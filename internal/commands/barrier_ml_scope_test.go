@@ -19,7 +19,9 @@ package commands
 // | TestMLScope_WipMissingDeclarationFails | ML in wave without **Files affected:** causes blocked status      |
 // | TestMLScopeFilesAffectedParsing        | parseMLScopeFilesAffected extracts backtick paths from single and multi-line declarations |
 // | TestMLScopeMatchPath                   | mlScopeMatchPath handles exact, dir, glob and ** patterns         |
-// | TestMLScope_NoOriginMain_Blocked       | Absent origin/main → status "blocked" (Decision 1, ML-4C)        |
+// | TestMLScope_NoOriginMain_Blocked               | Absent origin/main → status "blocked" (Decision 1, ML-4C)        |
+// | TestMLScope_RoadmapMovedStatePasses_Flat       | Moved roadmap (done/→wip/) old path NOT in failures; different basename IS in failures (flat) |
+// | TestMLScope_RoadmapMovedStatePasses_ByAgent    | Moved roadmap (agentA/done/→agentA/wip/) old path NOT in failures; same basename under different agent IS in failures (by_agent) |
 
 import (
 	"encoding/json"
@@ -42,7 +44,9 @@ func mlScopeGitEnv(base string) []string {
 	_ = os.WriteFile(cfgPath, []byte(
 		"[user]\n\temail = test@trackfw\n\tname = trackfw test\n"+
 			"[commit]\n\tgpgsign = false\n"+
-			"[core]\n\thooksPath = /dev/null\n\tautocrlf = false\n"), 0600)
+			"[core]\n\thooksPath = /dev/null\n\tautocrlf = false\n"+
+			"[gc]\n\tauto = 0\n"+
+			"[maintenance]\n\tauto = false\n"), 0600)
 	return append(os.Environ(),
 		"HOME="+base,
 		"GIT_CONFIG_GLOBAL="+cfgPath,
@@ -832,5 +836,225 @@ func TestMLScope_NoOriginMain_Blocked(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected 'origin/main' in failures; got: %v", check.Failures)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// T11 — Roadmap moved between states: old path is not out-of-scope (flat mode)
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestMLScope_RoadmapMovedStatePasses_Flat asserts that when a roadmap is moved
+// from one state directory to another on the branch (e.g. done/ → wip/ on
+// reopen), the deleted old-state path is NOT reported as "out of scope" — it is
+// part of the roadmap's orchestration set (same basename, any state in
+// roadmap_dir, flat mode).
+//
+// Counter-arm (same fixture): a DIFFERENT roadmap with another basename in the
+// same deleted path (docs/roadmaps/done/ROADMAP-ml-scope-moved-other.md) IS
+// reported as out of scope, proving the diff was actually evaluated and the fix
+// is basename-exact.
+//
+// Asserts: orchestration set includes same-basename paths across all roadmap
+// states (flat), so a moved roadmap does not produce a spurious "out of scope"
+// for the old path.
+// Contra-braço: FAILS on HEAD — old code includes only the current path in the
+// orchestration set, so done/ROADMAP-ml-scope-moved.md is flagged out of scope.
+func TestMLScope_RoadmapMovedStatePasses_Flat(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ml_scope uses git commands; windows path handling tested separately")
+	}
+
+	dir := t.TempDir()
+	if phys, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = phys
+	}
+	env := mlScopeGitEnv(dir)
+
+	const movedBase = "ROADMAP-ml-scope-moved.md"
+	const otherBase = "ROADMAP-ml-scope-moved-other.md"
+	content := buildMLScopeRoadmap("2026-10-01", "`internal/commands/ml-scope-moved.go`")
+
+	// ── Phase 1: build origin/main with roadmap at done/ ───────────────────
+	mlScopeGitRun(t, dir, env, "init", "-b", "main", dir)
+	for _, d := range []string{
+		"docs/roadmaps/wip", "docs/roadmaps/backlog", "docs/roadmaps/blocked",
+		"docs/roadmaps/done", "docs/roadmaps/abandoned", "docs/roadmaps/analyzing",
+		"docs/req", "docs/adr",
+	} {
+		if err := os.MkdirAll(filepath.Join(dir, d), 0755); err != nil {
+			t.Fatalf("mkdirs: %v", err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"),
+		[]byte("req_dir: docs/req\nroadmap_dir: docs/roadmaps\nadr_dirs: []\n"), 0644); err != nil {
+		t.Fatalf("write trackfw.yaml: %v", err)
+	}
+
+	// Roadmap at done/ for origin/main.
+	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps/done", movedBase), []byte(content), 0644); err != nil {
+		t.Fatalf("write done roadmap: %v", err)
+	}
+	// REQ+ADR fixtures (using the post-move wip/ path as the roadmap ref is fine;
+	// ml_scope only reads req: from the roadmap frontmatter to locate the REQ file).
+	writeMLScopeREQFixture(t, dir, "docs/roadmaps/wip/"+movedBase)
+
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "base: roadmap in done/")
+	mlScopeGitRun(t, dir, env, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+	// ── Phase 2: move roadmap to wip/, add other roadmap at done/ ──────────
+	mlScopeGitRun(t, dir, env, "rm", "-q", "docs/roadmaps/done/"+movedBase)
+	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps/wip", movedBase), []byte(content), 0644); err != nil {
+		t.Fatalf("write wip roadmap: %v", err)
+	}
+	// Counter-arm: different basename — must remain out of scope.
+	// Recreate docs/roadmaps/done/ in case git rm removed the now-empty directory.
+	if err := os.MkdirAll(filepath.Join(dir, "docs/roadmaps/done"), 0755); err != nil {
+		t.Fatalf("mkdir done/ for counter-arm: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps/done", otherBase), []byte(content), 0644); err != nil {
+		t.Fatalf("write other roadmap: %v", err)
+	}
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "chore: reopen — move roadmap to wip/")
+
+	// ── Check ───────────────────────────────────────────────────────────────
+	stdout, _ := mlScopeRunBarrier(t, dir, movedBase, "1")
+	check := findMLScopeCheck(t, stdout)
+
+	// Anti-vacuity: the check must have run.
+	if check.Status == "skipped" {
+		t.Fatalf("expected ml_scope to run (not skipped); evidence: %v", check.Evidence)
+	}
+
+	// Primary assertion: done/movedBase must NOT appear in failures.
+	oldPath := "docs/roadmaps/done/" + movedBase
+	for _, f := range check.Failures {
+		if strings.Contains(f, oldPath) {
+			t.Fatalf("old roadmap path %q must not be in failures after move to wip/; failure: %q\nall failures: %v",
+				oldPath, f, check.Failures)
+		}
+	}
+
+	// Counter-arm: a different basename under done/ MUST appear in failures.
+	otherRel := "docs/roadmaps/done/" + otherBase
+	foundOther := false
+	for _, f := range check.Failures {
+		if strings.Contains(f, otherRel) {
+			foundOther = true
+			break
+		}
+	}
+	if !foundOther {
+		t.Fatalf("counter-arm: %q must appear in failures (different basename → out of scope); failures: %v",
+			otherRel, check.Failures)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// T12 — Roadmap moved between states: old path is not out-of-scope (by_agent)
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestMLScope_RoadmapMovedStatePasses_ByAgent asserts the same contract as
+// TestMLScope_RoadmapMovedStatePasses_Flat in by_agent namespacing mode.
+//
+// Counter-arm (same fixture): the SAME basename under a DIFFERENT agent's done/
+// directory IS still out of scope — the fix pins sibling states within the same
+// agent only, not across all agents.
+//
+// Asserts: orchestration set includes same-basename paths across all roadmap
+// states for the owning agent (by_agent mode), but NOT for other agents.
+// Contra-braço: FAILS on HEAD — old code includes only the current path in the
+// orchestration set, so agentA/done/ROADMAP-ml-scope-byagent-moved.md is flagged
+// out of scope.
+func TestMLScope_RoadmapMovedStatePasses_ByAgent(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ml_scope uses git commands; windows path handling tested separately")
+	}
+
+	dir := t.TempDir()
+	if phys, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = phys
+	}
+	env := mlScopeGitEnv(dir)
+
+	const agentA = "apolo-tf"
+	const agentB = "zeus-tf"
+	const movedBase = "ROADMAP-ml-scope-byagent-moved.md"
+	content := buildMLScopeRoadmap("2026-10-01", "`internal/commands/ml-scope-byagent.go`")
+
+	// ── Phase 1: build origin/main with roadmap at agentA/done/ ────────────
+	mlScopeGitRun(t, dir, env, "init", "-b", "main", dir)
+	for _, agent := range []string{agentA, agentB} {
+		for _, state := range []string{"wip", "done", "backlog", "blocked", "abandoned", "analyzing"} {
+			if err := os.MkdirAll(filepath.Join(dir, "docs/roadmaps", agent, state), 0755); err != nil {
+				t.Fatalf("mkdirs %s/%s: %v", agent, state, err)
+			}
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "docs/req"), 0755); err != nil {
+		t.Fatalf("mkdirs req: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "docs/adr"), 0755); err != nil {
+		t.Fatalf("mkdirs adr: %v", err)
+	}
+	trackfwYAML := "req_dir: docs/req\nroadmap_dir: docs/roadmaps\nadr_dirs: []\n" +
+		"roadmap_namespacing: by_agent\nagents:\n  - " + agentA + "\n  - " + agentB + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte(trackfwYAML), 0644); err != nil {
+		t.Fatalf("write trackfw.yaml: %v", err)
+	}
+
+	// Roadmap at agentA/done/ for origin/main.
+	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps", agentA, "done", movedBase), []byte(content), 0644); err != nil {
+		t.Fatalf("write agentA done roadmap: %v", err)
+	}
+	writeMLScopeREQFixture(t, dir, "docs/roadmaps/"+agentA+"/wip/"+movedBase)
+
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "base: by_agent roadmap in agentA/done/")
+	mlScopeGitRun(t, dir, env, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+	// ── Phase 2: move roadmap to agentA/wip/, add same basename under agentB/done/ ─
+	mlScopeGitRun(t, dir, env, "rm", "-q", "docs/roadmaps/"+agentA+"/done/"+movedBase)
+	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps", agentA, "wip", movedBase), []byte(content), 0644); err != nil {
+		t.Fatalf("write agentA wip roadmap: %v", err)
+	}
+	// Counter-arm: same basename under a different agent — must remain out of scope.
+	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps", agentB, "done", movedBase), []byte(content), 0644); err != nil {
+		t.Fatalf("write agentB done roadmap: %v", err)
+	}
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "chore: reopen — move roadmap to agentA/wip/")
+
+	// ── Check ───────────────────────────────────────────────────────────────
+	stdout, _ := mlScopeRunBarrier(t, dir, movedBase, "1")
+	check := findMLScopeCheck(t, stdout)
+
+	// Anti-vacuity.
+	if check.Status == "skipped" {
+		t.Fatalf("expected ml_scope to run (not skipped); evidence: %v", check.Evidence)
+	}
+
+	// Primary assertion: agentA/done/movedBase must NOT appear in failures.
+	oldPath := "docs/roadmaps/" + agentA + "/done/" + movedBase
+	for _, f := range check.Failures {
+		if strings.Contains(f, oldPath) {
+			t.Fatalf("old roadmap path %q must not be in failures after move to agentA/wip/; failure: %q\nall failures: %v",
+				oldPath, f, check.Failures)
+		}
+	}
+
+	// Counter-arm: same basename under a different agent MUST appear in failures.
+	otherRel := "docs/roadmaps/" + agentB + "/done/" + movedBase
+	foundOther := false
+	for _, f := range check.Failures {
+		if strings.Contains(f, otherRel) {
+			foundOther = true
+			break
+		}
+	}
+	if !foundOther {
+		t.Fatalf("counter-arm: %q must appear in failures (different agent → out of scope); failures: %v",
+			otherRel, check.Failures)
 	}
 }

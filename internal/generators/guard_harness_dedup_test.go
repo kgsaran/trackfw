@@ -683,18 +683,18 @@ func TestWindsurfCredential_UserHookSurvivesDedup(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Windsurf D14 — global credential installed → project credential removed
+// Windsurf D15 — global credential installed → project credential still present
 // ---------------------------------------------------------------------------
 
-func TestWindsurfCredential_D14GlobalInstalledRemovesProject(t *testing.T) {
-	// Afirma: quando o guard global de credential está instalado em
-	// ~/.codeium/windsurf/hooks.json (D14 revised), InjectWindsurfHooks remove
-	// todas as entradas de credential do arquivo de projeto em pre_run_command
-	// e pre_write_code, mas mantém o git-branch guard em pre_run_command.
+// TestWindsurfCredential_D15GlobalInstalledKeepsProject (D15): even when the
+// global credential guard is installed, InjectWindsurfHooks ALWAYS emits the
+// project-scope credential guard in both pre_run_command and pre_write_code.
+// Legacy forms are migrated to canonical; git-branch guard remains present.
+func TestWindsurfCredential_D15GlobalInstalledKeepsProject(t *testing.T) {
 	root := t.TempDir()
 	home := harnessHome(t)
 
-	// Install global credential guard (both events required by globalCredentialGuardInstalledWindsurf).
+	// Seed global credential guard (both events).
 	globalPath := filepath.Join(home, ".codeium", "windsurf", "hooks.json")
 	writeJSONFile(t, globalPath, buildWindsurfFlatFixture(
 		[]string{"pre_run_command", "pre_write_code"},
@@ -721,26 +721,27 @@ func TestWindsurfCredential_D14GlobalInstalledRemovesProject(t *testing.T) {
 
 	result := readJSONFile(t, hooksPath)
 
-	// pre_run_command: git-branch canonical present, credential absent.
+	// pre_run_command: git-branch canonical present.
 	if n := countFlatCommandEntries(result, "pre_run_command", windsurfGitGuardCmd, ""); n != 1 {
 		t.Errorf("pre_run_command git-branch canonical count=%d, want 1", n)
 	}
+	// D15: credential canonical must be PRESENT (legacy migrated → canonical).
+	if n := countFlatCommandEntries(result, "pre_run_command", guardCredentialCmdPSPOSIX, ""); n != 1 {
+		t.Errorf("pre_run_command: credential canonical count=%d, want 1 (D15: always emitted)", n)
+	}
 	for _, leg := range guardforms.CredentialLegacyPSPOSIX {
 		if n := countFlatCommandEntries(result, "pre_run_command", leg, ""); n != 0 {
-			t.Errorf("pre_run_command: credential legacy %q should be absent, got %d", leg, n)
+			t.Errorf("pre_run_command: credential legacy %q should be absent (migrated), got %d", leg, n)
 		}
-	}
-	if n := countFlatCommandEntries(result, "pre_run_command", guardCredentialCmdPSPOSIX, ""); n != 0 {
-		t.Errorf("pre_run_command: credential canonical should be absent (D14), got %d entries", n)
 	}
 
-	// pre_write_code: no credential entries at all.
+	// pre_write_code: credential canonical must be PRESENT.
+	if n := countFlatCommandEntries(result, "pre_write_code", guardCredentialCmdPSPOSIX, ""); n != 1 {
+		t.Errorf("pre_write_code: credential canonical count=%d, want 1 (D15: always emitted)", n)
+	}
 	for _, leg := range guardforms.CredentialLegacyPSPOSIX {
 		if n := countFlatCommandEntries(result, "pre_write_code", leg, ""); n != 0 {
-			t.Errorf("pre_write_code: credential legacy %q should be absent, got %d", leg, n)
+			t.Errorf("pre_write_code: credential legacy %q should be absent (migrated), got %d", leg, n)
 		}
-	}
-	if n := countFlatCommandEntries(result, "pre_write_code", guardCredentialCmdPSPOSIX, ""); n != 0 {
-		t.Errorf("pre_write_code: credential canonical should be absent (D14), got %d entries", n)
 	}
 }

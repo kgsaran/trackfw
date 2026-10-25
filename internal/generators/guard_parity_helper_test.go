@@ -155,6 +155,17 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
+	// ML-7D: disable git maintenance auto-scheduling for every git child process
+	// in this test binary (including the compiled trackfw binary). GIT_CONFIG_PARAMETERS
+	// stacks with GIT_CONFIG_COUNT (independent mechanism). Measured: 0 maintenance
+	// events in GIT_TRACE2_EVENT vs 15 without it, with a helper setting GIT_CONFIG_COUNT=3.
+	// Note: the transition_log_entry_test.go helpers already carry gc.auto=0 in their own
+	// GIT_CONFIG_COUNT (ML-7C); this process-level variable is the single-point defence
+	// for the 20+ other helpers in this package that do not.
+	if err := os.Setenv("GIT_CONFIG_PARAMETERS", "'gc.auto=0' 'maintenance.auto=false'"); err != nil {
+		panic(err)
+	}
+
 	code := m.Run()
 	cleanupGuardBinary()
 	os.RemoveAll(guardTestHome)

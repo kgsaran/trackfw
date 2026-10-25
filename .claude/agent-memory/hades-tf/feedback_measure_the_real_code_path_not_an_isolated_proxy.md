@@ -27,3 +27,15 @@ primitive in a throwaway script. A proxy test of one function is fine for a firs
 but the parity verdict itself must come from the real path — this is the same principle as
 [[feedback_verify_by_execution]] and [[feedback_medir_decode_e_encode_separadamente]], specialized further:
 even "execute it" isn't enough if what you execute is a stand-in for the code rather than the code.
+
+**Extension — constant stubs erase temporal ordering (2026-10-24, ML-6B red-team D15):** when
+sabotaging a detector function with an always-true stub, the stub affects ALL callers in the test
+harness, not just the update path. AC9 (`TestD15_UpdatePreservesProjectGuardWithGlobalInstalled`)
+has a temporal structure: `init` (no global installed) → commit to origin/main → install global →
+`update`. An always-true stub makes `init` also skip the guard, so origin/main never has it, and
+`guard_wiring_removed` has nothing to compare — the test passes vacuously. The faithful sabotage is
+a reverse-patch (`git diff origin/main..HEAD -- <file> | patch -R -p1`) which restores the real D14
+detectors that read HOME. Those detectors return false at init-time (harness not yet installed) and
+true at update-time (harness installed) — preserving the temporal ordering the test relies on.
+**Rule: sabotage the detector's input (what the real code reads from disk/env), not its return value
+(a constant stub). A constant stub is a proxy, not the real code path.**

@@ -9,22 +9,22 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// ROADMAP-2026-08-17 Wave 2/ML-2B — InjectXHooks (project scope) must skip
-// the git-branch-guard entry when the corresponding global-scope wiring
-// (installed via `trackfw update harness --targets <tool>-git-branch-guard`,
-// ML-2A) is already present, so the guard doesn't fire (and print its block
-// message) twice per Bash call — and must fail-open (fall back to the
-// pre-ML-2B behavior of always adding the project-scope entry) if the
-// global file is missing, unreadable, or unparseable. Mirrors
-// credential_guard_dedup_test.go exactly, pointed at the git-branch-guard
-// scriptPath/scriptdispatch instead.
+// D15 (ADR-2026-10-04 adendo 2026-10-24, REQ-2026-10-23 #613) —
+// InjectXHooks (project scope) ALWAYS emits the git-branch-guard entry
+// regardless of whether the global-scope wiring is installed. The old D14
+// dedup behavior is removed. Tests below assert presence (not absence) when
+// a global file is present, and the "message once" test now expects 2 blocks
+// when both project and global scopes are wired.
 // ---------------------------------------------------------------------------
 
 func gbgDedupScriptPath(home string) string {
 	return filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
 }
 
-func TestGBGDedup_Claude_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
+// Reconciliação (D15): afirma que InjectClaudeHooks SEMPRE emite git-branch-guard
+// mesmo com o harness global instalado. A semente existe para provar que o código
+// não a lê para pular a fiação de projeto.
+func TestProjectGitBranchGuard_Claude_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
 	home := dedupFixtureHome(t)
 	scriptPath := gbgDedupScriptPath(home)
 	helperWriteJSON(t, filepath.Join(home, ".claude", "settings.json"), map[string]interface{}{
@@ -44,20 +44,19 @@ func TestGBGDedup_Claude_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
-	if helperHasClaudeHook(data, "PreToolUse", "Bash", guardGitBranchCmdPSPOSIX) {
-		t.Error("project-scope git-branch-guard entry should have been skipped (global already installed)")
+	if !helperHasClaudeHook(data, "PreToolUse", claudeShellMatcher, guardGitBranchCmdPSPOSIX) {
+		t.Error("project-scope git-branch-guard entry must be present even when global is installed (D15)")
 	}
-	// credential-guard (global not installed in this fixture) and
-	// attention-signal must still be added — dedup is per-guard, not global.
 	if !helperHasClaudeHook(data, "PreToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX) {
-		t.Error("credential-guard entry must still be added (its own global dedup was not triggered by this fixture)")
+		t.Error("credential-guard entry must still be added")
 	}
 	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", attentionSignalCmd) {
-		t.Error("attention-signal entry must still be added regardless of global git-branch-guard state")
+		t.Error("attention-signal entry must still be added")
 	}
 }
 
-func TestGBGDedup_Codex_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
+// Reconciliação (D15): Codex — idem Claude.
+func TestProjectGitBranchGuard_Codex_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
 	home := dedupFixtureHome(t)
 	scriptPath := gbgDedupScriptPath(home)
 	helperWriteJSON(t, filepath.Join(home, ".codex", "hooks.json"), map[string]interface{}{
@@ -77,15 +76,16 @@ func TestGBGDedup_Codex_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".codex", "hooks.json"))
-	if helperHasClaudeHook(data, "PreToolUse", "Bash", guardGitBranchCmdPSPOSIX) {
-		t.Error("project-scope git-branch-guard entry should have been skipped (global already installed)")
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardGitBranchCmdPSPOSIX) {
+		t.Error("project-scope git-branch-guard entry must be present even when global is installed (D15)")
 	}
 	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardCredentialCmdPSPOSIX) {
-		t.Error("credential-guard entry must still be added (its own global dedup was not triggered by this fixture)")
+		t.Error("credential-guard entry must still be added")
 	}
 }
 
-func TestGBGDedup_Gemini_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
+// Reconciliação (D15): Gemini — idem Claude.
+func TestProjectGitBranchGuard_Gemini_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
 	home := dedupFixtureHome(t)
 	scriptPath := gbgDedupScriptPath(home)
 	helperWriteJSON(t, filepath.Join(home, ".gemini", "settings.json"), map[string]interface{}{
@@ -105,15 +105,16 @@ func TestGBGDedup_Gemini_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".gemini", "settings.json"))
-	if helperHasClaudeHook(data, "BeforeTool", "run_shell_command", guardGitBranchCmdPSPOSIX) {
-		t.Error("project-scope git-branch-guard entry should have been skipped (global already installed)")
+	if !helperHasClaudeHook(data, "BeforeTool", "run_shell_command", guardGitBranchCmdPSPOSIX) {
+		t.Error("project-scope git-branch-guard entry must be present even when global is installed (D15)")
 	}
 	if !helperHasClaudeHook(data, "BeforeTool", "run_shell_command", guardCredentialCmdPSPOSIX) {
-		t.Error("credential-guard entry must still be added (its own global dedup was not triggered by this fixture)")
+		t.Error("credential-guard entry must still be added")
 	}
 }
 
-func TestGBGDedup_Cursor_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
+// Reconciliação (D15): Cursor — both beforeShellExecution entries must be present.
+func TestProjectGitBranchGuard_Cursor_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
 	home := dedupFixtureHome(t)
 	scriptPath := gbgDedupScriptPath(home)
 	helperWriteJSON(t, filepath.Join(home, ".cursor", "hooks.json"), map[string]interface{}{
@@ -133,16 +134,28 @@ func TestGBGDedup_Cursor_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	data := helperReadJSON(t, filepath.Join(dir, ".cursor", "hooks.json"))
 	hooks, _ := data["hooks"].(map[string]interface{})
 	before, _ := hooks["beforeShellExecution"].([]interface{})
-	// credential-guard's global dedup was NOT triggered by this fixture (only
-	// the git-branch-guard global entry was planted), so beforeShellExecution
-	// must contain exactly the credential-guard entry — git-branch-guard is
-	// skipped, credential-guard is not.
-	if len(before) != 1 || before[0].(map[string]interface{})["command"] != guardCredentialCmdPSPOSIX {
-		t.Errorf("expected only the credential-guard beforeShellExecution entry (git-branch-guard skipped, global already installed), got %v", before)
+	// D15: both credential-guard and git-branch-guard must be present.
+	foundCred, foundGit := false, false
+	for _, item := range before {
+		obj, _ := item.(map[string]interface{})
+		switch obj["command"] {
+		case guardCredentialCmdPSPOSIX:
+			foundCred = true
+		case guardGitBranchCmdPSPOSIX:
+			foundGit = true
+		}
+	}
+	if !foundCred {
+		t.Errorf("credential-guard must be present in beforeShellExecution (D15), got %v", before)
+	}
+	if !foundGit {
+		t.Errorf("git-branch-guard must be present in beforeShellExecution even when global is installed (D15), got %v", before)
 	}
 }
 
-func TestGBGDedup_Cursor_BothGloballyInstalled_KeyAbsentNotEmpty(t *testing.T) {
+// Reconciliação (D15): afirma que, com ambos os guards globais instalados para Cursor,
+// beforeShellExecution contém tanto credential-guard quanto git-branch-guard (D15: sempre emitidos).
+func TestProjectGitBranchGuard_Cursor_BothGloballyInstalled_BothKeysPresent(t *testing.T) {
 	home := dedupFixtureHome(t)
 	credScriptPath := dedupScriptPath(home)
 	gbgScriptPath := gbgDedupScriptPath(home)
@@ -163,17 +176,31 @@ func TestGBGDedup_Cursor_BothGloballyInstalled_KeyAbsentNotEmpty(t *testing.T) {
 
 	data := helperReadJSON(t, filepath.Join(dir, ".cursor", "hooks.json"))
 	hooks, _ := data["hooks"].(map[string]interface{})
-	// Both dedups skip: beforeShellExecution must be ABSENT, not an empty
-	// array — check-agent-hooks-parity.sh's structural comparator treats a
-	// present-but-empty array as drift against the other two stacks unless
-	// all three independently choose to always emit an empty array (they
-	// don't — Go never assigns the key when nothing is added to it).
-	if _, present := hooks["beforeShellExecution"]; present {
-		t.Errorf("expected beforeShellExecution key to be absent when both dedups skip, got %v", hooks["beforeShellExecution"])
+	// D15: beforeShellExecution key must be PRESENT with both entries.
+	before, _ := hooks["beforeShellExecution"].([]interface{})
+	if _, present := hooks["beforeShellExecution"]; !present {
+		t.Error("beforeShellExecution key must be present (D15: both guards always emitted)")
+	}
+	foundCred, foundGit := false, false
+	for _, item := range before {
+		obj, _ := item.(map[string]interface{})
+		switch obj["command"] {
+		case guardCredentialCmdPSPOSIX:
+			foundCred = true
+		case guardGitBranchCmdPSPOSIX:
+			foundGit = true
+		}
+	}
+	if !foundCred {
+		t.Errorf("credential-guard must be present (D15), got %v", before)
+	}
+	if !foundGit {
+		t.Errorf("git-branch-guard must be present (D15), got %v", before)
 	}
 }
 
-func TestGBGDedup_Copilot_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
+// Reconciliação (D15): Copilot — git-branch-guard must be present even with global.
+func TestProjectGitBranchGuard_Copilot_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
 	home := dedupFixtureHome(t)
 	scriptPath := gbgDedupScriptPath(home)
 	helperWriteJSON(t, filepath.Join(home, ".copilot", "settings.json"), map[string]interface{}{
@@ -192,10 +219,14 @@ func TestGBGDedup_Copilot_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	data := helperReadJSON(t, filepath.Join(dir, ".github", "hooks", "trackfw-attention.json"))
 	hooks, _ := data["hooks"].(map[string]interface{})
 	pre, _ := hooks["preToolUse"].([]interface{})
+	foundGit := false
 	for _, item := range pre {
 		if item.(map[string]interface{})["command"] == guardGitBranchCmdPSPOSIX {
-			t.Errorf("project-scope git-branch-guard entry should have been skipped (global already installed), got %v", pre)
+			foundGit = true
 		}
+	}
+	if !foundGit {
+		t.Errorf("project-scope git-branch-guard must be present even when global is installed (D15), got %v", pre)
 	}
 	foundCG := false
 	for _, item := range pre {
@@ -204,20 +235,15 @@ func TestGBGDedup_Copilot_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 		}
 	}
 	if !foundCG {
-		t.Errorf("credential-guard entry must still be added (its own global dedup was not triggered by this fixture), got %v", pre)
+		t.Errorf("credential-guard entry must still be added, got %v", pre)
 	}
 }
 
-// TestGBGDedup_Claude_SkipsProjectEntry_ToleratesDoubleSlashInStoredCommand
-// reproduces ROADMAP-2026-08-17 ML-2C's root cause directly at the dedup
-// level (not just the comparator unit test in guard_path_normalize_test.go):
-// the "command" value stored in ~/.claude/settings.json is built with raw
-// string concatenation (as a hand-edited config, or a $HOME captured with a
-// trailing slash before normalization, would produce) instead of
-// filepath.Join, so it textually differs from what
-// globalGitBranchGuardScriptPath() computes today even though it names the
-// SAME file. Before ML-2C this made the dedup silently fail to fire.
-func TestGBGDedup_Claude_SkipsProjectEntry_ToleratesDoubleSlashInStoredCommand(t *testing.T) {
+// TestGBGDedup_Claude_EmitsProjectEntry_WithDoubleSlashInGlobalCommand (D15):
+// the global command with // in the path is a seed that proves the code no
+// longer reads the global file to skip project wiring. The guard must be
+// present in the project file regardless.
+func TestProjectGitBranchGuard_Claude_EmitsProjectEntry_WithDoubleSlashInGlobalCommand(t *testing.T) {
 	home := dedupFixtureHome(t)
 	rawStoredCommand := home + "//" + ".trackfw/scripts/trackfw-git-branch-guard.sh"
 	helperWriteJSON(t, filepath.Join(home, ".claude", "settings.json"), map[string]interface{}{
@@ -237,186 +263,17 @@ func TestGBGDedup_Claude_SkipsProjectEntry_ToleratesDoubleSlashInStoredCommand(t
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
-	if helperHasClaudeHook(data, "PreToolUse", "Bash", guardGitBranchCmdPSPOSIX) {
-		t.Error("project-scope git-branch-guard entry should have been skipped despite the // formatting in the stored global command")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// ROADMAP-2026-08-17 ML-4B — hades-tf ML-4A barrier finding: a global entry
-// with the CORRECT command but MISSING "type":"command" (hand-edited config,
-// older trackfw version, another tool's merge) is silently never executed by
-// Claude Code/Codex/Gemini/GitHub Copilot CLI/Kiro. Before this ML,
-// hookArrayHasCommand/simpleArrayHasValue still read such an entry as
-// "installed", so the project-scope entry was skipped in favor of a global
-// entry that never fires — "nenhum dos dois escopos protege, e tudo fica
-// verde". Cursor is the one exception: its schema never carries a "type"
-// field at all, so a missing "type" there is normal, not malformed — see
-// TestGBGDedup_Cursor_SkipsProjectEntryWhenGlobalInstalled above, whose
-// fixture already has no "type" field and must keep skipping.
-// ---------------------------------------------------------------------------
-
-func TestGBGDedup_Claude_ReWiresProjectEntryWhenGlobalEntryMissingType(t *testing.T) {
-	home := dedupFixtureHome(t)
-	scriptPath := gbgDedupScriptPath(home)
-	helperWriteJSON(t, filepath.Join(home, ".claude", "settings.json"), map[string]interface{}{
-		"hooks": map[string]interface{}{
-			"PreToolUse": []interface{}{
-				map[string]interface{}{
-					"matcher": "Bash",
-					// Deliberately missing "type":"command" -- the ML-4A barrier
-					// finding's exact malformed shape.
-					"hooks": []interface{}{map[string]interface{}{"command": scriptPath}},
-				},
-			},
-		},
-	})
-
-	dir := t.TempDir()
-	if err := InjectClaudeHooks(dir); err != nil {
-		t.Fatalf("InjectClaudeHooks failed: %v", err)
-	}
-
-	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
 	if !helperHasClaudeHook(data, "PreToolUse", claudeShellMatcher, guardGitBranchCmdPSPOSIX) {
-		t.Error("project-scope git-branch-guard entry should have been RE-WIRED: the global entry is missing \"type\":\"command\" and Claude Code will never execute it, so treating it as \"installed\" would leave both scopes unprotected (hades-tf ML-4A barrier finding)")
+		t.Error("project-scope git-branch-guard must be present regardless of global state (D15)")
 	}
 }
 
-func TestGBGDedup_Copilot_ReWiresProjectEntryWhenGlobalEntryMissingType(t *testing.T) {
-	home := dedupFixtureHome(t)
-	scriptPath := gbgDedupScriptPath(home)
-	helperWriteJSON(t, filepath.Join(home, ".copilot", "settings.json"), map[string]interface{}{
-		"hooks": map[string]interface{}{
-			"preToolUse": []interface{}{
-				// Deliberately missing "type":"command" -- same ML-4A finding,
-				// Copilot's own schema.
-				map[string]interface{}{"matcher": "bash", "bash": scriptPath, "cwd": ".", "timeoutSec": 10},
-			},
-		},
-	})
-
-	dir := t.TempDir()
-	if err := InjectCopilotHooks(dir); err != nil {
-		t.Fatalf("InjectCopilotHooks failed: %v", err)
-	}
-
-	data := helperReadJSON(t, filepath.Join(dir, ".github", "hooks", "trackfw-attention.json"))
-	hooks, _ := data["hooks"].(map[string]interface{})
-	pre, _ := hooks["preToolUse"].([]interface{})
-	found := false
-	for _, item := range pre {
-		if item.(map[string]interface{})["command"] == guardGitBranchCmdPSPOSIX {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("project-scope git-branch-guard entry should have been RE-WIRED when the global Copilot entry is missing \"type\":\"command\", got %v", pre)
-	}
-}
-
-// TestGBGDedup_MalformedGlobalEntry_ProjectStillProtects proves the ML-4B fix
-// end-to-end via EXECUTION (not just JSON presence), mirroring
-// TestGBGDedup_MessageAppearsOnceWhenBothScopesInstalled's methodology. The
-// malformed global entry (missing "type") is real and present in the
-// combined project+global hook set, but a real Claude Code runtime would
-// never execute it -- so the "what actually fires" set (built via
-// helperClaudeHookCommandsWithType, which filters on type=="command", unlike
-// helperClaudeHookCommands above) must exclude it. Before this ML: the
-// malformed entry made the dedup skip the project entry AND the malformed
-// entry itself never fires -- 0 blocks, "nenhum dos dois escopos protege".
-// After this ML: the project entry is re-wired and, being structurally
-// valid, executes -- 1 block, protection restored.
-func TestGBGDedup_MalformedGlobalEntry_ProjectStillProtects(t *testing.T) {
-	home := dedupFixtureHome(t)
-	if err := GenerateGlobalGitBranchGuardScript(home); err != nil {
-		t.Fatalf("GenerateGlobalGitBranchGuardScript failed: %v", err)
-	}
-	globalScriptPath := gbgDedupScriptPath(home)
-	helperWriteJSON(t, filepath.Join(home, ".claude", "settings.json"), map[string]interface{}{
-		"hooks": map[string]interface{}{
-			"PreToolUse": []interface{}{
-				map[string]interface{}{
-					"matcher": "Bash",
-					"hooks":   []interface{}{map[string]interface{}{"command": globalScriptPath}},
-				},
-			},
-		},
-	})
-
-	projectDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(projectDir, "trackfw.yaml"), []byte("roadmap_dir: docs/roadmaps\n"), 0644); err != nil {
-		t.Fatalf("write trackfw.yaml: %v", err)
-	}
-	if err := GenerateGitBranchGuardScript(projectDir); err != nil {
-		t.Fatalf("GenerateGitBranchGuardScript failed: %v", err)
-	}
-	if err := InjectClaudeHooks(projectDir); err != nil {
-		t.Fatalf("InjectClaudeHooks failed: %v", err)
-	}
-
-	projectData := helperReadJSON(t, filepath.Join(projectDir, ".claude", "settings.json"))
-	globalData := helperReadJSON(t, filepath.Join(home, ".claude", "settings.json"))
-
-	// ML-5A: project file now uses claudeShellMatcher ("Bash|PowerShell") for guard
-	// hooks; global file still uses "Bash" (legacy, not yet updated by harness).
-	// Collect from both matchers in the project data so we capture the re-wired entry.
-	executable := append(
-		helperClaudeHookCommandsWithType(t, projectData, "PreToolUse", "Bash"),
-		helperClaudeHookCommandsWithType(t, projectData, "PreToolUse", claudeShellMatcher)...,
-	)
-	executable = append(executable, helperClaudeHookCommandsWithType(t, globalData, "PreToolUse", "Bash")...)
-	resolved := make([]string, 0, len(executable))
-	for _, p := range executable {
-		if !strings.Contains(p, "trackfw-git-branch-guard.sh") && !strings.Contains(p, "trackfw guard git-branch") {
-			continue
-		}
-		resolved = append(resolved, strings.ReplaceAll(p, "$CLAUDE_PROJECT_DIR", projectDir))
-	}
-
-	got := runGitBranchGuardEntries(t, projectDir, resolved)
-	if got != 1 {
-		t.Fatalf("expected exactly 1 block (the re-wired, structurally-valid project entry) -- the malformed global entry must be excluded from what actually executes; got %d (executable entries: %v)", got, resolved)
-	}
-}
-
-// --- Fail-open: missing/corrupted global file must not disable the
-// project-scope git-branch-guard entry. ---
-
-func TestGBGDedup_FailOpen_NoGlobalFile(t *testing.T) {
-	dedupFixtureHome(t) // empty $HOME, no global files at all
-
-	dir := t.TempDir()
-	if err := InjectClaudeHooks(dir); err != nil {
-		t.Fatalf("InjectClaudeHooks failed: %v", err)
-	}
-
-	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
-	if !helperHasClaudeHook(data, "PreToolUse", claudeShellMatcher, guardGitBranchCmdPSPOSIX) {
-		t.Error("expected project-scope git-branch-guard entry to be added when no global file exists (fail-open)")
-	}
-}
-
-func TestGBGDedup_FailOpen_CorruptedGlobalFile(t *testing.T) {
-	home := dedupFixtureHome(t)
-	path := filepath.Join(home, ".claude", "settings.json")
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.WriteFile(path, []byte("{not valid json"), 0644); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-
-	dir := t.TempDir()
-	if err := InjectClaudeHooks(dir); err != nil {
-		t.Fatalf("InjectClaudeHooks failed: %v", err)
-	}
-
-	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
-	if !helperHasClaudeHook(data, "PreToolUse", claudeShellMatcher, guardGitBranchCmdPSPOSIX) {
-		t.Error("expected project-scope git-branch-guard entry to be added when global file is corrupted (fail-open)")
-	}
-}
+// D15: The "rewire" and "fail-open" concepts no longer apply — project wiring is
+// unconditional; the global file is never consulted. Tests that covered those
+// pre-D15 paths (ReWiresProjectEntryWhenGlobalEntryMissingType,
+// MalformedGlobalEntry_ProjectStillProtects, FailOpen_NoGlobalFile,
+// FailOpen_CorruptedGlobalFile) have been removed. The EmitsProjectEntry*
+// tests above cover the same protection assertions under D15 semantics.
 
 // ---------------------------------------------------------------------------
 // "Message once" — proved by EXECUTING the generated hook file's entries
@@ -475,13 +332,21 @@ func runGitBranchGuardEntries(t *testing.T, projectDir string, scriptPaths []str
 	return count
 }
 
-func TestGBGDedup_MessageAppearsOnceWhenBothScopesInstalled(t *testing.T) {
+// TestProjectGitBranchGuard_BothScopesFireIndependently_TwoMessages (D15): under D15,
+// InjectClaudeHooks ALWAYS emits the project-scope entry even when a global
+// entry exists. Claude Code merges both project and global scope hooks for a
+// single Bash tool call, so the combined set has TWO git-branch-guard entries
+// (project under claudeShellMatcher + global under "Bash"). Both execute and
+// produce the block message — 2 blocks is the expected, accepted cost of D15
+// (ADR §D15: ~10.6 ms on a dual-scope machine). The NonVacuous test below
+// confirms 2 blocks is achievable.
+//
+// Reconciliação (D15): afirma que projeto + global emitem 2 entradas independentes de
+// git-branch-guard, resultando em 2 bloqueios (custo aceito por D15).
+func TestProjectGitBranchGuard_BothScopesFireIndependently_TwoMessages(t *testing.T) {
 	home := dedupFixtureHome(t)
 
-	// Write the real global script content (byte-identical to project scope,
-	// per GenerateGlobalGitBranchGuardScript's own doc comment) and wire the
-	// global-scope Claude config exactly the way harnessGitBranchGuardTargetClaude
-	// (ML-2A) would.
+	// Seed global scope exactly the way harnessGitBranchGuardTargetClaude would.
 	if err := GenerateGlobalGitBranchGuardScript(home); err != nil {
 		t.Fatalf("GenerateGlobalGitBranchGuardScript failed: %v", err)
 	}
@@ -497,9 +362,6 @@ func TestGBGDedup_MessageAppearsOnceWhenBothScopesInstalled(t *testing.T) {
 		},
 	})
 
-	// Project scaffold: needs trackfw.yaml so the ML-1A no-op doesn't
-	// swallow the invocation, plus its own project-scope script (generated
-	// the same way `trackfw init` would).
 	projectDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(projectDir, "trackfw.yaml"), []byte("roadmap_dir: docs/roadmaps\n"), 0644); err != nil {
 		t.Fatalf("write trackfw.yaml: %v", err)
@@ -507,62 +369,50 @@ func TestGBGDedup_MessageAppearsOnceWhenBothScopesInstalled(t *testing.T) {
 	if err := GenerateGitBranchGuardScript(projectDir); err != nil {
 		t.Fatalf("GenerateGitBranchGuardScript failed: %v", err)
 	}
-
 	if err := InjectClaudeHooks(projectDir); err != nil {
 		t.Fatalf("InjectClaudeHooks failed: %v", err)
 	}
 
-	// Claude Code reads and merges hook entries from BOTH the project-scope
-	// (.claude/settings.json) and global-scope (~/.claude/settings.json)
-	// files for a single Bash tool call — the dedup fix (ML-2B) is only
-	// correct if the COMBINED set of entries across both files has exactly
-	// one git-branch-guard command, not just the project file in isolation
-	// (the global file's entry is real and expected to be there).
+	// Collect entries from both matchers: project uses claudeShellMatcher
+	// ("Bash|PowerShell"), global uses "Bash". Combined must have exactly 2
+	// git-branch-guard entries.
 	projectData := helperReadJSON(t, filepath.Join(projectDir, ".claude", "settings.json"))
 	globalData := helperReadJSON(t, filepath.Join(home, ".claude", "settings.json"))
 	scriptPaths := append(
-		helperClaudeHookCommands(t, projectData, "PreToolUse", "Bash"),
+		helperClaudeHookCommands(t, projectData, "PreToolUse", claudeShellMatcher),
 		helperClaudeHookCommands(t, globalData, "PreToolUse", "Bash")...,
 	)
-	// The dedup fix (ML-2B) must leave exactly ONE Bash-matcher entry
-	// pointing at a git-branch-guard script across the combined project+
-	// global hook set — the global one; the project-scope entry was
-	// skipped.
 	gitGuardEntries := 0
 	for _, p := range scriptPaths {
-		if strings.Contains(p, "trackfw-git-branch-guard.sh") {
+		if strings.Contains(p, "trackfw-git-branch-guard.sh") || strings.Contains(p, "trackfw guard git-branch") {
 			gitGuardEntries++
 		}
 	}
-	if gitGuardEntries != 1 {
-		t.Fatalf("expected exactly 1 git-branch-guard entry across project+global PreToolUse/Bash after dedup, got %d: %v", gitGuardEntries, scriptPaths)
+	if gitGuardEntries != 2 {
+		t.Fatalf("D15: expected exactly 2 git-branch-guard entries across project+global (1 project under %q + 1 global under \"Bash\"), got %d: %v", claudeShellMatcher, gitGuardEntries, scriptPaths)
 	}
 
-	// Resolve $CLAUDE_PROJECT_DIR the way Claude Code would before invoking
-	// the hook command, then execute every Bash-matcher entry once (as a
-	// real agent runtime would per Bash tool call) and count how many times
-	// the block message appears.
 	resolved := make([]string, 0, len(scriptPaths))
 	for _, p := range scriptPaths {
-		if !strings.Contains(p, "trackfw-git-branch-guard.sh") {
+		if !strings.Contains(p, "trackfw-git-branch-guard.sh") && !strings.Contains(p, "trackfw guard git-branch") {
 			continue
 		}
 		resolved = append(resolved, strings.ReplaceAll(p, "$CLAUDE_PROJECT_DIR", projectDir))
 	}
 
 	got := runGitBranchGuardEntries(t, projectDir, resolved)
-	if got != 1 {
-		t.Errorf("expected the block message to appear exactly once when executing every registered PreToolUse/Bash git-branch-guard entry, got %d (entries executed: %v)", got, resolved)
+	if got != 2 {
+		t.Errorf("D15: expected 2 blocks (both project and global scopes fire independently), got %d (entries executed: %v)", got, resolved)
 	}
 }
 
-// TestGBGDedup_MessageAppearsOnceWhenBothScopesInstalled_NonVacuous proves
+// TestProjectGitBranchGuard_BothScopesFireIndependently_TwoMessages_NonVacuous proves
 // the test above is not vacuous: with the SAME fixture but the dedup
 // deliberately bypassed (both the project-scope AND a second, synthetic
 // global-scope entry executed, simulating the pre-ML-2B double-wiring bug),
 // the block message appears twice — the exact production symptom
 // (`docs/roadmaps/wip/ROADMAP-2026-08-17-...md` ML-2B "Impacto medido").
-func TestGBGDedup_MessageAppearsOnceWhenBothScopesInstalled_NonVacuous(t *testing.T) {
+func TestProjectGitBranchGuard_BothScopesFireIndependently_TwoMessages_NonVacuous(t *testing.T) {
 	home := dedupFixtureHome(t)
 	if err := GenerateGlobalGitBranchGuardScript(home); err != nil {
 		t.Fatalf("GenerateGlobalGitBranchGuardScript failed: %v", err)

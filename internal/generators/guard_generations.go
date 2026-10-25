@@ -85,8 +85,8 @@ func migrateDedupGuardInFlatArray(
 //
 // If the resulting array is empty, the key is DELETED from hooks (not set to nil or
 // []interface{}{}) — avoiding a present-but-empty-array drift that the structural
-// comparator treats as significant (see TestGBGDedup_Cursor_BothGloballyInstalled_
-// KeyAbsentNotEmpty).
+// comparator treats as significant (see TestProjectGitBranchGuard_Cursor_BothGloballyInstalled_
+// BothKeysPresent).
 //
 // Entries whose command is NOT in legacyForms ∪ {currentCmd} are left untouched.
 func removeGuardFromFlatArrayInHooks(

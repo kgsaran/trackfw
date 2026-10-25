@@ -87,6 +87,17 @@ func TestMain(m *testing.M) {
 	// ML-1A: ClaudeConfigDir respects CLAUDE_CONFIG_DIR. Unset before any test
 	// runs so a developer's real Claude config is never read or written.
 	os.Unsetenv("CLAUDE_CONFIG_DIR")
+
+	// ML-7D: disable git maintenance auto-scheduling for every git child process
+	// in this test binary. GIT_CONFIG_PARAMETERS stacks with GIT_CONFIG_COUNT
+	// (independent mechanism) — helpers that define their own GIT_CONFIG_COUNT
+	// do not override it. Measured: 0 maintenance events in GIT_TRACE2_EVENT
+	// vs 15 without it (contra-arm), with a helper that sets GIT_CONFIG_COUNT=3.
+	// Background: git maintenance run --auto --detach races with t.TempDir's
+	// RemoveAll and produces "directory not empty" under parallel load.
+	if err := os.Setenv("GIT_CONFIG_PARAMETERS", "'gc.auto=0' 'maintenance.auto=false'"); err != nil {
+		panic(err)
+	}
 	os.Exit(m.Run())
 }
 

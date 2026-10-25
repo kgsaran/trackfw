@@ -7,12 +7,11 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// ROADMAP-2026-08-06 Wave 3/ML-3A — InjectXHooks (project scope) must skip
-// the credential-guard entry when the corresponding global-scope wiring
-// (installed via `trackfw update harness --targets <tool>-credential-guard`,
-// internal/generators/update.go) is already present, and must fail-open
-// (fall back to the pre-ML-3A behavior of always adding the project-scope
-// entry) if the global file is missing, unreadable, or unparseable.
+// D15 (ADR-2026-10-04 adendo 2026-10-24, REQ-2026-10-23 #613) —
+// InjectXHooks (project scope) ALWAYS emits the credential-guard entry
+// regardless of whether the global-scope wiring is installed. The old D14
+// dedup behavior is removed; the tests below assert presence (not absence)
+// when a global file is present.
 // ---------------------------------------------------------------------------
 
 // dedupFixtureHome creates an isolated $HOME and points HOME, USERPROFILE and
@@ -32,7 +31,10 @@ func dedupScriptPath(home string) string {
 	return filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
 }
 
-func TestDedup_Claude_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
+// Reconciliação (D15): afirma que InjectClaudeHooks SEMPRE emite as entradas de
+// credential guard mesmo com o harness global instalado. A semente global existe para
+// provar que o código não a lê para pular a fiação de projeto.
+func TestProjectCredentialGuard_Claude_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
 	home := dedupFixtureHome(t)
 	scriptPath := dedupScriptPath(home)
 	helperWriteJSON(t, filepath.Join(home, ".claude", "settings.json"), map[string]interface{}{
@@ -52,21 +54,22 @@ func TestDedup_Claude_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
-	if helperHasClaudeHook(data, "PreToolUse", "Bash", guardCredentialCmdPSPOSIX) {
-		t.Error("project-scope credential-guard entry should have been skipped (global already installed)")
+	if !helperHasClaudeHook(data, "PreToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX) {
+		t.Error("project-scope credential-guard PreToolUse must be present even when global is installed (D15)")
 	}
-	if helperHasClaudeHook(data, "PostToolUse", "Bash", guardCredentialCmdPSPOSIX) {
-		t.Error("project-scope PostToolUse credential-guard entry should have been skipped")
+	if !helperHasClaudeHook(data, "PostToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX) {
+		t.Error("project-scope credential-guard PostToolUse must be present even when global is installed (D15)")
 	}
 	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", attentionSignalCmd) {
-		t.Error("attention-signal entry must still be added regardless of global credential-guard state")
+		t.Error("attention-signal entry must still be added")
 	}
 	if !helperHasClaudeHook(data, "PostToolUse", "AskUserQuestion", attentionCleanupCmd) {
-		t.Error("attention-cleanup entry must still be added regardless of global credential-guard state")
+		t.Error("attention-cleanup entry must still be added")
 	}
 }
 
-func TestDedup_Codex_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
+// Reconciliação (D15): Codex — idem Claude.
+func TestProjectCredentialGuard_Codex_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
 	home := dedupFixtureHome(t)
 	scriptPath := dedupScriptPath(home)
 	helperWriteJSON(t, filepath.Join(home, ".codex", "hooks.json"), map[string]interface{}{
@@ -86,21 +89,22 @@ func TestDedup_Codex_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".codex", "hooks.json"))
-	if helperHasClaudeHook(data, "PreToolUse", "Bash", guardCredentialCmdPSPOSIX) {
-		t.Error("project-scope credential-guard entry should have been skipped (global already installed)")
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardCredentialCmdPSPOSIX) {
+		t.Error("project-scope credential-guard PreToolUse must be present even when global is installed (D15)")
 	}
-	if helperHasClaudeHook(data, "PostToolUse", "Bash", guardCredentialCmdPSPOSIX) {
-		t.Error("project-scope PostToolUse credential-guard entry should have been skipped")
+	if !helperHasClaudeHook(data, "PostToolUse", "Bash", guardCredentialCmdPSPOSIX) {
+		t.Error("project-scope credential-guard PostToolUse must be present even when global is installed (D15)")
 	}
 	if !helperHasClaudeHook(data, "PermissionRequest", ".*", codexSignalCmd) {
-		t.Error("attention-signal entry must still be added regardless of global credential-guard state")
+		t.Error("attention-signal entry must still be added")
 	}
 	if !helperHasClaudeHook(data, "PostToolUse", ".*", codexCleanupCmd) {
-		t.Error("attention-cleanup entry must still be added regardless of global credential-guard state")
+		t.Error("attention-cleanup entry must still be added")
 	}
 }
 
-func TestDedup_Gemini_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
+// Reconciliação (D15): Gemini — idem Claude.
+func TestProjectCredentialGuard_Gemini_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
 	home := dedupFixtureHome(t)
 	scriptPath := dedupScriptPath(home)
 	helperWriteJSON(t, filepath.Join(home, ".gemini", "settings.json"), map[string]interface{}{
@@ -120,21 +124,23 @@ func TestDedup_Gemini_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".gemini", "settings.json"))
-	if helperHasClaudeHook(data, "BeforeTool", "run_shell_command", guardCredentialCmdPSPOSIX) {
-		t.Error("project-scope credential-guard entry should have been skipped (global already installed)")
+	if !helperHasClaudeHook(data, "BeforeTool", "run_shell_command", guardCredentialCmdPSPOSIX) {
+		t.Error("project-scope credential-guard BeforeTool must be present even when global is installed (D15)")
 	}
-	if helperHasClaudeHook(data, "AfterTool", "run_shell_command", guardCredentialCmdPSPOSIX) {
-		t.Error("project-scope AfterTool credential-guard entry should have been skipped")
+	if !helperHasClaudeHook(data, "AfterTool", "run_shell_command", guardCredentialCmdPSPOSIX) {
+		t.Error("project-scope credential-guard AfterTool must be present even when global is installed (D15)")
 	}
 	if !helperHasClaudeHook(data, "Notification", "ToolPermission", geminiSignalCmd) {
-		t.Error("attention-signal entry must still be added regardless of global credential-guard state")
+		t.Error("attention-signal entry must still be added")
 	}
 	if !helperHasClaudeHook(data, "AfterTool", "*", geminiCleanupCmd) {
-		t.Error("attention-cleanup entry must still be added regardless of global credential-guard state")
+		t.Error("attention-cleanup entry must still be added")
 	}
 }
 
-func TestDedup_Cursor_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
+// Reconciliação (D15): Cursor — both beforeShellExecution entries (credential + git-branch)
+// must be present when global is installed.
+func TestProjectCredentialGuard_Cursor_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
 	home := dedupFixtureHome(t)
 	scriptPath := dedupScriptPath(home)
 	helperWriteJSON(t, filepath.Join(home, ".cursor", "hooks.json"), map[string]interface{}{
@@ -155,59 +161,50 @@ func TestDedup_Cursor_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	hooks, _ := data["hooks"].(map[string]interface{})
 	before, _ := hooks["beforeShellExecution"].([]interface{})
 	after, _ := hooks["afterShellExecution"].([]interface{})
-	// The git-branch-guard entry (ROADMAP-2026-08-14 ML-3A) has no
-	// global-scope dedup target yet, so it is always added regardless of
-	// the global credential-guard dedup state exercised by this test —
-	// exactly 1 beforeShellExecution entry (git-branch-guard), 0 for
-	// credential-guard (skipped, global installed).
-	if len(before) != 1 || before[0].(map[string]interface{})["command"] != guardGitBranchCmdPSPOSIX {
-		t.Errorf("expected only the git-branch-guard beforeShellExecution entry (credential-guard skipped, global already installed), got %v", before)
+
+	// D15: both credential-guard and git-branch-guard must be present in beforeShellExecution.
+	foundCred, foundGitBranch := false, false
+	for _, item := range before {
+		obj, _ := item.(map[string]interface{})
+		switch obj["command"] {
+		case guardCredentialCmdPSPOSIX:
+			foundCred = true
+		case guardGitBranchCmdPSPOSIX:
+			foundGitBranch = true
+		}
 	}
-	if len(after) != 0 {
-		t.Errorf("expected no project-scope afterShellExecution entries (global already installed), got %v", after)
+	if !foundCred {
+		t.Errorf("credential-guard must be present in beforeShellExecution even when global is installed (D15), got %v", before)
 	}
+	if !foundGitBranch {
+		t.Errorf("git-branch-guard must be present in beforeShellExecution, got %v", before)
+	}
+	// afterShellExecution: credential-guard must be present.
+	foundCredAfter := false
+	for _, item := range after {
+		obj, _ := item.(map[string]interface{})
+		if obj["command"] == guardCredentialCmdPSPOSIX {
+			foundCredAfter = true
+		}
+	}
+	if !foundCredAfter {
+		t.Errorf("credential-guard must be present in afterShellExecution (D15), got %v", after)
+	}
+
 	pre, _ := hooks["preToolUse"].([]interface{})
 	post, _ := hooks["postToolUse"].([]interface{})
-	// D14 revised (ADR-2026-10-04 adendo 2026-10-23): the global harness covers only shell
-	// events; Read/Write pairs are ALWAYS emitted. So pre/post each have 3 entries:
-	// attention-signal/cleanup + {Read, credential} + {Write, credential}.
+	// D15: pre/post each have 3 entries: attention + Read guard + Write guard.
 	if len(pre) != 3 {
-		t.Errorf("expected 3 preToolUse entries (attention-signal + Read guard + Write guard), got %d: %v", len(pre), pre)
-	} else {
-		if pre[0].(map[string]interface{})["command"] != attentionSignalCmd {
-			t.Errorf("preToolUse[0] must be attention-signal, got %v", pre[0])
-		}
-		// Read and Write guard entries can be in any order after the signal.
-		hasRead, hasWrite := false, false
-		for _, item := range pre[1:] {
-			obj := item.(map[string]interface{})
-			if obj["command"] == guardCredentialCmdPSPOSIX && obj["matcher"] == "Read" {
-				hasRead = true
-			}
-			if obj["command"] == guardCredentialCmdPSPOSIX && obj["matcher"] == "Write" {
-				hasWrite = true
-			}
-		}
-		if !hasRead {
-			t.Errorf("preToolUse must contain a Read credential-guard entry, got %v", pre)
-		}
-		if !hasWrite {
-			t.Errorf("preToolUse must contain a Write credential-guard entry, got %v", pre)
-		}
+		t.Errorf("expected 3 preToolUse entries, got %d: %v", len(pre), pre)
 	}
 	if len(post) != 3 {
-		t.Errorf("expected 3 postToolUse entries (attention-cleanup + Read guard + Write guard), got %d: %v", len(post), post)
-	} else {
-		if post[0].(map[string]interface{})["command"] != attentionCleanupCmd {
-			t.Errorf("postToolUse[0] must be attention-cleanup, got %v", post[0])
-		}
+		t.Errorf("expected 3 postToolUse entries, got %d: %v", len(post), post)
 	}
 }
 
-func TestDedup_Copilot_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
-	// D14 revised (REQ-2026-10-23 ML-2C): global covers only "bash". With global
-	// installed, "bash" credential-guard is absent; "view" and "create|edit" are
-	// always emitted (not covered by the global).
+// Reconciliação (D15): Copilot — bash credential guard must be present even with global.
+func TestProjectCredentialGuard_Copilot_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
+	// D15: global seed present to prove the code no longer reads it to skip.
 	home := dedupFixtureHome(t)
 	scriptPath := dedupScriptPath(home)
 	helperWriteJSON(t, filepath.Join(home, ".copilot", "settings.json"), map[string]interface{}{
@@ -228,23 +225,32 @@ func TestDedup_Copilot_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	pre, _ := hooks["preToolUse"].([]interface{})
 	post, _ := hooks["postToolUse"].([]interface{})
 
-	// preToolUse: attention-signal + view guard + create|edit guard + git-branch-guard = 4
-	// (bash credential-guard absent — covered by global).
-	if len(pre) != 4 {
-		t.Errorf("expected 4 preToolUse entries (attention-signal + view + create|edit + git-branch), got %d: %v", len(pre), pre)
-	}
-	if pre[0].(map[string]interface{})["command"] != attentionSignalCmd {
-		t.Errorf("expected preToolUse[0] to be the attention-signal entry, got %v", pre[0])
-	}
-	// "bash" credential guard must be absent (global covers it).
+	// D15: preToolUse must have bash credential guard present.
+	foundBashCred := false
 	for _, item := range pre {
 		obj := item.(map[string]interface{})
 		if obj["matcher"] == "bash" && obj["command"] == guardCredentialCmdPSPOSIX {
-			t.Errorf("bash credential-guard must be absent when global is installed, found: %v", obj)
+			foundBashCred = true
 		}
 	}
-	// "view" and "create|edit" credential guards must be present.
-	foundView, foundCreateEdit := false, false
+	if !foundBashCred {
+		t.Errorf("bash credential-guard must be present in preToolUse even when global is installed (D15), got %v", pre)
+	}
+
+	// postToolUse: bash credential guard must also be present.
+	foundBashCredPost := false
+	for _, item := range post {
+		obj := item.(map[string]interface{})
+		if obj["matcher"] == "bash" && obj["command"] == guardCredentialCmdPSPOSIX {
+			foundBashCredPost = true
+		}
+	}
+	if !foundBashCredPost {
+		t.Errorf("bash credential-guard must be present in postToolUse even when global is installed (D15), got %v", post)
+	}
+
+	// view, create|edit and git-branch-guard must all still be present.
+	foundView, foundCreateEdit, foundGitGuard := false, false, false
 	for _, item := range pre {
 		obj := item.(map[string]interface{})
 		if obj["command"] == guardCredentialCmdPSPOSIX {
@@ -255,44 +261,24 @@ func TestDedup_Copilot_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 				foundCreateEdit = true
 			}
 		}
-	}
-	if !foundView {
-		t.Errorf("expected view credential-guard in preToolUse (not covered by global), got %v", pre)
-	}
-	if !foundCreateEdit {
-		t.Errorf("expected create|edit credential-guard in preToolUse (not covered by global), got %v", pre)
-	}
-	// git-branch-guard must still be present.
-	foundGitGuard := false
-	for _, item := range pre {
-		if item.(map[string]interface{})["command"] == guardGitBranchCmdPSPOSIX {
+		if obj["command"] == guardGitBranchCmdPSPOSIX {
 			foundGitGuard = true
 		}
 	}
+	if !foundView {
+		t.Errorf("view credential-guard must be present, got %v", pre)
+	}
+	if !foundCreateEdit {
+		t.Errorf("create|edit credential-guard must be present, got %v", pre)
+	}
 	if !foundGitGuard {
-		t.Errorf("expected preToolUse to contain the git-branch-guard entry, got %v", pre)
-	}
-
-	// postToolUse: attention-cleanup + view guard + create|edit guard = 3
-	if len(post) != 3 {
-		t.Errorf("expected 3 postToolUse entries (attention-cleanup + view + create|edit), got %d: %v", len(post), post)
-	}
-	if post[0].(map[string]interface{})["command"] != attentionCleanupCmd {
-		t.Errorf("expected postToolUse[0] to be attention-cleanup, got %v", post[0])
-	}
-	// "bash" credential guard must be absent in postToolUse too.
-	for _, item := range post {
-		obj := item.(map[string]interface{})
-		if obj["matcher"] == "bash" && obj["command"] == guardCredentialCmdPSPOSIX {
-			t.Errorf("bash credential-guard must be absent in postToolUse when global is installed, found: %v", obj)
-		}
+		t.Errorf("git-branch-guard must be present, got %v", pre)
 	}
 }
 
-func TestDedup_Kiro_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
-	// D14 revised (REQ-2026-10-23 ML-2C): global covers only "shell". With global
-	// installed, "shell" credential-guard is absent; "read" and "write" are always
-	// emitted (not covered by the global).
+// Reconciliação (D15): Kiro — shell credential guard must be present even with global.
+func TestProjectCredentialGuard_Kiro_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
+	// D15: global kiro seed present.
 	home := dedupFixtureHome(t)
 	globalKiroPath := filepath.Join(home, ".kiro", "hooks", "trackfw-credential-guard.json")
 	if err := os.MkdirAll(filepath.Dir(globalKiroPath), 0755); err != nil {
@@ -309,21 +295,14 @@ func TestDedup_Kiro_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 
 	data := helperReadJSON(t, filepath.Join(dir, ".kiro", "hooks", "trackfw-attention.json"))
 	hooks, _ := data["hooks"].([]interface{})
-	// With global installed: signal + cleanup + read-pre + read-post + write-pre + write-post + git-branch = 7
-	// (shell pre/post absent — covered by global).
-	if len(hooks) != 7 {
-		t.Fatalf("expected 7 hooks when global credential-guard is installed, got %d: %v", len(hooks), hooks)
+	// D15: signal + cleanup + shell-pre + shell-post + read-pre + read-post + write-pre + write-post + git-branch = 9
+	if len(hooks) != 9 {
+		t.Fatalf("expected 9 hooks (D15: shell credential-guard present), got %d: %v", len(hooks), hooks)
 	}
-	// "shell" pre/post must be absent.
-	for _, h := range hooks {
-		entry, _ := h.(map[string]interface{})
-		name, _ := entry["name"].(string)
-		if name == "trackfw-credential-guard-pre" || name == "trackfw-credential-guard-post" {
-			t.Errorf("project-scope shell credential-guard hook %q must be absent when global is installed", name)
-		}
-	}
-	// "read" and "write" guards must be present.
+	// shell pre/post must be present.
 	wantNames := []string{
+		"trackfw-credential-guard-pre",
+		"trackfw-credential-guard-post",
 		"trackfw-credential-guard-read-pre",
 		"trackfw-credential-guard-read-post",
 		"trackfw-credential-guard-write-pre",
@@ -339,82 +318,21 @@ func TestDedup_Kiro_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 			}
 		}
 		if !found {
-			t.Errorf("expected hook %q to be present (not covered by global), missing from: %v", want, hooks)
+			t.Errorf("expected hook %q to be present (D15), missing from: %v", want, hooks)
 		}
 	}
 }
 
-// --- Fail-open: missing/corrupted global file must not disable the
-// project-scope credential-guard entry. ---
-
-func TestDedup_FailOpen_NoGlobalFile(t *testing.T) {
-	dedupFixtureHome(t) // empty $HOME, no global files at all
-
-	dir := t.TempDir()
-	if err := InjectClaudeHooks(dir); err != nil {
-		t.Fatalf("InjectClaudeHooks failed: %v", err)
-	}
-
-	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
-	if !helperHasClaudeHook(data, "PreToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX) {
-		t.Error("expected project-scope credential-guard entry to be added when no global file exists (fail-open)")
-	}
-}
-
-func TestDedup_FailOpen_CorruptedGlobalFile(t *testing.T) {
-	home := dedupFixtureHome(t)
-	path := filepath.Join(home, ".claude", "settings.json")
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.WriteFile(path, []byte("{not valid json"), 0644); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-
-	dir := t.TempDir()
-	if err := InjectClaudeHooks(dir); err != nil {
-		t.Fatalf("InjectClaudeHooks failed: %v", err)
-	}
-
-	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
-	if !helperHasClaudeHook(data, "PreToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX) {
-		t.Error("expected project-scope credential-guard entry to be added when global file is corrupted (fail-open)")
-	}
-}
-
-func TestDedup_FailOpen_UnreadableGlobalFile(t *testing.T) {
-	home := dedupFixtureHome(t)
-	path := filepath.Join(home, ".claude", "settings.json")
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.WriteFile(path, []byte(`{"hooks":{}}`), 0000); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(path, 0644) }) // allow t.TempDir cleanup
-
-	dir := t.TempDir()
-	if err := InjectClaudeHooks(dir); err != nil {
-		t.Fatalf("InjectClaudeHooks failed: %v", err)
-	}
-
-	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
-	if !helperHasClaudeHook(data, "PreToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX) {
-		t.Error("expected project-scope credential-guard entry to be added when global file is unreadable (fail-open)")
-	}
-}
-
 // ---------------------------------------------------------------------------
-// ML-1B (REQ-2026-10-06) — Windsurf global dedup
+// ML-1B (REQ-2026-10-06) — Windsurf credential guard
 // ---------------------------------------------------------------------------
 
-// Reconciliação: afirma que InjectWindsurfHooks NÃO adiciona entradas de credential
-// guard em pre_run_command nem pre_write_code quando a instalação global
-// (~/.codeium/windsurf/hooks.json) já contém o global form (guardCredentialGlobalCmdPSPOSIX).
-// Isso evita disparo duplo quando o harness windsurf-credential-guard está ativo.
-func TestDedup_Windsurf_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
+// Reconciliação (D15): afirma que InjectWindsurfHooks SEMPRE adiciona entradas de
+// credential guard em pre_run_command e pre_write_code mesmo com a instalação global
+// (~/.codeium/windsurf/hooks.json) presente. A semente existe para provar que o código
+// não a lê para pular a fiação de projeto.
+func TestProjectCredentialGuard_Windsurf_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
 	home := dedupFixtureHome(t)
-	// Simula a instalação global via harnessCredentialGuardTargetWindsurf.
 	helperWriteJSON(t, filepath.Join(home, ".codeium", "windsurf", "hooks.json"), map[string]interface{}{
 		"hooks": map[string]interface{}{
 			"pre_run_command": []interface{}{
@@ -434,43 +352,7 @@ func TestDedup_Windsurf_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	data := helperReadJSON(t, filepath.Join(dir, ".windsurf", "hooks.json"))
 	hooksMap, _ := data["hooks"].(map[string]interface{})
 
-	// project-scope credential guard must NOT be added
-	for _, event := range []string{"pre_run_command", "pre_write_code"} {
-		arr, _ := hooksMap[event].([]interface{})
-		for _, item := range arr {
-			obj, _ := item.(map[string]interface{})
-			if obj["command"] == guardCredentialCmdPSPOSIX {
-				t.Errorf("project-scope credential-guard entry should have been skipped in %s (global already installed)", event)
-			}
-		}
-	}
-
-	// git-branch guard must still be present (dedup only applies to credential)
-	pre, _ := hooksMap["pre_run_command"].([]interface{})
-	found := false
-	for _, item := range pre {
-		obj, _ := item.(map[string]interface{})
-		if obj["command"] == guardGitBranchCmdPSPOSIX {
-			found = true
-		}
-	}
-	if !found {
-		t.Error("git-branch guard in pre_run_command must still be added even when global credential-guard is installed")
-	}
-}
-
-// Reconciliação: afirma que InjectWindsurfHooks adiciona o credential guard
-// em pre_run_command e pre_write_code quando a global está ausente (fail-open).
-func TestDedup_Windsurf_FailOpenWhenGlobalMissing(t *testing.T) {
-	dedupFixtureHome(t) // HOME → temp dir, ~/.codeium/windsurf/hooks.json not present
-	dir := t.TempDir()
-	if err := InjectWindsurfHooks(dir); err != nil {
-		t.Fatalf("InjectWindsurfHooks failed: %v", err)
-	}
-
-	data := helperReadJSON(t, filepath.Join(dir, ".windsurf", "hooks.json"))
-	hooksMap, _ := data["hooks"].(map[string]interface{})
-
+	// D15: project-scope credential guard must be present in both events.
 	for _, event := range []string{"pre_run_command", "pre_write_code"} {
 		arr, _ := hooksMap[event].([]interface{})
 		found := false
@@ -481,7 +363,20 @@ func TestDedup_Windsurf_FailOpenWhenGlobalMissing(t *testing.T) {
 			}
 		}
 		if !found {
-			t.Errorf("expected project-scope credential-guard in %s when global is absent (fail-open)", event)
+			t.Errorf("project-scope credential-guard must be present in %s even when global is installed (D15)", event)
 		}
+	}
+
+	// git-branch guard must still be present in pre_run_command.
+	pre, _ := hooksMap["pre_run_command"].([]interface{})
+	found := false
+	for _, item := range pre {
+		obj, _ := item.(map[string]interface{})
+		if obj["command"] == guardGitBranchCmdPSPOSIX {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("git-branch guard in pre_run_command must still be present")
 	}
 }

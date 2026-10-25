@@ -1,17 +1,17 @@
 ---
-status: Done
+status: Open
 date: 2026-10-23
 author: "zeus-tf (desenho) / KG (prioridade)"
 adr: "docs/adr/ADR-2026-10-04-o-guard-de-hook-e-um-subcomando-go-do-trackfw-e-a-linha-de-hook-e-a-mesma-string-em-todo-shell.md"
-roadmap: "docs/roadmaps/done/ROADMAP-2026-10-23-update-nao-remove-geracoes-antigas-do-credential-guard-em-pares-evento-matcher-e-o-validate-manda-rodar-update-que-nao-resolve.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-10-23-update-nao-remove-geracoes-antigas-do-credential-guard-em-pares-evento-matcher-e-o-validate-manda-rodar-update-que-nao-resolve.md"
 ---
 
 # REQ: update não remove gerações antigas do credential guard em pares evento×matcher, e o validate manda rodar o update, que não resolve
 
-> Date: 2026-10-23 | Status: Done
+> Date: 2026-10-23 | Status: Open (reaberta em 2026-10-24 pela #613)
 | Linear Issue:
 | Jira Issue:
-| GitHub Issue: #599
+| GitHub Issue: #599, #613
 
 ## Motivation
 
@@ -49,9 +49,17 @@ da legada de projeto com o guard global instalado).
   receba, e isso é verificado por falsificação.
 - [x] **AC5 — Hooks do usuário intactos.** Uma entrada que não está no registro (comando personalizado, inclusive um que
   só *contém* `trackfw guard credential`), no mesmo par evento×matcher, sobrevive à migração byte a byte.
-- [x] **AC6 — Guard global (D14 revista, por par).** Num par (evento, matcher) que o guard global do CLI cobre, a entrada de
-  projeto reconhecida pelo registro é removida. Num par que o global não cobre (por exemplo Cursor `preToolUse`×`Read`),
-  ela é migrada e continua emitida, com ou sem global. Os três braços têm teste.
+- [x] **AC6 — Guard global (D15, revisto em 2026-10-24 pela #613).** O texto anterior ("num par que o global cobre, a
+  entrada de projeto é removida", D14) foi entregue no #604 e estava **errado**: ele grava estado da máquina num arquivo
+  versionado. Passa a valer: em todo CLI e em todo par (evento, matcher), a fiação de projeto é emitida e migrada para a
+  forma atual **com e sem** guard global instalado, no `init` e no `update`. Nenhum gerador de projeto nem o validador
+  consulta o global para pular, remover ou aceitar ausência. Os testes que afirmavam a D14 (#604) e a decisão 4 do
+  ADR-2026-08-06 passam a afirmar a D15.
+- [x] **AC9 — Cruzamento update × validate (#613).** Com HOME falso contendo o guard global de cada CLI e um fixture git
+  cujo `origin/main` tem a fiação de projeto, `trackfw init` e `trackfw update` seguidos de `trackfw validate` no mesmo
+  diretório dão rc=0 e zero `guard_wiring_removed`, para cada CLI. Contra-braço: o mesmo teste reprova no código de
+  `origin/main` (11.0.0).
+- [ ] **AC10 — Fechamento da reabertura.** `make quality` rc=0, CI verde, e o PR leva `Closes #613`.
 - [x] **AC7 — Idempotência.** Rodar o `update` duas vezes produz o mesmo arquivo da primeira, byte a byte, e a segunda
   rodada não reporta mudança.
 - [x] **AC8 — Fechamento.** `make quality` rc=0, CI verde, e o PR leva `Closes #599`.
@@ -63,13 +71,15 @@ da legada de projeto com o guard global instalado).
   (aí entra como ML, pela Regra Dura).
 - **Não cria comando novo**, nem flag nova no `update`.
 - **Não reescreve arquivos globais do usuário** fora do que o `update harness` já escreve hoje.
+- **Não muda o `update harness`** nem o conteúdo dos arquivos globais (reabertura da #613).
+- **Não implementa dedup em tempo de execução**, rejeitado na D15.
 - **Não regenera o `~/.cursor` do KG nem o do consumidor.** Isso fica para depois da release, com o `update`.
 
 ## Linked ADR
-ADR: `docs/adr/ADR-2026-10-04-o-guard-de-hook-e-um-subcomando-go-do-trackfw-e-a-linha-de-hook-e-a-mesma-string-em-todo-shell.md` (adendo 2026-10-23, D12–D14)
+ADR: `docs/adr/ADR-2026-10-04-o-guard-de-hook-e-um-subcomando-go-do-trackfw-e-a-linha-de-hook-e-a-mesma-string-em-todo-shell.md` (adendo 2026-10-23, D12–D14; D15 de 2026-10-24 substitui a D14)
 
 ## Blocked by ADRs
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/done/ROADMAP-2026-10-23-update-nao-remove-geracoes-antigas-do-credential-guard-em-pares-evento-matcher-e-o-validate-manda-rodar-update-que-nao-resolve.md
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-10-23-update-nao-remove-geracoes-antigas-do-credential-guard-em-pares-evento-matcher-e-o-validate-manda-rodar-update-que-nao-resolve.md

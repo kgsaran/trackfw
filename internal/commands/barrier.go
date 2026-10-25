@@ -892,6 +892,12 @@ func mlScopeMatchSegs(pat, file []string) bool {
 	return len(pat) == 0 && len(file) == 0
 }
 
+// roadmapAllStates is the canonical list of valid roadmap state directory names
+// used by `trackfw roadmap move`, sourced from config.RoadmapStates() so there
+// is a single authoritative definition. Used by buildMLScopeOrchestrationSet to
+// include sibling state paths for the same roadmap basename.
+var roadmapAllStates = config.RoadmapStates()
+
 // buildMLScopeOrchestrationSet returns the list of always-permitted scope
 // patterns (roadmap, REQ, ADR, well-known directories). Patterns that end with
 // "/" are directory prefixes; others are exact paths. All values use forward
@@ -911,6 +917,38 @@ func buildMLScopeOrchestrationSet(topLevel, roadmapRelPath, headContent string, 
 		rdDir + "/.trackfw-log-entries/",
 		reqDir + "/.trackfw-log",
 		reqDir + "/.trackfw-log-entries/",
+	}
+
+	// Include all state-sibling paths for the same basename so that a roadmap
+	// moved between states in this branch (e.g. done/ → wip/ on reopen) does
+	// not produce a spurious "out of scope" for the deleted old-state path.
+	//
+	// In flat mode:     parent = <roadmap_dir>         → <parent>/<state>/<basename>
+	// In by_agent mode: parent = <roadmap_dir>/<agent> → <parent>/<state>/<basename>
+	//
+	// We derive parent by walking two directory levels up from roadmapRelPath
+	// (basename → stateDir → parent). Guard: only add siblings when the current
+	// directory name is a known roadmap state — leave the set unchanged otherwise.
+	{
+		basename := path.Base(roadmapRelPath)
+		stateDir := path.Dir(roadmapRelPath)
+		parent := path.Dir(stateDir)
+		currentState := path.Base(stateDir)
+		knownState := false
+		for _, s := range roadmapAllStates {
+			if s == currentState {
+				knownState = true
+				break
+			}
+		}
+		if knownState {
+			for _, s := range roadmapAllStates {
+				if s == currentState {
+					continue // already included as roadmapRelPath
+				}
+				set = append(set, parent+"/"+s+"/"+basename)
+			}
+		}
 	}
 
 	// REQ from frontmatter `req:`.

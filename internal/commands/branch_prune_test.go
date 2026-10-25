@@ -449,7 +449,7 @@ func TestEvaluateBranchIntegration_RealGitRepo_SquashMergeAndStaleDiscriminant(t
 		return string(out)
 	}
 
-	if err := os.WriteFile(filepath.Join(work, "empty-gitconfig"), []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(work, "empty-gitconfig"), []byte("[gc]\n\tauto = 0\n[maintenance]\n\tauto = false\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -627,7 +627,7 @@ func TestDefaultDeleteBranch_TriesDashDBeforeDashD_BothCodepaths(t *testing.T) {
 		}
 		return string(out)
 	}
-	if err := os.WriteFile(filepath.Join(work, "empty-gitconfig"), []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(work, "empty-gitconfig"), []byte("[gc]\n\tauto = 0\n[maintenance]\n\tauto = false\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -746,7 +746,7 @@ func TestRunBranchPrune_RealGitRepo_StaleOriginMain_IsConservativeNotWrong(t *te
 		}
 		return string(out)
 	}
-	if err := os.WriteFile(filepath.Join(work, "empty-gitconfig"), []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(work, "empty-gitconfig"), []byte("[gc]\n\tauto = 0\n[maintenance]\n\tauto = false\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -904,7 +904,7 @@ func TestEvaluateBranchIntegration_RealGitRepo_DocOnlyNeverIntegratedVsPartialRe
 		return string(out)
 	}
 
-	if err := os.WriteFile(filepath.Join(work, "empty-gitconfig"), []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(work, "empty-gitconfig"), []byte("[gc]\n\tauto = 0\n[maintenance]\n\tauto = false\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

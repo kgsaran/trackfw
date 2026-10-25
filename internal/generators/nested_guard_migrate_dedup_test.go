@@ -353,16 +353,16 @@ func TestNestedMigrate_Gemini_AC5_UserHookSurvives(t *testing.T) {
 // AC6 — D14-revised arms for Claude, Codex, Gemini (seeded with legacy forms)
 // ---------------------------------------------------------------------------
 
-// TestNestedD14Arms_Claude runs the three D14-revised arms for Claude:
+// TestNestedD14Arms_Claude runs the three D15 arms for Claude:
 //   ArmA: no global → shell+Read+Write present, each exactly once.
-//   ArmB: global CG installed → shell absent; Read+Write still present (D14 revised).
-//   ArmC: global GBG installed → git-branch shell absent; cred unaffected.
+//   ArmB: global CG installed → shell PRESENT (D15); Read+Write also present.
+//   ArmC: global GBG installed → git-branch shell PRESENT (D15); cred unaffected.
 //
 // Each arm is seeded with legacy forms to confirm removal/migration works from
 // non-empty starting state.
 //
-// Reconciliação: afirma que a detecção do guard global aciona os três ramos de D14
-// revisado e que os pares não cobertos pelo global permanecem presentes.
+// Reconciliação: afirma que todos os pares (shell+Read+Write) estão presentes
+// independentemente do guard global (D15 — wiring de projeto não depende do guard global).
 func TestNestedD14Arms_Claude(t *testing.T) {
 	t.Run("ArmA_NoGlobal_AllPairsPresent", func(t *testing.T) {
 		nestedFixtureHome(t) // no global file → fail-open
@@ -407,9 +407,9 @@ func TestNestedD14Arms_Claude(t *testing.T) {
 		}
 	})
 
-	t.Run("ArmB_GlobalCGInstalled_ShellAbsent_ReadWritePresent", func(t *testing.T) {
+	t.Run("ArmB_GlobalCGInstalled_ShellPresent_ReadWritePresent", func(t *testing.T) {
 		home := nestedFixtureHome(t)
-		// Write global credential guard so globalCredentialGuardInstalledClaude() returns true.
+		// D15: global seed proves the code no longer reads it to skip wiring.
 		helperWriteJSON(t, filepath.Join(home, ".claude", "settings.json"), map[string]interface{}{
 			"hooks": map[string]interface{}{
 				"PreToolUse": []interface{}{
@@ -443,25 +443,23 @@ func TestNestedD14Arms_Claude(t *testing.T) {
 		}
 		data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
 
-		// Shell: no cred guard (global covers it — D14 revised removal).
-		if n := countNestedEntries(data, "PreToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX); n != 0 {
-			t.Errorf("ArmB: cred must be absent from PreToolUse/%s when global installed, got %d", claudeShellMatcher, n)
+		// D15: Shell PRESENT (always emitted regardless of global).
+		if n := countNestedEntries(data, "PreToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX); n != 1 {
+			t.Errorf("ArmB(D15): expected 1 cred in PreToolUse/%s, got %d", claudeShellMatcher, n)
 		}
-		// Read: PRESENT (global does not cover Read — D14 revised).
+		// Read: PRESENT.
 		if n := countNestedEntries(data, "PreToolUse", "Read", guardCredentialCmdPSPOSIX); n != 1 {
-			t.Errorf("ArmB: expected 1 cred in PreToolUse/Read (not covered by global), got %d", n)
+			t.Errorf("ArmB(D15): expected 1 cred in PreToolUse/Read, got %d", n)
 		}
 		// Write|Edit: PRESENT.
 		if n := countNestedEntries(data, "PreToolUse", "Write|Edit", guardCredentialCmdPSPOSIX); n != 1 {
-			t.Errorf("ArmB: expected 1 cred in PreToolUse/Write|Edit (not covered by global), got %d", n)
+			t.Errorf("ArmB(D15): expected 1 cred in PreToolUse/Write|Edit, got %d", n)
 		}
 	})
 
-	t.Run("ArmC_GlobalGBGInstalled_GitBranchShellAbsent", func(t *testing.T) {
+	t.Run("ArmC_GlobalGBGInstalled_GitBranchShellPresent", func(t *testing.T) {
 		home := nestedFixtureHome(t)
-		// Write global git-branch guard so globalGitBranchGuardInstalledClaude() returns true.
-		// globalGitBranchGuardInstalledClaude checks for guardGitBranchCmdPSPOSIX under
-		// claudeShellMatcher in ~/.claude/settings.json — use that same command.
+		// D15: global git-branch seed proves the code no longer reads it to skip wiring.
 		helperWriteJSON(t, filepath.Join(home, ".claude", "settings.json"), map[string]interface{}{
 			"hooks": map[string]interface{}{
 				"PreToolUse": []interface{}{
@@ -491,23 +489,25 @@ func TestNestedD14Arms_Claude(t *testing.T) {
 		}
 		data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
 
-		// Git-branch: absent in shell pair (global installed).
-		if n := countNestedEntries(data, "PreToolUse", claudeShellMatcher, guardGitBranchCmdPSPOSIX); n != 0 {
-			t.Errorf("ArmC: git-branch guard must be absent from PreToolUse/%s when global installed, got %d", claudeShellMatcher, n)
+		// D15: git-branch PRESENT (always emitted).
+		if n := countNestedEntries(data, "PreToolUse", claudeShellMatcher, guardGitBranchCmdPSPOSIX); n != 1 {
+			t.Errorf("ArmC(D15): expected 1 git-branch in PreToolUse/%s, got %d", claudeShellMatcher, n)
 		}
 		// Credential guard Read/Write still present.
 		if n := countNestedEntries(data, "PreToolUse", "Read", guardCredentialCmdPSPOSIX); n != 1 {
-			t.Errorf("ArmC: cred Read must still be present, got %d", n)
+			t.Errorf("ArmC(D15): cred Read must still be present, got %d", n)
 		}
 	})
 }
 
 // TestNestedD14Arms_Codex mirrors TestNestedD14Arms_Claude for Codex.
 //
-// Reconciliação: afirma que apply_patch está sempre presente, Bash ausente quando global.
+// Reconciliação: afirma que Bash e apply_patch estão sempre presentes (D15 — wiring
+// de projeto não depende do guard global).
 func TestNestedD14Arms_Codex(t *testing.T) {
-	t.Run("ArmB_GlobalCGInstalled_BashAbsent_ApplyPatchPresent", func(t *testing.T) {
+	t.Run("ArmB_GlobalCGInstalled_BashPresent_ApplyPatchPresent", func(t *testing.T) {
 		home := nestedFixtureHome(t)
+		// D15: global seed proves the code no longer reads it to skip wiring.
 		helperWriteJSON(t, filepath.Join(home, ".codex", "hooks.json"), map[string]interface{}{
 			"hooks": map[string]interface{}{
 				"PreToolUse": []interface{}{
@@ -541,24 +541,25 @@ func TestNestedD14Arms_Codex(t *testing.T) {
 		}
 		data := helperReadJSON(t, filepath.Join(dir, ".codex", "hooks.json"))
 
-		// Bash: no cred guard (global covers it).
-		if n := countNestedEntries(data, "PreToolUse", "Bash", guardCredentialCmdPSPOSIX); n != 0 {
-			t.Errorf("ArmB/Codex: cred must be absent from PreToolUse/Bash when global installed, got %d", n)
+		// D15: Bash PRESENT (always emitted regardless of global).
+		if n := countNestedEntries(data, "PreToolUse", "Bash", guardCredentialCmdPSPOSIX); n != 1 {
+			t.Errorf("ArmB/Codex(D15): expected 1 cred in PreToolUse/Bash, got %d", n)
 		}
-		// apply_patch: PRESENT (not covered by global).
+		// apply_patch: PRESENT.
 		if n := countNestedEntries(data, "PreToolUse", "apply_patch", guardCredentialCmdPSPOSIX); n != 1 {
-			t.Errorf("ArmB/Codex: cred must be present in PreToolUse/apply_patch, got %d", n)
+			t.Errorf("ArmB/Codex(D15): cred must be present in PreToolUse/apply_patch, got %d", n)
 		}
 	})
 }
 
 // TestNestedD14Arms_Gemini mirrors TestNestedD14Arms_Claude for Gemini.
 //
-// Reconciliação: afirma que read/write pairs estão sempre presentes,
-// run_shell_command ausente quando global.
+// Reconciliação: afirma que run_shell_command, read e write pairs estão sempre
+// presentes (D15 — wiring de projeto não depende do guard global).
 func TestNestedD14Arms_Gemini(t *testing.T) {
-	t.Run("ArmB_GlobalCGInstalled_ShellAbsent_ReadWritePresent", func(t *testing.T) {
+	t.Run("ArmB_GlobalCGInstalled_ShellPresent_ReadWritePresent", func(t *testing.T) {
 		home := nestedFixtureHome(t)
+		// D15: global seed proves the code no longer reads it to skip wiring.
 		helperWriteJSON(t, filepath.Join(home, ".gemini", "settings.json"), map[string]interface{}{
 			"hooks": map[string]interface{}{
 				"BeforeTool": []interface{}{
@@ -592,17 +593,17 @@ func TestNestedD14Arms_Gemini(t *testing.T) {
 		}
 		data := helperReadJSON(t, filepath.Join(dir, ".gemini", "settings.json"))
 
-		// run_shell_command: no cred guard.
-		if n := countNestedEntries(data, "BeforeTool", "run_shell_command", guardCredentialCmdPSPOSIX); n != 0 {
-			t.Errorf("ArmB/Gemini: cred must be absent from BeforeTool/run_shell_command when global installed, got %d", n)
+		// D15: run_shell_command PRESENT (always emitted regardless of global).
+		if n := countNestedEntries(data, "BeforeTool", "run_shell_command", guardCredentialCmdPSPOSIX); n != 1 {
+			t.Errorf("ArmB/Gemini(D15): expected 1 cred in BeforeTool/run_shell_command, got %d", n)
 		}
 		// read: PRESENT.
 		if n := countNestedEntries(data, "BeforeTool", "read_file|read_many_files", guardCredentialCmdPSPOSIX); n != 1 {
-			t.Errorf("ArmB/Gemini: cred must be present in BeforeTool/read_file|read_many_files, got %d", n)
+			t.Errorf("ArmB/Gemini(D15): cred must be present in BeforeTool/read_file|read_many_files, got %d", n)
 		}
 		// write: PRESENT.
 		if n := countNestedEntries(data, "BeforeTool", "write_file|replace", guardCredentialCmdPSPOSIX); n != 1 {
-			t.Errorf("ArmB/Gemini: cred must be present in BeforeTool/write_file|replace, got %d", n)
+			t.Errorf("ArmB/Gemini(D15): cred must be present in BeforeTool/write_file|replace, got %d", n)
 		}
 	})
 }
@@ -694,17 +695,18 @@ func TestNestedInject_Codex_Idempotent(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// D14 revised: existing tests updated for new behavior
+// D15: all pairs always present regardless of global state
 // ---------------------------------------------------------------------------
 
-// TestDedup_Claude_D14Revised_ReadWriteAlwaysPresent verifies that even when the
-// global credential guard is installed, the Read and Write|Edit pairs are still wired.
+// TestDedup_Claude_D14Revised_ReadWriteAlwaysPresent (D15): ALL pairs are wired
+// unconditionally — including shell. The global seed proves the code no longer
+// consults it to skip project wiring.
 //
-// Reconciliação: afirma que D14 revisado — apenas o par shell é removido; os pares
-// Read/Write permanecem independente do global.
+// Reconciliação (D15): todos os pares (shell, Read, Write|Edit, PostToolUse/Read)
+// estão presentes independente do global.
 func TestDedup_Claude_D14Revised_ReadWriteAlwaysPresent(t *testing.T) {
 	home := nestedFixtureHome(t)
-	// Install global credential guard.
+	// Seed global credential guard — D15 proves this is no longer consulted.
 	helperWriteJSON(t, filepath.Join(home, ".claude", "settings.json"), map[string]interface{}{
 		"hooks": map[string]interface{}{
 			"PreToolUse": []interface{}{
@@ -722,27 +724,27 @@ func TestDedup_Claude_D14Revised_ReadWriteAlwaysPresent(t *testing.T) {
 	}
 	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
 
-	// Shell: no project-scope credential guard (covered by global).
-	if helperHasClaudeHook(data, "PreToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX) {
-		t.Error("D14Revised/Claude: cred guard in shell pair must be absent when global installed")
+	// D15: shell pair must be PRESENT (no longer skipped when global installed).
+	if !helperHasClaudeHook(data, "PreToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX) {
+		t.Error("D15/Claude: cred guard in shell pair must be present regardless of global (D15)")
 	}
 	// Read: present.
 	if !helperHasClaudeHook(data, "PreToolUse", "Read", guardCredentialCmdPSPOSIX) {
-		t.Error("D14Revised/Claude: cred guard must be present in Read pair even when global installed")
+		t.Error("D15/Claude: cred guard must be present in Read pair")
 	}
 	// Write|Edit: present.
 	if !helperHasClaudeHook(data, "PreToolUse", "Write|Edit", guardCredentialCmdPSPOSIX) {
-		t.Error("D14Revised/Claude: cred guard must be present in Write|Edit pair even when global installed")
+		t.Error("D15/Claude: cred guard must be present in Write|Edit pair")
 	}
 	// PostToolUse Read: present.
 	if !helperHasClaudeHook(data, "PostToolUse", "Read", guardCredentialCmdPSPOSIX) {
-		t.Error("D14Revised/Claude: PostToolUse/Read cred guard must be present when global installed")
+		t.Error("D15/Claude: PostToolUse/Read cred guard must be present")
 	}
 }
 
-// TestDedup_Gemini_D14Revised_ReadWriteAlwaysPresent mirrors the Claude test for Gemini.
+// TestDedup_Gemini_D14Revised_ReadWriteAlwaysPresent (D15): ALL pairs wired unconditionally.
 //
-// Reconciliação: afirma que read/write pairs do Gemini estão sempre presentes.
+// Reconciliação (D15): todos os pares do Gemini estão presentes independente do global.
 func TestDedup_Gemini_D14Revised_ReadWriteAlwaysPresent(t *testing.T) {
 	home := nestedFixtureHome(t)
 	helperWriteJSON(t, filepath.Join(home, ".gemini", "settings.json"), map[string]interface{}{
@@ -762,20 +764,21 @@ func TestDedup_Gemini_D14Revised_ReadWriteAlwaysPresent(t *testing.T) {
 	}
 	data := helperReadJSON(t, filepath.Join(dir, ".gemini", "settings.json"))
 
-	if helperHasClaudeHook(data, "BeforeTool", "run_shell_command", guardCredentialCmdPSPOSIX) {
-		t.Error("D14Revised/Gemini: shell pair must be absent when global installed")
+	// D15: shell pair must be PRESENT.
+	if !helperHasClaudeHook(data, "BeforeTool", "run_shell_command", guardCredentialCmdPSPOSIX) {
+		t.Error("D15/Gemini: shell pair must be present regardless of global (D15)")
 	}
 	if !helperHasClaudeHook(data, "BeforeTool", "read_file|read_many_files", guardCredentialCmdPSPOSIX) {
-		t.Error("D14Revised/Gemini: read pair must be present even when global installed")
+		t.Error("D15/Gemini: read pair must be present")
 	}
 	if !helperHasClaudeHook(data, "BeforeTool", "write_file|replace", guardCredentialCmdPSPOSIX) {
-		t.Error("D14Revised/Gemini: write pair must be present even when global installed")
+		t.Error("D15/Gemini: write pair must be present")
 	}
 }
 
-// TestDedup_Codex_D14Revised_ApplyPatchAlwaysPresent mirrors for Codex.
+// TestDedup_Codex_D14Revised_ApplyPatchAlwaysPresent (D15): ALL pairs wired unconditionally.
 //
-// Reconciliação: afirma que apply_patch está sempre presente para Codex.
+// Reconciliação (D15): apply_patch e Bash estão presentes independente do global.
 func TestDedup_Codex_D14Revised_ApplyPatchAlwaysPresent(t *testing.T) {
 	home := nestedFixtureHome(t)
 	helperWriteJSON(t, filepath.Join(home, ".codex", "hooks.json"), map[string]interface{}{
@@ -795,10 +798,11 @@ func TestDedup_Codex_D14Revised_ApplyPatchAlwaysPresent(t *testing.T) {
 	}
 	data := helperReadJSON(t, filepath.Join(dir, ".codex", "hooks.json"))
 
-	if helperHasClaudeHook(data, "PreToolUse", "Bash", guardCredentialCmdPSPOSIX) {
-		t.Error("D14Revised/Codex: Bash pair must be absent when global installed")
+	// D15: Bash pair must be PRESENT.
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardCredentialCmdPSPOSIX) {
+		t.Error("D15/Codex: Bash pair must be present regardless of global (D15)")
 	}
 	if !helperHasClaudeHook(data, "PreToolUse", "apply_patch", guardCredentialCmdPSPOSIX) {
-		t.Error("D14Revised/Codex: apply_patch pair must be present even when global installed")
+		t.Error("D15/Codex: apply_patch pair must be present")
 	}
 }

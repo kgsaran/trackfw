@@ -1,38 +1,22 @@
 package generators
 
-// copilot_kiro_d14_ml2c_test.go — D14 revised, per-pair coverage for Copilot and Kiro
-// (REQ-2026-10-23, ML-2C corretivo)
+// copilot_kiro_d14_ml2c_test.go — D14 revised + D15 unconditional wiring for Copilot and Kiro
+// (REQ-2026-10-23, ML-2C corretivo + ML-5A D15)
 //
-// Copilot and Kiro overwrite their hook files on every run (no migration
-// concern). The AC for D14 revised is: for every pair (event, matcher) NOT
-// covered by the global harness, the credential guard is emitted regardless of
-// whether the global is installed. For Copilot: global covers "bash"; "view"
-// and "create|edit" must always be present. For Kiro: global covers "shell";
-// "read" and "write" must always be present.
+// D15 (ADR-2026-10-04 adendo 2026-10-24): InjectCopilotHooks and InjectKiroHooks
+// ALWAYS emit ALL matchers unconditionally — the global file is never consulted
+// for project wiring decisions.
 //
-// Two arms per CLI:
+// For Copilot: bash, view, and create|edit must ALL be present regardless of
+// global state. For Kiro: shell, read, and write must ALL be present regardless
+// of global state.
+//
+// Two arms per CLI (kept to exercise both code paths):
 //   arm A (no global): all pairs must be present.
-//   arm B (global installed): uncovered pairs still present; covered pair absent.
+//   arm B (global installed): ALL pairs still present (D15 — no longer skips "bash" or "shell").
 //
-// Reconciliação (CLAUDE.md Regra Dura de Reconciliação):
-//
-//   TestCopilotD14_ViewCreateEditAlwaysPresent/no-global asserts: with no
-//   global installed, "view" and "create|edit" entries are present in both
-//   preToolUse and postToolUse. This arm passes on HEAD before ML-2C.
-//
-//   TestCopilotD14_ViewCreateEditAlwaysPresent/with-global asserts: with the
-//   global installed (bash covered), "view" and "create|edit" entries are
-//   still present; "bash" is absent. This arm FAILS on HEAD before ML-2C
-//   because the entire if block (including view and create|edit) is gated on
-//   !globalCredentialGuardInstalledCopilot().
-//
-//   TestKiroD14_ReadWriteAlwaysPresent/no-global asserts: with no global, all
-//   pairs (shell, read, write) are present. This arm passes on HEAD before ML-2C.
-//
-//   TestKiroD14_ReadWriteAlwaysPresent/with-global asserts: with the global
-//   installed (shell covered), "read" and "write" are still present; "shell"
-//   pre/post are absent. This arm FAILS on HEAD before ML-2C because the entire
-//   if block (including read and write) is gated on !globalCredentialGuardInstalledKiro().
+// Reconciliação (D15):
+//   /with-global arms now assert the COVERED pair IS present (was: absent under D14).
 
 import (
 	"os"
@@ -143,18 +127,11 @@ func TestCopilotD14_ViewCreateEditAlwaysPresent(t *testing.T) {
 				}
 			}
 
-			// With global installed, "bash" must be absent (global covers it).
-			// Without global, "bash" must be present.
+			// D15: "bash" must ALWAYS be present regardless of global state.
 			for _, event := range []string{"preToolUse", "postToolUse"} {
 				bashCount := copilotD14CountMatcher(hooks, event, "bash", guardCredentialCmdPSPOSIX)
-				if tc.installGlob {
-					if bashCount != 0 {
-						t.Errorf("[%s] %s×bash: bash credential guard must be absent when global installed, got %d", tc.name, event, bashCount)
-					}
-				} else {
-					if bashCount != 1 {
-						t.Errorf("[%s] %s×bash: bash credential guard count=%d, want 1 (no global)", tc.name, event, bashCount)
-					}
+				if bashCount != 1 {
+					t.Errorf("[%s] %s×bash: bash credential guard count=%d, want 1 (D15: always emitted)", tc.name, event, bashCount)
 				}
 			}
 		})
@@ -199,18 +176,11 @@ func TestKiroD14_ReadWriteAlwaysPresent(t *testing.T) {
 				}
 			}
 
-			// With global installed, "shell" pre/post must be absent.
-			// Without global, "shell" pre/post must be present.
+			// D15: "shell" must ALWAYS be present regardless of global state.
 			for _, trigger := range []string{"PreToolUse", "PostToolUse"} {
 				shellCount := kiroD14CountPair(hooksRaw, trigger, "shell", guardCredentialCmdCmdExe)
-				if tc.installGlob {
-					if shellCount != 0 {
-						t.Errorf("[%s] %s×shell: must be absent when global installed, got %d", tc.name, trigger, shellCount)
-					}
-				} else {
-					if shellCount != 1 {
-						t.Errorf("[%s] %s×shell: count=%d, want 1 (no global)", tc.name, trigger, shellCount)
-					}
+				if shellCount != 1 {
+					t.Errorf("[%s] %s×shell: count=%d, want 1 (D15: always emitted)", tc.name, trigger, shellCount)
 				}
 			}
 		})
@@ -221,17 +191,16 @@ func TestKiroD14_ReadWriteAlwaysPresent(t *testing.T) {
 // AC6 seed: verify removeGuardFromFlatArrayInHooks is exercised on "shell" arm
 // ---------------------------------------------------------------------------
 
-// TestKiroD14_ShellRemovalRequiresLegacySeed checks that with global installed
-// and a pre-existing legacy shell entry in an earlier file, InjectKiroHooks
-// overwrites the file without the shell entries (overwrite semantics; no migration).
-// This test exists to seed the fixture with a legacy form so that
-// removeGuardFromFlatArrayInHooks is reachable if Kiro ever switches to merge
-// semantics — currently it confirms overwrite: shell absent regardless of pre-existing.
-func TestKiroD14_ShellRemovalRequiresLegacySeed(t *testing.T) {
+// TestKiroD15_ShellAlwaysPresent (D15): InjectKiroHooks always emits the "shell"
+// matcher regardless of global guard state — the pre-seeded legacy entry is
+// migrated and the canonical form is emitted unconditionally.
+//
+// Reconciliação: afirma que shell, read e write estão sempre presentes no wiring
+// de projeto Kiro independentemente do guard global (D15).
+func TestKiroD15_ShellAlwaysPresent(t *testing.T) {
 	home := harnessHome(t)
 	installKiroGlobal(t)
 
-	// Pre-seed the project hook file with a legacy shell credential guard.
 	dir := t.TempDir()
 	hookPath := filepath.Join(dir, ".kiro", "hooks", "trackfw-attention.json")
 	if err := os.MkdirAll(filepath.Dir(hookPath), 0755); err != nil {
@@ -246,14 +215,14 @@ func TestKiroD14_ShellRemovalRequiresLegacySeed(t *testing.T) {
 	data := readJSONFile(t, hookPath)
 	hooksRaw, _ := data["hooks"].([]interface{})
 
-	// shell must be absent (global covers it; overwrite semantics).
+	// D15: shell must be PRESENT (always emitted regardless of global).
 	for _, trigger := range []string{"PreToolUse", "PostToolUse"} {
 		n := kiroD14CountPair(hooksRaw, trigger, "shell", guardCredentialCmdCmdExe)
-		if n != 0 {
-			t.Errorf("%s×shell: must be absent when global installed, got %d", trigger, n)
+		if n != 1 {
+			t.Errorf("%s×shell: count=%d, want 1 (D15: always emitted)", trigger, n)
 		}
 	}
-	// read and write must be present.
+	// read and write must also be present.
 	for _, trigger := range []string{"PreToolUse", "PostToolUse"} {
 		for _, matcher := range []string{"read", "write"} {
 			n := kiroD14CountPair(hooksRaw, trigger, matcher, guardCredentialCmdCmdExe)

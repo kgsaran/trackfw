@@ -181,7 +181,7 @@ func validateRoadmapGatesCoverage() (wave0Msgs []string, wave0ExemptNotice []str
 // no special handling needed here.
 func validateRoadmapUnterminatedFence() []string {
 	cfg := config.Load()
-	allStates := []string{"backlog", "analyzing", "wip", "blocked", "done", "abandoned"}
+	allStates := config.RoadmapStates()
 
 	var msgs []string
 	for _, state := range allStates {

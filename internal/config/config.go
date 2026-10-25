@@ -899,3 +899,26 @@ func ExpandPath(p string) string {
 	}
 	return p
 }
+
+// RoadmapStates returns the canonical, closed list of roadmap state names in
+// alphabetical order. Callers that only need set membership (e.g. building a
+// map[string]bool or iterating all directories) should consume this function.
+//
+// The order is the lifecycle order: backlog → analyzing → wip → blocked → done → abandoned.
+// This order IS contract: it appears in `trackfw status` output (via inventoryBlock) and
+// is the reference set for all per-state directory scans. Changing it changes what users see.
+// Tests must assert the order, not just the set.
+//
+// Note: callers with a different priority order (e.g. `trackfw context`, which uses
+// contextRoadmapStateOrder with wip-first) keep their own ordered slice and must have a
+// set-equality test against RoadmapStates().
+//
+// Callers with a different order-semantic (e.g. priority search where "wip"
+// must come first) must keep their own ordered slice; they must, however, have
+// a test that asserts their slice contains the same elements as RoadmapStates().
+//
+// The function returns a new slice on every call so that callers cannot
+// accidentally mutate the shared canonical list.
+func RoadmapStates() []string {
+	return []string{"backlog", "analyzing", "wip", "blocked", "done", "abandoned"}
+}

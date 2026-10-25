@@ -1405,7 +1405,7 @@ func TestDetectPendingSquashMerges_RealGitRepo_StaleIntegratedVsGenuinelyPending
 		return string(out)
 	}
 
-	if err := os.WriteFile(filepath.Join(work, "empty-gitconfig"), []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(work, "empty-gitconfig"), []byte("[gc]\n\tauto = 0\n[maintenance]\n\tauto = false\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

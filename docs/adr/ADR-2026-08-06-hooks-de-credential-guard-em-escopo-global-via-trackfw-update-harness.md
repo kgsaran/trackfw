@@ -50,7 +50,8 @@ pelo nível de projeto:
    `<tool>-credential-guard`, seguindo o padrão de nomenclatura de `<tool>-agents`/`<tool>-skills` já
    usado em `HarnessTargetIDs`) — cada um escreve o wiring no arquivo de hooks global daquele CLI,
    apontando para o script em `~/.trackfw/scripts/`.
-4. **Dedup: o projeto detecta instalação global e pula o wiring local do credential-guard
+4. **[Substituída pela D15 do ADR-2026-10-04, em 2026-10-24 (#613): a fiação de projeto não depende do guard global.]**
+   **Dedup: o projeto detecta instalação global e pula o wiring local do credential-guard
    especificamente.** `InjectXHooks` (escopo de projeto) passa a checar, em modo leitura (nunca
    escrita) no arquivo de hooks global do CLI correspondente, se a entrada de credential-guard
    apontando para `~/.trackfw/scripts/trackfw-credential-guard.sh` já existe — se sim, **não**

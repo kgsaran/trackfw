@@ -3,12 +3,10 @@ package generators
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/kgsaran/trackfw/internal/homedir"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/kgsaran/trackfw/internal/agentconfig"
 	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/guardforms"
 	"github.com/kgsaran/trackfw/internal/pathguard"
@@ -384,40 +382,24 @@ func InjectClaudeHooks(rootDir string) error {
 		hooks["PreToolUse"] = migrateDedupGuardInNestedArray(hooks["PreToolUse"], m, guardGitBranchCmdPSPOSIX, guardforms.GitBranchLegacyPSPOSIX)
 	}
 
-	// D14 revised (ADR-2026-10-04 adendo 2026-10-23, REQ-2026-10-23): removal is per
-	// pair, only where the global guard covers. The global harness covers shell events
-	// (claudeShellMatcher); it does NOT cover Read and Write|Edit.
-	// — Shell pair: when global installed → REMOVE project-scope entries so the guard
-	//   does not run twice. When not installed → emit normally.
-	// — Read/Write|Edit pairs: ALWAYS present regardless of global state (D14 revised).
-	skipClaudeCG := globalCredentialGuardInstalledClaude()
-	if !skipClaudeCG {
-		hooks["PreToolUse"] = mergeClaudeHookArray(hooks["PreToolUse"], claudeShellMatcher, guardCredentialCmdPSPOSIX)
-	} else {
-		removeGuardFromNestedArrayInHooks(hooks, "PreToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX, guardforms.CredentialLegacyPSPOSIX)
-	}
+	// D15 (ADR-2026-10-04 adendo 2026-10-24, REQ-2026-10-23 #613): project-scope
+	// wiring is always emitted regardless of global guard state. No generator
+	// consults global to skip or remove project-scope entries. Guard runs twice
+	// per event on machines with global installed (~12 ms accepted cost, D15).
+	hooks["PreToolUse"] = mergeClaudeHookArray(hooks["PreToolUse"], claudeShellMatcher, guardCredentialCmdPSPOSIX)
 	// Read/Write|Edit coverage (ADR-2026-08-06 emenda 7, 2026-08-08): always present.
 	hooks["PreToolUse"] = mergeClaudeHookArray(hooks["PreToolUse"], "Read", guardCredentialCmdPSPOSIX)
 	hooks["PreToolUse"] = mergeClaudeHookArray(hooks["PreToolUse"], "Write|Edit", guardCredentialCmdPSPOSIX)
 
-	// Git branch guard (ROADMAP-2026-08-14 ML-3A / ML-2A / ML-5A / D14 revised):
+	// Git branch guard (ROADMAP-2026-08-14 ML-3A / ML-2A / ML-5A / D15):
 	// shell pair only — git branch guard has no Read/Write coverage.
-	// When global installed → REMOVE; when not installed → emit.
-	if !globalGitBranchGuardInstalledClaude() {
-		hooks["PreToolUse"] = mergeClaudeHookArray(hooks["PreToolUse"], claudeShellMatcher, guardGitBranchCmdPSPOSIX)
-	} else {
-		removeGuardFromNestedArrayInHooks(hooks, "PreToolUse", claudeShellMatcher, guardGitBranchCmdPSPOSIX, guardforms.GitBranchLegacyPSPOSIX)
-	}
+	hooks["PreToolUse"] = mergeClaudeHookArray(hooks["PreToolUse"], claudeShellMatcher, guardGitBranchCmdPSPOSIX)
 
 	hooks["PostToolUse"] = migrateAttentionHook(hooks["PostToolUse"], "AskUserQuestion", attentionCleanupCmd)
 
 	hooks["PostToolUse"] = mergeClaudeHookArray(hooks["PostToolUse"], "AskUserQuestion", attentionCleanupCmd)
-	// D14 revised PostToolUse: same per-pair logic as PreToolUse.
-	if !skipClaudeCG {
-		hooks["PostToolUse"] = mergeClaudeHookArray(hooks["PostToolUse"], claudeShellMatcher, guardCredentialCmdPSPOSIX)
-	} else {
-		removeGuardFromNestedArrayInHooks(hooks, "PostToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX, guardforms.CredentialLegacyPSPOSIX)
-	}
+	// D15 PostToolUse: always emit shell-pair credential guard.
+	hooks["PostToolUse"] = mergeClaudeHookArray(hooks["PostToolUse"], claudeShellMatcher, guardCredentialCmdPSPOSIX)
 	hooks["PostToolUse"] = mergeClaudeHookArray(hooks["PostToolUse"], "Read", guardCredentialCmdPSPOSIX)
 	hooks["PostToolUse"] = mergeClaudeHookArray(hooks["PostToolUse"], "Write|Edit", guardCredentialCmdPSPOSIX)
 
@@ -692,32 +674,17 @@ func InjectCodexHooks(rootDir string) error {
 	}
 	hooks["PreToolUse"] = migrateDedupGuardInNestedArray(hooks["PreToolUse"], "Bash", guardGitBranchCmdPSPOSIX, guardforms.GitBranchLegacyPSPOSIX)
 
-	// D14 revised (REQ-2026-10-23): per-pair logic.
-	// Global harness covers Bash pair; apply_patch is NOT covered by the global.
-	skipCodexCG := globalCredentialGuardInstalledCodex()
-	if !skipCodexCG {
-		hooks["PreToolUse"] = mergeClaudeHookArray(hooks["PreToolUse"], "Bash", guardCredentialCmdPSPOSIX)
-	} else {
-		removeGuardFromNestedArrayInHooks(hooks, "PreToolUse", "Bash", guardCredentialCmdPSPOSIX, guardforms.CredentialLegacyPSPOSIX)
-	}
-	// apply_patch always present (D14 revised: global does not cover this pair).
+	// D15 (ADR-2026-10-04 adendo 2026-10-24): project-scope wiring always emitted.
+	// Global state not consulted (D15).
+	hooks["PreToolUse"] = mergeClaudeHookArray(hooks["PreToolUse"], "Bash", guardCredentialCmdPSPOSIX)
 	hooks["PreToolUse"] = mergeClaudeHookArray(hooks["PreToolUse"], "apply_patch", guardCredentialCmdPSPOSIX)
 
-	// Git branch guard D14 revised: Bash pair only.
-	if !globalGitBranchGuardInstalledCodex() {
-		hooks["PreToolUse"] = mergeClaudeHookArray(hooks["PreToolUse"], "Bash", guardGitBranchCmdPSPOSIX)
-	} else {
-		removeGuardFromNestedArrayInHooks(hooks, "PreToolUse", "Bash", guardGitBranchCmdPSPOSIX, guardforms.GitBranchLegacyPSPOSIX)
-	}
+	// Git branch guard D15: Bash pair only — always emitted.
+	hooks["PreToolUse"] = mergeClaudeHookArray(hooks["PreToolUse"], "Bash", guardGitBranchCmdPSPOSIX)
 
 	hooks["PostToolUse"] = mergeClaudeHookArray(hooks["PostToolUse"], ".*", codexCleanupCmd)
-	// D14 revised PostToolUse: same per-pair logic.
-	if !skipCodexCG {
-		hooks["PostToolUse"] = mergeClaudeHookArray(hooks["PostToolUse"], "Bash", guardCredentialCmdPSPOSIX)
-	} else {
-		removeGuardFromNestedArrayInHooks(hooks, "PostToolUse", "Bash", guardCredentialCmdPSPOSIX, guardforms.CredentialLegacyPSPOSIX)
-	}
-	// apply_patch always present.
+	// D15 PostToolUse: always emit.
+	hooks["PostToolUse"] = mergeClaudeHookArray(hooks["PostToolUse"], "Bash", guardCredentialCmdPSPOSIX)
 	hooks["PostToolUse"] = mergeClaudeHookArray(hooks["PostToolUse"], "apply_patch", guardCredentialCmdPSPOSIX)
 
 	root["hooks"] = hooks
@@ -857,33 +824,17 @@ func InjectGeminiHooks(rootDir string) error {
 	}
 	hooks["BeforeTool"] = migrateDedupGuardInNestedArray(hooks["BeforeTool"], "run_shell_command", guardGitBranchCmdPSPOSIX, guardforms.GitBranchLegacyPSPOSIX)
 
-	// D14 revised (REQ-2026-10-23): per-pair logic.
-	// Global harness covers run_shell_command; read/write pairs NOT covered.
-	skipGeminiCG := globalCredentialGuardInstalledGemini()
-	if !skipGeminiCG {
-		hooks["BeforeTool"] = mergeClaudeHookArray(hooks["BeforeTool"], "run_shell_command", guardCredentialCmdPSPOSIX)
-	} else {
-		removeGuardFromNestedArrayInHooks(hooks, "BeforeTool", "run_shell_command", guardCredentialCmdPSPOSIX, guardforms.CredentialLegacyPSPOSIX)
-	}
-	// read/write always present (D14 revised: global does not cover these pairs).
+	// D15 (ADR-2026-10-04 adendo 2026-10-24): project-scope wiring always emitted.
+	hooks["BeforeTool"] = mergeClaudeHookArray(hooks["BeforeTool"], "run_shell_command", guardCredentialCmdPSPOSIX)
 	hooks["BeforeTool"] = mergeClaudeHookArray(hooks["BeforeTool"], "read_file|read_many_files", guardCredentialCmdPSPOSIX)
 	hooks["BeforeTool"] = mergeClaudeHookArray(hooks["BeforeTool"], "write_file|replace", guardCredentialCmdPSPOSIX)
 
-	// Git branch guard D14 revised: run_shell_command only.
-	if !globalGitBranchGuardInstalledGemini() {
-		hooks["BeforeTool"] = mergeClaudeHookArray(hooks["BeforeTool"], "run_shell_command", guardGitBranchCmdPSPOSIX)
-	} else {
-		removeGuardFromNestedArrayInHooks(hooks, "BeforeTool", "run_shell_command", guardGitBranchCmdPSPOSIX, guardforms.GitBranchLegacyPSPOSIX)
-	}
+	// Git branch guard D15: run_shell_command only — always emitted.
+	hooks["BeforeTool"] = mergeClaudeHookArray(hooks["BeforeTool"], "run_shell_command", guardGitBranchCmdPSPOSIX)
 
 	hooks["AfterTool"] = mergeClaudeHookArray(hooks["AfterTool"], "*", geminiCleanupCmd)
-	// D14 revised AfterTool: same per-pair logic.
-	if !skipGeminiCG {
-		hooks["AfterTool"] = mergeClaudeHookArray(hooks["AfterTool"], "run_shell_command", guardCredentialCmdPSPOSIX)
-	} else {
-		removeGuardFromNestedArrayInHooks(hooks, "AfterTool", "run_shell_command", guardCredentialCmdPSPOSIX, guardforms.CredentialLegacyPSPOSIX)
-	}
-	// read/write always present.
+	// D15 AfterTool: always emit.
+	hooks["AfterTool"] = mergeClaudeHookArray(hooks["AfterTool"], "run_shell_command", guardCredentialCmdPSPOSIX)
 	hooks["AfterTool"] = mergeClaudeHookArray(hooks["AfterTool"], "read_file|read_many_files", guardCredentialCmdPSPOSIX)
 	hooks["AfterTool"] = mergeClaudeHookArray(hooks["AfterTool"], "write_file|replace", guardCredentialCmdPSPOSIX)
 
@@ -984,33 +935,24 @@ func InjectKiroHooks(rootDir string) error {
 		},
 	}
 
-	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda
-	// 7/ROADMAP-2026-08-08 Wave 2 to read/write): skip the project-scope
-	// credential-guard entries when the global one is already installed
-	// (`trackfw update harness --targets kiro-credential-guard`,
-	// ~/.kiro/hooks/trackfw-credential-guard.json).
-	// ML-2A: Kiro uses cmd.exe family — no `; exit $LASTEXITCODE` suffix.
-	// D14 revised (REQ-2026-10-23 ML-2C corretivo): the global harness only covers
-	// "shell". "read" and "write" are never covered by the global, so they must
-	// always be emitted regardless of whether the global is installed.
-	if !globalCredentialGuardInstalledKiro() {
-		hooks = append(hooks,
-			map[string]interface{}{
-				"name":        "trackfw-credential-guard-pre",
-				"description": "Blocks/warns on possible plaintext credential materialization before a shell command executes",
-				"trigger":     "PreToolUse",
-				"matcher":     "shell",
-				"action":      map[string]interface{}{"type": "command", "command": guardCredentialCmdCmdExe},
-			},
-			map[string]interface{}{
-				"name":        "trackfw-credential-guard-post",
-				"description": "Warns on possible plaintext credential materialization after a shell command executes",
-				"trigger":     "PostToolUse",
-				"matcher":     "shell",
-				"action":      map[string]interface{}{"type": "command", "command": guardCredentialCmdCmdExe},
-			},
-		)
-	}
+	// D15 (ADR-2026-10-04 adendo 2026-10-24): project-scope wiring always emitted
+	// regardless of global guard state (D15). ML-2A: Kiro uses cmd.exe family.
+	hooks = append(hooks,
+		map[string]interface{}{
+			"name":        "trackfw-credential-guard-pre",
+			"description": "Blocks/warns on possible plaintext credential materialization before a shell command executes",
+			"trigger":     "PreToolUse",
+			"matcher":     "shell",
+			"action":      map[string]interface{}{"type": "command", "command": guardCredentialCmdCmdExe},
+		},
+		map[string]interface{}{
+			"name":        "trackfw-credential-guard-post",
+			"description": "Warns on possible plaintext credential materialization after a shell command executes",
+			"trigger":     "PostToolUse",
+			"matcher":     "shell",
+			"action":      map[string]interface{}{"type": "command", "command": guardCredentialCmdCmdExe},
+		},
+	)
 	// Read/Write coverage (ADR-2026-08-06 emenda 7, 2026-08-08): "read"
 	// and "write" are the documented Kiro tool-category aliases
 	// (fs_read/fs_write). Not covered by the global harness → always emit.
@@ -1159,25 +1101,21 @@ func InjectCopilotHooks(rootDir string) error {
 	// convention already used for "bash" above.
 	// ML-2A: Copilot uses `command` field (not `bash`) per ADR-2026-10-04 D4.
 	// PS/POSIX family — includes `; exit $LASTEXITCODE` suffix.
-	// D14 revised (REQ-2026-10-23 ML-2C corretivo): the global harness only covers
-	// "bash". "view" and "create|edit" are never covered by the global, so they
-	// must always be emitted regardless of whether the global is installed.
-	if !globalCredentialGuardInstalledCopilot() {
-		preToolUse = append(preToolUse, map[string]interface{}{
-			"type":       "command",
-			"matcher":    "bash",
-			"command":    guardCredentialCmdPSPOSIX,
-			"cwd":        ".",
-			"timeoutSec": 10,
-		})
-		postToolUse = append(postToolUse, map[string]interface{}{
-			"type":       "command",
-			"matcher":    "bash",
-			"command":    guardCredentialCmdPSPOSIX,
-			"cwd":        ".",
-			"timeoutSec": 10,
-		})
-	}
+	// D15 (ADR-2026-10-04 adendo 2026-10-24): project-scope wiring always emitted.
+	preToolUse = append(preToolUse, map[string]interface{}{
+		"type":       "command",
+		"matcher":    "bash",
+		"command":    guardCredentialCmdPSPOSIX,
+		"cwd":        ".",
+		"timeoutSec": 10,
+	})
+	postToolUse = append(postToolUse, map[string]interface{}{
+		"type":       "command",
+		"matcher":    "bash",
+		"command":    guardCredentialCmdPSPOSIX,
+		"cwd":        ".",
+		"timeoutSec": 10,
+	})
 	// "view" and "create|edit": not covered by the global harness → always emit.
 	preToolUse = append(preToolUse, map[string]interface{}{
 		"type":       "command",
@@ -1218,20 +1156,16 @@ func InjectCopilotHooks(rootDir string) error {
 	// divergence from the roadmap's literal wording in docs/cli-parity.md.
 	// This file is overwritten wholesale every run (doc comment above), but
 	// that only means there is no MIGRATION concern (nothing stale to leave
-	// behind) — it does not exempt this entry from the dedup-against-global
-	// check (ROADMAP-2026-08-17 Wave 2/ML-2B): skip the project-scope
-	// git-branch-guard entry when the global one is already installed
-	// (`trackfw update harness --targets copilot-git-branch-guard`), same
-	// reasoning as the credential-guard dedup above.
-	if !globalGitBranchGuardInstalledCopilot() {
-		preToolUse = append(preToolUse, map[string]interface{}{
-			"type":       "command",
-			"matcher":    "bash",
-			"command":    guardGitBranchCmdPSPOSIX,
-			"cwd":        ".",
-			"timeoutSec": 10,
-		})
-	}
+	// behind) — it does not exempt this entry from unconditional wiring under
+	// D15 (ADR-2026-10-04 adendo 2026-10-24): project-scope git-branch guard
+	// always emitted regardless of global guard state.
+	preToolUse = append(preToolUse, map[string]interface{}{
+		"type":       "command",
+		"matcher":    "bash",
+		"command":    guardGitBranchCmdPSPOSIX,
+		"cwd":        ".",
+		"timeoutSec": 10,
+	})
 
 	content := map[string]interface{}{
 		"version": 1,
@@ -1380,24 +1314,16 @@ func InjectCursorHooks(rootDir string) error {
 		hooks[pair.event] = mergeSimpleCommandArray(hooks[pair.event], pair.command, makeEntry, getCmd)
 	}
 
-	// Credential guard — shell events (D12/D13/D14 revised, ADR-2026-10-04 adendo
-	// 2026-10-23): migrate ALL known legacy forms to current in one pass and
-	// deduplicate to exactly one entry. When the global guard is installed, the
-	// global harness covers shell events — remove project-level entries instead of
-	// adding them. The remove step (else branch) also handles the case where a user
-	// had project-level entries before installing the global guard.
+	// Credential guard — shell events (D12/D13/D15, ADR-2026-10-04 adendo
+	// 2026-10-24): migrate ALL known legacy forms to current in one pass and
+	// deduplicate to exactly one entry. D15: always emit regardless of global state.
 	credLegacyForms := guardforms.CredentialLegacyPSPOSIX
-	if !globalCredentialGuardInstalledCursor() {
-		hooks["beforeShellExecution"] = migrateDedupGuardInFlatArray(
-			hooks["beforeShellExecution"], "", guardCredentialCmdPSPOSIX, credLegacyForms, getCmd)
-		hooks["afterShellExecution"] = migrateDedupGuardInFlatArray(
-			hooks["afterShellExecution"], "", guardCredentialCmdPSPOSIX, credLegacyForms, getCmd)
-	} else {
-		removeGuardFromFlatArrayInHooks(hooks, "beforeShellExecution", "", guardCredentialCmdPSPOSIX, credLegacyForms, getCmd)
-		removeGuardFromFlatArrayInHooks(hooks, "afterShellExecution", "", guardCredentialCmdPSPOSIX, credLegacyForms, getCmd)
-	}
+	hooks["beforeShellExecution"] = migrateDedupGuardInFlatArray(
+		hooks["beforeShellExecution"], "", guardCredentialCmdPSPOSIX, credLegacyForms, getCmd)
+	hooks["afterShellExecution"] = migrateDedupGuardInFlatArray(
+		hooks["afterShellExecution"], "", guardCredentialCmdPSPOSIX, credLegacyForms, getCmd)
 
-	// Credential guard — Read/Write pairs (D14 revised: ALWAYS present).
+	// Credential guard — Read/Write pairs (D15: ALWAYS present).
 	// The global harness is wired to shell events only and does NOT fire for
 	// Read/Write tool calls. These entries cover file-access operations regardless
 	// of global installation status. Uses migrateDedupGuardInFlatArray so that
@@ -1413,16 +1339,10 @@ func InjectCursorHooks(rootDir string) error {
 		hooks["postToolUse"], "Write", guardCredentialCmdPSPOSIX, credLegacyForms, getCmd)
 
 	// Git branch guard — shell events only (no Read/Write coverage for git guard).
-	// Same D13/D14 pattern: migrate all legacy forms and deduplicate; remove when
-	// global is installed. The key is only touched inside conditionals so that
-	// when both guards are deduped away, the key stays absent (not empty array).
+	// D15: always emit; migrate all legacy forms and deduplicate.
 	gitLegacyForms := guardforms.GitBranchLegacyPSPOSIX
-	if !globalGitBranchGuardInstalledCursor() {
-		hooks["beforeShellExecution"] = migrateDedupGuardInFlatArray(
-			hooks["beforeShellExecution"], "", guardGitBranchCmdPSPOSIX, gitLegacyForms, getCmd)
-	} else {
-		removeGuardFromFlatArrayInHooks(hooks, "beforeShellExecution", "", guardGitBranchCmdPSPOSIX, gitLegacyForms, getCmd)
-	}
+	hooks["beforeShellExecution"] = migrateDedupGuardInFlatArray(
+		hooks["beforeShellExecution"], "", guardGitBranchCmdPSPOSIX, gitLegacyForms, getCmd)
 
 	root["hooks"] = hooks
 
@@ -1719,25 +1639,16 @@ func InjectWindsurfHooks(rootDir string) error {
 	hooks["pre_run_command"] = dedupFlatGuardEntries(hooks["pre_run_command"], "", windsurfGitGuardCmd, guardforms.GitBranchLegacyPSPOSIX, windsurfGetCmd)
 	hooks["pre_run_command"] = mergeSimpleCommandArray(hooks["pre_run_command"], windsurfGitGuardCmd, windsurfMakeEntry, windsurfGetCmd)
 
-	// D13/D14 revised for credential guard (REQ-2026-10-23):
-	// globalCredentialGuardInstalledWindsurf checks ~/.codeium/windsurf/hooks.json.
-	// When global installed → REMOVE project-scope entries (D14 revised removal).
-	// When not installed → migrate legacy forms and emit canonical entry.
-	if !globalCredentialGuardInstalledWindsurf() {
-		// pre_run_command: credential guard in addition to git-branch guard.
-		// Credential guard merged AFTER git-branch for stable byte order.
-		hooks["pre_run_command"] = dedupFlatGuardEntries(hooks["pre_run_command"], "", guardCredentialCmdPSPOSIX, guardforms.CredentialLegacyPSPOSIX, windsurfGetCmd)
-		hooks["pre_run_command"] = mergeSimpleCommandArray(hooks["pre_run_command"], guardCredentialCmdPSPOSIX, windsurfMakeEntry, windsurfGetCmd)
-		// pre_write_code: credential guard only (git-branch irrelevant for write events).
-		// Wave 0 ML-0B: pre_write_code carries edits[*].new_string — Vector H confirmed: RC=2.
-		// NÃO instalar em pre_read_code: payload is file_path only, not content (R2).
-		hooks["pre_write_code"] = dedupFlatGuardEntries(hooks["pre_write_code"], "", guardCredentialCmdPSPOSIX, guardforms.CredentialLegacyPSPOSIX, windsurfGetCmd)
-		hooks["pre_write_code"] = mergeSimpleCommandArray(hooks["pre_write_code"], guardCredentialCmdPSPOSIX, windsurfMakeEntry, windsurfGetCmd)
-	} else {
-		// D14 revised: remove project-scope entries from pairs the global covers.
-		removeGuardFromFlatArrayInHooks(hooks, "pre_run_command", "", guardCredentialCmdPSPOSIX, guardforms.CredentialLegacyPSPOSIX, windsurfGetCmd)
-		removeGuardFromFlatArrayInHooks(hooks, "pre_write_code", "", guardCredentialCmdPSPOSIX, guardforms.CredentialLegacyPSPOSIX, windsurfGetCmd)
-	}
+	// D15 (ADR-2026-10-04 adendo 2026-10-24): project-scope wiring always emitted.
+	// pre_run_command: credential guard in addition to git-branch guard.
+	// Credential guard merged AFTER git-branch for stable byte order.
+	hooks["pre_run_command"] = dedupFlatGuardEntries(hooks["pre_run_command"], "", guardCredentialCmdPSPOSIX, guardforms.CredentialLegacyPSPOSIX, windsurfGetCmd)
+	hooks["pre_run_command"] = mergeSimpleCommandArray(hooks["pre_run_command"], guardCredentialCmdPSPOSIX, windsurfMakeEntry, windsurfGetCmd)
+	// pre_write_code: credential guard only (git-branch irrelevant for write events).
+	// Wave 0 ML-0B: pre_write_code carries edits[*].new_string — Vector H confirmed: RC=2.
+	// NÃO instalar em pre_read_code: payload is file_path only, not content (R2).
+	hooks["pre_write_code"] = dedupFlatGuardEntries(hooks["pre_write_code"], "", guardCredentialCmdPSPOSIX, guardforms.CredentialLegacyPSPOSIX, windsurfGetCmd)
+	hooks["pre_write_code"] = mergeSimpleCommandArray(hooks["pre_write_code"], guardCredentialCmdPSPOSIX, windsurfMakeEntry, windsurfGetCmd)
 	root["hooks"] = hooks
 
 	// ML-6B: marshalJSONNoEscape so '>' in D11 survives as a literal redirect.
@@ -2038,78 +1949,6 @@ func mergeCursorGuardMatcherEntry(existing interface{}, matcher, command string)
 	return append(arr, map[string]interface{}{"command": command, "matcher": matcher})
 }
 
-// --- Global credential-guard dedup (ROADMAP-2026-08-06 Wave 3/ML-3A) ---
-//
-// InjectClaudeHooks/InjectCodexHooks/InjectGeminiHooks/InjectCursorHooks/
-// InjectCopilotHooks/InjectKiroHooks each check, read-only, whether the
-// user already has the global-scope credential-guard wiring installed for
-// that CLI (via `trackfw update harness --targets <tool>-credential-guard`,
-// internal/generators/update.go) before adding the project-scope
-// credential-guard entry. If the global entry is already present, the
-// project-scope entry is skipped entirely (never running the guard twice
-// per command) — attention-signal/cleanup entries are unaffected, since
-// those are inherently project-scoped (ADR-2026-08-06, Decision #4).
-//
-// Fail-open is mandatory: any failure to resolve $HOME, read the global
-// file, or parse its JSON is treated as "not installed globally" and the
-// project-scope entry is added exactly as before this ML. This function
-// never writes to the global file — read-only by construction (no
-// os.WriteFile call anywhere in this section).
-
-// globalCredentialGuardScriptPath resolves the absolute path the global
-// credential-guard wiring would point at (~/.trackfw/scripts/trackfw-
-// credential-guard.sh), matching harnessCredentialGuardTargetClaude/Codex/
-// Gemini/Cursor/Copilot/Kiro (internal/generators/update.go) exactly. Returns
-// ok=false if $HOME cannot be resolved (fail-open: caller treats this as
-// "not installed globally").
-func globalCredentialGuardScriptPath() (path string, ok bool) {
-	home, err := homedir.Dir()
-	if err != nil || home == "" {
-		return "", false
-	}
-	return filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh"), true
-}
-
-// readGlobalHookJSON reads and parses a JSON object at $HOME/<relParts...>.
-// Returns ok=false on any failure (file missing, unreadable, not valid JSON,
-// or $HOME unresolvable) — the fail-open contract for every caller in this
-// section.
-func readGlobalHookJSON(relParts ...string) (root map[string]interface{}, ok bool) {
-	home, err := homedir.Dir()
-	if err != nil || home == "" {
-		return nil, false
-	}
-	parts := append([]string{home}, relParts...)
-	raw, err := os.ReadFile(filepath.Join(parts...))
-	if err != nil {
-		return nil, false
-	}
-	if err := json.Unmarshal(raw, &root); err != nil {
-		return nil, false
-	}
-	return root, true
-}
-
-// readClaudeSettingsJSON reads and parses the JSON object at Claude Code's
-// settings.json, honouring CLAUDE_CONFIG_DIR and, on Windows, USERPROFILE
-// instead of $HOME (ML-1A, REQ-2026-09-01, ADR-2026-10-14 D3).
-// Returns ok=false on any failure — same fail-open contract as readGlobalHookJSON.
-// Callers that need the path for a different CLI must still call readGlobalHookJSON.
-func readClaudeSettingsJSON() (root map[string]interface{}, ok bool) {
-	dir, err := agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver)
-	if err != nil || dir == "" {
-		return nil, false
-	}
-	raw, err := os.ReadFile(filepath.Join(dir, "settings.json"))
-	if err != nil {
-		return nil, false
-	}
-	if err := json.Unmarshal(raw, &root); err != nil {
-		return nil, false
-	}
-	return root, true
-}
-
 // normalizeGuardPath collapses run of consecutive slashes ("//" -> "/", at
 // any position, including leading) and strips a trailing slash, so that two
 // on-disk forms of the SAME script path compare equal regardless of
@@ -2359,359 +2198,6 @@ func simpleArrayHasValue(existing interface{}, field, value string, requireComma
 		}
 	}
 	return false
-}
-
-// globalCredentialGuardInstalledClaude checks ~/.claude/settings.json for
-// the PreToolUse[matcher:claudeShellMatcher] entry harnessCredentialGuardTargetClaude
-// writes. Also accepts the legacy "Bash"-only matcher for configs not yet migrated.
-// Fail-open: any read/parse error → false.
-func globalCredentialGuardInstalledClaude() bool {
-	scriptPath, ok := globalCredentialGuardScriptPath()
-	if !ok {
-		return false
-	}
-	// ML-1A: use readClaudeSettingsJSON so we read from the same path the agent does.
-	root, ok := readClaudeSettingsJSON()
-	if !ok {
-		return false
-	}
-	hooks, _ := root["hooks"].(map[string]interface{})
-	// ML-2A: accept both old abs .sh path and new inline command form.
-	// ML-5A: also accept the new claudeShellMatcher ("Bash|PowerShell") in addition
-	// to the legacy "Bash" matcher so that a global config already migrated by
-	// `trackfw update harness` still dedups the project-scope entry.
-	// ML-6B: also accept D2 revised form so that a global config not yet migrated
-	// to D11 still dedups the project-scope entry.
-	// ML-6C: also accept pre-ML-6C D11 (without 4th PS trecho) so that a global
-	// config not yet migrated to D11 revised still dedups the project-scope entry.
-	// REQ-2026-10-20: also accept D11 revised pré-REQ-2026-10-20 and workaround bash wrapper form.
-	return hookArrayHasCommand(hooks["PreToolUse"], "Bash", scriptPath) ||
-		hookArrayHasCommand(hooks["PreToolUse"], "Bash", guardCredentialGlobalCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["PreToolUse"], claudeShellMatcher, guardCredentialGlobalCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["PreToolUse"], "Bash", legacyD11RevCredentialGlobalCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["PreToolUse"], claudeShellMatcher, legacyD11RevCredentialGlobalCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["PreToolUse"], "Bash", legacyWABashCredentialGlobalCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["PreToolUse"], claudeShellMatcher, legacyWABashCredentialGlobalCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["PreToolUse"], "Bash", legacyD2CredentialGlobalCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["PreToolUse"], claudeShellMatcher, legacyD2CredentialGlobalCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["PreToolUse"], "Bash", legacyD11CredentialGlobalCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["PreToolUse"], claudeShellMatcher, legacyD11CredentialGlobalCmdPSPOSIX)
-}
-
-// globalCredentialGuardInstalledCodex checks ~/.codex/hooks.json for the
-// PreToolUse[matcher:"Bash"] entry harnessCredentialGuardTargetCodex writes.
-// Fail-open: any read/parse error → false.
-func globalCredentialGuardInstalledCodex() bool {
-	scriptPath, ok := globalCredentialGuardScriptPath()
-	if !ok {
-		return false
-	}
-	root, ok := readGlobalHookJSON(".codex", "hooks.json")
-	if !ok {
-		return false
-	}
-	hooks, _ := root["hooks"].(map[string]interface{})
-	// ML-2A: accept both old abs .sh path and new inline command form.
-	// ML-6B: also accept D2 revised form.
-	// ML-6C: also accept pre-ML-6C D11 form.
-	// REQ-2026-10-20: also accept D11 revised pré-REQ-2026-10-20 and workaround bash wrapper form.
-	return hookArrayHasCommand(hooks["PreToolUse"], "Bash", scriptPath) ||
-		hookArrayHasCommand(hooks["PreToolUse"], "Bash", guardCredentialGlobalCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["PreToolUse"], "Bash", legacyD11RevCredentialGlobalCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["PreToolUse"], "Bash", legacyWABashCredentialGlobalCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["PreToolUse"], "Bash", legacyD2CredentialGlobalCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["PreToolUse"], "Bash", legacyD11CredentialGlobalCmdPSPOSIX)
-}
-
-// globalCredentialGuardInstalledGemini checks ~/.gemini/settings.json for
-// the BeforeTool[matcher:"run_shell_command"] entry
-// harnessCredentialGuardTargetGemini writes. Fail-open: any read/parse
-// error → false.
-func globalCredentialGuardInstalledGemini() bool {
-	scriptPath, ok := globalCredentialGuardScriptPath()
-	if !ok {
-		return false
-	}
-	root, ok := readGlobalHookJSON(".gemini", "settings.json")
-	if !ok {
-		return false
-	}
-	hooks, _ := root["hooks"].(map[string]interface{})
-	// ML-2A: accept both old abs .sh path and new inline command form.
-	// ML-6B: also accept D2 revised form.
-	// ML-6C: also accept pre-ML-6C D11 form.
-	// REQ-2026-10-20: also accept D11 revised pré-REQ-2026-10-20 and workaround bash wrapper form.
-	return hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", scriptPath) ||
-		hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", guardCredentialGlobalCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", legacyD11RevCredentialGlobalCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", legacyWABashCredentialGlobalCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", legacyD2CredentialGlobalCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", legacyD11CredentialGlobalCmdPSPOSIX)
-}
-
-// globalCredentialGuardInstalledCursor checks ~/.cursor/hooks.json for the
-// hooks.beforeShellExecution entry harnessCredentialGuardTargetCursor
-// writes. Fail-open: any read/parse error → false.
-func globalCredentialGuardInstalledCursor() bool {
-	scriptPath, ok := globalCredentialGuardScriptPath()
-	if !ok {
-		return false
-	}
-	root, ok := readGlobalHookJSON(".cursor", "hooks.json")
-	if !ok {
-		return false
-	}
-	hooks, _ := root["hooks"].(map[string]interface{})
-	// ML-2A: accept both old abs .sh path and new inline command form.
-	// ML-6B: also accept D2 revised form.
-	// ML-6C: also accept pre-ML-6C D11 form.
-	// REQ-2026-10-20: also accept D11 revised pré-REQ-2026-10-20 and workaround bash wrapper form.
-	return simpleArrayHasValue(hooks["beforeShellExecution"], "command", scriptPath, false) ||
-		simpleArrayHasValue(hooks["beforeShellExecution"], "command", guardCredentialGlobalCmdPSPOSIX, false) ||
-		simpleArrayHasValue(hooks["beforeShellExecution"], "command", legacyD11RevCredentialGlobalCmdPSPOSIX, false) ||
-		simpleArrayHasValue(hooks["beforeShellExecution"], "command", legacyWABashCredentialGlobalCmdPSPOSIX, false) ||
-		simpleArrayHasValue(hooks["beforeShellExecution"], "command", legacyD2CredentialGlobalCmdPSPOSIX, false) ||
-		simpleArrayHasValue(hooks["beforeShellExecution"], "command", legacyD11CredentialGlobalCmdPSPOSIX, false)
-}
-
-// globalCredentialGuardInstalledCopilot checks ~/.copilot/settings.json for
-// the hooks.preToolUse[bash] entry harnessCredentialGuardTargetCopilot
-// writes. Fail-open: any read/parse error → false.
-func globalCredentialGuardInstalledCopilot() bool {
-	scriptPath, ok := globalCredentialGuardScriptPath()
-	if !ok {
-		return false
-	}
-	root, ok := readGlobalHookJSON(".copilot", "settings.json")
-	if !ok {
-		return false
-	}
-	hooks, _ := root["hooks"].(map[string]interface{})
-	// ML-2A: accept both old abs .sh path and new inline command form.
-	// ML-6B: also accept D2 revised form.
-	// ML-6C: also accept pre-ML-6C D11 form.
-	// REQ-2026-10-20: also accept D11 revised pré-REQ-2026-10-20 and workaround bash wrapper form.
-	return simpleArrayHasValue(hooks["preToolUse"], "bash", scriptPath, true) ||
-		simpleArrayHasValue(hooks["preToolUse"], "bash", guardCredentialGlobalCmdPSPOSIX, true) ||
-		simpleArrayHasValue(hooks["preToolUse"], "bash", legacyD11RevCredentialGlobalCmdPSPOSIX, true) ||
-		simpleArrayHasValue(hooks["preToolUse"], "bash", legacyWABashCredentialGlobalCmdPSPOSIX, true) ||
-		simpleArrayHasValue(hooks["preToolUse"], "bash", legacyD2CredentialGlobalCmdPSPOSIX, true) ||
-		simpleArrayHasValue(hooks["preToolUse"], "bash", legacyD11CredentialGlobalCmdPSPOSIX, true)
-}
-
-// globalCredentialGuardInstalledKiro checks whether
-// ~/.kiro/hooks/trackfw-credential-guard.json exists and is non-empty — this
-// file is 100% dedicated to the global credential-guard wiring
-// (harnessCredentialGuardTargetKiro overwrites it wholesale, never merges),
-// so presence + non-empty content is sufficient, matching the roadmap's
-// explicit instruction for Kiro. Fail-open: any stat error → false.
-func globalCredentialGuardInstalledKiro() bool {
-	home, err := homedir.Dir()
-	if err != nil || home == "" {
-		return false
-	}
-	info, err := os.Stat(filepath.Join(home, ".kiro", "hooks", "trackfw-credential-guard.json"))
-	if err != nil {
-		return false
-	}
-	return info.Size() > 0
-}
-
-// globalCredentialGuardInstalledWindsurf checks ~/.codeium/windsurf/hooks.json
-// for the hooks.pre_run_command AND hooks.pre_write_code entries that
-// harnessCredentialGuardTargetWindsurf writes (ML-1B, REQ-2026-10-06).
-//
-// ML-1D fix: both events are required. The old behavior (checking only
-// pre_run_command) allowed a partially-initialized global file (one that only
-// got pre_run_command, e.g. from a partial `trackfw update harness` run) to
-// cause InjectWindsurfHooks to skip project-scope wiring for BOTH events,
-// leaving pre_write_code uncovered in project and global alike.
-// harnessCredentialGuardTargetWindsurf always writes both events atomically;
-// a global file with only one is partially initialized and InjectWindsurfHooks
-// must fill in the project file.
-// Fail-open: any read/parse error → false.
-func globalCredentialGuardInstalledWindsurf() bool {
-	root, ok := readGlobalHookJSON(".codeium", "windsurf", "hooks.json")
-	if !ok {
-		return false
-	}
-	hooks, _ := root["hooks"].(map[string]interface{})
-	// REQ-2026-10-20: also accept D11 revised pré-REQ-2026-10-20 form (workaround bash wrapper not used in Windsurf).
-	hasPreRun := simpleArrayHasValue(hooks["pre_run_command"], "command", guardCredentialGlobalCmdPSPOSIX, false) ||
-		simpleArrayHasValue(hooks["pre_run_command"], "command", legacyD11RevCredentialGlobalCmdPSPOSIX, false)
-	hasPreWrite := simpleArrayHasValue(hooks["pre_write_code"], "command", guardCredentialGlobalCmdPSPOSIX, false) ||
-		simpleArrayHasValue(hooks["pre_write_code"], "command", legacyD11RevCredentialGlobalCmdPSPOSIX, false)
-	return hasPreRun && hasPreWrite
-}
-
-// --- git-branch-guard global-installed dedup (ROADMAP-2026-08-17 Wave 2/
-// ML-2B) ---
-//
-// Mirrors the globalCredentialGuardInstalled<Tool> family above exactly,
-// pointed at ~/.trackfw/scripts/trackfw-git-branch-guard.sh instead of
-// trackfw-credential-guard.sh. The global-scope git-branch-guard targets
-// added by ML-2A (harnessGitBranchGuardTarget<Tool>, internal/generators/
-// update.go) reuse the SAME merge helpers as their credential-guard
-// counterparts (mergeCredentialGuardClaudeHooks/GeminiHooks/CursorHooks/
-// CopilotHooks, parametrized by scriptPath) — same hooks key, same matcher,
-// only the scriptPath argument differs — so the read side below checks the
-// exact same hooks key/matcher as globalCredentialGuardInstalled<Tool>, just
-// against the git-branch-guard scriptPath.
-//
-// Only 5 of the 6 credential-guard dedup targets have a git-branch-guard
-// counterpart: Kiro's project-scope injector (InjectKiroHooks) wires
-// git-branch-guard at project scope (agentfiles.go:1027–1038), but has no
-// GLOBAL harness target (no ~/.kiro/hooks/ harness was added by ML-2A) — so
-// no globalGitBranchGuardInstalledKiro function exists and no dedup is needed.
-// Windsurf/AmazonQ wire git-branch-guard at project scope but have no global-scope target
-// (ML-2A only added targets for the 6 CLIs above) and no credential-guard
-// dedup precedent either — consistent, not a gap.
-
-// globalGitBranchGuardScriptPath resolves the absolute path the global
-// git-branch-guard wiring would point at (~/.trackfw/scripts/trackfw-git-
-// branch-guard.sh), matching harnessGitBranchGuardTargetClaude/Codex/Gemini/
-// Cursor/Copilot (internal/generators/update.go) exactly. Returns ok=false
-// if $HOME cannot be resolved (fail-open: caller treats this as "not
-// installed globally").
-func globalGitBranchGuardScriptPath() (path string, ok bool) {
-	home, err := homedir.Dir()
-	if err != nil || home == "" {
-		return "", false
-	}
-	return filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh"), true
-}
-
-// globalGitBranchGuardInstalledClaude checks ~/.claude/settings.json for the
-// PreToolUse[matcher:claudeShellMatcher] entry harnessGitBranchGuardTargetClaude
-// writes. Also accepts the legacy "Bash"-only matcher for configs not yet migrated.
-// Fail-open: any read/parse error → false.
-func globalGitBranchGuardInstalledClaude() bool {
-	scriptPath, ok := globalGitBranchGuardScriptPath()
-	if !ok {
-		return false
-	}
-	// ML-1A: use readClaudeSettingsJSON so we read from the same path the agent does.
-	root, ok := readClaudeSettingsJSON()
-	if !ok {
-		return false
-	}
-	hooks, _ := root["hooks"].(map[string]interface{})
-	// ML-2A: accept both old abs .sh path and new inline command form.
-	// ML-5A: also accept the new claudeShellMatcher ("Bash|PowerShell") in addition
-	// to the legacy "Bash" matcher so that a global config already migrated by
-	// `trackfw update harness` still dedups the project-scope entry.
-	// ML-6B: also accept D2 revised form.
-	return hookArrayHasCommand(hooks["PreToolUse"], "Bash", scriptPath) ||
-		hookArrayHasCommand(hooks["PreToolUse"], "Bash", guardGitBranchCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["PreToolUse"], claudeShellMatcher, guardGitBranchCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["PreToolUse"], "Bash", legacyD11RevGitBranchCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["PreToolUse"], claudeShellMatcher, legacyD11RevGitBranchCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["PreToolUse"], "Bash", legacyWABashGitBranchCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["PreToolUse"], claudeShellMatcher, legacyWABashGitBranchCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["PreToolUse"], "Bash", legacyD2GitBranchCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["PreToolUse"], claudeShellMatcher, legacyD2GitBranchCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["PreToolUse"], "Bash", legacyD11GitBranchCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["PreToolUse"], claudeShellMatcher, legacyD11GitBranchCmdPSPOSIX)
-}
-
-// globalGitBranchGuardInstalledCodex checks ~/.codex/hooks.json for the
-// PreToolUse[matcher:"Bash"] entry harnessGitBranchGuardTargetCodex writes.
-// Fail-open: any read/parse error → false.
-func globalGitBranchGuardInstalledCodex() bool {
-	scriptPath, ok := globalGitBranchGuardScriptPath()
-	if !ok {
-		return false
-	}
-	root, ok := readGlobalHookJSON(".codex", "hooks.json")
-	if !ok {
-		return false
-	}
-	hooks, _ := root["hooks"].(map[string]interface{})
-	// ML-2A: accept both old abs .sh path and new inline command form.
-	// ML-6B: also accept D2 revised form.
-	// ML-6C: also accept pre-ML-6C D11 form.
-	// REQ-2026-10-20: also accept D11 revised pré-REQ-2026-10-20 and workaround bash wrapper form.
-	return hookArrayHasCommand(hooks["PreToolUse"], "Bash", scriptPath) ||
-		hookArrayHasCommand(hooks["PreToolUse"], "Bash", guardGitBranchCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["PreToolUse"], "Bash", legacyD11RevGitBranchCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["PreToolUse"], "Bash", legacyWABashGitBranchCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["PreToolUse"], "Bash", legacyD2GitBranchCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["PreToolUse"], "Bash", legacyD11GitBranchCmdPSPOSIX)
-}
-
-// globalGitBranchGuardInstalledGemini checks ~/.gemini/settings.json for the
-// BeforeTool[matcher:"run_shell_command"] entry harnessGitBranchGuardTargetGemini
-// writes. Fail-open: any read/parse error → false.
-func globalGitBranchGuardInstalledGemini() bool {
-	scriptPath, ok := globalGitBranchGuardScriptPath()
-	if !ok {
-		return false
-	}
-	root, ok := readGlobalHookJSON(".gemini", "settings.json")
-	if !ok {
-		return false
-	}
-	hooks, _ := root["hooks"].(map[string]interface{})
-	// ML-2A: accept both old abs .sh path and new inline command form.
-	// ML-6B: also accept D2 revised form.
-	// ML-6C: also accept pre-ML-6C D11 form.
-	// REQ-2026-10-20: also accept D11 revised pré-REQ-2026-10-20 and workaround bash wrapper form.
-	return hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", scriptPath) ||
-		hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", guardGitBranchCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", legacyD11RevGitBranchCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", legacyWABashGitBranchCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", legacyD2GitBranchCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", legacyD11GitBranchCmdPSPOSIX)
-}
-
-// globalGitBranchGuardInstalledCursor checks ~/.cursor/hooks.json for the
-// hooks.beforeShellExecution entry harnessGitBranchGuardTargetCursor writes.
-// Fail-open: any read/parse error → false.
-func globalGitBranchGuardInstalledCursor() bool {
-	scriptPath, ok := globalGitBranchGuardScriptPath()
-	if !ok {
-		return false
-	}
-	root, ok := readGlobalHookJSON(".cursor", "hooks.json")
-	if !ok {
-		return false
-	}
-	hooks, _ := root["hooks"].(map[string]interface{})
-	// ML-2A: accept both old abs .sh path and new inline command form.
-	// ML-6B: also accept D2 revised form.
-	// ML-6C: also accept pre-ML-6C D11 form.
-	// REQ-2026-10-20: also accept D11 revised pré-REQ-2026-10-20 and workaround bash wrapper form.
-	return simpleArrayHasValue(hooks["beforeShellExecution"], "command", scriptPath, false) ||
-		simpleArrayHasValue(hooks["beforeShellExecution"], "command", guardGitBranchCmdPSPOSIX, false) ||
-		simpleArrayHasValue(hooks["beforeShellExecution"], "command", legacyD11RevGitBranchCmdPSPOSIX, false) ||
-		simpleArrayHasValue(hooks["beforeShellExecution"], "command", legacyWABashGitBranchCmdPSPOSIX, false) ||
-		simpleArrayHasValue(hooks["beforeShellExecution"], "command", legacyD2GitBranchCmdPSPOSIX, false) ||
-		simpleArrayHasValue(hooks["beforeShellExecution"], "command", legacyD11GitBranchCmdPSPOSIX, false)
-}
-
-// globalGitBranchGuardInstalledCopilot checks ~/.copilot/settings.json for
-// the hooks.preToolUse[bash] entry harnessGitBranchGuardTargetCopilot writes.
-// Fail-open: any read/parse error → false.
-func globalGitBranchGuardInstalledCopilot() bool {
-	scriptPath, ok := globalGitBranchGuardScriptPath()
-	if !ok {
-		return false
-	}
-	root, ok := readGlobalHookJSON(".copilot", "settings.json")
-	if !ok {
-		return false
-	}
-	hooks, _ := root["hooks"].(map[string]interface{})
-	// ML-2A: accept both old abs .sh path and new inline command form.
-	// ML-6B: also accept D2 revised form.
-	// ML-6C: also accept pre-ML-6C D11 form.
-	// REQ-2026-10-20: also accept D11 revised pré-REQ-2026-10-20 and workaround bash wrapper form.
-	return simpleArrayHasValue(hooks["preToolUse"], "bash", scriptPath, true) ||
-		simpleArrayHasValue(hooks["preToolUse"], "bash", guardGitBranchCmdPSPOSIX, true) ||
-		simpleArrayHasValue(hooks["preToolUse"], "bash", legacyD11RevGitBranchCmdPSPOSIX, true) ||
-		simpleArrayHasValue(hooks["preToolUse"], "bash", legacyWABashGitBranchCmdPSPOSIX, true) ||
-		simpleArrayHasValue(hooks["preToolUse"], "bash", legacyD2GitBranchCmdPSPOSIX, true) ||
-		simpleArrayHasValue(hooks["preToolUse"], "bash", legacyD11GitBranchCmdPSPOSIX, true)
 }
 
 // Exact equality prevents rewriting a user's command containing a similar path.

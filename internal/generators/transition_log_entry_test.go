@@ -39,13 +39,18 @@ func TestTransitionLog_ParallelBranchesMergeWithoutConflict(t *testing.T) {
 	repoDir := t.TempDir()
 
 	// Helper: run a git command in repoDir.
+	// gc.auto=0 and maintenance.auto=false prevent git maintenance run --auto
+	// --detach from spawning a background process that writes to .git/objects
+	// while t.TempDir's RemoveAll is running, which would cause "directory not
+	// empty" cleanup failures under parallel load (measured via GIT_TRACE2_EVENT:
+	// "argv":["git","maintenance","run","--auto","--no-quiet","--detach"]).
 	git := func(args ...string) *exec.Cmd {
 		cmd := exec.Command("git", args...)
 		cmd.Dir = repoDir
 		cmd.Env = append(os.Environ(),
 			"GIT_CONFIG_GLOBAL=/dev/null",
 			"GIT_CONFIG_NOSYSTEM=1",
-			"GIT_CONFIG_COUNT=4",
+			"GIT_CONFIG_COUNT=6",
 			"GIT_CONFIG_KEY_0=core.autocrlf",
 			"GIT_CONFIG_VALUE_0=false",
 			"GIT_CONFIG_KEY_1=commit.gpgsign",
@@ -54,6 +59,10 @@ func TestTransitionLog_ParallelBranchesMergeWithoutConflict(t *testing.T) {
 			"GIT_CONFIG_VALUE_2=/dev/null",
 			"GIT_CONFIG_KEY_3=user.email",
 			"GIT_CONFIG_VALUE_3=test@example.com",
+			"GIT_CONFIG_KEY_4=gc.auto",
+			"GIT_CONFIG_VALUE_4=0",
+			"GIT_CONFIG_KEY_5=maintenance.auto",
+			"GIT_CONFIG_VALUE_5=false",
 		)
 		return cmd
 	}
@@ -165,19 +174,25 @@ func TestTransitionLog_LegacyAppendConflicts(t *testing.T) {
 
 	repoDir := t.TempDir()
 
+	// gc.auto=0 and maintenance.auto=false: same reason as in the first test —
+	// suppress background git maintenance --detach that races with RemoveAll.
 	git := func(args ...string) *exec.Cmd {
 		cmd := exec.Command("git", args...)
 		cmd.Dir = repoDir
 		cmd.Env = append(os.Environ(),
 			"GIT_CONFIG_GLOBAL=/dev/null",
 			"GIT_CONFIG_NOSYSTEM=1",
-			"GIT_CONFIG_COUNT=3",
+			"GIT_CONFIG_COUNT=5",
 			"GIT_CONFIG_KEY_0=commit.gpgsign",
 			"GIT_CONFIG_VALUE_0=false",
 			"GIT_CONFIG_KEY_1=core.attributesFile",
 			"GIT_CONFIG_VALUE_1=/dev/null",
 			"GIT_CONFIG_KEY_2=user.email",
 			"GIT_CONFIG_VALUE_2=test@example.com",
+			"GIT_CONFIG_KEY_3=gc.auto",
+			"GIT_CONFIG_VALUE_3=0",
+			"GIT_CONFIG_KEY_4=maintenance.auto",
+			"GIT_CONFIG_VALUE_4=false",
 		)
 		return cmd
 	}

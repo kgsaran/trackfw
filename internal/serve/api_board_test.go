@@ -602,3 +602,50 @@ func TestBoardHandler_EmptyBoard(t *testing.T) {
 		}
 	}
 }
+
+// sameStateSet returns true when a and b contain exactly the same strings
+// (ignoring order, rejecting duplicates). Both directions are checked:
+// every element of a is in b (a⊆b) AND every element of b is in a (b⊆a).
+// A duplicate entry in a would inflate len(a) relative to the unique set,
+// but even without a length difference it is detected when the missing
+// element from the other side is reported.
+func sameStateSet(a, b []string) (bool, string) {
+	if len(a) != len(b) {
+		return false, "length mismatch"
+	}
+	aset := make(map[string]bool, len(a))
+	for _, s := range a {
+		aset[s] = true
+	}
+	bset := make(map[string]bool, len(b))
+	for _, s := range b {
+		bset[s] = true
+	}
+	for _, s := range b {
+		if !aset[s] {
+			return false, s + " in b but not in a"
+		}
+	}
+	for _, s := range a {
+		if !bset[s] {
+			return false, s + " in a but not in b"
+		}
+	}
+	return true, ""
+}
+
+// TestBoardStates_SetEqualsCanonical verifies that boardStates contains exactly
+// the same elements as config.RoadmapStates(), regardless of order.
+//
+// Reconciliação: afirma que boardStates tem os mesmos 6 estados que a lista
+// canônica — checagem bidirecional (boardStates⊆canonical e canonical⊆boardStates)
+// para que duplicatas ou estados ausentes sejam detectados. O ordering de exibição
+// no board é semântico (backlog→analyzing→wip→...) mas o conjunto deve ser completo.
+func TestBoardStates_SetEqualsCanonical(t *testing.T) {
+	canonical := config.RoadmapStates()
+	ok, msg := sameStateSet(boardStates, canonical)
+	if !ok {
+		t.Errorf("boardStates and config.RoadmapStates() differ: %s\ngot=%v\nwant-set=%v",
+			msg, boardStates, canonical)
+	}
+}

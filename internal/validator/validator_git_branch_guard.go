@@ -83,11 +83,11 @@ type globalGuardConfigFile struct {
 
 // globalGuardConfigFiles is the closed list of GLOBAL hook/settings files `trackfw update harness`
 // can write a guard entry into — the global-scope counterpart of credentialGuardHookFiles
-// (validator_credential_guard.go). Paths and CLI labels taken from
-// globalCredentialGuardInstalled{Claude,Codex,Gemini,Cursor,Copilot,Kiro} in
-// internal/generators/agentfiles.go (validator cannot import that package — see the import-cycle
-// note on credentialGuardScriptReference — so this list is validator's own, independently
-// maintained copy of the same 6 paths).
+// (validator_credential_guard.go). This list has 6 entries (Claude, Codex, Gemini, Cursor, Copilot,
+// Kiro). Windsurf has a credential-guard harness target (harnessCredentialGuardTargetWindsurf in
+// internal/generators/update.go) but no git-branch-guard global target, so it is excluded here.
+// The globalCredentialGuardInstalled{…} functions were removed in D15, ADR-2026-10-04 adendo
+// 2026-10-24; this list is the validator's own, independently maintained copy of the 6 paths.
 var globalGuardConfigFiles = []globalGuardConfigFile{
 	// ML-2B: `family` campo normativo — ADR-2026-10-04 D2 revista.
 	{".claude/settings.json", "Claude Code", true, guardShellFamilyPSPosix},
@@ -138,14 +138,16 @@ func globalGuardConfigPath(gf globalGuardConfigFile, scriptMarker string) string
 //
 // Trigger condition (advisor-reviewed, see ML-1A commit): "a global CLI config file contains a
 // string referencing scriptMarker" — this single condition covers BOTH REQ disjuncts (b): "projeto
-// delega pro global" (which never shows up in the PROJECT file — dedup means the project file has
-// NO entry at all — so it can only ever be observed by finding the entry in the GLOBAL file
-// instead) and "global está registrado em algum arquivo de config do CLI" (the literal condition
-// this function checks). No project-side signal is needed or consulted here.
+// delega pro global" (under D14: dedup means the project file has NO entry at all, so it can only
+// ever be observed by finding the entry in the GLOBAL file instead) and "global está registrado em
+// algum arquivo de config do CLI" (the literal condition this function checks). Under D15, the
+// project file always has its own entry regardless of global; this function still validates
+// the global entry independently. No project-side signal is needed or consulted here.
 //
-// Global entries are written by internal/generators (harnessCredentialGuardTarget*, agentfiles.go)
-// as fully resolved absolute paths (via globalCredentialGuardScriptPath — filepath.Join(home,
-// ".trackfw","scripts", name)), never a placeholder like $CLAUDE_PROJECT_DIR — so, unlike the
+// Global entries are written by internal/generators (harnessCredentialGuardTarget* and
+// harnessGitBranchGuardTarget* in internal/generators/update.go, using
+// filepath.Join(home, ".trackfw", "scripts", name)) as fully resolved absolute paths,
+// never a placeholder like $CLAUDE_PROJECT_DIR — so, unlike the
 // project-scope resolveCredentialGuardHookPath, no prefix-stripping is needed here: any matched
 // command that is NOT already an absolute path is not a form trackfw itself ever emits and is
 // skipped (never treated as a violation — same "not our wiring, not our job" contract
@@ -647,8 +649,8 @@ func validateGitBranchGuardGlobalHookD11RevisedLegacyWarnings() ([]string, error
 // validateGuardGlobalScriptIntegrity is the GLOBAL-scope counterpart of
 // validateCredentialGuardScriptIntegrity/validateGitBranchGuardScriptIntegrity: verifies the
 // content of ~/.trackfw/scripts/<scriptFileName> (the fixed location GenerateGlobal*Script writes
-// to — see globalCredentialGuardScriptPath/globalGitBranchGuardScriptPath in
-// internal/generators/agentfiles.go, both `filepath.Join(home, ".trackfw", "scripts", name)")
+// to — harnessCredentialGuardScriptTarget and harnessGitBranchGuardScriptTarget in
+// internal/generators/update.go, both using filepath.Join(home, ".trackfw", "scripts", name))
 // against referenceContent byte-for-byte.
 //
 // ROADMAP-2026-08-17 (guard global cabeado com no-op / integridade independente de fiação), ML-3A:
