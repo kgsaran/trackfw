@@ -35,16 +35,16 @@ Decisão: D16 do ADR-2026-10-04.
 
 ## Acceptance Criteria
 
-- [ ] **AC1 — Só comando de hook.** Em todo CLI e em todo arquivo (projeto e global), o validador só considera um marcador
+- [x] **AC1 — Só comando de hook.** Em todo CLI e em todo arquivo (projeto e global), o validador só considera um marcador
   de guard quando ele está num campo de comando de hook do esquema daquele CLI. Fica medido, por CLI, qual é o campo.
-- [ ] **AC2 — Todos os sítios.** Os 12 chamadores e qualquer outro que a Wave 0 encontrar usam a coleta restrita. Um teste
+- [x] **AC2 — Todos os sítios.** Os 12 chamadores e qualquer outro que a Wave 0 encontrar usam a coleta restrita. Um teste
   de concordância falha se um chamador novo passar o arquivo inteiro.
-- [ ] **AC3 — Falso positivo, os dois braços.** O mesmo marcador fora de `hooks` (prosa, `permissions.allow`, `autoMode`,
+- [x] **AC3 — Falso positivo, os dois braços.** O mesmo marcador fora de `hooks` (prosa, `permissions.allow`, `autoMode`,
   `env`) não gera aviso nem violation, e dentro de `hooks` continua gerando. Isso vale para cada regra afetada.
   Contra-braço: o braço "fora de hooks" reprova em `origin/main`.
-- [ ] **AC4 — Sem fail-open.** Nenhuma regra de presença passa a contar como fiação uma string fora de comando de hook, e o
+- [x] **AC4 — Sem fail-open.** Nenhuma regra de presença passa a contar como fiação uma string fora de comando de hook, e o
   teste prova isso. Se a Wave 0 medir que alguma já contava, essa é a correção prioritária do ML.
-- [ ] **AC5 — O caso medido.** Um `~/.claude/settings.json` falso com o texto de `.autoMode.environment` e o hook atual
+- [x] **AC5 — O caso medido.** Um `~/.claude/settings.json` falso com o texto de `.autoMode.environment` e o hook atual
   não gera o aviso de forma legada.
 - [ ] **AC6 — Fechamento.** `make quality` rc=0, CI verde e o PR leva `Closes #618`.
 

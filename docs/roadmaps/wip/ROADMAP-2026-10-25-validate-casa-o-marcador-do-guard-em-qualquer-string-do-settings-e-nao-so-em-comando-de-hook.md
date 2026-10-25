@@ -157,6 +157,6 @@ test -s docs/seguranca/2026-10-25-wave0-marcador-fora-de-hook.md
 **Agente:** zeus-tf
 **Files affected:** nenhum arquivo de produto; só medição
 **Acceptance criteria:**
-- [ ] `make quality` rc=0 com a máquina ociosa e o HOME isolado
-- [ ] Neste repositório, `trackfw validate` (binário da branch) sem o aviso falso de `~/.claude/settings.json`
+- [x] `make quality` rc=0 com a máquina ociosa e o HOME isolado (falsificação 367 OK / 0 FAIL / guarda OK; as 14 linhas FAIL são braços de autoteste)
+- [x] Neste repositório, `trackfw validate` (binário da branch) sem o aviso falso de `~/.claude/settings.json` (branch: rc=0 e 0 avisos de script legado; 11.0.1 instalado: 1 aviso)
 - [ ] CI verde; PR com `Closes #618`
