@@ -7,6 +7,24 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [11.0.2] - 2026-10-25
+
+### Breaking Changes
+
+Nenhum.
+
+### Fixed
+
+- **O `trackfw validate` só reconhece o guard no campo de comando de hook** (#618). Antes, o marcador do guard era
+  procurado em qualquer string do JSON. Isso tinha dois efeitos:
+  - **fail-open:** uma linha de guard num campo como `note`, com um `command` que não roda o guard, passava como fiação
+    instalada no Windsurf e no Amazon Q;
+  - **falso positivo:** texto em `autoMode`, `permissions.allow` ou `env` gerava aviso ou violation com uma instrução
+    (`update harness`) que não resolvia.
+
+  Agora a coleta segue o esquema de cada CLI. O Copilot global usa a chave `bash`. O arquivo global do Windsurf
+  (`~/.codeium/windsurf/hooks.json`) passa a ser lido. (D16 do ADR-2026-10-04, #620)
+
 ## [11.0.1] - 2026-10-25
 
 ### Breaking Changes
