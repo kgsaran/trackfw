@@ -82,17 +82,39 @@ test -s docs/seguranca/2026-10-25-wave0-aviso-presenca-credential-guard.md
 > Dependencies: Wave 1 auditada.
 
 ### ML-2A — Revisão de qualidade
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** hefesto-tf
 **Files affected:** `docs/qualidade/2026-10-25-revisao-aviso-presenca-credential-guard.md`
+**Acceptance criteria:**
+- [x] Parecer APROVADO, sem bloqueantes:
+  - R1: falta um teste de consistência entre o `schema` da tabela de presença e o `guardWiringHookLayout`;
+  - R2: a travessia JSON está duplicada;
+  - R3: um nome de teste tem erro de grafia.
+  O R1 e o R3 vão para o ML-2C, e o R2 fica como resíduo de refatoração.
+
 
 ### ML-2B — Red-team
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** hades-tf
 **Files affected:** `docs/seguranca/2026-10-25-redteam-aviso-presenca-credential-guard.md`
 
+### ML-2C — Corretivo das revisões
+**Status:** ⬜ Pendente
+**Agente:** apolo-tf
+**Files affected:** `internal/validator/validator_guard_wiring_test.go`, `internal/validator/validator_guard_d16_wiring_external_test.go`, `docs/cli-parity.md`
+**Acceptance criteria:**
+- [ ] R1 do ML-2A: um teste afirma que o `schema` de cada entrada de aviso de `credentialGuardRequiredEntries` é igual ao do `guardWiringHookLayout` para o mesmo arquivo, e reprova numa divergência injetada
+- [ ] R3 do ML-2A: o nome `..._NaoTemViolacaoDePresencaDisco` corrigido, e o comentário atualizado
+- [ ] R5-anchor do ML-2B: o `cli-parity.md` descreve quando `rules: credential_guard_presence_warning: off` silencia e quando não silencia (projeto ancorado em `origin/main`), com a evidência do parecer
+
 ## Wave 3 — Fechamento
 > Dependencies: Wave 2 aprovada.
+**Acceptance criteria:**
+- [x] Parecer APROVA: 31 ataques, todos PASS. Resíduos:
+  - R5-anchor: num projeto ancorado (com `origin/main`), `rules: off` não silencia o aviso;
+  - R-echo, R-chmod/BOM, R-JSON-file-field e R2 do Cursor.
+  O R5-anchor contradiz o texto do `cli-parity.md` e vai para o ML-2C.
+
 
 ### ML-3A — make quality, CI e PR
 **Status:** ⬜ Pendente
