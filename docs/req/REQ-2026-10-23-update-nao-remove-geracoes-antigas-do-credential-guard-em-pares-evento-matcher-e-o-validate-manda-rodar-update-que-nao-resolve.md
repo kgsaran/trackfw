@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-10-23
 author: "zeus-tf (desenho) / KG (prioridade)"
 adr: "docs/adr/ADR-2026-10-04-o-guard-de-hook-e-um-subcomando-go-do-trackfw-e-a-linha-de-hook-e-a-mesma-string-em-todo-shell.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-10-23-update-nao-remove-geracoes-antigas-do-credential-guard-em-pares-evento-matcher-e-o-validate-manda-rodar-update-que-nao-resolve.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-10-23-update-nao-remove-geracoes-antigas-do-credential-guard-em-pares-evento-matcher-e-o-validate-manda-rodar-update-que-nao-resolve.md"
 ---
 
 # REQ: update não remove gerações antigas do credential guard em pares evento×matcher, e o validate manda rodar o update, que não resolve
 
-> Date: 2026-10-23 | Status: Open (reaberta em 2026-10-24 pela #613)
+> Date: 2026-10-23 | Status: Done (reaberta em 2026-10-24 pela #613; fechada no #615)
 | Linear Issue:
 | Jira Issue:
 | GitHub Issue: #599, #613
@@ -59,7 +59,7 @@ da legada de projeto com o guard global instalado).
   cujo `origin/main` tem a fiação de projeto, `trackfw init` e `trackfw update` seguidos de `trackfw validate` no mesmo
   diretório dão rc=0 e zero `guard_wiring_removed`, para cada CLI. Contra-braço: o mesmo teste reprova no código de
   `origin/main` (11.0.0).
-- [ ] **AC10 — Fechamento da reabertura.** `make quality` rc=0, CI verde, e o PR leva `Closes #613`.
+- [x] **AC10 — Fechamento da reabertura.** `make quality` rc=0, CI verde, e o PR leva `Closes #613`. (#615, 656ef287)
 - [x] **AC7 — Idempotência.** Rodar o `update` duas vezes produz o mesmo arquivo da primeira, byte a byte, e a segunda
   rodada não reporta mudança.
 - [x] **AC8 — Fechamento.** `make quality` rc=0, CI verde, e o PR leva `Closes #599`.
@@ -82,4 +82,4 @@ ADR: `docs/adr/ADR-2026-10-04-o-guard-de-hook-e-um-subcomando-go-do-trackfw-e-a-
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-10-23-update-nao-remove-geracoes-antigas-do-credential-guard-em-pares-evento-matcher-e-o-validate-manda-rodar-update-que-nao-resolve.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-10-23-update-nao-remove-geracoes-antigas-do-credential-guard-em-pares-evento-matcher-e-o-validate-manda-rodar-update-que-nao-resolve.md
