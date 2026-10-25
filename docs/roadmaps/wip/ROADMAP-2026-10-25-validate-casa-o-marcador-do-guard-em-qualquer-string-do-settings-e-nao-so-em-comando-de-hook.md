@@ -27,16 +27,30 @@ cobrir `scripts/` e os testes que afirmam o contrato atual, e não só o Go de p
 > Dependencies: nenhuma. Bloqueia toda implementação.
 
 ### ML-0A — Threat model, campo de comando por CLI e matriz de chamadores
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** hades-tf
 **Files affected:** `docs/seguranca/2026-10-25-wave0-marcador-fora-de-hook.md` (novo; o único arquivo que o ML escreve)
 **Acceptance criteria:**
-- [ ] **Campo de comando por CLI**, para projeto e global (Claude, Codex, Gemini, Cursor, Copilot, Kiro, Windsurf e Amazon Q): o caminho JSON exato em que o comando de hook vive, com a fonte (gerador do trackfw e documentação do CLI)
-- [ ] **Matriz de chamadores:** todo uso de `collectCommandsWithMarker` e de qualquer outra busca por substring em arquivo de hook, em `internal/` **e** `scripts/`, com arquivo:linha, a regra que alimenta (violation, aviso ou presença) e se recebe o arquivo inteiro ou o subárvore
-- [ ] **Fail-open:** para cada regra de presença, a medição de se uma string fora de hook conta como fiação, com fixture em `t.TempDir()` ou `mktemp -d` no binário 11.0.1
-- [ ] **Falso positivo:** a reprodução do caso do `.autoMode.environment` e de uma entrada `permissions.allow` no `.claude/settings.json` de projeto
-- [ ] Testes que afirmam o comportamento atual e vão mudar, e cenários de `scripts/check-gates-falsify.sh` que dependem dele
-- [ ] Recomendação de `Files affected` para a Wave 1
+- [x] **Campo de comando por CLI**, para projeto e global (Claude, Codex, Gemini, Cursor, Copilot, Kiro, Windsurf e Amazon Q): o caminho JSON exato em que o comando de hook vive, com a fonte (gerador do trackfw e documentação do CLI)
+- [x] **Matriz de chamadores:** todo uso de `collectCommandsWithMarker` e de qualquer outra busca por substring em arquivo de hook, em `internal/` **e** `scripts/`, com arquivo:linha, a regra que alimenta (violation, aviso ou presença) e se recebe o arquivo inteiro ou o subárvore
+- [x] **Fail-open:** para cada regra de presença, a medição de se uma string fora de hook conta como fiação, com fixture em `t.TempDir()` ou `mktemp -d` no binário 11.0.1
+- [x] **Falso positivo:** a reprodução do caso do `.autoMode.environment` e de uma entrada `permissions.allow` no `.claude/settings.json` de projeto
+- [x] Testes que afirmam o comportamento atual e vão mudar, e cenários de `scripts/check-gates-falsify.sh` que dependem dele
+- [x] Recomendação de `Files affected` para a Wave 1
+
+**Auditoria do arquiteto (2026-10-25):** aprovado.
+- **Fail-open reproduzido pelo arquiteto:** em `mktemp -d` com HOME falso, um `.windsurf/hooks.json` com
+  `"command":"echo x"` e a linha exata do guard em `"note"` dá `validate` rc=0, sem nenhuma mensagem do Windsurf. O
+  controle sem o `note` dá rc=1 ("has no credential guard entry"). Com texto não exato no `note`, o resultado é
+  violation de forma (rc=1), e por isso o fail-open exige a linha exata.
+- **Conclusões que mudam o desenho:**
+  - restringir ao subárvore `hooks` não basta, porque L758/L773 já passam só o evento e deixam passar;
+  - restringir à chave `command` cega o Copilot global (`bash`).
+  O coletor precisa conhecer o esquema de cada CLI.
+- **Lacuna vizinha:** o Windsurf global está ausente de `globalGuardConfigFiles`. É a mesma superfície (arquivo global de
+  hook não lido), e entra no ML-1A.
+- **Pendente, medido no ML-1A:** o fail-open no Amazon Q com a estrutura correta, no Copilot global e no Kiro aninhado.
+- **Nota do vault:** `vault/notes/validator-guard-marcador-em-campo-nao-comando-fail-open-2026-10-25.md`.
 
 **Gates da wave:**
 ```bash
@@ -49,7 +63,7 @@ test -s docs/seguranca/2026-10-25-wave0-marcador-fora-de-hook.md
 ### ML-1A — Coleta restrita a comando de hook em todos os sítios
 **Status:** ⬜ Pendente
 **Agente:** apolo-tf
-**Files affected:** a definir pela Wave 0 (no mínimo `internal/validator/validator_credential_guard.go`, `internal/validator/validator_git_branch_guard.go`, os testes novos e `docs/cli-parity.md`)
+**Files affected:** `internal/validator/validator_credential_guard.go`, `internal/validator/validator_git_branch_guard.go`, `internal/validator/validator_credential_guard_test.go`, `internal/validator/validator_guard_hook_concordance_external_test.go`, `internal/validator/validator_guard_command_schema_test.go` (novo), `docs/cli-parity.md`
 **Acceptance criteria:**
 - [ ] AC1–AC5 da REQ, com contra-braço em `origin/main`
 

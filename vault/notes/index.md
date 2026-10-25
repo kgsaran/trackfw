@@ -4,6 +4,7 @@
 
 ## Índice
 
+- [validator-guard-marcador-em-campo-nao-comando-fail-open-2026-10-25](validator-guard-marcador-em-campo-nao-comando-fail-open-2026-10-25.md) — 🔴 **`collectCommandsWithMarker` casa o marcador em QUALQUER string: `"note":"<linha do guard>"` + `"command":"echo x"` → validate rc=0 (fail-open, medido no Windsurf); prosa em `autoMode`/`permissions` → aviso/violation falsos. Subárvore `hooks` não basta (o note está no evento); chave `command` só cega o Copilot global (`bash`) — coletor por esquema de CLI**
 - [yaml-stringval-sequence-mapping-silent-drop-ci-trigger-2026-10-24](yaml-stringval-sequence-mapping-silent-drop-ci-trigger-2026-10-24.md) — 🔴 **`ci: [X]`/`ci: {a:b}` → normalizeNode retorna []interface{}/map → stringVal ok=false → campo silenciosamente ausente (AC4 violation); escalares (bool/int/null) retornam n.Value textual, capturado pelo enum; `config.Load()` sync.Once: testar via `parse()` direto; canal AC4 = validator/update, não parser** (config.go:596-623)
 
 - [filepath-join-go-nao-descarta-componentes-absolutos-2026-10-22](filepath-join-go-nao-descarta-componentes-absolutos-2026-10-22.md) — 🔴 **Go filepath.Join NÃO descarta elementos antes de um componente absoluto** (ao contrário do Python); `filepath.Join("/a", "/b", "c")` = `/a/b/c`; causa: 5 testes de translog falhavam silenciosamente após mudança de assinatura de WriteEntry; fix: `if filepath.IsAbs(dir) { dPath = filepath.Join(dir, ...) }`
