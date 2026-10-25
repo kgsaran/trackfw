@@ -83,11 +83,16 @@ type globalGuardConfigFile struct {
 
 // globalGuardConfigFiles is the closed list of GLOBAL hook/settings files `trackfw update harness`
 // can write a guard entry into — the global-scope counterpart of credentialGuardHookFiles
-// (validator_credential_guard.go). This list has 6 entries (Claude, Codex, Gemini, Cursor, Copilot,
-// Kiro). Windsurf has a credential-guard harness target (harnessCredentialGuardTargetWindsurf in
-// internal/generators/update.go) but no git-branch-guard global target, so it is excluded here.
+// (validator_credential_guard.go). This list has 7 entries (Claude, Codex, Gemini, Cursor, Copilot,
+// Kiro, Windsurf). Windsurf has a credential-guard harness target (harnessCredentialGuardTargetWindsurf
+// in internal/generators/update.go) at ~/.codeium/windsurf/hooks.json; it has no separate
+// git-branch-guard global target (declared gap, ML-1B REQ-2026-10-06). For the git-branch-guard
+// validator pass, the Windsurf global file will be read but will contain no git-branch marker →
+// silently skipped (no false violation). ML-1A2 (REQ-2026-10-25 D16): Windsurf global added here
+// so the schema-aware collection (hookCmdSchemaFlat) is applied, closing the fail-open for a
+// credential-guard marker placed in a non-command field of ~/.codeium/windsurf/hooks.json.
 // The globalCredentialGuardInstalled{…} functions were removed in D15, ADR-2026-10-04 adendo
-// 2026-10-24; this list is the validator's own, independently maintained copy of the 6 paths.
+// 2026-10-24; this list is the validator's own, independently maintained copy of the 7 paths.
 var globalGuardConfigFiles = []globalGuardConfigFile{
 	// ML-2B: `family` campo normativo — ADR-2026-10-04 D2 revista.
 	{".claude/settings.json", "Claude Code", true, guardShellFamilyPSPosix},
@@ -96,6 +101,38 @@ var globalGuardConfigFiles = []globalGuardConfigFile{
 	{".cursor/hooks.json", "Cursor", false, guardShellFamilyPSPosix},
 	{".copilot/settings.json", "GitHub Copilot CLI", true, guardShellFamilyPSPosix},
 	{".kiro/hooks/trackfw-credential-guard.json", "Kiro", true, guardShellFamilyCmdExe},
+	// ML-1A2 (REQ-2026-10-25): Windsurf global added. Schema: hookCmdSchemaFlat (hooks[event][i].command,
+	// same as project-scope .windsurf/hooks.json). requiresCommandType=false: Windsurf schema has no
+	// "type" discriminant. family=PS/POSIX: harnessCredentialGuardTargetWindsurf uses guardCredentialGlobalCmdPSPOSIX.
+	// No "type" field: requiresCommandType=false avoids false "structurally malformed" violations.
+	{".codeium/windsurf/hooks.json", "Windsurf", false, guardShellFamilyPSPosix},
+}
+
+// guardGlobalHookLayout maps each global hook-file path (relative to $HOME, as stored in
+// globalGuardConfigFile.path and the Kiro git-branch alternate path from globalGuardConfigPath)
+// to its command-extraction schema. Every path reachable from globalGuardConfigFiles — including
+// the Kiro git-branch alternate path (.kiro/hooks/trackfw-git-branch-guard.json) — must have an
+// entry here; TestGuardGlobalHookLayout_CobreTodasAsEntradas enforces this.
+//
+// D16 (ADR-2026-10-04): the schema determines WHICH JSON key holds the executable command.
+// A guard marker found outside that key does not count as wiring (fails-closed, not fail-open).
+//
+// Verified against generator source code (update.go):
+//   - Nested (hooks[eventKey][i].hooks[j].command): Claude, Codex, Gemini via mergeClaudeHookArray.
+//   - Flat-command (hooks[eventKey][i].command): Cursor, Windsurf via mergeCursorGuardMatcherEntry /
+//     mergeSimpleCommandArray.
+//   - Flat-bash (hooks[eventKey][i].bash): Copilot via mergeCredentialGuardCopilotHooks (ML-2E).
+//   - Kiro (hooks[i].action.command): both credential and git-branch files use the same shape.
+var guardGlobalHookLayout = map[string]hookCmdSchemaKind{
+	".claude/settings.json":                     hookCmdSchemaNested,
+	".codex/hooks.json":                         hookCmdSchemaNested,
+	".gemini/settings.json":                     hookCmdSchemaNested,
+	".cursor/hooks.json":                        hookCmdSchemaFlat,
+	".copilot/settings.json":                    hookCmdSchemaFlatBash,
+	".kiro/hooks/trackfw-credential-guard.json": hookCmdSchemaKiro,
+	".kiro/hooks/trackfw-git-branch-guard.json": hookCmdSchemaKiro,
+	// ML-1A2 (REQ-2026-10-25): Windsurf global uses the same flat schema as the project-scope file.
+	".codeium/windsurf/hooks.json": hookCmdSchemaFlat,
 }
 
 // globalGuardConfigPath resolves the actual on-disk path (relative to $HOME) that
@@ -127,7 +164,7 @@ func globalGuardConfigPath(gf globalGuardConfigFile, scriptMarker string) string
 }
 
 // validateGuardGlobalHookResolvable is the GLOBAL-scope counterpart of validateGuardHookResolvable
-// (validator_credential_guard.go): for each of the 6 globalGuardConfigFiles that exists AND
+// (validator_credential_guard.go): for each of the 7 globalGuardConfigFiles that exists AND
 // references scriptMarker, verifies the referenced script exists and is executable.
 //
 // This is the gap the REQ (docs/req/REQ-2026-08-15-trackfw-validate-deve-detectar-scripts-de-
@@ -232,7 +269,7 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker, subcmdMarker, sub
 			// ML-1A: same decision as the project-scope sibling (validateGuardHookResolvable,
 			// validator_credential_guard.go) — see that function's json.Unmarshal error branch for
 			// the full measurement. Applies identically here: globalGuardConfigFiles is the same
-			// kind of closed, enumerable list (6 entries), each owned/consumed by gf.cli itself, so
+			// kind of closed, enumerable list (7 entries), each owned/consumed by gf.cli itself, so
 			// invalid JSON is never a legitimate state for any of them.
 			//
 			// ML-1B: not-valid-UTF-8 gets its own message — see the identical branch in
@@ -256,7 +293,8 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker, subcmdMarker, sub
 		}
 
 		var commands []guardCommandMatch
-		collectCommandsWithMarker(parsed, scriptMarker, &commands)
+		// D16: schema-aware — only the executable-command field for this CLI counts.
+		collectCommandsWithMarkerBySchema(parsed, guardGlobalHookLayout[relPath], scriptMarker, &commands)
 
 		seen := make(map[string]bool, len(commands))
 		for _, m := range commands {
@@ -308,9 +346,10 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker, subcmdMarker, sub
 		}
 
 		// --- NOVA FORMA (subcomando Go) global --- ML-2B, ADR-2026-10-04 D6 ---
+		// D16: same schema-aware restriction applies to the subcmd marker.
 		if subcmdMarker != "" {
 			var subcmdCommands []guardCommandMatch
-			collectCommandsWithMarker(parsed, subcmdMarker, &subcmdCommands)
+			collectCommandsWithMarkerBySchema(parsed, guardGlobalHookLayout[relPath], subcmdMarker, &subcmdCommands)
 			expectedLine := guardExpectedLine(subcmdName, gf.family)
 
 			seenSubcmd := make(map[string]bool, len(subcmdCommands))
@@ -421,7 +460,8 @@ func validateGuardGlobalHookShLegacyWarnings(scriptMarker string) ([]string, err
 		}
 
 		var commands []guardCommandMatch
-		collectCommandsWithMarker(parsed, scriptMarker, &commands)
+		// D16: schema-aware — only the executable-command field for this CLI counts.
+		collectCommandsWithMarkerBySchema(parsed, guardGlobalHookLayout[relPath], scriptMarker, &commands)
 
 		for _, m := range commands {
 			_ = m
@@ -479,7 +519,7 @@ func validateGuardGlobalHookD2InlineWarnings(scriptMarker, subcmdMarker, subcmdN
 			continue // JSON inválido — já tratado pela regra resolvable
 		}
 		var subcmdCommands []guardCommandMatch
-		collectCommandsWithMarker(parsed, subcmdMarker, &subcmdCommands)
+		collectCommandsWithMarkerBySchema(parsed, guardGlobalHookLayout[relPath], subcmdMarker, &subcmdCommands)
 		legacyD2Line := guardD2LegacyLine(subcmdName, gf.family)
 		expectedLine := guardExpectedLine(subcmdName, gf.family)
 		for _, m := range subcmdCommands {
@@ -546,7 +586,7 @@ func validateGuardGlobalHookD11LegacyWarnings(scriptMarker, subcmdMarker, subcmd
 			continue
 		}
 		var subcmdCommands []guardCommandMatch
-		collectCommandsWithMarker(parsed, subcmdMarker, &subcmdCommands)
+		collectCommandsWithMarkerBySchema(parsed, guardGlobalHookLayout[relPath], subcmdMarker, &subcmdCommands)
 		legacyD11Line := guardD11LegacyLine(subcmdName, gf.family)
 		legacyD11RevLine := guardD11RevisedLegacyLine(subcmdName, gf.family)
 		expectedLine := guardExpectedLine(subcmdName, gf.family)
@@ -617,7 +657,7 @@ func validateGuardGlobalHookD11RevisedLegacyWarnings(scriptMarker, subcmdMarker,
 			continue
 		}
 		var subcmdCommands []guardCommandMatch
-		collectCommandsWithMarker(parsed, subcmdMarker, &subcmdCommands)
+		collectCommandsWithMarkerBySchema(parsed, guardGlobalHookLayout[relPath], subcmdMarker, &subcmdCommands)
 		legacyD11RevLine := guardD11RevisedLegacyLine(subcmdName, gf.family)
 		expectedLine := guardExpectedLine(subcmdName, gf.family)
 		for _, m := range subcmdCommands {

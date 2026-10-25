@@ -1253,6 +1253,200 @@ func writeWindsurfGlobalHooksWithCmd(t *testing.T, home, cmd string) {
 	}
 }
 
+// --------------------------------------------------------------------------
+// D16 schema-aware collection (ML-1A, REQ-2026-10-25)
+// --------------------------------------------------------------------------
+
+// windsurfHooksWithNoteOnlyMarker builds a .windsurf/hooks.json where `marker` appears
+// exclusively in a "note" field — NOT in "command" — for both required events.
+// Used to prove the schema-aware search (D16) does not count non-command fields as wiring.
+func windsurfHooksWithNoteOnlyMarker(marker string) string {
+	return `{
+  "hooks": {
+    "pre_run_command": [
+      {
+        "command": "echo placeholder",
+        "note": "` + marker + `",
+        "show_output": true
+      }
+    ],
+    "pre_write_code": [
+      {
+        "command": "echo placeholder",
+        "note": "` + marker + `",
+        "show_output": true
+      }
+    ]
+  }
+}`
+}
+
+// claudeGlobalSettingsWithMarkerInAutoModeOnly builds ~/.claude/settings.json where the
+// credential-guard script name appears only in autoMode.environment (not in hooks).
+// Used to prove D16 does not generate a spurious legacy-script warning for non-hook fields.
+func claudeGlobalSettingsWithMarkerInAutoModeOnly() string {
+	return `{
+  "autoMode": {
+    "enabled": true,
+    "environment": "This project uses ` + credentialGuardScriptMarker + ` to guard credentials."
+  }
+}`
+}
+
+// claudeGlobalSettingsWithMarkerInAutoModeAndCurrentHook builds ~/.claude/settings.json
+// with the credential-guard script name in autoMode.environment AND a correct current hook
+// (D11 subcommand form, no .sh reference in hooks). Used for AC5.
+func claudeGlobalSettingsWithMarkerInAutoModeAndCurrentHook() string {
+	return `{
+  "autoMode": {
+    "enabled": true,
+    "environment": "This project uses ` + credentialGuardScriptMarker + ` to guard credentials."
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "` + guardforms.CredentialGlobalCurrentPSPOSIX + `"
+          }
+        ]
+      }
+    ]
+  }
+}`
+}
+
+// TestCredentialGuardPresenceRequired_Windsurf_MarkerSoEmNote_Violation — AC4 (D16, fail-open)
+//
+// Reconciliação: D16 schema-aware search — the guard marker in a non-command field of a
+// Windsurf hook (e.g. "note") is not counted as wiring; the presence rule emits violations
+// for both required events (fail-open closed).
+//
+// Prova de mordida: the old collectCommandsWithMarker (removed by this ML) traversed all
+// JSON strings recursively; a marker in "note" satisfied the check → 0 presence violations
+// (fail-open). The binary contra-braço measured this in mktemp fixtures against origin/main.
+func TestCredentialGuardPresenceRequired_Windsurf_MarkerSoEmNote_Violation(t *testing.T) {
+	isolateHome(t)
+
+	dir := t.TempDir()
+	chdir(t, dir)
+	stubProbeOK(t)
+
+	writeFile(t, dir, ".windsurf/hooks.json",
+		windsurfHooksWithNoteOnlyMarker(credentialGuardScriptMarker))
+
+	msgs, err := validateCredentialGuardPresenceRequired()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !hasViolation(msgs, ".windsurf/hooks.json") {
+		t.Errorf("AC4: expected presence violation for .windsurf/hooks.json when marker is only in 'note' field; got: %v", msgs)
+	}
+}
+
+// TestGuardGlobalHookShLegacyWarnings_MarkerEmAutoModeEnvironment_SemAviso — AC3 (D16, false positive)
+//
+// Reconciliação: D16 schema-aware search — the guard script marker in autoMode.environment
+// (outside the hooks tree) does not trigger a legacy-script migration warning.
+//
+// Prova de mordida: the old collectCommandsWithMarker traversed all JSON strings recursively;
+// the marker in autoMode.environment triggered a spurious legacy warning. The binary
+// contra-braço measured this against origin/main (3 warnings vs 2 in the fixed binary).
+func TestGuardGlobalHookShLegacyWarnings_MarkerEmAutoModeEnvironment_SemAviso(t *testing.T) {
+	home := isolateHome(t)
+
+	dir := t.TempDir()
+	chdir(t, dir)
+
+	claudeDir := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(claudeDir, 0755); err != nil {
+		t.Fatalf("mkdir .claude: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(claudeDir, "settings.json"),
+		[]byte(claudeGlobalSettingsWithMarkerInAutoModeOnly()), 0644); err != nil {
+		t.Fatalf("write settings.json: %v", err)
+	}
+
+	warns, err := validateGuardGlobalHookShLegacyWarnings(credentialGuardScriptMarker)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(warns) != 0 {
+		t.Errorf("AC3: expected 0 legacy-script warnings when marker is only in autoMode.environment; got %d: %v", len(warns), warns)
+	}
+}
+
+// TestGuardGlobalHookShLegacyWarnings_MarkerNaHook_EmiteAviso — AC3 positive arm (D16)
+//
+// Reconciliação: D16 schema-aware search — the guard script marker in the hooks command
+// field still triggers the legacy-script warning (positive arm of AC3: inside hooks
+// continues to generate the warning).
+func TestGuardGlobalHookShLegacyWarnings_MarkerNaHook_EmiteAviso(t *testing.T) {
+	home := isolateHome(t)
+
+	dir := t.TempDir()
+	chdir(t, dir)
+
+	// Use a script path containing the marker as the hook command value.
+	scriptPath := filepath.Join(home, ".trackfw", "scripts", credentialGuardScriptMarker)
+	if err := os.MkdirAll(filepath.Dir(scriptPath), 0755); err != nil {
+		t.Fatalf("mkdir scripts: %v", err)
+	}
+	// Write the actual hook file with the .sh marker in the command field.
+	claudeDir := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(claudeDir, 0755); err != nil {
+		t.Fatalf("mkdir .claude: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(claudeDir, "settings.json"),
+		[]byte(globalClaudeSettingsWithCommand(scriptPath)), 0644); err != nil {
+		t.Fatalf("write settings.json: %v", err)
+	}
+
+	warns, err := validateGuardGlobalHookShLegacyWarnings(credentialGuardScriptMarker)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(warns) == 0 {
+		t.Errorf("AC3 positive arm: expected legacy-script warning when marker is in hooks command field; got none")
+	}
+	if !hasWarning(warns, "~/.claude/settings.json") {
+		t.Errorf("AC3 positive arm: warning should cite ~/.claude/settings.json; got: %v", warns)
+	}
+}
+
+// TestGuardGlobalHookShLegacyWarnings_AutoModeComHookCorreto_SemAviso — AC5 (D16)
+//
+// Reconciliação: D16 schema-aware search — a ~/.claude/settings.json with the guard script
+// name in autoMode.environment AND a correct current subcommand hook (no .sh in hooks)
+// does not generate a legacy-script warning.
+func TestGuardGlobalHookShLegacyWarnings_AutoModeComHookCorreto_SemAviso(t *testing.T) {
+	home := isolateHome(t)
+	// Clear CLAUDE_CONFIG_DIR so the validator uses HOME/.claude — same as the real case.
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+
+	dir := t.TempDir()
+	chdir(t, dir)
+
+	claudeDir := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(claudeDir, 0755); err != nil {
+		t.Fatalf("mkdir .claude: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(claudeDir, "settings.json"),
+		[]byte(claudeGlobalSettingsWithMarkerInAutoModeAndCurrentHook()), 0644); err != nil {
+		t.Fatalf("write settings.json: %v", err)
+	}
+
+	warns, err := validateGuardGlobalHookShLegacyWarnings(credentialGuardScriptMarker)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(warns) != 0 {
+		t.Errorf("AC5: expected 0 legacy-script warnings when marker is only in autoMode.environment and hook is current form; got %d: %v", len(warns), warns)
+	}
+}
+
 // D15: TestCredentialGuardGlobalInstalled_D2Legacy_NotAccepted,
 // TestCredentialGuardGlobalInstalled_D11Legacy_NotAccepted, and
 // TestCredentialGuardGlobalInstalled_D11Revised_Accepted have been removed.

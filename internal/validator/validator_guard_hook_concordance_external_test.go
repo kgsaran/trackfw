@@ -187,6 +187,62 @@ func TestGuardHookConcordance_GitHubCopilot_Credential(t *testing.T) {
 	assertZeroCredentialViolations(t)
 }
 
+// TestGuardGlobalHookResolvable_CopilotGlobal_MarkerEmCwdNaoContaComoFiacao — pin de não-regressão
+//
+// Reconciliação: este teste é um pin de não-regressão — passa em origin/main. Em origin/main,
+// collectCommandsWithMarker também encontrava "trackfw-credential-guard.sh" na chave "cwd", mas
+// a função de validação global já ignorava caminhos relativos ("not our wiring, not our job":
+// apenas caminhos absolutos emitidos pelo gerador são verificados). Assim, nenhuma violation era
+// emitida lá, e o teste não distingue D16 do comportamento pré-D16.
+//
+// O que o teste afirma: com a chave "cwd" contendo o script marker e a chave "bash" contendo o
+// subcomando canônico, ~/.copilot/settings.json não gera nenhuma mensagem de violation — o
+// marcador em "cwd" (campo não-executável no esquema hookCmdSchemaFlatBash) não conta como fiação.
+//
+// A prova de mordida de D16 para o Copilot global está nos testes de presença obrigatória e nos
+// testes AC3/AC4 (Windsurf e Amazon Q) — não neste teste.
+func TestGuardGlobalHookResolvable_CopilotGlobal_MarkerEmCwdNaoContaComoFiacao(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	setupConcordanceDir(t)
+
+	copilotDir := filepath.Join(home, ".copilot")
+	if err := os.MkdirAll(copilotDir, 0755); err != nil {
+		t.Fatalf("mkdir .copilot: %v", err)
+	}
+
+	// Correct subcommand form in "bash"; script marker placed in "cwd" (a non-command field).
+	// The schema for ~/.copilot/settings.json is hookCmdSchemaFlatBash: only "bash" is read.
+	// D16: "cwd" is not the executable path for this schema → not counted as wiring.
+	entry := map[string]interface{}{
+		"type":    "command",
+		"matcher": "bash",
+		"bash":    "trackfw guard credential --global",
+		"cwd":     "trackfw-credential-guard.sh", // marker in non-command field
+	}
+	content, _ := json.Marshal(map[string]interface{}{
+		"hooks": map[string]interface{}{
+			"preToolUse":  []interface{}{entry},
+			"postToolUse": []interface{}{entry},
+		},
+	})
+	if err := os.WriteFile(filepath.Join(copilotDir, "settings.json"), content, 0644); err != nil {
+		t.Fatalf("write .copilot/settings.json: %v", err)
+	}
+
+	msgs, err := validator.ValidateCredentialGuardGlobalHookResolvableForTest()
+	if err != nil {
+		t.Fatalf("ValidateCredentialGuardGlobalHookResolvable: unexpected error: %v", err)
+	}
+	for _, m := range msgs {
+		if strings.Contains(m, ".copilot/settings.json") {
+			t.Errorf("Ameaça C: unexpected violation for .copilot/settings.json — marker in non-bash field should not count as wiring: %s", m)
+		}
+	}
+}
+
 // --------------------------------------------------------------------------
 // Cursor
 // --------------------------------------------------------------------------

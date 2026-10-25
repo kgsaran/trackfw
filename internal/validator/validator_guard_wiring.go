@@ -69,6 +69,14 @@ const (
 	// CLIs: Kiro (.kiro/hooks/trackfw-attention.json).
 	// Generator function: InjectKiroHooks (agentfiles.go:954).
 	hookCmdSchemaKiro
+	// hookCmdSchemaFlatBash: the executable command lives at entry["bash"] directly.
+	// If "type" is present on the entry and != "command", the entry is not executed → skip (R-2).
+	// CLIs: GitHub Copilot CLI global (~/.copilot/settings.json).
+	// Generator function: mergeCredentialGuardCopilotHooks (update.go) — uses "bash" key instead
+	// of "command" as mandated by the Copilot user-level hooks format (ROADMAP-2026-08-06 ML-2E).
+	// D16 (ADR-2026-10-04): only "bash" entries count as wiring for Copilot global; a guard marker
+	// in any other field is NOT wiring and must not be recognized as such.
+	hookCmdSchemaFlatBash
 )
 
 // guardWiringHookLayout maps each hook file path to its command-extraction schema.
@@ -80,35 +88,36 @@ const (
 //   - Flat (hooks[i].command): Copilot (with type), Cursor/Windsurf (without type).
 //   - Kiro (hooks[i].action.command): array format, not object.
 var guardWiringHookLayout = map[string]hookCmdSchemaKind{
-	".claude/settings.json":                        hookCmdSchemaNested,
-	".codex/hooks.json":                            hookCmdSchemaNested,
-	".gemini/settings.json":                        hookCmdSchemaNested,
-	".amazonq/cli-agents/q_cli_default.json":       hookCmdSchemaNested,
-	".github/hooks/trackfw-attention.json":         hookCmdSchemaFlat,
-	".cursor/hooks.json":                           hookCmdSchemaFlat,
-	".windsurf/hooks.json":                         hookCmdSchemaFlat,
-	".kiro/hooks/trackfw-attention.json":           hookCmdSchemaKiro,
+	".claude/settings.json":                  hookCmdSchemaNested,
+	".codex/hooks.json":                      hookCmdSchemaNested,
+	".gemini/settings.json":                  hookCmdSchemaNested,
+	".amazonq/cli-agents/q_cli_default.json": hookCmdSchemaNested,
+	".github/hooks/trackfw-attention.json":   hookCmdSchemaFlat,
+	".cursor/hooks.json":                     hookCmdSchemaFlat,
+	".windsurf/hooks.json":                   hookCmdSchemaFlat,
+	".kiro/hooks/trackfw-attention.json":     hookCmdSchemaKiro,
 }
 
 // disableKeyKind classifies the hook disable mechanism for a given CLI.
 type disableKeyKind int
 
 const (
-	disableKeyKindNone           disableKeyKind = iota
-	disableKeyKindDisableAllHooks               // JSON: disableAllHooks: true
-	disableKeyKindHooksEnabled                  // JSON: hooksConfig.enabled: false
-	disableKeyKindEntryEnabled                  // JSON: "enabled": false on a guard entry
+	disableKeyKindNone            disableKeyKind = iota
+	disableKeyKindDisableAllHooks                // JSON: disableAllHooks: true
+	disableKeyKindHooksEnabled                   // JSON: hooksConfig.enabled: false
+	disableKeyKindEntryEnabled                   // JSON: "enabled": false on a guard entry
 )
 
 // guardWiringDisableKeys maps the hook file path to its D7 disable-key mechanism.
 // CLIs not in this map have no documented disable key (Cursor, Windsurf, Amazon Q).
 // Source: docs/seguranca/2026-10-10-wave0-fiacao-do-guard-ancorada.md §2a,
-//         vault/notes/hooks-tem-chave-de-desligamento-por-cli-e-a-fiacao-intacta-nao-prova-guard-ativo-2026-10-10.md
+//
+//	vault/notes/hooks-tem-chave-de-desligamento-por-cli-e-a-fiacao-intacta-nao-prova-guard-ativo-2026-10-10.md
 var guardWiringDisableKeys = map[string]disableKeyKind{
-	".claude/settings.json":                  disableKeyKindDisableAllHooks,
-	".github/hooks/trackfw-attention.json":   disableKeyKindDisableAllHooks,
-	".gemini/settings.json":                  disableKeyKindHooksEnabled,
-	".kiro/hooks/trackfw-attention.json":     disableKeyKindEntryEnabled,
+	".claude/settings.json":                disableKeyKindDisableAllHooks,
+	".github/hooks/trackfw-attention.json": disableKeyKindDisableAllHooks,
+	".gemini/settings.json":                disableKeyKindHooksEnabled,
+	".kiro/hooks/trackfw-attention.json":   disableKeyKindEntryEnabled,
 }
 
 // validateGuardWiringRemoved is the guard_wiring_removed rule (ADR-2026-10-10, ML-1A).
@@ -267,7 +276,7 @@ func guardWiringReadFromOrigin(ref, path string) ([]byte, bool, error) {
 	if len(strings.TrimSpace(string(lsOut))) == 0 {
 		return nil, true, nil // file not tracked in this ref → "never installed" → silent
 	}
-	showOut, showErr := gitCommand(".", "show", ref+":./" + path).Output()
+	showOut, showErr := gitCommand(".", "show", ref+":./"+path).Output()
 	if showErr != nil {
 		return nil, false, fmt.Errorf("git show %s:./%s: %w", ref, path, showErr)
 	}
@@ -372,8 +381,12 @@ func guardWiringExtractTuples(parsed map[string]any, schema hookCmdSchemaKind, f
 // Schema paths (source: generator functions in internal/generators/agentfiles.go):
 //   - hookCmdSchemaNested (Claude, Codex, Gemini, Amazon Q — mergeClaudeHookArray):
 //     entry["hooks"][i]["command"]; inner item skipped if type != "command".
-//   - hookCmdSchemaFlat (Copilot, Cursor, Windsurf):
+//   - hookCmdSchemaFlat (Copilot project, Cursor, Windsurf):
 //     entry["command"] directly; entry skipped if type != "command".
+//   - hookCmdSchemaFlatBash (GitHub Copilot CLI global — mergeCredentialGuardCopilotHooks):
+//     entry["bash"] directly; entry skipped if type != "command". Global-scope only:
+//     guardWiringHookLayout (project scope) does not include this schema; if it is ever
+//     added there, this case will correctly extract commands rather than silently returning nil.
 //   - hookCmdSchemaKiro (Kiro — InjectKiroHooks):
 //     entry["action"]["command"]; skipped if action["type"] != "command".
 func guardWiringExtractCommandsFromEntry(entry map[string]any, schema hookCmdSchemaKind) []string {
@@ -413,6 +426,24 @@ func guardWiringExtractCommandsFromEntry(entry map[string]any, schema hookCmdSch
 			}
 		}
 		if cmd, ok := entry["command"].(string); ok && cmd != "" {
+			return []string{cmd}
+		}
+		return nil
+
+	case hookCmdSchemaFlatBash:
+		// Executable path: entry["bash"] directly (GitHub Copilot CLI global schema).
+		// R-2: "type" present and != "command" → entry not executed by runtime.
+		// Note: this schema is global-scope only (guardGlobalHookLayout). It is not present in
+		// guardWiringHookLayout (project scope). The explicit case is here so that if it is ever
+		// added to the project scope, the extractor correctly reads "bash" instead of returning
+		// nil silently (which would be a fail-open for guard_wiring_removed).
+		if typeVal, hasType := entry["type"]; hasType {
+			typeStr, isStr := typeVal.(string)
+			if !isStr || typeStr != "command" {
+				return nil
+			}
+		}
+		if cmd, ok := entry["bash"].(string); ok && cmd != "" {
 			return []string{cmd}
 		}
 		return nil
@@ -743,7 +774,7 @@ func guardWiringHasAnyFetchedOriginRefs() bool {
 type tomlFeaturesHooksState int
 
 const (
-	tomlHooksAbsent           tomlFeaturesHooksState = iota
+	tomlHooksAbsent            tomlFeaturesHooksState = iota
 	tomlHooksTrue                                     // hooks = true (explicitly enabled)
 	tomlHooksDisabledOrUnknown                        // hooks disabled or form unclassifiable as true
 )

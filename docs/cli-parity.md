@@ -8911,6 +8911,29 @@ campo executável por `echo bypassed`).
 | Windsurf | `hookCmdSchemaFlat` | `entry["command"]` | `InjectWindsurfHooks` |
 | Kiro | `hookCmdSchemaKiro` | `entry["action"]["command"]` | `InjectKiroHooks` |
 
+#### Escopo global — `guardGlobalHookLayout` (D16, ML-1A REQ-2026-10-25)
+
+<!-- trackfw-contract: gate=internal/validator/validator_guard_command_schema_test.go partial=TestGuardGlobalHookLayout_CobreTodasAsEntradas (cobertura do mapa global), TestGuardGlobalHookShLegacyWarnings_MarkerEmAutoModeEnvironment_SemAviso (AC3), TestGuardGlobalHookShLegacyWarnings_AutoModeComHookCorreto_SemAviso (AC5), TestGuardGlobalHookResolvable_CopilotGlobal_MarkerEmCwdNaoContaComoFiacao (Ameaça C), TestGuardGlobalHookResolvable_Windsurf_CurrentForm_ZeroViolation (Windsurf global forma canônica), TestGuardGlobalHookResolvable_Windsurf_MissingScript_EmitsViolation (Windsurf global script ausente) -->
+
+As regras globais (`credential_guard_global_hook_resolvable`, `git_branch_guard_global_hook_resolvable`,
+`credential_guard_global_hook_sh_legacy`) lêem os arquivos em `globalGuardConfigFiles` e usam
+`guardGlobalHookLayout` para a mesma restrição D16: **só o campo executável do CLI conta**.
+
+| CLI (escopo global) | Esquema | Caminho do executável | Nota |
+|---|---|---|---|
+| Claude Code | `hookCmdSchemaNested` | `entry["hooks"][i]["command"]` | `~/.claude/settings.json` |
+| Codex CLI | `hookCmdSchemaNested` | `entry["hooks"][i]["command"]` | `~/.codex/hooks.json` |
+| Gemini CLI | `hookCmdSchemaNested` | `entry["hooks"][i]["command"]` | `~/.gemini/settings.json` |
+| Cursor | `hookCmdSchemaFlat` | `entry["command"]` | `~/.cursor/hooks.json` |
+| GitHub Copilot CLI | `hookCmdSchemaFlatBash` | `entry["bash"]` | `~/.copilot/settings.json` — chave `"bash"`, não `"command"` |
+| Windsurf | `hookCmdSchemaFlat` | `entry["command"]` | `~/.codeium/windsurf/hooks.json` |
+| Kiro (credential) | `hookCmdSchemaKiro` | `entry["action"]["command"]` | `~/.kiro/hooks/trackfw-credential-guard.json` |
+| Kiro (git-branch) | `hookCmdSchemaKiro` | `entry["action"]["command"]` | `~/.kiro/hooks/trackfw-git-branch-guard.json` |
+
+**Diferença Copilot projeto × global:** projeto usa `hookCmdSchemaFlat` (chave `"command"`);
+global usa `hookCmdSchemaFlatBash` (chave `"bash"`) porque o gerador global (`mergeCredentialGuardCopilotHooks`) sempre
+escreve a chave `"bash"` conforme a especificação de hooks inline de `~/.copilot/settings.json`.
+
 **R-2:** se o campo `"type"` estiver presente no objeto executável e seu valor for diferente de
 `"command"`, a entrada não é executada pelo runtime → **não conta como fiação viva**.
 

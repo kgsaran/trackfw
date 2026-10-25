@@ -419,3 +419,20 @@ atenção no modo `warn`) fica medida na Wave 0 da REQ.
   da máquina de quem o gerou. O CI continuaria sem guard.
 
 REQ: `docs/req/REQ-2026-10-23-update-nao-remove-geracoes-antigas-do-credential-guard-em-pares-evento-matcher-e-o-validate-manda-rodar-update-que-nao-resolve.md` (AC6 revisto, AC9).
+
+### D16 (2026-10-25, issue #618): o validador só reconhece o guard em campo de comando de hook
+
+**Defeito medido.** `collectCommandsWithMarker` casa o marcador do guard (`trackfw-credential-guard.sh`,
+`trackfw guard credential` e equivalentes) em **qualquer** string do JSON, e 12 chamadores passam o arquivo inteiro. O
+efeito medido no 11.0.1: um texto em prosa do usuário em `~/.claude/settings.json` (`.autoMode.environment[15]`) gera
+o aviso de forma legada, com a instrução `trackfw update harness`, que não o resolve.
+
+**Decisão.** O validador só considera um marcador de guard quando ele está num **campo de comando de hook** do esquema
+daquele CLI, em arquivo de projeto e global. Qualquer outra string (prosa, `permissions`, `env`, `autoMode` e chaves
+desconhecidas) não é fiação, nem para presença, nem para violation, nem para aviso. A coleta fica num ponto único,
+restrito por CLI, e os chamadores deixam de passar o arquivo inteiro.
+
+**Por que não "filtrar por `type: command`" apenas:** nem todo CLI usa esse campo, e uma string em `permissions.allow`
+pode estar dentro de um objeto qualquer. O critério é o caminho de esquema do comando, medido por CLI na Wave 0 da REQ.
+
+REQ: `docs/req/REQ-2026-10-25-validate-casa-o-marcador-do-guard-em-qualquer-string-do-settings-e-nao-so-em-comando-de-hook.md`.

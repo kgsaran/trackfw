@@ -1311,13 +1311,20 @@ func globalClaudeSettingsWithSubcmdD2Credential() string {
 
 // globalKiroGitBranchWithSubcmdD2 monta ~/.kiro/hooks/trackfw-git-branch-guard.json com a linha
 // D2-revised de git-branch para família cmd.exe: "trackfw guard git-branch" (sem sufixo).
+// Formato real do Kiro (confirmado contra harnessGitBranchGuardTargetKiro em update.go e
+// InjectKiroHooks em agentfiles.go): {"version":"v1","hooks":[{trigger,matcher,action:{type,command}}]}.
+// O fixture anterior usava "actions" como chave de topo (incorreto); a coleta schema-aware (D16)
+// só reconhece o marcador em action.command — um marker em outro campo não conta como fiação.
 func globalKiroGitBranchWithSubcmdD2() string {
 	const d2Line = "trackfw guard git-branch"
 	return `{
-  "actions": [
+  "version": "v1",
+  "hooks": [
     {
-      "type": "command",
-      "command": ` + jsonStringLiteral(d2Line) + `
+      "name": "trackfw-git-branch-guard",
+      "trigger": "PreToolUse",
+      "matcher": "shell",
+      "action": {"type": "command", "command": ` + jsonStringLiteral(d2Line) + `}
     }
   ]
 }`
