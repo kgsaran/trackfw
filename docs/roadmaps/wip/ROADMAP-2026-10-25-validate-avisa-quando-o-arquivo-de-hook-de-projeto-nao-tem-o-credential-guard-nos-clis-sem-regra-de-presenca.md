@@ -124,6 +124,20 @@ test -s docs/seguranca/2026-10-25-wave0-aviso-presenca-credential-guard.md
 ## Wave 3 — Fechamento
 > Dependencies: Wave 2 aprovada.
 
+### ML-3B — Corretivo do CI: teste dependia do trackfw no PATH
+**Status:** ✅ Concluído
+**Agente:** apolo-tf
+**Files affected:** `internal/validator/validator_test.go`, `.claude/agent-memory/zeus-tf/MEMORY.md`, `.claude/agent-memory/zeus-tf/project_path_local_mascara_sonda_de_binario.md`
+**Por que existe:** o CI do #623 reprovou em `go`, em `windows-full-suites` e no agregador `parity`, todos pelo
+`TestValidate_Clean` ("trackfw binary not found in PATH"). O ML-1A pôs a linha do guard no `writeWriteScopeSettings`, e isso
+aciona a sonda de binário. Localmente, o `trackfw` instalado no PATH deixava o teste verde.
+**Acceptance criteria:**
+- [x] `writeWriteScopeSettings` chama `stubProbeOK(t)`, a costura que já existia, e assim cobre os 4 testes que o usam
+- [x] Com o `trackfw` fora do PATH, `internal/validator` e `internal/generators` passam
+- [x] As 15 falhas de `internal/commands` sem o `trackfw` no PATH também aparecem em `origin/main`, medido pelo arquiteto
+  via `git archive` (15 `--- FAIL`). A causa é outra: os testes leem o `~/.claude/settings.json` real. O CI não é
+  afetado, e o caso ficou numa issue própria.
+
 ### ML-3A — make quality, CI e PR
 **Status:** ⬜ Pendente
 **Agente:** zeus-tf
