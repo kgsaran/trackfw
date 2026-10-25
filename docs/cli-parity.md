@@ -9355,9 +9355,18 @@ Windsurf e Amazon Q **permanecem com violation-grade** (`warnOnly=false` na mesm
 
 ### O que ela NÃO cobre
 
-<!-- trackfw-contract: none reason=autodeclaração de limites; não são alegações de comportamento verificável por gate — AC4 pina o guard em evento/campo errado; R5 (silenciamento via rules:off) é comportamento aceito e consistente com todos os avisos existentes -->
+<!-- trackfw-contract: none reason=autodeclaração de limites; não são alegações de comportamento verificável por gate — AC4 pina o guard em evento/campo errado; R5-anchor (silenciamento via rules:off) depende do estado do anchor e é descrito abaixo -->
 
 - Guard em evento errado (ex.: `PostToolUse`) → aviso dispara (AC4 pina).
 - Guard em campo errado do Kiro (`entry.command` sem `action.command`) → aviso dispara (AC4 pina).
-- Silenciável via `rules: credential_guard_presence_warning: off` no `trackfw.yaml` (residual R5 da Wave 0).
+- `rules: credential_guard_presence_warning: off` no `trackfw.yaml` — comportamento depende do anchor:
+  - **Projeto sem anchor** (sem git, sem `origin`, ou sem `trackfw init` executado — `originAnchorNoGit` /
+    `originAnchorNoRemote` / `originAnchorFileAbsent`): `ruleSeverity` cai para `diskRuleSeverity`, que retorna
+    `"off"` → aviso silenciado. Medido em A4a do red-team (fixture sem git).
+  - **Projeto com anchor** (`originAnchorOK` — git + `origin` presente): `ruleSeverity` retorna
+    `stricter-of(origin_main_default, disk)`. Como `credential_guard_presence_warning` está ausente do
+    `rules:` do `origin/main`, `mainSev = credentialGuardDefaultSeverity("credential_guard_presence_warning") = "warning"`.
+    `stricter-of("warning", "off") = "warning"` → aviso **não é silenciado**. Mecanismo em
+    `internal/validator/validator.go:287-296` (case `originAnchorOK` de `ruleSeverity`). Este é o comportamento
+    da maioria dos projetos reais (que rodaram `trackfw init` e têm remote configurado).
 - Não transforma o aviso em violation em nenhum CLI novo — essa decisão está reservada para uma próxima versão major.

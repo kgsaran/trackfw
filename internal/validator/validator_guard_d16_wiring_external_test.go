@@ -774,16 +774,17 @@ func TestCredentialGuardPresenceRequired_AmazonQ_MarkerSoEmNote_Violation(t *tes
 	}
 }
 
-// TestCredentialGuardPresenceRequired_Kiro_NaoTemRegraDePresencaDisco afirma: Kiro não está em
-// credentialGuardRequiredEntries — sua única regra de presença é guard_wiring_removed (que compara
-// com origin/main). Nenhum teste de fail-open por disk-only rule é necessário; o fail-open de
-// guard_wiring_removed é exercido pelos testes item-1 acima.
+// TestCredentialGuardPresenceRequired_Kiro_NaoTemViolacaoDePresencaDisco afirma: Kiro não está em
+// credentialGuardRequiredEntries com warnOnly=false — sua regra de presença é warning-grade
+// (warnOnly=true). validateCredentialGuardPresenceRequired (violation-grade) não dispara para Kiro.
+// validateCredentialGuardPresenceWarnings (warning-grade) dispara quando o arquivo existe sem
+// guard; após InjectKiroHooks deve ser zero.
 //
 // Reconciliação (D17, REQ-2026-10-25 #619 ML-1A): Kiro está em credentialGuardRequiredEntries
 // com warnOnly=true — warning-grade, não violation-grade. validateCredentialGuardPresenceRequired
 // (violation-grade) não dispara para Kiro. validateCredentialGuardPresenceWarnings (warning-grade)
 // dispara quando o arquivo existe sem guard; após InjectKiroHooks deve ser zero.
-func TestCredentialGuardPresenceRequired_Kiro_NaoTemViolacaoDePrescaDisco(t *testing.T) {
+func TestCredentialGuardPresenceRequired_Kiro_NaoTemViolacaoDePresencaDisco(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)

@@ -99,13 +99,22 @@ test -s docs/seguranca/2026-10-25-wave0-aviso-presenca-credential-guard.md
 **Files affected:** `docs/seguranca/2026-10-25-redteam-aviso-presenca-credential-guard.md`
 
 ### ML-2C — Corretivo das revisões
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** apolo-tf
 **Files affected:** `internal/validator/validator_guard_wiring_test.go`, `internal/validator/validator_guard_d16_wiring_external_test.go`, `docs/cli-parity.md`
 **Acceptance criteria:**
-- [ ] R1 do ML-2A: um teste afirma que o `schema` de cada entrada de aviso de `credentialGuardRequiredEntries` é igual ao do `guardWiringHookLayout` para o mesmo arquivo, e reprova numa divergência injetada
-- [ ] R3 do ML-2A: o nome `..._NaoTemViolacaoDePresencaDisco` corrigido, e o comentário atualizado
-- [ ] R5-anchor do ML-2B: o `cli-parity.md` descreve quando `rules: credential_guard_presence_warning: off` silencia e quando não silencia (projeto ancorado em `origin/main`), com a evidência do parecer
+- [x] R1 do ML-2A: um teste afirma que o `schema` de cada entrada de aviso de `credentialGuardRequiredEntries` é igual ao do `guardWiringHookLayout` para o mesmo arquivo, e reprova numa divergência injetada
+- [x] R3 do ML-2A: o nome `..._NaoTemViolacaoDePresencaDisco` corrigido, e o comentário atualizado
+- [x] R5-anchor do ML-2B: o `cli-parity.md` descreve quando `rules: credential_guard_presence_warning: off` silencia e quando não silencia (projeto ancorado em `origin/main`), com a evidência do parecer
+**Auditoria do arquiteto (2026-10-25):** aprovado.
+- **R1:** `TestPresenceWarnOnlyEntries_SchemaMatchesWiringLayout` passa no HEAD. Numa cópia com o esquema trocado, ele
+  reprovou (FAIL relatado pelo executor).
+- **R3:** nome corrigido. Os dois testes rodam (`=== RUN` conferido).
+- **R5-anchor:** o texto do `cli-parity.md` confere com `validator.go:262-296`.
+  - **Sem âncora:** vale só o disco, e `off` silencia.
+  - **Âncora OK:** vale o mais estrito entre `origin/main` e o disco. O `off` só no disco não silencia; ele precisa estar
+    commitado na `main`.
+- **`parity-rest`:** rc=0 (`pr-619c.log`).
 
 ## Wave 3 — Fechamento
 > Dependencies: Wave 2 aprovada.
