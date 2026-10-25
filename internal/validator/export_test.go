@@ -200,6 +200,104 @@ func ValidateGuardWiringRemovedForTest() ([]string, error) {
 	return validateGuardWiringRemoved()
 }
 
+// ValidateCredentialGuardPresenceWarningsForTest exposes validateCredentialGuardPresenceWarnings
+// to the external test package (package validator_test) — standard "export_test.go" pattern.
+// D17, REQ-2026-10-25 #619 ML-1A: used by concordance tests to assert that after Inject*Hooks
+// the 6 warning-only CLIs produce zero "has no credential guard entry" warnings.
+func ValidateCredentialGuardPresenceWarningsForTest() ([]string, error) {
+	return validateCredentialGuardPresenceWarnings()
+}
+
+// CredentialGuardPresenceWarnOnlyCountForTest returns the number of warnOnly=true entries in
+// credentialGuardRequiredEntries. AC5 (#619): concordance test asserts this equals 6 so that
+// a developer who adds a new CLI without an entry causes the test to fail.
+func CredentialGuardPresenceWarnOnlyCountForTest() int {
+	n := 0
+	for _, e := range credentialGuardRequiredEntries {
+		if e.warnOnly {
+			n++
+		}
+	}
+	return n
+}
+
+// CredentialGuardPresenceViolationCountForTest returns the number of warnOnly=false entries in
+// credentialGuardRequiredEntries. AC5 (#619): concordance test asserts this equals 2 (Windsurf
+// and Amazon Q) so that a developer cannot accidentally demote a violation to warning.
+func CredentialGuardPresenceViolationCountForTest() int {
+	n := 0
+	for _, e := range credentialGuardRequiredEntries {
+		if !e.warnOnly {
+			n++
+		}
+	}
+	return n
+}
+
+// PresenceWarnOnlyEventForTest is one (hookEvent, matcher, requiresCommandType) triple
+// exported from a warnOnly=true credentialGuardRequiredEntry. Schema is represented as a
+// string to avoid exporting the unexported hookCmdSchemaKind type.
+// AC5 (#619 ML-1A2): used by the bidirectional generator-concordance test.
+type PresenceWarnOnlyEventForTest struct {
+	HookEvent           string
+	Matcher             string // empty = no matcher filter (e.g. Cursor beforeShellExecution)
+	Schema              string // "nested", "flat", or "kiro"
+	RequiresCommandType bool
+}
+
+// PresenceWarnOnlyEntryForTest is one (path, events) pair from a warnOnly=true
+// credentialGuardRequiredEntry. Used by AC5 (#619 ML-1A2) bidirectional test.
+type PresenceWarnOnlyEntryForTest struct {
+	Path   string
+	Events []PresenceWarnOnlyEventForTest
+}
+
+// CredentialGuardPresenceWarnOnlyEntriesForTest returns the full structured entries (path +
+// events) for all warnOnly=true entries in credentialGuardRequiredEntries.
+// AC5 (#619 ML-1A2): bidirectional generator-concordance test uses this to assert that
+// every pair in the generated file is in the table, and vice-versa.
+func CredentialGuardPresenceWarnOnlyEntriesForTest() []PresenceWarnOnlyEntryForTest {
+	var out []PresenceWarnOnlyEntryForTest
+	for _, entry := range credentialGuardRequiredEntries {
+		if !entry.warnOnly {
+			continue
+		}
+		var evs []PresenceWarnOnlyEventForTest
+		for _, ev := range entry.events {
+			var schema string
+			switch entry.schema {
+			case hookCmdSchemaNested:
+				schema = "nested"
+			case hookCmdSchemaFlat:
+				schema = "flat"
+			case hookCmdSchemaKiro:
+				schema = "kiro"
+			default:
+				schema = "unknown"
+			}
+			evs = append(evs, PresenceWarnOnlyEventForTest{
+				HookEvent:           ev.hookEvent,
+				Matcher:             ev.matcher,
+				Schema:              schema,
+				RequiresCommandType: entry.hookFile.requiresCommandType,
+			})
+		}
+		out = append(out, PresenceWarnOnlyEntryForTest{
+			Path:   entry.hookFile.path,
+			Events: evs,
+		})
+	}
+	return out
+}
+
+// ValidateForTest exposes the full Validate() pipeline (baseline + lenient mode applied)
+// to the external test package. Used by AC2 outside-lenient braço (#619 ML-1A2) to confirm
+// that credential_guard_presence_warning messages route to warnings, not violations, in
+// strict mode.
+func ValidateForTest() (violations []string, warnings []string, err error) {
+	return Validate()
+}
+
 // ChdirForTest changes the working directory to dir and resets the config singleton (required
 // because Validate* functions call os.Getwd() which is cached by config.Load). Restores both
 // on t.Cleanup. Safe to use from external test package (package validator_test).

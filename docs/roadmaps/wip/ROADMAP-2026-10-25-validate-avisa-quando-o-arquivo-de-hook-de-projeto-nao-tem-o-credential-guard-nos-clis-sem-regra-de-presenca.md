@@ -57,11 +57,26 @@ test -s docs/seguranca/2026-10-25-wave0-aviso-presenca-credential-guard.md
 > Dependencies: Wave 0 auditada.
 
 ### ML-1A — Aviso de presença nos 6 CLIs, com lista única de eventos
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** apolo-tf
-**Files affected:** `internal/validator/validator_credential_guard.go`, `internal/validator/validator_credential_guard_test.go`, `internal/validator/validator_guard_d16_wiring_external_test.go`, `internal/validator/validator_guard_hook_concordance_external_test.go`, `internal/validator/validator_credential_guard_presence_warning_test.go` (novo), `docs/cli-parity.md`, `scripts/check-gates-falsify.sh`
+**Files affected:** `internal/validator/validator_credential_guard.go`, `internal/validator/validator_credential_guard_test.go`, `internal/validator/validator_guard_d16_wiring_external_test.go`, `internal/validator/validator_guard_hook_concordance_external_test.go`, `internal/validator/validator_credential_guard_presence_warning_test.go` (novo), `docs/cli-parity.md`, `scripts/check-gates-falsify.sh`, `internal/validator/validator.go`, `internal/validator/validator_test.go`, `internal/validator/export_test.go` (acrescentados na auditoria: registro da regra, fixture de settings completo, exports de teste)
 **Acceptance criteria:**
-- [ ] AC1–AC5 da REQ, com contra-braço em `origin/main`
+- [x] AC1–AC5 da REQ, com contra-braço em `origin/main`
+**Auditoria do arquiteto (2026-10-25):** aprovado depois do corretivo ML-1A2.
+- **Regra:** `credential_guard_presence_warning`, via `applyRuleWarnOnly`. A tabela única `credentialGuardRequiredEntries`
+  tem 6 entradas de aviso e 2 de violation.
+- **Contra-braço medido pelo arquiteto com binários:** guard só em `PostToolUse` no `.claude/settings.json`. O binário
+  de `origin/main` dá rc=0 e 0 avisos de presença. O da branch dá rc=0 e 3 avisos, um por par. O rc inalterado
+  confirma o AC2. O "contra-braço" do executor (o símbolo não existe em `origin/main`) foi rejeitado, porque falha de
+  compilação é vacuosa.
+- **AC5, as duas direções:** o teste `GeneratorTableBidirectional` cobre gerado ⊆ tabela. A direção tabela ⊆ gerado vem
+  dos testes de concordância de ruído (`Inject*`, depois zero avisos), que reprovariam se a tabela exigisse um par não
+  gerado.
+- **AC3 com o guard global:** os testes cobrem Claude e Kiro. Nos outros 4, a cobertura vem da medição do arquiteto na
+  Wave 0 (contagem idêntica com e sem global nos 6 CLIs).
+- **Evidência ausente:** o executor relatou `make parity-falsify` com "365 OK", mas nenhum log de falsificação foi
+  gravado no caminho combinado nem em outro lugar. A falsificação fica medida no `make quality` do ML-3A. O
+  `parity-rest` tem log (`pr-619.log`).
 
 ## Wave 2 — Revisões independentes
 > Dependencies: Wave 1 auditada.

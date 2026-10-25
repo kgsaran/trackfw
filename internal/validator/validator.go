@@ -243,6 +243,11 @@ var ruleDefaults = map[string]string{
 	// Default "warning": the project may have deliberately chosen manual dispatch.
 	// ci_trigger_invalid is absent (defaults to "error" via the fallthrough).
 	"ci_trigger_manual": "warning",
+	// D17 (ADR-2026-10-04 adendo 2026-10-25, REQ-2026-10-25 #619): warning-only presence check
+	// for the 6 CLIs that have no violation-grade rule (Claude, Codex, Gemini, Cursor, Copilot,
+	// Kiro). Never "error": the decision to keep it a warning was explicit (opção b). Windsurf
+	// and Amazon Q are handled by credential_guard_hook_resolvable with violation severity.
+	"credential_guard_presence_warning": "warning",
 }
 
 // ruleSeverity retorna a severidade configurada para a regra.
@@ -1266,6 +1271,12 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	// 🔴 Mirror site in validateUnfilteredTagged below — forgetting it silences this rule from --json.
 	applyRule("config_value_type", validateConfigValueType(), &violations, &warnings)
 
+	// D17 (ADR-2026-10-04 adendo 2026-10-25, REQ-2026-10-25 #619 ML-1A): presence warning for
+	// the 6 CLIs without a violation-grade rule. Always-warning, never blockable.
+	// 🔴 Mirror site in validateUnfilteredTagged below — forgetting it silences the rule from --json.
+	presenceWarnMsgs, _ := validateCredentialGuardPresenceWarnings()
+	applyRuleWarnOnly("credential_guard_presence_warning", presenceWarnMsgs, &warnings)
+
 	return violations, warnings, nil
 }
 
@@ -1779,6 +1790,11 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 	// ML-1C (REQ-2026-10-24): mirror of ValidateUnfiltered config_value_type block.
 	// 🔴 Missing this site silences config_value_type from --json output.
 	applyRuleTagged("config_value_type", validateConfigValueType(), &violations, &warnings)
+
+	// D17 (ADR-2026-10-04 adendo 2026-10-25, REQ-2026-10-25 #619 ML-1A): mirror of ValidateUnfiltered.
+	// 🔴 Missing this site silences credential_guard_presence_warning from --json output.
+	presenceWarnMsgsT, _ := validateCredentialGuardPresenceWarnings()
+	applyRuleWarnOnlyTagged("credential_guard_presence_warning", presenceWarnMsgsT, &warnings)
 
 	return violations, warnings, nil
 }

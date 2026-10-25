@@ -1381,10 +1381,13 @@ FIXEOF
 }
 
 s47_write_claude_guard_hook() {
+  # D17 (REQ-2026-10-25 #619 ML-1A): write the 3 modern pairs that the credential-guard
+  # presence rule expects for Claude Code (Bash|PowerShell, Read, Write|Edit).
+  # Using $CLAUDE_PROJECT_DIR prefix — recognized by credentialGuardScriptMarker check.
   local dest=$1
   mkdir -p "$(dirname "$dest")"
   cat > "$dest" <<'EOF'
-{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh"}]}]}}
+{"hooks":{"PreToolUse":[{"matcher":"Bash|PowerShell","hooks":[{"type":"command","command":"$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh"}]},{"matcher":"Read","hooks":[{"type":"command","command":"$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh"}]},{"matcher":"Write|Edit","hooks":[{"type":"command","command":"$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh"}]}]}}
 EOF
 }
 
