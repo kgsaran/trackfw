@@ -7,6 +7,30 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [11.0.1] - 2026-10-25
+
+### Breaking Changes
+
+Nenhum.
+
+### Fixed
+
+- **O `trackfw update` e o `trackfw init` não tiram mais do projeto o guard que o guard global cobre** (#613). Na 11.0.0,
+  com o guard global instalado, o `update` removia do projeto as entradas de `credential` e `git-branch` nos pares de
+  shell, e o `init` nem chegava a emiti-las. Os settings de projeto são versionados, então o CI e os clones sem global
+  ficavam sem guard, e o `validate` da mesma versão reprovava com `guard_wiring_removed`. Agora a fiação de projeto é
+  sempre emitida e migrada, com ou sem global (D15 do ADR-2026-10-04, que substitui a D14). Numa máquina com o global, o
+  guard roda duas vezes por evento, a ~11–12 ms por chamada. O validador do Windsurf também deixa de aceitar a ausência
+  da fiação de projeto por causa do global, e o veredito local passa a ser igual ao do CI. (#615)
+  **Se você rodou o `update` da 11.0.0 com o global instalado:** rode o `trackfw update` da 11.0.1 para devolver a
+  fiação, e commite o resultado.
+- **`trackfw barrier`: o `ml_scope` aceita o roadmap em qualquer estado do `roadmap_dir`.** Um roadmap reaberto
+  (`done/` → `wip/`) ou movido de estado na branch fazia o barrier sair `blocked`, por causa da remoção do caminho
+  antigo. (#615)
+- **O `trackfw discover` e o `trackfw context` passam a enxergar `analyzing/`.** As duas listas de estados estavam
+  copiadas à mão sem `analyzing`, e a contagem e a detecção do modo `by_agent` ignoravam essa pasta. Agora há uma lista
+  canônica única, `config.RoadmapStates()`. (#615)
+
 ## [11.0.0] - 2026-10-24
 
 ### Breaking Changes
