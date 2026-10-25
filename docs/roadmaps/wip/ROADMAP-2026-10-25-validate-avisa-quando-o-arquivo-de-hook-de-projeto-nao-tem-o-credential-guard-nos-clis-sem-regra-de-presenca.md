@@ -26,16 +26,27 @@ afirmam o contrato atual, e não só o Go de produção.
 > Dependencies: nenhuma. Bloqueia toda implementação.
 
 ### ML-0A — Eventos bloqueantes por CLI, sítios e ruído
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** hades-tf
 **Files affected:** `docs/seguranca/2026-10-25-wave0-aviso-presenca-credential-guard.md` (novo; o único arquivo que o ML escreve)
 **Acceptance criteria:**
-- [ ] Por CLI (os 8): os pares (evento, matcher) de credential guard que o gerador emite no projeto, com arquivo:linha do gerador, e quais deles bloqueiam a execução
-- [ ] Como a regra de violation do Windsurf e do Amazon Q (`validateCredentialGuardPresenceRequired`) escolhe os eventos hoje, e se essa lista pode virar o ponto único dos 8
-- [ ] Ruído: medir com o binário 11.0.2, em `mktemp -d`, que `init`/`update` de cada CLI, com e sem global, geram todos os pares, e que o aviso não dispararia
-- [ ] Testes e cenários de `scripts/` que afirmam "ausência de guard nesses 6 CLIs não é problema" e vão mudar
-- [ ] Ameaças: aviso que some sem a fiação existir, ou aviso que o `update` não resolve
-- [ ] Recomendação de `Files affected` para a Wave 1
+- [x] Por CLI (os 8): os pares (evento, matcher) de credential guard que o gerador emite no projeto, com arquivo:linha do gerador, e quais deles bloqueiam a execução
+- [x] Como a regra de violation do Windsurf e do Amazon Q (`validateCredentialGuardPresenceRequired`) escolhe os eventos hoje, e se essa lista pode virar o ponto único dos 8
+- [x] Ruído: medir com o binário 11.0.2, em `mktemp -d`, que `init`/`update` de cada CLI, com e sem global, geram todos os pares, e que o aviso não dispararia
+- [x] Testes e cenários de `scripts/` que afirmam "ausência de guard nesses 6 CLIs não é problema" e vão mudar
+- [x] Ameaças: aviso que some sem a fiação existir, ou aviso que o `update` não resolve
+- [x] Recomendação de `Files affected` para a Wave 1
+
+**Auditoria do arquiteto (2026-10-25):** aprovado.
+- **Pares por CLI:** citados com a linha do gerador. Os eventos que bloqueiam são `PreToolUse`/`BeforeTool`/
+  `preToolUse`/`beforeShellExecution`.
+- **Ruído, medido pelo arquiteto com o 11.0.2:** em `mktemp -d`, para cada um dos 6 CLIs, comparei as ocorrências de
+  `trackfw guard credential` no projeto depois de `init` (sem global) e depois de `update harness` + `update` (com
+  global). Os resultados foram iguais: Claude 6/6, Codex 10/10, Gemini 12/12, Cursor 12/12, Copilot 12/12 e Kiro 12/12.
+  A D15 se mantém, e o aviso novo não deve disparar em projeto gerado.
+- **R3, fechado pelo arquiteto:** o `init --ai-tools cursor` emite `beforeShellExecution`, `preToolUse Read` e
+  `preToolUse Write`, além dos três pares pós.
+- **Para o ML-1A:** quebram 10 testes por contrato (§1.5 do parecer), e o Cenário 47 precisa de ajuste.
 
 **Gates da wave:**
 ```bash
@@ -48,7 +59,7 @@ test -s docs/seguranca/2026-10-25-wave0-aviso-presenca-credential-guard.md
 ### ML-1A — Aviso de presença nos 6 CLIs, com lista única de eventos
 **Status:** ⬜ Pendente
 **Agente:** apolo-tf
-**Files affected:** a definir pela Wave 0 (no mínimo `internal/validator/validator_credential_guard.go`, os testes novos e `docs/cli-parity.md`)
+**Files affected:** `internal/validator/validator_credential_guard.go`, `internal/validator/validator_credential_guard_test.go`, `internal/validator/validator_guard_d16_wiring_external_test.go`, `internal/validator/validator_guard_hook_concordance_external_test.go`, `internal/validator/validator_credential_guard_presence_warning_test.go` (novo), `docs/cli-parity.md`, `scripts/check-gates-falsify.sh`
 **Acceptance criteria:**
 - [ ] AC1–AC5 da REQ, com contra-braço em `origin/main`
 
