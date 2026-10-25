@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-10-23
 req: "docs/req/REQ-2026-10-23-update-nao-remove-geracoes-antigas-do-credential-guard-em-pares-evento-matcher-e-o-validate-manda-rodar-update-que-nao-resolve.md"
 squad: "hades-tf, apolo-tf, hefesto-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, hefesto-tf"
 
 # Roadmap: update não remove gerações antigas do credential guard em pares evento×matcher
 
-> Created: 2026-10-23 | Status: wip (reaberto em 2026-10-24 pela #613)
+> Created: 2026-10-23 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-10-23-update-nao-remove-geracoes-antigas-do-credential-guard-em-pares-evento-matcher-e-o-validate-manda-rodar-update-que-nao-resolve.md
@@ -21,7 +21,7 @@ divergem entre os CLIs.
 ## Acceptance Criteria
 - [x] AC1–AC7 da REQ, cada um com a evidência registrada no ML que o fecha (AC8 = fechamento, abaixo).
 - [x] `make quality` e o CI ficam verdes. (`make quality` rc=0; CI 20/20 no 39d0ac26; mergeado no #604, f2c7c7fd)
-- [ ] Reabertura (#613): AC6 revisto, AC9 e AC10 da REQ, nas Waves 4–7.
+- [x] Reabertura (#613): AC6 revisto, AC9 e AC10 da REQ, nas Waves 4–7. (#615, 656ef287)
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -565,10 +565,10 @@ mesma causa do ML-7C (Regra Dura). Em vez de 24 edições, a correção usa um p
 - **Gates:** 6 pacotes `ok` e `TestTransitionLog` com `-count=20` rc=0.
 
 ### ML-7A — make quality, CI e PR
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** zeus-tf
 **Files affected:** nenhum arquivo de produto; só medição
 **Acceptance criteria:**
 - [x] `make quality` rc=0 com a máquina ociosa e o HOME isolado (terceira rodada; falsificação 367 OK / 0 FAIL / guarda OK; as 14 linhas FAIL são braços de autoteste. A 1ª reprovou → ML-7B; a 2ª reprovou → ML-7C/7D)
 - [x] `trackfw update` neste repositório, numa máquina com global, seguido de `trackfw validate; echo rc=$?` sem pipe: rc=0 (binário `bin/trackfw` desta branch: o update não alterou nenhum arquivo, e o validate deu rc=0 com 0 `guard_wiring_removed`)
-- [ ] CI do PR verde; PR com `Closes #613`
+- [x] CI do PR verde; PR com `Closes #613` (#615, 20/20, mergeado como 656ef287; #613 fechada)
