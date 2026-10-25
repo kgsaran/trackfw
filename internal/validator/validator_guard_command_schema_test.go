@@ -59,6 +59,13 @@ func TestGuardGlobalHookLayout_CobreTodasAsEntradas(t *testing.T) {
 // Prova de mordida (contra-braço): origin/main define `collectCommandsWithMarker` em
 // validator_credential_guard.go:332; um grep nesse arquivo encontra a definição e o teste
 // teria falhado lá (medido na seção 6 do relatório ML-1A2).
+//
+// Nota (R1, ML-2C): este teste é um pin de nome — detecta apenas a reintrodução com o nome exato
+// "collectCommandsWithMarker". Uma reintrodução com outro nome não é detectada aqui. Os testes
+// comportamentais AC3/AC4 (TestCredentialGuardPresenceRequired_Windsurf_MarkerSoEmNote_Violation,
+// TestCredentialGuardPresenceRequired_AmazonQ_MarkerSoEmNote_Violation,
+// TestCredentialGuardHookResolvable_PermissionsAllowNaoGeraViolation) são a barreira real — um
+// coletor recursivo reintroduzido sob qualquer nome quebraria esses testes antes de chegar aqui.
 func TestGuardRecursivoAusente_CodigoFonte(t *testing.T) {
 	// Localiza o diretório do pacote validator relativo ao cwd do teste.
 	// Em `go test ./internal/validator/`, o cwd é a raiz do módulo ou a pasta do pacote;
@@ -270,8 +277,10 @@ func TestCredentialGuardHookResolvable_EnvMarkerNaoGeraViolation(t *testing.T) {
 // permissions.allow, the validator still detects the real hook issue; the decoy does not mask it.
 //
 // This uses a differential assertion:
-//   arm A — correct subcommand hook + permissions decoy → zero violations from the hook
-//   arm B — relative .sh hook (cwd-dependent) + permissions decoy → violation fires from hook
+//
+//	arm A — correct subcommand hook + permissions decoy → zero violations from the hook
+//	arm B — relative .sh hook (cwd-dependent) + permissions decoy → violation fires from hook
+//
 // In both arms, the decoy in permissions.allow is NOT the source of any violation.
 func TestCredentialGuardHookResolvable_PermissionsAllowDecoyRealHookAindaDetectado(t *testing.T) {
 	t.Run("correct subcommand hook + permissions decoy = zero hook violations", func(t *testing.T) {

@@ -14,6 +14,7 @@ package validator_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -232,6 +233,380 @@ func TestGuardWiringRemoved_MutacaoDoComandoParaEchoX(t *testing.T) {
 					"AC4 (wiring_removed): expected 'is absent from disk' for %s (%s) after "+
 						"command replaced with 'echo x' and original moved to note; msgs=%v",
 					tc.hookPath, tc.cli, msgs,
+				)
+			}
+		})
+	}
+}
+
+// d16NestedWiringCase extends d16WiringCase with the event key the CLI uses for blocking hooks
+// (PreToolUse for Claude/Codex, BeforeTool for Gemini). Used to assert the correct event in
+// guard_wiring_removed messages.
+type d16NestedWiringCase struct {
+	d16WiringCase
+	// preEventKey is the event key in origin/main that carries the blocking guard
+	// (e.g., "PreToolUse" for Claude Code / Codex CLI, "BeforeTool" for Gemini CLI).
+	preEventKey string
+}
+
+// d16NestedWiringCases is the subset of d16WiringCases for CLIs that use hookCmdSchemaNested
+// (guard is at entry["hooks"][i]["command"]). Mutations (a) and (b) below are meaningful only
+// for these CLIs: moving to PostToolUse or to group level are structural attacks on the nested
+// schema. Amazon Q also uses hookCmdSchemaNested but is excluded here because the instruction
+// specifies Claude, Codex, and Gemini by name.
+var d16NestedWiringCases = []d16NestedWiringCase{
+	{d16WiringCase{"Claude Code", generators.InjectClaudeHooks, ".claude/settings.json"}, "PreToolUse"},
+	{d16WiringCase{"Codex CLI", generators.InjectCodexHooks, ".codex/hooks.json"}, "PreToolUse"},
+	{d16WiringCase{"Gemini CLI", generators.InjectGeminiHooks, ".gemini/settings.json"}, "BeforeTool"},
+}
+
+// d16documentHasGuardCmd returns true if any string value anywhere in the JSON document
+// contains a guard marker. Used as a safety check after mutation to confirm the guard
+// is still present in the document.
+func d16documentHasGuardCmd(v interface{}) bool {
+	switch t := v.(type) {
+	case string:
+		return d16isGuardCmd(t)
+	case map[string]interface{}:
+		for _, val := range t {
+			if d16documentHasGuardCmd(val) {
+				return true
+			}
+		}
+	case []interface{}:
+		for _, val := range t {
+			if d16documentHasGuardCmd(val) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// d16MutateGuardEventToPost renames the event key in hooks{} that contains a guard command
+// from "PreToolUse" to "PostToolUse" (or "BeforeTool" → "AfterTool").
+// Returns (mutated JSON bytes, true) if a guard-bearing event was found and renamed;
+// (original, false) otherwise.
+//
+// The guard command strings are preserved unchanged — only the event key is renamed. This ensures
+// the guard is still present in the document, just in a non-blocking event.
+func d16MutateGuardEventToPost(t *testing.T, content []byte) ([]byte, bool) {
+	t.Helper()
+	var root interface{}
+	if err := json.Unmarshal(content, &root); err != nil {
+		t.Fatalf("d16MutateGuardEventToPost: unmarshal: %v", err)
+	}
+	rootMap, ok := root.(map[string]interface{})
+	if !ok {
+		return content, false
+	}
+	hooksRaw, ok := rootMap["hooks"]
+	if !ok {
+		return content, false
+	}
+	hooksMap, ok := hooksRaw.(map[string]interface{})
+	if !ok {
+		return content, false
+	}
+
+	// eventRenameMap maps blocking event → non-blocking counterpart.
+	eventRenameMap := map[string]string{
+		"PreToolUse": "PostToolUse",
+		"BeforeTool": "AfterTool",
+		"preToolUse": "postToolUse",
+		"beforeTool": "afterTool",
+	}
+
+	changed := false
+	for oldKey, newKey := range eventRenameMap {
+		entries, has := hooksMap[oldKey]
+		if !has {
+			continue
+		}
+		// Check if any entry in this event has a guard command (anywhere in the subtree).
+		if !d16documentHasGuardCmd(entries) {
+			continue
+		}
+		// Rename: remove old key, merge into newKey (append to preserve any existing entries).
+		delete(hooksMap, oldKey)
+		if existing, hasNew := hooksMap[newKey]; hasNew {
+			existingSlice, ok1 := existing.([]interface{})
+			newSlice, ok2 := entries.([]interface{})
+			if ok1 && ok2 {
+				hooksMap[newKey] = append(existingSlice, newSlice...)
+			} else {
+				hooksMap[newKey] = entries
+			}
+		} else {
+			hooksMap[newKey] = entries
+		}
+		changed = true
+	}
+	if !changed {
+		return content, false
+	}
+	rootMap["hooks"] = hooksMap
+	out, err := json.MarshalIndent(rootMap, "", "  ")
+	if err != nil {
+		t.Fatalf("d16MutateGuardEventToPost: marshal: %v", err)
+	}
+	return out, true
+}
+
+// d16MutateGuardToGroupLevel rewrites hookCmdSchemaNested entries so that the guard command
+// moves from entry["hooks"][i]["command"] to entry["command"] (group level), and the inner
+// hooks[] array is either emptied or has the guard item removed. This mirrors the B2 fixture
+// from the red-team (hades-tf ML-2B): Claude Code does not execute a "command" at group level —
+// only inner hooks[i]["command"] is executed — so the guard is silently absent.
+//
+// Returns (mutated JSON bytes, true) if at least one group was mutated; (original, false) otherwise.
+func d16MutateGuardToGroupLevel(t *testing.T, content []byte) ([]byte, bool) {
+	t.Helper()
+	var root interface{}
+	if err := json.Unmarshal(content, &root); err != nil {
+		t.Fatalf("d16MutateGuardToGroupLevel: unmarshal: %v", err)
+	}
+	changed := false
+	d16mutateNestedToGroupLevel(&root, &changed)
+	if !changed {
+		return content, false
+	}
+	out, err := json.MarshalIndent(root, "", "  ")
+	if err != nil {
+		t.Fatalf("d16MutateGuardToGroupLevel: marshal: %v", err)
+	}
+	return out, true
+}
+
+// d16mutateNestedToGroupLevel walks the JSON tree. For each group object that has a "hooks"
+// key pointing to an ARRAY (i.e., inner hook objects, not the event container), it promotes
+// the first guard command found in that array to entry["command"] and replaces it in the array
+// with "echo x". This is the hookCmdSchemaNested structural attack (B2, hades-tf ML-2B):
+// Claude Code executes entry["hooks"][i]["command"], not entry["command"].
+func d16mutateNestedToGroupLevel(v *interface{}, changed *bool) {
+	switch t := (*v).(type) {
+	case map[string]interface{}:
+		// Check if this map has a "hooks" key pointing to an []interface{} (group object).
+		if innerHooksRaw, hasInner := t["hooks"]; hasInner {
+			if innerHooks, ok := innerHooksRaw.([]interface{}); ok {
+				var remaining []interface{}
+				var promoted string
+				for _, ih := range innerHooks {
+					iobj, ok := ih.(map[string]interface{})
+					if !ok {
+						remaining = append(remaining, ih)
+						continue
+					}
+					if cmd, ok := iobj["command"].(string); ok && d16isGuardCmd(cmd) && promoted == "" {
+						// Promote this command to the group level.
+						promoted = cmd
+						// Keep the inner item with command replaced by echo x.
+						iobj["command"] = "echo x"
+						remaining = append(remaining, iobj)
+						*changed = true
+					} else {
+						remaining = append(remaining, ih)
+					}
+				}
+				if promoted != "" {
+					t["hooks"] = remaining
+					t["command"] = promoted
+					t["type"] = "command"
+				}
+			}
+		}
+		// Recurse into ALL children (including "hooks" since it may be the event container
+		// at higher levels, not the inner hooks array we just processed).
+		for k, val := range t {
+			d16mutateNestedToGroupLevel(&val, changed)
+			t[k] = val
+		}
+	case []interface{}:
+		for i := range t {
+			d16mutateNestedToGroupLevel(&t[i], changed)
+		}
+	}
+}
+
+// TestGuardWiringRemoved_MutacaoGuardParaPostToolUse afirma: quando o guard está na forma
+// canônica mas no evento PostToolUse (em vez de PreToolUse), a regra guard_wiring_removed
+// emite violation para o par original (event="PreToolUse") — o evento não-bloqueante não
+// satisfaz a cobertura da tupla de origin/main.
+//
+// Reconciliação: guardWiringTupleCovered exige event == origin.event; mover o guard para
+// PostToolUse cria uma tupla (PostToolUse, matcher, guardType) que não cobre a tupla de
+// origin/main (PreToolUse, matcher, guardType) — guard_wiring_removed dispara no par original.
+//
+// Nota: não medido em origin/main. O comportamento depende de guardWiringExtractTuples e
+// guardWiringTupleCovered, ambos presentes em origin/main sem alteração neste ML.
+//
+// Observation: Amazon Q também usa hookCmdSchemaNested mas está excluído desta tabela porque
+// o handoff nomeia explicitamente Claude, Codex e Gemini.
+func TestGuardWiringRemoved_MutacaoGuardParaPostToolUse(t *testing.T) {
+	for _, tc := range d16NestedWiringCases {
+		tc := tc
+		t.Run(tc.cli, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("HOME", t.TempDir())
+			d16InitGitRepo(t, dir)
+			validator.StubProbeOKForTest(t)
+
+			genDir := t.TempDir()
+			if err := tc.inject(genDir); err != nil {
+				t.Fatalf("inject(%s): %v", tc.cli, err)
+			}
+			hookContent, err := os.ReadFile(filepath.Join(genDir, tc.hookPath))
+			if err != nil {
+				t.Fatalf("generator did not write %s for %s: %v", tc.hookPath, tc.cli, err)
+			}
+
+			d16SetupOriginWithFiles(t, dir, map[string]string{
+				tc.hookPath: string(hookContent),
+			})
+
+			// Mutation (a): rename the guard-bearing event from PreToolUse/BeforeTool to
+			// PostToolUse/AfterTool. The guard command is preserved; only the event key changes.
+			mutated, hadGuard := d16MutateGuardEventToPost(t, hookContent)
+			if !hadGuard {
+				t.Fatalf(
+					"mutation (a): generator output for %s has no guard-bearing %s event; "+
+						"cannot exercise the mutation — investigate",
+					tc.cli, tc.preEventKey,
+				)
+			}
+			// Safety: confirm the guard string is still present in the mutated document
+			// (we are testing event placement, not guard removal).
+			var mutatedDoc interface{}
+			if err := json.Unmarshal(mutated, &mutatedDoc); err != nil {
+				t.Fatalf("mutation (a): unmarshal mutated doc: %v", err)
+			}
+			if !d16documentHasGuardCmd(mutatedDoc) {
+				t.Fatalf(
+					"mutation (a): guard command not found in mutated document for %s — "+
+						"mutation deleted the guard instead of moving it; fix d16MutateGuardEventToPost",
+					tc.cli,
+				)
+			}
+
+			diskPath := filepath.Join(dir, tc.hookPath)
+			if mkErr := os.MkdirAll(filepath.Dir(diskPath), 0755); mkErr != nil {
+				t.Fatalf("mkdir: %v", mkErr)
+			}
+			if writeErr := os.WriteFile(diskPath, mutated, 0644); writeErr != nil {
+				t.Fatalf("write mutated disk: %v", writeErr)
+			}
+
+			validator.ChdirForTest(t, dir)
+			msgs, err := validator.ValidateGuardWiringRemovedForTest()
+			if err != nil {
+				t.Fatalf("ValidateGuardWiringRemoved: %v", err)
+			}
+			// Expect guard_wiring_removed on the ORIGINAL pair (e.g., event="PreToolUse" or "BeforeTool").
+			wantEvent := fmt.Sprintf(`event=%q`, tc.preEventKey)
+			found := false
+			for _, m := range msgs {
+				if strings.Contains(m, tc.hookPath) &&
+					strings.Contains(m, "is absent from disk") &&
+					strings.Contains(m, wantEvent) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf(
+					"guard_wiring_removed expected for %s (event=%s) after guard moved to "+
+						"post-event; msgs=%v",
+					tc.hookPath, tc.preEventKey, msgs,
+				)
+			}
+		})
+	}
+}
+
+// TestGuardWiringRemoved_MutacaoGuardParaNivelDoGrupo afirma: quando o guard sobe de
+// entry["hooks"][i]["command"] para entry["command"] (nível do grupo), a regra
+// guard_wiring_removed emite violation para o par original — hookCmdSchemaNested não extrai
+// comandos do nível do grupo, apenas do array interno hooks[].
+//
+// Reconciliação: guardWiringExtractCommandsFromEntry com hookCmdSchemaNested lê apenas
+// entry["hooks"][i]["command"]; "command" no grupo não é o caminho executável para este esquema.
+// A tupla de origin/main fica sem cobertura no disco mutado → guard_wiring_removed dispara
+// no par original (event="PreToolUse").
+//
+// Nota: não medido em origin/main.
+func TestGuardWiringRemoved_MutacaoGuardParaNivelDoGrupo(t *testing.T) {
+	for _, tc := range d16NestedWiringCases {
+		tc := tc
+		t.Run(tc.cli, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("HOME", t.TempDir())
+			d16InitGitRepo(t, dir)
+			validator.StubProbeOKForTest(t)
+
+			genDir := t.TempDir()
+			if err := tc.inject(genDir); err != nil {
+				t.Fatalf("inject(%s): %v", tc.cli, err)
+			}
+			hookContent, err := os.ReadFile(filepath.Join(genDir, tc.hookPath))
+			if err != nil {
+				t.Fatalf("generator did not write %s for %s: %v", tc.hookPath, tc.cli, err)
+			}
+
+			d16SetupOriginWithFiles(t, dir, map[string]string{
+				tc.hookPath: string(hookContent),
+			})
+
+			// Mutation (b): promote guard from inner hooks[i]["command"] to group["command"].
+			mutated, hadGuard := d16MutateGuardToGroupLevel(t, hookContent)
+			if !hadGuard {
+				t.Fatalf(
+					"mutation (b): generator output for %s has no nested guard command to promote; "+
+						"cannot exercise the mutation — investigate",
+					tc.cli,
+				)
+			}
+			// Safety: confirm the guard string is still present in the mutated document.
+			var mutatedDocB interface{}
+			if err := json.Unmarshal(mutated, &mutatedDocB); err != nil {
+				t.Fatalf("mutation (b): unmarshal mutated doc: %v", err)
+			}
+			if !d16documentHasGuardCmd(mutatedDocB) {
+				t.Fatalf(
+					"mutation (b): guard command not found in mutated document for %s — "+
+						"mutation deleted the guard; fix d16MutateGuardToGroupLevel",
+					tc.cli,
+				)
+			}
+
+			diskPath := filepath.Join(dir, tc.hookPath)
+			if mkErr := os.MkdirAll(filepath.Dir(diskPath), 0755); mkErr != nil {
+				t.Fatalf("mkdir: %v", mkErr)
+			}
+			if writeErr := os.WriteFile(diskPath, mutated, 0644); writeErr != nil {
+				t.Fatalf("write mutated disk: %v", writeErr)
+			}
+
+			validator.ChdirForTest(t, dir)
+			msgs, err := validator.ValidateGuardWiringRemovedForTest()
+			if err != nil {
+				t.Fatalf("ValidateGuardWiringRemoved: %v", err)
+			}
+			// Expect guard_wiring_removed on the ORIGINAL pair (e.g., event="PreToolUse" or "BeforeTool").
+			wantEvent := fmt.Sprintf(`event=%q`, tc.preEventKey)
+			found := false
+			for _, m := range msgs {
+				if strings.Contains(m, tc.hookPath) &&
+					strings.Contains(m, "is absent from disk") &&
+					strings.Contains(m, wantEvent) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf(
+					"guard_wiring_removed expected for %s (event=%s) after guard promoted to "+
+						"group level; msgs=%v",
+					tc.hookPath, tc.preEventKey, msgs,
 				)
 			}
 		})

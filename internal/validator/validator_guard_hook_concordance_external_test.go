@@ -187,16 +187,21 @@ func TestGuardHookConcordance_GitHubCopilot_Credential(t *testing.T) {
 	assertZeroCredentialViolations(t)
 }
 
-// TestGuardGlobalHookResolvable_CopilotGlobal_MarkerEmNoteNaoContaComoFiacao — Ameaça C (D16)
+// TestGuardGlobalHookResolvable_CopilotGlobal_MarkerEmCwdNaoContaComoFiacao — pin de não-regressão
 //
-// Reconciliação: D16 schema-aware search — a credential-guard script marker that appears in a
-// non-command field (e.g. "cwd") of a ~/.copilot/settings.json entry does NOT count as wiring;
-// the validator does not emit a spurious "script not found" violation.
+// Reconciliação: este teste é um pin de não-regressão — passa em origin/main. Em origin/main,
+// collectCommandsWithMarker também encontrava "trackfw-credential-guard.sh" na chave "cwd", mas
+// a função de validação global já ignorava caminhos relativos ("not our wiring, not our job":
+// apenas caminhos absolutos emitidos pelo gerador são verificados). Assim, nenhuma violation era
+// emitida lá, e o teste não distingue D16 do comportamento pré-D16.
 //
-// Setup: ~/.copilot/settings.json has the correct current guard subcommand in "bash" AND the
-// script marker in "cwd". Old code (recursive search) would find the marker in "cwd", try to
-// check if a script with that path exists, and emit a violation — Ameaça C fail-open.
-func TestGuardGlobalHookResolvable_CopilotGlobal_MarkerEmNoteNaoContaComoFiacao(t *testing.T) {
+// O que o teste afirma: com a chave "cwd" contendo o script marker e a chave "bash" contendo o
+// subcomando canônico, ~/.copilot/settings.json não gera nenhuma mensagem de violation — o
+// marcador em "cwd" (campo não-executável no esquema hookCmdSchemaFlatBash) não conta como fiação.
+//
+// A prova de mordida de D16 para o Copilot global está nos testes de presença obrigatória e nos
+// testes AC3/AC4 (Windsurf e Amazon Q) — não neste teste.
+func TestGuardGlobalHookResolvable_CopilotGlobal_MarkerEmCwdNaoContaComoFiacao(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
@@ -210,8 +215,7 @@ func TestGuardGlobalHookResolvable_CopilotGlobal_MarkerEmNoteNaoContaComoFiacao(
 
 	// Correct subcommand form in "bash"; script marker placed in "cwd" (a non-command field).
 	// The schema for ~/.copilot/settings.json is hookCmdSchemaFlatBash: only "bash" is read.
-	// Old code (recursive) would match "trackfw-credential-guard.sh" in "cwd" and try to
-	// check if that script exists, emitting a spurious violation.
+	// D16: "cwd" is not the executable path for this schema → not counted as wiring.
 	entry := map[string]interface{}{
 		"type":    "command",
 		"matcher": "bash",

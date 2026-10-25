@@ -124,15 +124,15 @@ var globalGuardConfigFiles = []globalGuardConfigFile{
 //   - Flat-bash (hooks[eventKey][i].bash): Copilot via mergeCredentialGuardCopilotHooks (ML-2E).
 //   - Kiro (hooks[i].action.command): both credential and git-branch files use the same shape.
 var guardGlobalHookLayout = map[string]hookCmdSchemaKind{
-	".claude/settings.json":                      hookCmdSchemaNested,
-	".codex/hooks.json":                          hookCmdSchemaNested,
-	".gemini/settings.json":                      hookCmdSchemaNested,
-	".cursor/hooks.json":                         hookCmdSchemaFlat,
-	".copilot/settings.json":                     hookCmdSchemaFlatBash,
-	".kiro/hooks/trackfw-credential-guard.json":  hookCmdSchemaKiro,
-	".kiro/hooks/trackfw-git-branch-guard.json":  hookCmdSchemaKiro,
+	".claude/settings.json":                     hookCmdSchemaNested,
+	".codex/hooks.json":                         hookCmdSchemaNested,
+	".gemini/settings.json":                     hookCmdSchemaNested,
+	".cursor/hooks.json":                        hookCmdSchemaFlat,
+	".copilot/settings.json":                    hookCmdSchemaFlatBash,
+	".kiro/hooks/trackfw-credential-guard.json": hookCmdSchemaKiro,
+	".kiro/hooks/trackfw-git-branch-guard.json": hookCmdSchemaKiro,
 	// ML-1A2 (REQ-2026-10-25): Windsurf global uses the same flat schema as the project-scope file.
-	".codeium/windsurf/hooks.json":               hookCmdSchemaFlat,
+	".codeium/windsurf/hooks.json": hookCmdSchemaFlat,
 }
 
 // globalGuardConfigPath resolves the actual on-disk path (relative to $HOME) that
@@ -164,7 +164,7 @@ func globalGuardConfigPath(gf globalGuardConfigFile, scriptMarker string) string
 }
 
 // validateGuardGlobalHookResolvable is the GLOBAL-scope counterpart of validateGuardHookResolvable
-// (validator_credential_guard.go): for each of the 6 globalGuardConfigFiles that exists AND
+// (validator_credential_guard.go): for each of the 7 globalGuardConfigFiles that exists AND
 // references scriptMarker, verifies the referenced script exists and is executable.
 //
 // This is the gap the REQ (docs/req/REQ-2026-08-15-trackfw-validate-deve-detectar-scripts-de-
@@ -269,7 +269,7 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker, subcmdMarker, sub
 			// ML-1A: same decision as the project-scope sibling (validateGuardHookResolvable,
 			// validator_credential_guard.go) — see that function's json.Unmarshal error branch for
 			// the full measurement. Applies identically here: globalGuardConfigFiles is the same
-			// kind of closed, enumerable list (6 entries), each owned/consumed by gf.cli itself, so
+			// kind of closed, enumerable list (7 entries), each owned/consumed by gf.cli itself, so
 			// invalid JSON is never a legitimate state for any of them.
 			//
 			// ML-1B: not-valid-UTF-8 gets its own message — see the identical branch in

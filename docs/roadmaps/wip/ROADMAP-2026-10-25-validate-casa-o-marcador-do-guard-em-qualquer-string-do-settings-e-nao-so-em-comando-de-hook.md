@@ -126,17 +126,28 @@ test -s docs/seguranca/2026-10-25-wave0-marcador-fora-de-hook.md
   acha nada, então nenhum gerador emite essa chave.
 
 ### ML-2C — Corretivo das revisões
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** apolo-tf
 **Files affected:** `internal/validator/validator_guard_hook_concordance_external_test.go`, `internal/validator/validator_guard_d16_wiring_external_test.go`, `internal/validator/validator_guard_command_schema_test.go`, `internal/validator/validator_guard_wiring.go`, `internal/validator/validator_git_branch_guard.go`, `docs/cli-parity.md`
 **Acceptance criteria:**
-- [ ] B1 do ML-2A: o nome e a reconciliação do teste do Copilot global dizem o que o corpo afirma (a chave `cwd`) e que
+- [x] B1 do ML-2A: o nome e a reconciliação do teste do Copilot global dizem o que o corpo afirma (a chave `cwd`) e que
   ele é fixação, porque passa em `origin/main`
-- [ ] B2 do ML-2A: a linha do Windsurf no mapa global do `cli-parity.md`, e os testes do Windsurf global na anotação do
+- [x] B2 do ML-2A: a linha do Windsurf no mapa global do `cli-parity.md`, e os testes do Windsurf global na anotação do
   contrato
-- [ ] R1–R3 do ML-2A
-- [ ] Duas linhas novas em `TestGuardWiringRemoved_*`, nos CLIs aninhados: o guard movido de `PreToolUse` para
+- [x] R1–R3 do ML-2A
+- [x] Duas linhas novas em `TestGuardWiringRemoved_*`, nos CLIs aninhados: o guard movido de `PreToolUse` para
   `PostToolUse`, e o guard movido para o nível do grupo. As duas esperam `guard_wiring_removed`
+**Auditoria do arquiteto (2026-10-25):** aprovado.
+- **Testes novos, medidos pelo arquiteto:** `TestGuardWiringRemoved_MutacaoGuardParaPostToolUse` e
+  `..._MutacaoGuardParaNivelDoGrupo` passam nos 3 CLIs aninhados. A proteção relativa dispara nos dois vetores do
+  red-team.
+- **Copilot global:** o teste foi renomeado para `MarkerEmCwd` e declarado como fixação. O R2 lê `entry["bash"]` em vez
+  de devolver nil.
+- **Formatação:** o `gofmt` aplicado a 3 arquivos corrige uma divergência que já existia em `origin/main` (`gofmt -l`
+  sobre a versão da `main` acusa o arquivo).
+- **Resíduo:** o comentário em `validator_git_branch_guard.go:140` ("For 5 of the 6 CLIs") ficou como está. O Windsurf
+  global só tem o credential guard, e "6 de 7" também seria impreciso. O comentário descreve o compartilhamento de
+  arquivo entre os dois guards, que não mudou.
 
 ## Wave 3 — Fechamento
 > Dependencies: Wave 2 aprovada.
