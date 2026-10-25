@@ -97,6 +97,11 @@ test -s docs/seguranca/2026-10-25-wave0-aviso-presenca-credential-guard.md
 **Status:** ✅ Concluído
 **Agente:** hades-tf
 **Files affected:** `docs/seguranca/2026-10-25-redteam-aviso-presenca-credential-guard.md`
+**Acceptance criteria:**
+- [x] Parecer APROVA: 31 ataques, todos PASS. Resíduos:
+  - R5-anchor: num projeto ancorado (com `origin/main`), `rules: off` não silencia o aviso;
+  - R-echo, R-chmod/BOM, R-JSON-file-field e R2 do Cursor.
+  O R5-anchor contradiz o texto do `cli-parity.md` e vai para o ML-2C.
 
 ### ML-2C — Corretivo das revisões
 **Status:** ✅ Concluído
@@ -118,12 +123,6 @@ test -s docs/seguranca/2026-10-25-wave0-aviso-presenca-credential-guard.md
 
 ## Wave 3 — Fechamento
 > Dependencies: Wave 2 aprovada.
-**Acceptance criteria:**
-- [x] Parecer APROVA: 31 ataques, todos PASS. Resíduos:
-  - R5-anchor: num projeto ancorado (com `origin/main`), `rules: off` não silencia o aviso;
-  - R-echo, R-chmod/BOM, R-JSON-file-field e R2 do Cursor.
-  O R5-anchor contradiz o texto do `cli-parity.md` e vai para o ML-2C.
-
 
 ### ML-3A — make quality, CI e PR
 **Status:** ⬜ Pendente
