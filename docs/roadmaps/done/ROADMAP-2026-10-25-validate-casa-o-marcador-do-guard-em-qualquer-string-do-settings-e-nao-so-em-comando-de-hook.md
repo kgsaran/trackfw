@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-10-25
 req: "docs/req/REQ-2026-10-25-validate-casa-o-marcador-do-guard-em-qualquer-string-do-settings-e-nao-so-em-comando-de-hook.md"
 squad: "hades-tf, apolo-tf, hefesto-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, hefesto-tf"
 
 # Roadmap: validate casa o marcador do guard em qualquer string do settings, e não só em comando de hook
 
-> Created: 2026-10-25 | Status: wip
+> Created: 2026-10-25 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-10-25-validate-casa-o-marcador-do-guard-em-qualquer-string-do-settings-e-nao-so-em-comando-de-hook.md
@@ -18,7 +18,7 @@ o marcador em qualquer string. 12 chamadores passam o arquivo inteiro. Lição d
 cobrir `scripts/` e os testes que afirmam o contrato atual, e não só o Go de produção.
 
 ## Acceptance Criteria
-- [ ] AC1–AC6 da REQ, cada um com a evidência no ML que o fecha.
+- [x] AC1–AC6 da REQ, cada um com a evidência no ML que o fecha. (#620, 5de964cc)
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -153,10 +153,10 @@ test -s docs/seguranca/2026-10-25-wave0-marcador-fora-de-hook.md
 > Dependencies: Wave 2 aprovada.
 
 ### ML-3A — make quality, CI e PR
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** zeus-tf
 **Files affected:** nenhum arquivo de produto; só medição
 **Acceptance criteria:**
 - [x] `make quality` rc=0 com a máquina ociosa e o HOME isolado (falsificação 367 OK / 0 FAIL / guarda OK; as 14 linhas FAIL são braços de autoteste)
 - [x] Neste repositório, `trackfw validate` (binário da branch) sem o aviso falso de `~/.claude/settings.json` (branch: rc=0 e 0 avisos de script legado; 11.0.1 instalado: 1 aviso)
-- [ ] CI verde; PR com `Closes #618`
+- [x] CI verde; PR com `Closes #618` (#620, 20/20, mergeado como 5de964cc; #618 fechada)
