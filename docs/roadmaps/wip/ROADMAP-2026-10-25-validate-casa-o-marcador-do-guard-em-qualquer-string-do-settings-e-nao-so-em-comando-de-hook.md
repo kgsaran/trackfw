@@ -82,20 +82,61 @@ test -s docs/seguranca/2026-10-25-wave0-marcador-fora-de-hook.md
     - `Windsurf_MissingScript` (Windsurf global lido).
   - **Passam lá (fixações de regressão, declaradas):** `GuardWiringRemoved_MutacaoDoComandoParaEchoX`, nos 8 CLIs,
     porque o `guard_wiring_removed` já usava o extrator por esquema; e `CopilotGlobal_MarkerEmNote`.
+  - **Corrigido na auditoria do ML-2A (B3 do hefesto):** três testes ficaram fora da lista. Medidos depois numa cópia
+    de `origin/main`, os três passam lá:
+    - `GuardWiringRemoved_ControlArm_OrigemIntacta`, nos 8 CLIs (fixação);
+    - `GuardGlobalHookShLegacyWarnings_MarkerNaHook_EmiteAviso` (braço positivo, fixação);
+    - `GuardGlobalHookResolvable_Windsurf_CurrentForm_ZeroViolation`, que passa lá **porque o arquivo nem é lido**. Ele é
+      fixação de não-regressão, e a prova de que o arquivo passou a ser lido é o `Windsurf_MissingScript`. O parecer do
+      hefesto dizia que ele reprovava em `origin/main`, e a medição mostra o contrário.
 - **Gates do executor:** `go build`, `go vet` e os testes de `validator`, `generators` e `commands` com rc=0.
 
 ## Wave 2 — Revisões independentes
 > Dependencies: Wave 1 auditada.
 
 ### ML-2A — Revisão de qualidade
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** hefesto-tf
 **Files affected:** `docs/qualidade/2026-10-25-revisao-marcador-fora-de-hook.md`
+**Acceptance criteria:**
+- [x] Parecer REPROVADO:
+  - B1: o nome e a reconciliação do teste do Copilot global contradizem a medição;
+  - B2: falta a linha do Windsurf no mapa global do `cli-parity.md`;
+  - B3: a auditoria do ML-1A deixou de classificar três testes. Corrigido acima pelo arquiteto.
+  Os R1–R3 vão para o ML-2C.
 
 ### ML-2B — Red-team
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** hades-tf
 **Files affected:** `docs/seguranca/2026-10-25-redteam-marcador-fora-de-hook.md`
+**Acceptance criteria:**
+- [x] Parecer REPROVA com B1 (guard só em evento que não bloqueia, como `PostToolUse`) e B2 (`command` no nível do grupo,
+  sem o `hooks[]` interno). Resíduos R1–R4.
+
+**Auditoria do arquiteto (2026-10-25):** o B1 e o B2 foram **reclassificados, com medição**.
+- **Medição:** com o binário da branch, mesmo HOME e mesmo projeto, os fixtures de B1 e de B2 dão saída **idêntica** à do
+  controle sem guard nenhum (`diff` vazio; rc=0; os mesmos 2 avisos, que não são de guard). O coletor por esquema já
+  trata o guard mal posicionado como ausência, e a causa da D16 está fechada para esses vetores.
+- **O que sobra é outra causa:** o validador não tem regra de presença **absoluta** do credential guard em 6 dos 8 CLIs.
+  Só o Windsurf e o Amazon Q têm. Isso é política, porque exigir a presença é breaking, e virou a #619 para decisão do
+  KG.
+- **Proteção relativa:** a `guard_wiring_removed` compara por par contra `origin/main`. O ML-2C acrescenta as duas
+  mutações (guard movido para `PostToolUse` e para o nível do grupo) à tabela `TestGuardWiringRemoved_*`.
+- **R1** (Copilot global só com `powershell`): continua como resíduo. Um `git grep '"powershell"'` nos geradores não
+  acha nada, então nenhum gerador emite essa chave.
+
+### ML-2C — Corretivo das revisões
+**Status:** ⬜ Pendente
+**Agente:** apolo-tf
+**Files affected:** `internal/validator/validator_guard_hook_concordance_external_test.go`, `internal/validator/validator_guard_d16_wiring_external_test.go`, `internal/validator/validator_guard_command_schema_test.go`, `internal/validator/validator_guard_wiring.go`, `internal/validator/validator_git_branch_guard.go`, `docs/cli-parity.md`
+**Acceptance criteria:**
+- [ ] B1 do ML-2A: o nome e a reconciliação do teste do Copilot global dizem o que o corpo afirma (a chave `cwd`) e que
+  ele é fixação, porque passa em `origin/main`
+- [ ] B2 do ML-2A: a linha do Windsurf no mapa global do `cli-parity.md`, e os testes do Windsurf global na anotação do
+  contrato
+- [ ] R1–R3 do ML-2A
+- [ ] Duas linhas novas em `TestGuardWiringRemoved_*`, nos CLIs aninhados: o guard movido de `PreToolUse` para
+  `PostToolUse`, e o guard movido para o nível do grupo. As duas esperam `guard_wiring_removed`
 
 ## Wave 3 — Fechamento
 > Dependencies: Wave 2 aprovada.
