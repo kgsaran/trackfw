@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-10-25
 author: "zeus-tf (desenho) / KG (prioridade)"
 adr: "docs/adr/ADR-2026-10-04-o-guard-de-hook-e-um-subcomando-go-do-trackfw-e-a-linha-de-hook-e-a-mesma-string-em-todo-shell.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-10-25-validate-casa-o-marcador-do-guard-em-qualquer-string-do-settings-e-nao-so-em-comando-de-hook.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-10-25-validate-casa-o-marcador-do-guard-em-qualquer-string-do-settings-e-nao-so-em-comando-de-hook.md"
 ---
 
 # REQ: validate casa o marcador do guard em qualquer string do settings, e não só em comando de hook
 
-> Date: 2026-10-25 | Status: Open
+> Date: 2026-10-25 | Status: Done (#620, 5de964cc)
 | Linear Issue:
 | Jira Issue:
 | GitHub Issue: #618
@@ -46,7 +46,7 @@ Decisão: D16 do ADR-2026-10-04.
   teste prova isso. Se a Wave 0 medir que alguma já contava, essa é a correção prioritária do ML.
 - [x] **AC5 — O caso medido.** Um `~/.claude/settings.json` falso com o texto de `.autoMode.environment` e o hook atual
   não gera o aviso de forma legada.
-- [ ] **AC6 — Fechamento.** `make quality` rc=0, CI verde e o PR leva `Closes #618`.
+- [x] **AC6 — Fechamento.** `make quality` rc=0, CI verde e o PR leva `Closes #618`.
 
 ## Negative scope
 
@@ -62,4 +62,4 @@ ADR: `docs/adr/ADR-2026-10-04-o-guard-de-hook-e-um-subcomando-go-do-trackfw-e-a-
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-10-25-validate-casa-o-marcador-do-guard-em-qualquer-string-do-settings-e-nao-so-em-comando-de-hook.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-10-25-validate-casa-o-marcador-do-guard-em-qualquer-string-do-settings-e-nao-so-em-comando-de-hook.md
