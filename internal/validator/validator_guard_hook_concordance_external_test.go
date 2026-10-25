@@ -187,6 +187,58 @@ func TestGuardHookConcordance_GitHubCopilot_Credential(t *testing.T) {
 	assertZeroCredentialViolations(t)
 }
 
+// TestGuardGlobalHookResolvable_CopilotGlobal_MarkerEmNoteNaoContaComoFiacao — Ameaça C (D16)
+//
+// Reconciliação: D16 schema-aware search — a credential-guard script marker that appears in a
+// non-command field (e.g. "cwd") of a ~/.copilot/settings.json entry does NOT count as wiring;
+// the validator does not emit a spurious "script not found" violation.
+//
+// Setup: ~/.copilot/settings.json has the correct current guard subcommand in "bash" AND the
+// script marker in "cwd". Old code (recursive search) would find the marker in "cwd", try to
+// check if a script with that path exists, and emit a violation — Ameaça C fail-open.
+func TestGuardGlobalHookResolvable_CopilotGlobal_MarkerEmNoteNaoContaComoFiacao(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	setupConcordanceDir(t)
+
+	copilotDir := filepath.Join(home, ".copilot")
+	if err := os.MkdirAll(copilotDir, 0755); err != nil {
+		t.Fatalf("mkdir .copilot: %v", err)
+	}
+
+	// Correct subcommand form in "bash"; script marker placed in "cwd" (a non-command field).
+	// The schema for ~/.copilot/settings.json is hookCmdSchemaFlatBash: only "bash" is read.
+	// Old code (recursive) would match "trackfw-credential-guard.sh" in "cwd" and try to
+	// check if that script exists, emitting a spurious violation.
+	entry := map[string]interface{}{
+		"type":    "command",
+		"matcher": "bash",
+		"bash":    "trackfw guard credential --global",
+		"cwd":     "trackfw-credential-guard.sh", // marker in non-command field
+	}
+	content, _ := json.Marshal(map[string]interface{}{
+		"hooks": map[string]interface{}{
+			"preToolUse":  []interface{}{entry},
+			"postToolUse": []interface{}{entry},
+		},
+	})
+	if err := os.WriteFile(filepath.Join(copilotDir, "settings.json"), content, 0644); err != nil {
+		t.Fatalf("write .copilot/settings.json: %v", err)
+	}
+
+	msgs, err := validator.ValidateCredentialGuardGlobalHookResolvableForTest()
+	if err != nil {
+		t.Fatalf("ValidateCredentialGuardGlobalHookResolvable: unexpected error: %v", err)
+	}
+	for _, m := range msgs {
+		if strings.Contains(m, ".copilot/settings.json") {
+			t.Errorf("Ameaça C: unexpected violation for .copilot/settings.json — marker in non-bash field should not count as wiring: %s", m)
+		}
+	}
+}
+
 // --------------------------------------------------------------------------
 // Cursor
 // --------------------------------------------------------------------------

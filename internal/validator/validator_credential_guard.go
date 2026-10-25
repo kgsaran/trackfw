@@ -299,61 +299,136 @@ func resolveCredentialGuardHookPath(raw, root string) (resolved string, ok bool)
 // guardCommandMatch pairs a matched raw command string with whether the immediate JSON object it
 // was found in also carries a "type" field equal to "command" — the structural discriminant
 // ROADMAP-2026-08-17 ML-4B adds. Every hook schema this validator reads (Claude/Codex/Gemini's
-// {"hooks":[{"type","command"}]}, Copilot's {"type","bash"}, Kiro's action:{"type","command"})
-// places "type" as a SIBLING of the marker field within the SAME object — never nested deeper —
-// so recording it from the object collectCommandsWithMarker is currently visiting is sufficient;
-// no separate schema-aware walk is needed. Cursor's flat {"command":...} shape never carries a
-// "type" field at all, so typeIsCommand is always false there — see credentialGuardHookFile.
-// requiresCommandType for how callers decide whether that false is a violation or expected.
+// {"hooks":[{"type","command"}]}, Copilot project {"type","command"}, Copilot global {"type","bash"},
+// Kiro's action:{"type","command"}) places "type" as a SIBLING of the command field within the SAME
+// object — never nested deeper — so recording it from the object collectCommandsWithMarkerBySchema
+// is visiting is sufficient. Cursor's flat {"command":...} shape never carries a "type" field at
+// all, so typeIsCommand is always false there — see credentialGuardHookFile.requiresCommandType
+// for how callers decide whether that false is a violation or expected.
+// D16 (ADR-2026-10-04): collectCommandsWithMarkerBySchema only records matches from the designated
+// executable-command field of a hook entry; matches in any other field are silently ignored.
 type guardCommandMatch struct {
 	raw           string
 	typeIsCommand bool
 }
 
-// collectCommandsWithMarker percorre recursivamente um valor JSON já decodificado
-// (map[string]interface{} / []interface{} / string / ...) e coleta todo valor-string que contém
-// marker, independentemente do nome do campo que o contém — junto com um sinal estrutural
-// (guardCommandMatch.typeIsCommand) de que o objeto imediato que o contém também tem
-// "type":"command" como campo irmão (ROADMAP-2026-08-17 ML-4B).
-//
-// Os 6 formatos de hook usam campos diferentes para o comando: "command" (Claude/Codex/
-// Gemini/Cursor), "bash" (GitHub Copilot CLI), "action.command" (Kiro). Varrer por VALOR em vez
-// de por caminho de chave evita acoplar esta regra à forma exata de cada schema — decisão de
-// design deste ML, não replicar o parsing schema-aware que agentfiles.go faz para escrever os
-// hooks. O sinal de "type" é a única exceção a essa regra: ele NÃO decide se algo é um "comando"
-// (isso continua sendo puramente por valor/marker), só anota, para cada match já encontrado, se o
-// objeto que o continha também parece estruturalmente válido — a decisão de exigir ou não esse
-// sinal continua no chamador (via requiresCommandType), não aqui.
-//
-// Generalizado (ROADMAP-2026-08-15-trackfw-validate-deve-detectar-scripts-de-hook-ausentes-ou-
-// desatualizados, ML-1A) para aceitar qualquer marker — originalmente hardcoded para
-// credentialGuardScriptMarker; reusado agora também para gitBranchGuardScriptMarker, sem duplicar
-// a travessia recursiva.
-func collectCommandsWithMarker(v interface{}, marker string, out *[]guardCommandMatch) {
-	switch t := v.(type) {
-	case string:
-		// Top-level/loose string match, outside any enclosing object (defensive fallback — every
-		// hook file this validator reads is rooted at a JSON object in practice, so this branch is
-		// not expected to fire, but preserves the original function's contract of matching ANY
-		// string value anywhere in the tree). No enclosing object means no "type" sibling to read.
-		if strings.Contains(t, marker) {
-			*out = append(*out, guardCommandMatch{raw: t, typeIsCommand: false})
+// collectCommandsFromCommandKeyArray iterates a flat array of hook-entry objects and appends every
+// entry whose "command" string field contains marker. typeIsCommand is set when the entry also
+// carries a sibling "type":"command" field (for requiresCommandType callers — ROADMAP-2026-08-17
+// ML-4B). Used by extractCredentialGuardCommandsFromEvent (Windsurf flat array and Amazon Q inner
+// hooks array) and by collectCommandsWithMarkerBySchema (hookCmdSchemaFlat inner iteration).
+func collectCommandsFromCommandKeyArray(arr interface{}, marker string, out *[]guardCommandMatch) {
+	entries, _ := arr.([]interface{})
+	for _, entryRaw := range entries {
+		obj, ok := entryRaw.(map[string]interface{})
+		if !ok {
+			continue
 		}
-	case map[string]interface{}:
-		typeStr, _ := t["type"].(string)
-		typeIsCommand := typeStr == "command"
-		for _, val := range t {
-			if s, ok := val.(string); ok {
-				if strings.Contains(s, marker) {
-					*out = append(*out, guardCommandMatch{raw: s, typeIsCommand: typeIsCommand})
-				}
+		typeStr, _ := obj["type"].(string)
+		cmd, _ := obj["command"].(string)
+		if cmd != "" && strings.Contains(cmd, marker) {
+			*out = append(*out, guardCommandMatch{raw: cmd, typeIsCommand: typeStr == "command"})
+		}
+	}
+}
+
+// collectCommandsWithMarkerBySchema collects command strings that contain marker from a parsed
+// hook file using the structural path defined by schema — D16 (ADR-2026-10-04): only a string in
+// the designated executable-command field of a hook entry counts as wiring; a marker found in any
+// other field (e.g. "note", "autoMode.environment", "permissions.allow") is NOT wiring and must
+// not be recognized as such.
+//
+// This replaces collectCommandsWithMarker (the old recursive key-blind scan) for all callers that
+// receive a full parsed hook-file document. The schema for each file is registered in
+// guardWiringHookLayout (project files, validator_guard_wiring.go) and guardGlobalHookLayout
+// (global files, validator_git_branch_guard.go). Every file in credentialGuardHookFiles and
+// globalGuardConfigFiles has a registered schema; TestGuardWiringHookLayout_CobreTodasAsEntradas
+// and TestGuardGlobalHookLayout_CobreTodasAsEntradas enforce this invariant.
+//
+// typeIsCommand is preserved for requiresCommandType callers (ROADMAP-2026-08-17 ML-4B): an entry
+// with the guard marker in the correct command key but with a missing/wrong "type":"command" sibling
+// still produces a match so the caller can emit the "entry is structurally malformed" violation.
+func collectCommandsWithMarkerBySchema(parsed interface{}, schema hookCmdSchemaKind, marker string, out *[]guardCommandMatch) {
+	root, ok := parsed.(map[string]interface{})
+	if !ok {
+		return
+	}
+	hooksRaw, ok := root["hooks"]
+	if !ok {
+		return
+	}
+
+	if schema == hookCmdSchemaKiro {
+		// Kiro: hooks is a root-level array of {trigger, matcher, action:{type, command}} objects.
+		arr, _ := hooksRaw.([]interface{})
+		for _, entryRaw := range arr {
+			entry, ok := entryRaw.(map[string]interface{})
+			if !ok {
 				continue
 			}
-			collectCommandsWithMarker(val, marker, out)
+			action, _ := entry["action"].(map[string]interface{})
+			if action == nil {
+				continue
+			}
+			typeStr, _ := action["type"].(string)
+			cmd, _ := action["command"].(string)
+			if cmd != "" && strings.Contains(cmd, marker) {
+				*out = append(*out, guardCommandMatch{raw: cmd, typeIsCommand: typeStr == "command"})
+			}
 		}
-	case []interface{}:
-		for _, val := range t {
-			collectCommandsWithMarker(val, marker, out)
+		return
+	}
+
+	// For all other schemas: hooks is an object whose values are event arrays.
+	hooksObj, _ := hooksRaw.(map[string]interface{})
+	if hooksObj == nil {
+		return
+	}
+
+	for _, evRaw := range hooksObj {
+		entries, ok := evRaw.([]interface{})
+		if !ok {
+			continue
+		}
+		switch schema {
+		case hookCmdSchemaNested:
+			// Each entries[i] is a group object with optional "matcher" and inner "hooks" array.
+			// The executable command lives at group["hooks"][j]["command"].
+			for _, entryRaw := range entries {
+				entry, ok := entryRaw.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				innerHooks, _ := entry["hooks"].([]interface{})
+				for _, ih := range innerHooks {
+					innerObj, ok := ih.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					typeStr, _ := innerObj["type"].(string)
+					cmd, _ := innerObj["command"].(string)
+					if cmd != "" && strings.Contains(cmd, marker) {
+						*out = append(*out, guardCommandMatch{raw: cmd, typeIsCommand: typeStr == "command"})
+					}
+				}
+			}
+		case hookCmdSchemaFlat:
+			// Each entries[i] IS the command entry; executable command at entry["command"].
+			collectCommandsFromCommandKeyArray(entries, marker, out)
+		case hookCmdSchemaFlatBash:
+			// GitHub Copilot CLI global (~/.copilot/settings.json): command at entry["bash"].
+			// mergeCredentialGuardCopilotHooks (update.go ML-2E) always writes "bash" key.
+			for _, entryRaw := range entries {
+				entry, ok := entryRaw.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				typeStr, _ := entry["type"].(string)
+				cmd, _ := entry["bash"].(string)
+				if cmd != "" && strings.Contains(cmd, marker) {
+					*out = append(*out, guardCommandMatch{raw: cmd, typeIsCommand: typeStr == "command"})
+				}
+			}
 		}
 	}
 }
@@ -508,8 +583,10 @@ func validateGuardHookResolvable(ruleName, scriptMarker, subcmdMarker, subcmdNam
 		}
 
 		// --- FORMA LEGADA (.sh) --- mantem comportamento existente ---
+		// D16 (ADR-2026-10-04): only recognize the marker in the executable-command field for
+		// this CLI's hook schema (guardWiringHookLayout). A marker in any other field is not wiring.
 		var commands []guardCommandMatch
-		collectCommandsWithMarker(parsed, scriptMarker, &commands)
+		collectCommandsWithMarkerBySchema(parsed, guardWiringHookLayout[hf.path], scriptMarker, &commands)
 
 		seen := make(map[string]bool, len(commands))
 		for _, m := range commands {
@@ -578,9 +655,10 @@ func validateGuardHookResolvable(ruleName, scriptMarker, subcmdMarker, subcmdNam
 		}
 
 		// --- NOVA FORMA (subcomando Go) --- ML-2B, ADR-2026-10-04 D6 ---
+		// D16: same schema-aware restriction applies to the subcmd marker.
 		if subcmdMarker != "" {
 			var subcmdCommands []guardCommandMatch
-			collectCommandsWithMarker(parsed, subcmdMarker, &subcmdCommands)
+			collectCommandsWithMarkerBySchema(parsed, guardWiringHookLayout[hf.path], subcmdMarker, &subcmdCommands)
 			expectedLine := guardExpectedLine(subcmdName, hf.family)
 
 			seenSubcmd := make(map[string]bool, len(subcmdCommands))
@@ -679,7 +757,8 @@ func validateGuardHookShLegacyWarnings(scriptMarker string) ([]string, error) {
 		}
 
 		var commands []guardCommandMatch
-		collectCommandsWithMarker(parsed, scriptMarker, &commands)
+		// D16: schema-aware — only the executable-command field for this CLI counts.
+		collectCommandsWithMarkerBySchema(parsed, guardWiringHookLayout[hf.path], scriptMarker, &commands)
 
 		seen := make(map[string]bool, len(commands))
 		for _, m := range commands {
@@ -753,13 +832,16 @@ func extractCredentialGuardCommandsFromEvent(parsed interface{}, event credentia
 	}
 
 	if event.amazonQMatcher == "" {
-		// Windsurf-style: hooks[event] is a flat command array.
+		// Windsurf-style: hooks[event] is a flat array of {"command":"..."} objects
+		// (hookCmdSchemaFlat). D16: only the "command" key counts as wiring.
 		var out []guardCommandMatch
-		collectCommandsWithMarker(hooks[event.hookEvent], marker, &out)
+		collectCommandsFromCommandKeyArray(hooks[event.hookEvent], marker, &out)
 		return out
 	}
 
-	// Amazon Q-style: hooks.preToolUse is [{matcher:..., hooks:[{command:...}]}, ...]
+	// Amazon Q-style: hooks.preToolUse is [{matcher:..., hooks:[{type:"command",command:...}]}, ...]
+	// (hookCmdSchemaNested). After locating the matcher entry, the inner hooks[] uses the same
+	// {"type":"command","command":"..."} shape — "command" key only. D16: only that key is wiring.
 	preToolUse, _ := hooks[event.hookEvent].([]interface{})
 	for _, item := range preToolUse {
 		obj, _ := item.(map[string]interface{})
@@ -770,7 +852,7 @@ func extractCredentialGuardCommandsFromEvent(parsed interface{}, event credentia
 			continue
 		}
 		var out []guardCommandMatch
-		collectCommandsWithMarker(obj["hooks"], marker, &out)
+		collectCommandsFromCommandKeyArray(obj["hooks"], marker, &out)
 		return out
 	}
 	return nil
@@ -885,7 +967,7 @@ func validateGuardHookD2InlineWarnings(subcmdMarker, subcmdName string) ([]strin
 			continue
 		}
 		var subcmdCommands []guardCommandMatch
-		collectCommandsWithMarker(parsed, subcmdMarker, &subcmdCommands)
+		collectCommandsWithMarkerBySchema(parsed, guardWiringHookLayout[hf.path], subcmdMarker, &subcmdCommands)
 		legacyD2Line := guardD2LegacyLine(subcmdName, hf.family)
 		expectedLine := guardExpectedLine(subcmdName, hf.family)
 		for _, m := range subcmdCommands {
@@ -939,7 +1021,7 @@ func validateGuardHookD11LegacyWarnings(subcmdMarker, subcmdName string) ([]stri
 			continue
 		}
 		var subcmdCommands []guardCommandMatch
-		collectCommandsWithMarker(parsed, subcmdMarker, &subcmdCommands)
+		collectCommandsWithMarkerBySchema(parsed, guardWiringHookLayout[hf.path], subcmdMarker, &subcmdCommands)
 		legacyD11Line := guardD11LegacyLine(subcmdName, hf.family)
 		expectedLine := guardExpectedLine(subcmdName, hf.family)
 		for _, m := range subcmdCommands {
@@ -992,7 +1074,7 @@ func validateGuardHookD11RevisedLegacyWarnings(subcmdMarker, subcmdName string) 
 			continue
 		}
 		var subcmdCommands []guardCommandMatch
-		collectCommandsWithMarker(parsed, subcmdMarker, &subcmdCommands)
+		collectCommandsWithMarkerBySchema(parsed, guardWiringHookLayout[hf.path], subcmdMarker, &subcmdCommands)
 		legacyD11RevLine := guardD11RevisedLegacyLine(subcmdName, hf.family)
 		expectedLine := guardExpectedLine(subcmdName, hf.family)
 		for _, m := range subcmdCommands {

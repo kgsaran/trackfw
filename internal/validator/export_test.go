@@ -192,6 +192,14 @@ func CheckProjectForeignWriteForTest(root string) []string {
 	return checkProjectForeignWrite(root)
 }
 
+// ValidateGuardWiringRemovedForTest exposes validateGuardWiringRemoved to the external test
+// package (package validator_test) — standard "export_test.go" pattern.
+// ML-1A2 (REQ-2026-10-25): used by the guard_wiring_removed table test that exercises the
+// D16 schema-aware collection in the presence of a real git repository and bare origin.
+func ValidateGuardWiringRemovedForTest() ([]string, error) {
+	return validateGuardWiringRemoved()
+}
+
 // ChdirForTest changes the working directory to dir and resets the config singleton (required
 // because Validate* functions call os.Getwd() which is cached by config.Load). Restores both
 // on t.Cleanup. Safe to use from external test package (package validator_test).

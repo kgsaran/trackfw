@@ -69,6 +69,14 @@ const (
 	// CLIs: Kiro (.kiro/hooks/trackfw-attention.json).
 	// Generator function: InjectKiroHooks (agentfiles.go:954).
 	hookCmdSchemaKiro
+	// hookCmdSchemaFlatBash: the executable command lives at entry["bash"] directly.
+	// If "type" is present on the entry and != "command", the entry is not executed → skip (R-2).
+	// CLIs: GitHub Copilot CLI global (~/.copilot/settings.json).
+	// Generator function: mergeCredentialGuardCopilotHooks (update.go) — uses "bash" key instead
+	// of "command" as mandated by the Copilot user-level hooks format (ROADMAP-2026-08-06 ML-2E).
+	// D16 (ADR-2026-10-04): only "bash" entries count as wiring for Copilot global; a guard marker
+	// in any other field is NOT wiring and must not be recognized as such.
+	hookCmdSchemaFlatBash
 )
 
 // guardWiringHookLayout maps each hook file path to its command-extraction schema.

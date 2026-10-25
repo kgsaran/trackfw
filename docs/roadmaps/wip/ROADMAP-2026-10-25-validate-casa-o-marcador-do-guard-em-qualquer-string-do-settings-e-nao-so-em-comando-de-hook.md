@@ -61,11 +61,28 @@ test -s docs/seguranca/2026-10-25-wave0-marcador-fora-de-hook.md
 > Dependencies: Wave 0 auditada.
 
 ### ML-1A — Coleta restrita a comando de hook em todos os sítios
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** apolo-tf
-**Files affected:** `internal/validator/validator_credential_guard.go`, `internal/validator/validator_git_branch_guard.go`, `internal/validator/validator_credential_guard_test.go`, `internal/validator/validator_guard_hook_concordance_external_test.go`, `internal/validator/validator_guard_command_schema_test.go` (novo), `docs/cli-parity.md`
+**Files affected:** `internal/validator/validator_credential_guard.go`, `internal/validator/validator_git_branch_guard.go`, `internal/validator/validator_credential_guard_test.go`, `internal/validator/validator_guard_hook_concordance_external_test.go`, `internal/validator/validator_guard_command_schema_test.go` (novo), `docs/cli-parity.md`, `internal/validator/validator_guard_wiring.go`, `internal/validator/validator_git_branch_guard_test.go`, `internal/validator/export_test.go`, `internal/validator/validator_guard_d16_wiring_external_test.go` (novo) (acrescentados na auditoria)
 **Acceptance criteria:**
-- [ ] AC1–AC5 da REQ, com contra-braço em `origin/main`
+- [x] AC1–AC5 da REQ, com contra-braço em `origin/main`
+**Auditoria do arquiteto (2026-10-25):** aprovado depois do corretivo ML-1A2.
+- **Primeira entrega, reprovada:** cobria só o Windsurf. Faltavam os testes de Amazon Q, Kiro, `guard_wiring_removed` e
+  `permissions.allow` do projeto, a concordância do lado projeto, o teste contra o coletor livre, o Windsurf global e o
+  contra-braço.
+- **Código:** o coletor livre `collectCommandsWithMarker` saiu, e os 14 chamadores usam o coletor por esquema. O Windsurf
+  global entrou em `globalGuardConfigFiles`. O Kiro não tem regra de presença por disco, e isso está declarado.
+- **Contra-braço medido pelo arquiteto:** os testes novos rodados numa cópia de `origin/main` (via `git archive`, sem o
+  teste de layout, que usa símbolo novo).
+  - **Reprovam lá:**
+    - `Windsurf_MarkerSoEmNote` e `AmazonQ_MarkerSoEmNote` (fail-open);
+    - `AutoModeEnvironment_SemAviso`, `AutoModeComHookCorreto` (AC5), `PermissionsAllowNaoGeraViolation`,
+      `EnvMarkerNaoGeraViolation` e o braço "decoy" (falso positivo);
+    - `RecursivoAusente_CodigoFonte` (concordância);
+    - `Windsurf_MissingScript` (Windsurf global lido).
+  - **Passam lá (fixações de regressão, declaradas):** `GuardWiringRemoved_MutacaoDoComandoParaEchoX`, nos 8 CLIs,
+    porque o `guard_wiring_removed` já usava o extrator por esquema; e `CopilotGlobal_MarkerEmNote`.
+- **Gates do executor:** `go build`, `go vet` e os testes de `validator`, `generators` e `commands` com rc=0.
 
 ## Wave 2 — Revisões independentes
 > Dependencies: Wave 1 auditada.
