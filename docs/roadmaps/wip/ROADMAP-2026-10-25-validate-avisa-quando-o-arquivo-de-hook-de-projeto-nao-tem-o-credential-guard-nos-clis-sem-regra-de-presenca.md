@@ -129,6 +129,6 @@ test -s docs/seguranca/2026-10-25-wave0-aviso-presenca-credential-guard.md
 **Agente:** zeus-tf
 **Files affected:** nenhum arquivo de produto; só medição
 **Acceptance criteria:**
-- [ ] `make quality` rc=0 com a máquina ociosa e o HOME isolado
-- [ ] Neste repositório, o `validate` do binário da branch não emite o aviso novo (a fiação está completa)
+- [x] `make quality` rc=0 com a máquina ociosa e o HOME isolado (falsificação 367 OK / 0 FAIL / guarda OK; os mesmos 333 rótulos de antes)
+- [x] Neste repositório, o `validate` do binário da branch não emite o aviso novo (a fiação está completa) — rc=0, 0 avisos de presença
 - [ ] CI verde; PR com `Closes #619`

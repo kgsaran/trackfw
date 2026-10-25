@@ -29,17 +29,17 @@ no ADR-2026-10-04.
 
 ## Acceptance Criteria
 
-- [ ] **AC1 — Aviso por CLI e evento.** Quando um arquivo de hook de projeto de Claude, Codex, Gemini, Cursor, Copilot ou
+- [x] **AC1 — Aviso por CLI e evento.** Quando um arquivo de hook de projeto de Claude, Codex, Gemini, Cursor, Copilot ou
   Kiro existe e não tem o credential guard no campo de comando (D16) de cada evento bloqueante que o gerador emite para
   aquele CLI, o `validate` emite um aviso com o arquivo, o evento e a instrução `trackfw update`. A lista de eventos
   esperados por CLI vem do gerador.
-- [ ] **AC2 — Só aviso.** O rc do `validate` não muda por causa deste aviso, inclusive no modo estrito (fora do lenient).
+- [x] **AC2 — Só aviso.** O rc do `validate` não muda por causa deste aviso, inclusive no modo estrito (fora do lenient).
   Um teste afirma isso.
-- [ ] **AC3 — Sem ruído no caso gerado.** O resultado do `trackfw init` e do `trackfw update` de cada CLI não produz o
+- [x] **AC3 — Sem ruído no caso gerado.** O resultado do `trackfw init` e do `trackfw update` de cada CLI não produz o
   aviso, e também não o produz quando existe o guard global (D15).
-- [ ] **AC4 — Os casos do red-team.** O guard só em `PostToolUse`/`AfterTool`, e o `command` no nível do grupo, produzem o
+- [x] **AC4 — Os casos do red-team.** O guard só em `PostToolUse`/`AfterTool`, e o `command` no nível do grupo, produzem o
   aviso.
-- [ ] **AC5 — Ponto único.** O Windsurf e o Amazon Q continuam com violation. A lista de eventos esperados por CLI fica num
+- [x] **AC5 — Ponto único.** O Windsurf e o Amazon Q continuam com violation. A lista de eventos esperados por CLI fica num
   ponto único, compartilhado pela regra de violation e pela de aviso, e um teste de concordância pega um CLI sem entrada.
 - [ ] **AC6 — Fechamento.** `make quality` rc=0, CI verde, PR com `Closes #619` e release 11.1.0 (minor).
 
