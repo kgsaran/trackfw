@@ -436,3 +436,20 @@ restrito por CLI, e os chamadores deixam de passar o arquivo inteiro.
 pode estar dentro de um objeto qualquer. O critério é o caminho de esquema do comando, medido por CLI na Wave 0 da REQ.
 
 REQ: `docs/req/REQ-2026-10-25-validate-casa-o-marcador-do-guard-em-qualquer-string-do-settings-e-nao-so-em-comando-de-hook.md`.
+
+### D17 (2026-10-25, issue #619): ausência do credential guard de projeto é aviso nos CLIs sem regra de presença
+
+**Contexto.** Só o Windsurf e o Amazon Q têm regra de presença absoluta do credential guard de projeto (violation). Em
+Claude, Codex, Gemini, Cursor, Copilot e Kiro, um arquivo de hook sem o guard no evento bloqueante passa sem aviso. Isso
+foi medido no red-team da #618. A `guard_wiring_removed` só protege a fiação que já estava na `main`.
+
+**Decisão (KG, opção b).** Nesses 6 CLIs, o `validate` emite **aviso**, e não violation, quando o arquivo de hook de
+projeto existe e falta o credential guard no campo de comando (D16) de um evento bloqueante que o gerador emite. A lista
+de eventos esperados por CLI é um ponto único, compartilhado com a regra de violation do Windsurf e do Amazon Q.
+
+**Alternativas rejeitadas:**
+- **(a) violation:** deixaria vermelho todo repositório que hoje roda sem guard, o que é breaking.
+- **(c) opt-in no `trackfw.yaml`:** cria uma chave nova para algo que o aviso já resolve.
+- **(d) manter:** deixa o buraco invisível.
+
+REQ: `docs/req/REQ-2026-10-25-validate-avisa-quando-o-arquivo-de-hook-de-projeto-nao-tem-o-credential-guard-nos-clis-sem-regra-de-presenca.md`.
