@@ -15,16 +15,26 @@ import (
 )
 
 // writeWriteScopeSettings writes a minimal .claude/settings.json that satisfies
-// the write_scope_not_wired validator rule.
+// the write_scope_not_wired validator rule AND the new credential_guard_presence_warning
+// rule (D17, REQ-2026-10-25 #619 ML-1A): includes all three required credential guard pairs
+// (PreToolUse Bash|PowerShell, Read, Write|Edit) so a "clean" project has zero warnings.
+//
+// The credential guard entries include the `trackfw guard credential` subcommand, which
+// triggers the binary probe (guardBinaryProbeOnce → guardLookupBinary). To avoid
+// depending on `trackfw` being present in PATH (which it is not in CI), this helper
+// stubs guardLookupBinary and guardRunProbe via stubProbeOK for the duration of the test.
 func writeWriteScopeSettings(t *testing.T, dir string) {
 	t.Helper()
+	stubProbeOK(t)
 	settingsDir := filepath.Join(dir, ".claude")
 	if err := os.MkdirAll(settingsDir, 0700); err != nil {
 		t.Fatalf("MkdirAll .claude: %v", err)
 	}
+	credCmd := guardforms.CredentialCurrentPSPOSIX
 	settings := map[string]interface{}{
 		"hooks": map[string]interface{}{
 			"PreToolUse": []interface{}{
+				// write_scope_not_wired rule (ML-3A)
 				map[string]interface{}{
 					"matcher": "Write|Edit|NotebookEdit",
 					"hooks": []interface{}{
@@ -32,6 +42,25 @@ func writeWriteScopeSettings(t *testing.T, dir string) {
 							"type":    "command",
 							"command": guardforms.WriteScopeCurrentPSPOSIX,
 						},
+					},
+				},
+				// credential_guard_presence_warning rule (D17) — Bash|PowerShell, Read, Write|Edit
+				map[string]interface{}{
+					"matcher": "Bash|PowerShell",
+					"hooks": []interface{}{
+						map[string]interface{}{"type": "command", "command": credCmd},
+					},
+				},
+				map[string]interface{}{
+					"matcher": "Read",
+					"hooks": []interface{}{
+						map[string]interface{}{"type": "command", "command": credCmd},
+					},
+				},
+				map[string]interface{}{
+					"matcher": "Write|Edit",
+					"hooks": []interface{}{
+						map[string]interface{}{"type": "command", "command": credCmd},
 					},
 				},
 			},

@@ -1884,6 +1884,43 @@ func TestGuardWiringHookLayout_CobreTodasAsEntradas(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------
+// ML-2C / R1: Schema consistency — credentialGuardRequiredEntries vs guardWiringHookLayout
+// --------------------------------------------------------------------------
+
+// TestPresenceWarnOnlyEntries_SchemaMatchesWiringLayout afirma: o campo schema de cada entrada
+// warnOnly=true em credentialGuardRequiredEntries é igual ao schema mapeado em
+// guardWiringHookLayout para o mesmo arquivo. Sem este teste, uma atualização de
+// guardWiringHookLayout (ex.: formato de hook de um CLI muda) não atualizada em
+// credentialGuardRequiredEntries provoca travessia silenciosamente errada em
+// extractPresenceCommandsD17, produzindo falsos negativos na regra de presença.
+//
+// Reconciliação (R1, ML-2C, REQ-2026-10-25 #619): afirma que os dois mapas são consistentes para
+// todas as 6 entradas de aviso — qualquer divergência entre eles é detectada aqui antes de chegar
+// ao usuário.
+func TestPresenceWarnOnlyEntries_SchemaMatchesWiringLayout(t *testing.T) {
+	for _, entry := range credentialGuardRequiredEntries {
+		if !entry.warnOnly {
+			continue
+		}
+		wantSchema, ok := guardWiringHookLayout[entry.hookFile.path]
+		if !ok {
+			t.Errorf(
+				"warnOnly entry for %q has no schema in guardWiringHookLayout — add one or remove the entry",
+				entry.hookFile.path,
+			)
+			continue
+		}
+		if entry.schema != wantSchema {
+			t.Errorf(
+				"warnOnly entry for %q: credentialGuardRequiredEntries.schema=%v but guardWiringHookLayout=%v — "+
+					"update credentialGuardRequiredEntries to match the layout",
+				entry.hookFile.path, entry.schema, wantSchema,
+			)
+		}
+	}
+}
+
+// --------------------------------------------------------------------------
 // Helper: runGitInDir — executa um comando git em um diretório de teste.
 // --------------------------------------------------------------------------
 

@@ -486,3 +486,494 @@ func TestCredentialGuardGlobalCmdWindsurf_ValidatorMatchesGenerator(t *testing.T
 		}
 	}
 }
+
+// --------------------------------------------------------------------------
+// AC3 — Inject* produces zero credential_guard_presence_warning for 6 CLIs
+// (D17, REQ-2026-10-25 #619 ML-1A)
+// --------------------------------------------------------------------------
+
+// assertZeroPresenceWarningsForPath fails if ValidateCredentialGuardPresenceWarningsForTest
+// returns any warning that mentions the given hook file path.
+func assertZeroPresenceWarningsForPath(t *testing.T, hookPath string) {
+	t.Helper()
+	msgs, err := validator.ValidateCredentialGuardPresenceWarningsForTest()
+	if err != nil {
+		t.Fatalf("ValidateCredentialGuardPresenceWarnings: unexpected error: %v", err)
+	}
+	for _, m := range msgs {
+		if strings.Contains(m, hookPath) {
+			t.Errorf("unexpected credential_guard_presence_warning for %s: %s", hookPath, m)
+		}
+	}
+}
+
+// TestGuardHookConcordance_D17_ClaudeCode_PresenceWarning afirma que InjectClaudeHooks emite
+// os 3 pares de credential guard que a regra credential_guard_presence_warning reconhece como
+// presentes (zero warnings após inject).
+// Reconciliação (AC3, #619 ML-1A): valida que o matcher exato da lista de entradas coincide
+// com o que o gerador escreve para Claude Code.
+func TestGuardHookConcordance_D17_ClaudeCode_PresenceWarning(t *testing.T) {
+	dir := setupConcordanceDir(t)
+	if err := generators.InjectClaudeHooks(dir); err != nil {
+		t.Fatalf("InjectClaudeHooks: %v", err)
+	}
+	assertZeroPresenceWarningsForPath(t, ".claude/settings.json")
+}
+
+// TestGuardHookConcordance_D17_CodexCLI_PresenceWarning afirma que InjectCodexHooks emite
+// os 2 pares de credential guard que a regra reconhece (zero warnings após inject).
+// Reconciliação (AC3, #619 ML-1A): matcher exato da lista coincide com o gerador Codex.
+func TestGuardHookConcordance_D17_CodexCLI_PresenceWarning(t *testing.T) {
+	dir := setupConcordanceDir(t)
+	if err := generators.InjectCodexHooks(dir); err != nil {
+		t.Fatalf("InjectCodexHooks: %v", err)
+	}
+	assertZeroPresenceWarningsForPath(t, ".codex/hooks.json")
+}
+
+// TestGuardHookConcordance_D17_GeminiCLI_PresenceWarning afirma que InjectGeminiHooks emite
+// os 3 pares de credential guard que a regra reconhece (zero warnings após inject).
+// Reconciliação (AC3, #619 ML-1A): BeforeTool matchers coincidem com o gerador Gemini.
+func TestGuardHookConcordance_D17_GeminiCLI_PresenceWarning(t *testing.T) {
+	dir := setupConcordanceDir(t)
+	if err := generators.InjectGeminiHooks(dir); err != nil {
+		t.Fatalf("InjectGeminiHooks: %v", err)
+	}
+	assertZeroPresenceWarningsForPath(t, ".gemini/settings.json")
+}
+
+// TestGuardHookConcordance_D17_Cursor_PresenceWarning afirma que InjectCursorHooks emite
+// os 3 pares de credential guard que a regra reconhece (zero warnings após inject).
+// Reconciliação (AC3, #619 ML-1A): schemaFlat beforeShellExecution + preToolUse+Read/Write
+// coincidem com o gerador Cursor.
+func TestGuardHookConcordance_D17_Cursor_PresenceWarning(t *testing.T) {
+	dir := setupConcordanceDir(t)
+	if err := generators.InjectCursorHooks(dir); err != nil {
+		t.Fatalf("InjectCursorHooks: %v", err)
+	}
+	assertZeroPresenceWarningsForPath(t, ".cursor/hooks.json")
+}
+
+// TestGuardHookConcordance_D17_GitHubCopilot_PresenceWarning afirma que InjectCopilotHooks
+// emite os 3 pares de credential guard que a regra reconhece (zero warnings após inject).
+// Reconciliação (AC3, #619 ML-1A): schemaFlat preToolUse+bash/view/create|edit coincidem
+// com o gerador Copilot.
+func TestGuardHookConcordance_D17_GitHubCopilot_PresenceWarning(t *testing.T) {
+	dir := setupConcordanceDir(t)
+	if err := generators.InjectCopilotHooks(dir); err != nil {
+		t.Fatalf("InjectCopilotHooks: %v", err)
+	}
+	assertZeroPresenceWarningsForPath(t, ".github/hooks/trackfw-attention.json")
+}
+
+// TestGuardHookConcordance_D17_Kiro_PresenceWarning afirma que InjectKiroHooks emite
+// os 3 pares de credential guard que a regra reconhece (zero warnings após inject).
+// Reconciliação (AC3, #619 ML-1A): schemaKiro PreToolUse+shell/read/write coincidem
+// com o gerador Kiro.
+func TestGuardHookConcordance_D17_Kiro_PresenceWarning(t *testing.T) {
+	dir := setupConcordanceDir(t)
+	if err := generators.InjectKiroHooks(dir); err != nil {
+		t.Fatalf("InjectKiroHooks: %v", err)
+	}
+	assertZeroPresenceWarningsForPath(t, ".kiro/hooks/trackfw-attention.json")
+}
+
+// --------------------------------------------------------------------------
+// AC5 — Entry table ponto único: warnOnly count = 6, violation count = 2
+// --------------------------------------------------------------------------
+
+// TestCredentialGuardPresence_AC5_EntryTableCount afirma que credentialGuardRequiredEntries
+// tem exatamente 6 entradas warnOnly=true (os 6 CLIs sem violation-grade) e exatamente 2
+// entradas warnOnly=false (Windsurf e Amazon Q).
+// Reconciliação (AC5, #619 ML-1A): a tabela é o ponto único compartilhado entre a regra de
+// violation e a de aviso; um developer que adiciona um CLI novo sem entrada nessa tabela faz
+// este teste falhar.
+func TestCredentialGuardPresence_AC5_EntryTableCount(t *testing.T) {
+	got := validator.CredentialGuardPresenceWarnOnlyCountForTest()
+	if got != 6 {
+		t.Errorf("AC5: esperado 6 entradas warnOnly=true em credentialGuardRequiredEntries, obteve %d", got)
+	}
+	gotViol := validator.CredentialGuardPresenceViolationCountForTest()
+	if gotViol != 2 {
+		t.Errorf("AC5: esperado 2 entradas warnOnly=false (Windsurf+AmazonQ), obteve %d", gotViol)
+	}
+}
+
+// --------------------------------------------------------------------------
+// AC5 — Bidirectional: generated ⊇ table AND table ⊇ blocking-pairs-in-generated
+// (D17, REQ-2026-10-25 #619 ML-1A2)
+// --------------------------------------------------------------------------
+
+// blockingEventsForCLI returns the set of event keys that are "blocking" (pre-execution)
+// for a given CLI hook file. Hard-coded from Wave 0 §1.2 to avoid circular dependency
+// on the production table.
+func blockingEventsForCLI(hookPath string) map[string]bool {
+	switch hookPath {
+	case ".claude/settings.json":
+		return map[string]bool{"PreToolUse": true}
+	case ".codex/hooks.json":
+		return map[string]bool{"PreToolUse": true}
+	case ".gemini/settings.json":
+		return map[string]bool{"BeforeTool": true}
+	case ".cursor/hooks.json":
+		return map[string]bool{"beforeShellExecution": true, "preToolUse": true}
+	case ".github/hooks/trackfw-attention.json":
+		return map[string]bool{"preToolUse": true}
+	case ".kiro/hooks/trackfw-attention.json":
+		return map[string]bool{"PreToolUse": true}
+	}
+	return nil
+}
+
+// guardPairKey is a (hookEvent, matcher) pair for use as a map key.
+type guardPairKey struct{ event, matcher string }
+
+// containsGuardMarker returns true if cmd contains the credential guard script or subcommand marker.
+func containsGuardMarker(cmd string) bool {
+	return strings.Contains(cmd, "trackfw-credential-guard.sh") ||
+		strings.Contains(cmd, "trackfw guard credential")
+}
+
+// extractBlockingPairsNested walks a schemaNested JSON (hooks[event][i]["hooks"][j]["command"])
+// and returns all (event, matcher) pairs in blocking events that contain the guard marker.
+// requiresCommandType: when true, only entries with "type":"command" count.
+func extractBlockingPairsNested(parsed map[string]interface{}, blocking map[string]bool, requiresCommandType bool) map[guardPairKey]bool {
+	out := make(map[guardPairKey]bool)
+	hooksObj, _ := parsed["hooks"].(map[string]interface{})
+	for event := range blocking {
+		arr, _ := hooksObj[event].([]interface{})
+		for _, groupRaw := range arr {
+			group, _ := groupRaw.(map[string]interface{})
+			if group == nil {
+				continue
+			}
+			matcher, _ := group["matcher"].(string)
+			innerHooks, _ := group["hooks"].([]interface{})
+			for _, ih := range innerHooks {
+				inner, _ := ih.(map[string]interface{})
+				if inner == nil {
+					continue
+				}
+				if requiresCommandType {
+					if typeStr, _ := inner["type"].(string); typeStr != "command" {
+						continue
+					}
+				}
+				cmd, _ := inner["command"].(string)
+				if containsGuardMarker(cmd) {
+					out[guardPairKey{event, matcher}] = true
+				}
+			}
+		}
+	}
+	return out
+}
+
+// extractBlockingPairsFlat walks a schemaFlat JSON (hooks[event][i]["command"])
+// and returns all (event, matcher) pairs in blocking events that contain the guard marker.
+// requiresCommandType: when true, only entries with "type":"command" count.
+func extractBlockingPairsFlat(parsed map[string]interface{}, blocking map[string]bool, requiresCommandType bool) map[guardPairKey]bool {
+	out := make(map[guardPairKey]bool)
+	hooksObj, _ := parsed["hooks"].(map[string]interface{})
+	for event := range blocking {
+		arr, _ := hooksObj[event].([]interface{})
+		for _, entryRaw := range arr {
+			entry, _ := entryRaw.(map[string]interface{})
+			if entry == nil {
+				continue
+			}
+			if requiresCommandType {
+				if typeStr, _ := entry["type"].(string); typeStr != "command" {
+					continue
+				}
+			}
+			matcher, _ := entry["matcher"].(string)
+			cmd, _ := entry["command"].(string)
+			if containsGuardMarker(cmd) {
+				out[guardPairKey{event, matcher}] = true
+			}
+		}
+	}
+	return out
+}
+
+// extractBlockingPairsKiro walks a schemaKiro JSON (hooks[i]["action"]["command"])
+// and returns all (trigger, matcher) pairs in blocking events that contain the guard marker.
+// requiresCommandType: when true, only action entries with "type":"command" count.
+func extractBlockingPairsKiro(parsed map[string]interface{}, blocking map[string]bool, requiresCommandType bool) map[guardPairKey]bool {
+	out := make(map[guardPairKey]bool)
+	arr, _ := parsed["hooks"].([]interface{})
+	for _, entryRaw := range arr {
+		entry, _ := entryRaw.(map[string]interface{})
+		if entry == nil {
+			continue
+		}
+		trigger, _ := entry["trigger"].(string)
+		if !blocking[trigger] {
+			continue
+		}
+		action, _ := entry["action"].(map[string]interface{})
+		if action == nil {
+			continue
+		}
+		if requiresCommandType {
+			if typeStr, _ := action["type"].(string); typeStr != "command" {
+				continue
+			}
+		}
+		cmd, _ := action["command"].(string)
+		if containsGuardMarker(cmd) {
+			matcher, _ := entry["matcher"].(string)
+			out[guardPairKey{trigger, matcher}] = true
+		}
+	}
+	return out
+}
+
+// extractGeneratedBlockingPairs reads the hook file at hookPath (relative to dir), parses it,
+// and returns all (event, matcher) pairs in blocking events that contain the guard marker.
+// Uses a hand-written walker (not extractPresenceCommandsD17) to avoid circular dependency.
+func extractGeneratedBlockingPairs(t *testing.T, dir, hookPath, schema string, requiresCommandType bool) map[guardPairKey]bool {
+	t.Helper()
+	fullPath := filepath.Join(dir, filepath.FromSlash(hookPath))
+	data, err := os.ReadFile(fullPath) //nolint:gosec
+	if err != nil {
+		t.Fatalf("readFile(%s): %v", hookPath, err)
+	}
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("unmarshal(%s): %v", hookPath, err)
+	}
+	blocking := blockingEventsForCLI(hookPath)
+	switch schema {
+	case "nested":
+		return extractBlockingPairsNested(parsed, blocking, requiresCommandType)
+	case "flat":
+		return extractBlockingPairsFlat(parsed, blocking, requiresCommandType)
+	case "kiro":
+		return extractBlockingPairsKiro(parsed, blocking, requiresCommandType)
+	default:
+		t.Fatalf("unknown schema %q for %s", schema, hookPath)
+		return nil
+	}
+}
+
+// inject function table for each of the 6 CLIs (path → inject function).
+type injectFn func(dir string) error
+
+func injectFnFor(hookPath string) injectFn {
+	switch hookPath {
+	case ".claude/settings.json":
+		return generators.InjectClaudeHooks
+	case ".codex/hooks.json":
+		return generators.InjectCodexHooks
+	case ".gemini/settings.json":
+		return generators.InjectGeminiHooks
+	case ".cursor/hooks.json":
+		return generators.InjectCursorHooks
+	case ".github/hooks/trackfw-attention.json":
+		return generators.InjectCopilotHooks
+	case ".kiro/hooks/trackfw-attention.json":
+		return generators.InjectKiroHooks
+	}
+	return nil
+}
+
+// TestCredentialGuardPresence_AC5_GeneratorTableBidirectional_GeneratedSubsetOfTable afirma
+// que todo par (evento bloqueante, matcher) gerado por Inject* que contém o guard também existe
+// na tabela credentialGuardRequiredEntries (warnOnly=true). Isso garante que a tabela não
+// esquece nenhum par gerado — um par gerado mas ausente da tabela significa um warning falso
+// permanente que `trackfw update` não resolve.
+// Reconciliação (AC5, #619 ML-1A2): walker independente do código de produção; blocking events
+// hard-coded do Wave 0 §1.2 para evitar circularidade.
+func TestCredentialGuardPresence_AC5_GeneratorTableBidirectional_GeneratedSubsetOfTable(t *testing.T) {
+	entries := validator.CredentialGuardPresenceWarnOnlyEntriesForTest()
+
+	for _, entry := range entries {
+		entry := entry // capture range variable
+		t.Run(entry.Path, func(t *testing.T) {
+			dir := setupConcordanceDir(t)
+
+			inject := injectFnFor(entry.Path)
+			if inject == nil {
+				t.Fatalf("no inject function for %s", entry.Path)
+			}
+			if err := inject(dir); err != nil {
+				t.Fatalf("Inject*Hooks: %v", err)
+			}
+
+			// Verify the hook file was actually written.
+			fullPath := filepath.Join(dir, filepath.FromSlash(entry.Path))
+			if _, err := os.Stat(fullPath); err != nil {
+				t.Fatalf("hook file not written after Inject*: %v", err)
+			}
+
+			// Pick schema and requiresCommandType from the first event (all events share the same schema).
+			schema := ""
+			requiresCommandType := false
+			if len(entry.Events) > 0 {
+				schema = entry.Events[0].Schema
+				requiresCommandType = entry.Events[0].RequiresCommandType
+			}
+
+			// Build the table set of (event, matcher) pairs for this CLI.
+			tableSet := make(map[guardPairKey]bool)
+			for _, ev := range entry.Events {
+				tableSet[guardPairKey{ev.HookEvent, ev.Matcher}] = true
+			}
+
+			// Walk the generated file with an independent hand-written walker.
+			generatedPairs := extractGeneratedBlockingPairs(t, dir, entry.Path, schema, requiresCommandType)
+
+			// Direction: generated ⊆ table (table doesn't miss any generated blocking pair).
+			for pair := range generatedPairs {
+				if !tableSet[pair] {
+					t.Errorf("generated blocking pair (%q, %q) is not in the table for %s — "+
+						"table is missing a pair that `trackfw update` would write; "+
+						"add it to credentialGuardRequiredEntries",
+						pair.event, pair.matcher, entry.Path)
+				}
+			}
+		})
+	}
+}
+
+// --------------------------------------------------------------------------
+// AC3 — com guard global instalado pelo UpdateHarness real
+// (D17, REQ-2026-10-25 #619 ML-1A2)
+// --------------------------------------------------------------------------
+
+// TestGuardHookConcordance_D17_WithGlobalHarness_ClaudeCode_ZeroPresenceWarnings afirma que,
+// depois de UpdateHarness instalar o guard global em um HOME falso e InjectClaudeHooks escrever
+// o arquivo de projeto, validateCredentialGuardPresenceWarnings emite zero warnings para Claude.
+// Reconciliação (AC3, #619 ML-1A2): D15 garante que project-scope é sempre emitido pelo gerador
+// independente do global; o aviso não deve disparar quando ambos estão instalados.
+func TestGuardHookConcordance_D17_WithGlobalHarness_ClaudeCode_ZeroPresenceWarnings(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // Windows compatibility even on non-Windows
+
+	dir := t.TempDir()
+	validator.ChdirForTest(t, dir)
+	validator.StubProbeOKForTest(t)
+
+	// Step 1: install the global harness into the fake HOME (writes ~/.claude/settings.json).
+	report, err := generators.UpdateHarness(generators.UpdateOptions{
+		Targets:        []string{"claude-credential-guard"},
+		InstallMissing: true,
+	})
+	if err != nil {
+		t.Fatalf("UpdateHarness: %v", err)
+	}
+	_ = report // result is informational; we verify the file below
+
+	// Assertion 1: global guard file exists in fake HOME.
+	globalPath := filepath.Join(home, ".claude", "settings.json")
+	if _, err := os.Stat(globalPath); err != nil {
+		t.Fatalf("global guard file not written to fake HOME by UpdateHarness: %v", err)
+	}
+
+	// Step 2: inject project-scope hook file.
+	if err := generators.InjectClaudeHooks(dir); err != nil {
+		t.Fatalf("InjectClaudeHooks: %v", err)
+	}
+
+	// Assertion 2: project hook file exists.
+	projectPath := filepath.Join(dir, ".claude", "settings.json")
+	if _, err := os.Stat(projectPath); err != nil {
+		t.Fatalf("project hook file not written by InjectClaudeHooks: %v", err)
+	}
+
+	// Assertion 3: zero presence warnings for Claude after both global and project installs.
+	assertZeroPresenceWarningsForPath(t, ".claude/settings.json")
+}
+
+// TestGuardHookConcordance_D17_WithGlobalHarness_Kiro_ZeroPresenceWarnings afirma que,
+// depois de UpdateHarness instalar o guard global Kiro e InjectKiroHooks escrever o arquivo
+// de projeto, validateCredentialGuardPresenceWarnings emite zero warnings para Kiro.
+// Reconciliação (AC3, #619 ML-1A2): schema Kiro (action.command) é o mais distinto dos 6;
+// confirmar que global+project não dispara aviso de presença.
+func TestGuardHookConcordance_D17_WithGlobalHarness_Kiro_ZeroPresenceWarnings(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	dir := t.TempDir()
+	validator.ChdirForTest(t, dir)
+	validator.StubProbeOKForTest(t)
+
+	// Step 1: install global harness for Kiro.
+	_, err := generators.UpdateHarness(generators.UpdateOptions{
+		Targets:        []string{"kiro-credential-guard"},
+		InstallMissing: true,
+	})
+	if err != nil {
+		t.Fatalf("UpdateHarness(kiro): %v", err)
+	}
+
+	// Step 2: inject project-scope hook file.
+	if err := generators.InjectKiroHooks(dir); err != nil {
+		t.Fatalf("InjectKiroHooks: %v", err)
+	}
+
+	// Assertion: project file exists.
+	if _, err := os.Stat(filepath.Join(dir, ".kiro", "hooks", "trackfw-attention.json")); err != nil {
+		t.Fatalf("Kiro project hook file not written: %v", err)
+	}
+
+	// Assertion: zero presence warnings for Kiro.
+	assertZeroPresenceWarningsForPath(t, ".kiro/hooks/trackfw-attention.json")
+}
+
+// --------------------------------------------------------------------------
+// AC2 braço — Validate() fora do lenient confirma roteamento para warnings
+// (D17, REQ-2026-10-25 #619 ML-1A2)
+// --------------------------------------------------------------------------
+
+// TestCredentialGuardPresence_AC2_ValidateForTest_RoteiaWarningsNaoViolations afirma que
+// ValidateForTest() (pipeline completo, baseline + lenient aplicado) roteia os warnings de
+// credential_guard_presence_warning para warnings, não para violations — mesmo em strict mode.
+// Reconciliação (AC2, #619 ML-1A2): confirma que o roteamento via applyRuleWarnOnly no caminho
+// Validate() é idêntico ao do caminho ValidateUnfiltered(); qualquer regressão que mova a
+// mensagem para violations faria este teste falhar.
+func TestCredentialGuardPresence_AC2_ValidateForTest_RoteiaWarningsNaoViolations(t *testing.T) {
+	dir := setupConcordanceDir(t)
+
+	// Write .claude/settings.json without credential guard — presence warnings should fire.
+	if err := os.MkdirAll(filepath.Join(dir, ".claude"), 0755); err != nil {
+		t.Fatalf("mkdir .claude: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".claude", "settings.json"), []byte(`{
+  "hooks": {
+    "PostToolUse": [
+      {"matcher": "AskUserQuestion", "hooks": [{"command": "scripts/cleanup.sh", "type": "command"}]}
+    ]
+  }
+}`), 0644); err != nil {
+		t.Fatalf("write settings.json: %v", err)
+	}
+
+	violations, warnings, err := validator.ValidateForTest()
+	if err != nil {
+		t.Fatalf("ValidateForTest: %v", err)
+	}
+
+	// Assertion 1: nenhuma violation contém "has no credential guard entry".
+	for _, v := range violations {
+		if strings.Contains(v, "has no credential guard entry") {
+			t.Errorf("AC2 ValidateForTest: credential guard presence deve ser warning, não violation; obteve: %q", v)
+		}
+	}
+
+	// Assertion 2: pelo menos um warning contém "has no credential guard entry".
+	found := false
+	for _, w := range warnings {
+		if strings.Contains(w, "has no credential guard entry") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("AC2 ValidateForTest: esperado aviso 'has no credential guard entry' em warnings; violations=%v warnings=%v", violations, warnings)
+	}
+}

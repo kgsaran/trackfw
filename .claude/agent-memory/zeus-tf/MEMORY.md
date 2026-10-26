@@ -41,3 +41,4 @@
 - [Agentes escrevem o working context](project_agentes_escrevem_working_context.md) — 5/9 ignoraram a proibição; a instrução do arquivo do agente vence o handoff; corrigir no gerador
 - [PR incompleto abre como draft](feedback_pr_incompleto_abre_como_draft.md) — wave pendente → `gh pr create --draft`; aviso em prosa não segurou o merge do #598
 - [Mover escrita roda o pathguard](feedback_mover_escrita_roda_pathguard.md) — escrita movida de função/pacote → `go test ./internal/pathguard/`; só o make quality pegou (#602)
+- [PATH local mascara a sonda de binário](project_path_local_mascara_sonda_de_binario.md) — trackfw instalado no PATH deixa teste verde local e vermelho no CI; rode go test com PATH sem trackfw

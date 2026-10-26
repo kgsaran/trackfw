@@ -781,31 +781,53 @@ func validateGuardHookShLegacyWarnings(scriptMarker string) ([]string, error) {
 // credentialGuardRequiredEvent describes a single event or matcher within a hook file where the
 // credential guard MUST be present after ML-1B (REQ-2026-10-06). For Windsurf, events are top-level
 // keys under "hooks"; for Amazon Q, events are "matcher" values inside hooks.preToolUse entries.
+// D17 (ADR-2026-10-04 adendo 2026-10-25, REQ-2026-10-25 #619 ML-1A): extends to the 6 CLIs that
+// carry a warning (not violation) via validateCredentialGuardPresenceWarnings.
 type credentialGuardRequiredEvent struct {
 	// hookEvent is the event key within the top-level "hooks" object (e.g. "pre_run_command").
 	hookEvent string
 	// amazonQMatcher, when non-empty, switches to Amazon Q's preToolUse[matcher] extraction mode:
 	// instead of hooks[hookEvent], we look for preToolUse entries with this "matcher" value.
+	// Legacy field — only used by the two warnOnly=false entries (Amazon Q). Prefer using the
+	// matcher field for new warnOnly=true entries.
 	amazonQMatcher string
+	// matcher is the exact "matcher" string to look for in the hook entry (D17). Empty means no
+	// matcher filtering (e.g. Cursor's beforeShellExecution, Windsurf pre_run_command).
+	matcher string
 }
 
 // credentialGuardRequiredEntry pairs a hook file with the list of events that must carry the guard.
+// D17 (ADR-2026-10-04 adendo 2026-10-25, REQ-2026-10-25 #619): warnOnly=false → violation (Windsurf,
+// Amazon Q); warnOnly=true → warning for 6 CLIs (Claude, Codex, Gemini, Cursor, Copilot, Kiro).
+// schema is the extraction schema for the presence check (used by warnOnly=true entries only).
 type credentialGuardRequiredEntry struct {
 	hookFile credentialGuardHookFile
 	events   []credentialGuardRequiredEvent
+	// warnOnly: false = violation (handled by validateCredentialGuardPresenceRequired),
+	//           true = warning-only (handled by validateCredentialGuardPresenceWarnings).
+	warnOnly bool
+	// schema: hookCmdSchemaNested / hookCmdSchemaFlat / hookCmdSchemaKiro — D17 extraction.
+	// Only consulted when warnOnly=true. Windsurf/Amazon Q use extractCredentialGuardCommandsFromEvent.
+	schema hookCmdSchemaKind
 }
 
 // credentialGuardRequiredEntries is the closed list of (file, events) pairs where the credential
-// guard is MANDATORY (ML-1B, REQ-2026-10-06). Each event is checked independently; a file that
-// has the guard in pre_run_command but not in pre_write_code still emits a violation for the
-// missing event (Wave 0 requirement: "credential guard nos eventos decididos").
+// guard is MANDATORY (violation, ML-1B, REQ-2026-10-06) or advisory (warning, D17, REQ-2026-10-25).
+// Each event is checked independently. warnOnly=false → violation; warnOnly=true → warning only.
+//
+// This is the SINGLE SOURCE OF TRUTH for all CLIs (AC5, REQ-2026-10-25): every CLI in
+// credentialGuardHookFiles (except Windsurf and Amazon Q which are warnOnly=false) has a
+// warnOnly=true entry here. validateCredentialGuardPresenceRequired skips warnOnly=true;
+// validateCredentialGuardPresenceWarnings processes only warnOnly=true.
 var credentialGuardRequiredEntries = []credentialGuardRequiredEntry{
+	// ── Violation-grade entries (warnOnly=false) ────────────────────────────────
 	{
 		hookFile: credentialGuardHookFile{".windsurf/hooks.json", "Windsurf", false, false, guardShellFamilyPSPosix},
 		events: []credentialGuardRequiredEvent{
 			{hookEvent: "pre_run_command"},
 			{hookEvent: "pre_write_code"},
 		},
+		warnOnly: false,
 		// D15 (ADR-2026-10-04 adendo 2026-10-24): project-scope wiring always required.
 	},
 	{
@@ -814,6 +836,69 @@ var credentialGuardRequiredEntries = []credentialGuardRequiredEntry{
 			{hookEvent: "preToolUse", amazonQMatcher: "execute_bash"},
 			{hookEvent: "preToolUse", amazonQMatcher: "fs_write"},
 		},
+		warnOnly: false,
+	},
+	// ── Warning-grade entries (warnOnly=true, D17) ──────────────────────────────
+	// Matchers and events are EXACT strings from the generator (confirmed in Wave 0
+	// docs/seguranca/2026-10-25-wave0-aviso-presenca-credential-guard.md §1.2).
+	{
+		hookFile: credentialGuardHookFile{".claude/settings.json", "Claude Code", true, true, guardShellFamilyPSPosix},
+		events: []credentialGuardRequiredEvent{
+			{hookEvent: "PreToolUse", matcher: "Bash|PowerShell"},
+			{hookEvent: "PreToolUse", matcher: "Read"},
+			{hookEvent: "PreToolUse", matcher: "Write|Edit"},
+		},
+		warnOnly: true,
+		schema:   hookCmdSchemaNested,
+	},
+	{
+		hookFile: credentialGuardHookFile{".codex/hooks.json", "Codex CLI", true, true, guardShellFamilyPSPosix},
+		events: []credentialGuardRequiredEvent{
+			{hookEvent: "PreToolUse", matcher: "Bash"},
+			{hookEvent: "PreToolUse", matcher: "apply_patch"},
+		},
+		warnOnly: true,
+		schema:   hookCmdSchemaNested,
+	},
+	{
+		hookFile: credentialGuardHookFile{".gemini/settings.json", "Gemini CLI", true, true, guardShellFamilyPSPosix},
+		events: []credentialGuardRequiredEvent{
+			{hookEvent: "BeforeTool", matcher: "run_shell_command"},
+			{hookEvent: "BeforeTool", matcher: "read_file|read_many_files"},
+			{hookEvent: "BeforeTool", matcher: "write_file|replace"},
+		},
+		warnOnly: true,
+		schema:   hookCmdSchemaNested,
+	},
+	{
+		hookFile: credentialGuardHookFile{".cursor/hooks.json", "Cursor", false, false, guardShellFamilyPSPosix},
+		events: []credentialGuardRequiredEvent{
+			{hookEvent: "beforeShellExecution"}, // no matcher — entire event is guarded
+			{hookEvent: "preToolUse", matcher: "Read"},
+			{hookEvent: "preToolUse", matcher: "Write"},
+		},
+		warnOnly: true,
+		schema:   hookCmdSchemaFlat,
+	},
+	{
+		hookFile: credentialGuardHookFile{".github/hooks/trackfw-attention.json", "GitHub Copilot CLI", true, false, guardShellFamilyPSPosix},
+		events: []credentialGuardRequiredEvent{
+			{hookEvent: "preToolUse", matcher: "bash"},
+			{hookEvent: "preToolUse", matcher: "view"},
+			{hookEvent: "preToolUse", matcher: "create|edit"},
+		},
+		warnOnly: true,
+		schema:   hookCmdSchemaFlat,
+	},
+	{
+		hookFile: credentialGuardHookFile{".kiro/hooks/trackfw-attention.json", "Kiro", true, false, guardShellFamilyCmdExe},
+		events: []credentialGuardRequiredEvent{
+			{hookEvent: "PreToolUse", matcher: "shell"},
+			{hookEvent: "PreToolUse", matcher: "read"},
+			{hookEvent: "PreToolUse", matcher: "write"},
+		},
+		warnOnly: true,
+		schema:   hookCmdSchemaKiro,
 	},
 }
 
@@ -878,6 +963,9 @@ func validateCredentialGuardPresenceRequired() ([]string, error) {
 
 	var msgs []string
 	for _, entry := range credentialGuardRequiredEntries {
+		if entry.warnOnly {
+			continue // D17: handled by validateCredentialGuardPresenceWarnings
+		}
 		hf := entry.hookFile
 		fullPath := filepath.Join(root, hf.path)
 		content, readErr := readRegularFile(fullPath)
@@ -899,6 +987,190 @@ func validateCredentialGuardPresenceRequired() ([]string, error) {
 				eventDesc := ev.hookEvent
 				if ev.amazonQMatcher != "" {
 					eventDesc = ev.hookEvent + "[" + ev.amazonQMatcher + "]"
+				}
+				msgs = append(msgs, fmt.Sprintf(
+					"%s (%s) is present but has no credential guard entry in event %s — "+
+						"run `trackfw update` to add the credential guard wiring",
+					hf.path, hf.cli, eventDesc,
+				))
+			}
+		}
+	}
+	return msgs, nil
+}
+
+// extractPresenceCommandsD17 extracts credential-guard command strings from a single (event, matcher)
+// slot of a parsed hook file, using the extraction schema defined by schema. Both the .sh legacy form
+// (credentialGuardScriptMarker) and the Go subcommand form (credentialGuardSubcmdMarker) are
+// recognised. requiresCommandType=true means an entry without "type":"command" is NOT counted.
+//
+// Three schemas are supported (D17, REQ-2026-10-25 Wave 0 §1.3):
+//   - hookCmdSchemaNested (Claude, Codex, Gemini): hooks[event] is [{matcher, hooks:[{type,command}]}];
+//     filter by group["matcher"]==event.matcher, then read group["hooks"][i]["command"].
+//   - hookCmdSchemaFlat (Cursor, Copilot project): hooks[event] is [{type,matcher,command}];
+//     filter by entry["matcher"]==event.matcher (skip filter when event.matcher is empty).
+//   - hookCmdSchemaKiro: root["hooks"] is [{trigger,matcher,action:{type,command}}];
+//     filter by trigger==event.hookEvent && matcher==event.matcher.
+func extractPresenceCommandsD17(parsed interface{}, event credentialGuardRequiredEvent, schema hookCmdSchemaKind, requiresCommandType bool) []guardCommandMatch {
+	root, ok := parsed.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	containsMarker := func(cmd string) bool {
+		return strings.Contains(cmd, credentialGuardSubcmdMarker) ||
+			strings.Contains(cmd, credentialGuardScriptMarker)
+	}
+
+	switch schema {
+	case hookCmdSchemaNested:
+		// Claude, Codex, Gemini: hooks[event] is [{matcher, hooks:[{type, command}]}]
+		hooksObj, _ := root["hooks"].(map[string]interface{})
+		if hooksObj == nil {
+			return nil
+		}
+		evArr, _ := hooksObj[event.hookEvent].([]interface{})
+		var out []guardCommandMatch
+		for _, groupRaw := range evArr {
+			group, _ := groupRaw.(map[string]interface{})
+			if group == nil {
+				continue
+			}
+			if event.matcher != "" {
+				m, _ := group["matcher"].(string)
+				if m != event.matcher {
+					continue
+				}
+			}
+			innerHooks, _ := group["hooks"].([]interface{})
+			for _, ih := range innerHooks {
+				innerObj, _ := ih.(map[string]interface{})
+				if innerObj == nil {
+					continue
+				}
+				typeStr, _ := innerObj["type"].(string)
+				cmd, _ := innerObj["command"].(string)
+				if cmd == "" || !containsMarker(cmd) {
+					continue
+				}
+				if requiresCommandType && typeStr != "command" {
+					continue
+				}
+				out = append(out, guardCommandMatch{raw: cmd, typeIsCommand: typeStr == "command"})
+			}
+		}
+		return out
+
+	case hookCmdSchemaFlat:
+		// Cursor, Copilot project: hooks[event] is [{type, matcher, command}]
+		hooksObj, _ := root["hooks"].(map[string]interface{})
+		if hooksObj == nil {
+			return nil
+		}
+		evArr, _ := hooksObj[event.hookEvent].([]interface{})
+		var out []guardCommandMatch
+		for _, entryRaw := range evArr {
+			entry, _ := entryRaw.(map[string]interface{})
+			if entry == nil {
+				continue
+			}
+			if event.matcher != "" {
+				m, _ := entry["matcher"].(string)
+				if m != event.matcher {
+					continue
+				}
+			}
+			typeStr, _ := entry["type"].(string)
+			cmd, _ := entry["command"].(string)
+			if cmd == "" || !containsMarker(cmd) {
+				continue
+			}
+			if requiresCommandType && typeStr != "command" {
+				continue
+			}
+			out = append(out, guardCommandMatch{raw: cmd, typeIsCommand: typeStr == "command"})
+		}
+		return out
+
+	case hookCmdSchemaKiro:
+		// Kiro: root["hooks"] is [{trigger, matcher, action:{type, command}}]
+		arr, _ := root["hooks"].([]interface{})
+		var out []guardCommandMatch
+		for _, entryRaw := range arr {
+			entry, _ := entryRaw.(map[string]interface{})
+			if entry == nil {
+				continue
+			}
+			trigger, _ := entry["trigger"].(string)
+			if trigger != event.hookEvent {
+				continue
+			}
+			if event.matcher != "" {
+				m, _ := entry["matcher"].(string)
+				if m != event.matcher {
+					continue
+				}
+			}
+			action, _ := entry["action"].(map[string]interface{})
+			if action == nil {
+				continue
+			}
+			typeStr, _ := action["type"].(string)
+			cmd, _ := action["command"].(string)
+			if cmd == "" || !containsMarker(cmd) {
+				continue
+			}
+			if requiresCommandType && typeStr != "command" {
+				continue
+			}
+			out = append(out, guardCommandMatch{raw: cmd, typeIsCommand: typeStr == "command"})
+		}
+		return out
+	}
+	return nil
+}
+
+// validateCredentialGuardPresenceWarnings emits WARNINGS (never violations) when a project hook
+// file for one of the 6 CLIs without a violation-grade presence rule exists on disk but is missing
+// the credential guard in one of the expected (event, matcher) pairs.
+//
+// D17 (ADR-2026-10-04 adendo 2026-10-25, REQ-2026-10-25 #619 ML-1A): warning-only, never blockable.
+// Registered via applyRuleWarnOnly("credential_guard_presence_warning", ...) in validator.go.
+// The violation-grade CLIs (Windsurf, Amazon Q) are handled by validateCredentialGuardPresenceRequired
+// via validateCredentialGuardHookResolvable.
+func validateCredentialGuardPresenceWarnings() ([]string, error) {
+	root, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	if resolvedRoot, symErr := filepath.EvalSymlinks(root); symErr == nil {
+		root = resolvedRoot
+	}
+
+	var msgs []string
+	for _, entry := range credentialGuardRequiredEntries {
+		if !entry.warnOnly {
+			continue // D17: violations handled by validateCredentialGuardPresenceRequired
+		}
+		hf := entry.hookFile
+		fullPath := filepath.Join(root, hf.path)
+		content, readErr := readRegularFile(fullPath)
+		if readErr != nil {
+			// Absent or unreadable: no project hook installed, warning is inappropriate.
+			continue
+		}
+		var parsed interface{}
+		if json.Unmarshal(content, &parsed) != nil {
+			// Invalid JSON: already reported by validateGuardHookResolvable.
+			continue
+		}
+
+		for _, ev := range entry.events {
+			matches := extractPresenceCommandsD17(parsed, ev, entry.schema, hf.requiresCommandType)
+			if len(matches) == 0 {
+				eventDesc := ev.hookEvent
+				if ev.matcher != "" {
+					eventDesc = ev.hookEvent + "[" + ev.matcher + "]"
 				}
 				msgs = append(msgs, fmt.Sprintf(
 					"%s (%s) is present but has no credential guard entry in event %s — "+

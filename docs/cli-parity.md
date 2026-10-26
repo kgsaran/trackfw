@@ -9314,3 +9314,59 @@ Quando `agent_id` está presente no payload (subagente) e `agent_type` é um slu
 - R6 (Wave 0): dois subagentes do mesmo `agent_type` em worktrees paralelos compartilham o mesmo lease — a instância menos privilegiada herda a permissão da mais privilegiada.
 - Escrita fora de qualquer projeto trackfw (sem `trackfw.yaml` ancestral) não é bloqueada pela D4.
 - Escrita por Bash (`echo >>`, `sed -i`, `cp`) escapa da D3 e da D4; só a D2 (`trackfw barrier ml_scope`) a detecta na auditoria de commit.
+
+## Regra `credential_guard_presence_warning` — aviso de presença do guard nos 6 CLIs sem exigência de violation (D17, REQ-2026-10-25 #619)
+
+<!-- trackfw-contract: gate=internal/validator/validator_credential_guard_presence_warning_test.go,internal/validator/validator_guard_hook_concordance_external_test.go partial=os testes AC1 (par-por-par para os 6 CLIs), AC2 (roteamento para warnings via ValidateUnfiltered), AC4 (red-team PostToolUse e Kiro command-raiz) e AC5 (contagem da tabela de entradas) cobrem o comportamento especificado aqui; o Cenário 47 de check-gates-falsify.sh usa o gerador de fixture atualizado com os 3 pares modernos; NÃO há teste de integração via CLI (parity-rest) neste ML -->
+
+> REQ: `docs/req/REQ-2026-10-25-validate-avisa-quando-o-arquivo-de-hook-de-projeto-nao-tem-o-credential-guard-nos-clis-sem-regra-de-presenca.md`
+> ADR: `docs/adr/ADR-2026-10-04-o-guard-de-hook-e-um-subcomando-go-do-trackfw-e-a-linha-de-hook-e-a-mesma-string-em-todo-shell.md` (D17)
+> Issue: #619
+
+### O que a regra faz
+
+<!-- trackfw-contract: none reason=comportamento coberto pela anotação de contrato da seção pai (## Regra credential_guard_presence_warning) acima — os gates AC1–AC5 em validator_credential_guard_presence_warning_test.go e validator_guard_hook_concordance_external_test.go provam cada afirmação desta subseção -->
+
+`credential_guard_presence_warning` (severity default `warning`, never `error` — D17 decision by KG):
+
+Para cada um dos 6 CLIs sem violation-grade (Claude Code, Codex CLI, Gemini CLI, Cursor, GitHub Copilot CLI, Kiro), quando o arquivo de hook de **projeto** **existir** no disco, verifica se o campo executável de cada par `(evento, matcher)` esperado contém o marcador do credential guard (`trackfw-credential-guard.sh` ou `trackfw guard credential`).
+
+**Lista de entradas (`credentialGuardRequiredEntries` em `validator_credential_guard.go`):**
+
+| CLI | Arquivo | Schema | Pares (hookEvent + matcher) |
+|---|---|---|---|
+| Claude Code | `.claude/settings.json` | schemaNested | PreToolUse+`Bash\|PowerShell`, PreToolUse+`Read`, PreToolUse+`Write\|Edit` |
+| Codex CLI | `.codex/hooks.json` | schemaNested | PreToolUse+`Bash`, PreToolUse+`apply_patch` |
+| Gemini CLI | `.gemini/settings.json` | schemaNested | BeforeTool+`run_shell_command`, BeforeTool+`read_file\|read_many_files`, BeforeTool+`write_file\|replace` |
+| Cursor | `.cursor/hooks.json` | schemaFlat | `beforeShellExecution` (sem matcher), preToolUse+`Read`, preToolUse+`Write` |
+| GitHub Copilot CLI | `.github/hooks/trackfw-attention.json` | schemaFlat | preToolUse+`bash`, preToolUse+`view`, preToolUse+`create\|edit` |
+| Kiro | `.kiro/hooks/trackfw-attention.json` | schemaKiro | PreToolUse+`shell`, PreToolUse+`read`, PreToolUse+`write` |
+
+Windsurf e Amazon Q **permanecem com violation-grade** (`warnOnly=false` na mesma tabela).
+
+**Mensagem de aviso (por par ausente):**
+```
+<arquivo> (<CLI>) is present but has no credential guard entry in event <evento>[<matcher>] — run `trackfw update` to add the credential guard wiring
+```
+
+**Comportamento de silêncio:** arquivo ausente → silêncio (guard global pode estar instalado). Arquivo presente mas JSON inválido → silêncio (já reportado por `credential_guard_hook_resolvable`).
+
+**Ponto único:** `credentialGuardRequiredEntries` é a tabela compartilhada entre `validateCredentialGuardPresenceRequired` (violations, `warnOnly=false`) e `validateCredentialGuardPresenceWarnings` (warnings, `warnOnly=true`). AC5 pina os contadores: 2 violation-grade e 6 warning-grade.
+
+### O que ela NÃO cobre
+
+<!-- trackfw-contract: none reason=autodeclaração de limites; não são alegações de comportamento verificável por gate — AC4 pina o guard em evento/campo errado; R5-anchor (silenciamento via rules:off) depende do estado do anchor e é descrito abaixo -->
+
+- Guard em evento errado (ex.: `PostToolUse`) → aviso dispara (AC4 pina).
+- Guard em campo errado do Kiro (`entry.command` sem `action.command`) → aviso dispara (AC4 pina).
+- `rules: credential_guard_presence_warning: off` no `trackfw.yaml` — comportamento depende do anchor:
+  - **Projeto sem anchor** (sem git, sem `origin`, ou sem `trackfw init` executado — `originAnchorNoGit` /
+    `originAnchorNoRemote` / `originAnchorFileAbsent`): `ruleSeverity` cai para `diskRuleSeverity`, que retorna
+    `"off"` → aviso silenciado. Medido em A4a do red-team (fixture sem git).
+  - **Projeto com anchor** (`originAnchorOK` — git + `origin` presente): `ruleSeverity` retorna
+    `stricter-of(origin_main_default, disk)`. Como `credential_guard_presence_warning` está ausente do
+    `rules:` do `origin/main`, `mainSev = credentialGuardDefaultSeverity("credential_guard_presence_warning") = "warning"`.
+    `stricter-of("warning", "off") = "warning"` → aviso **não é silenciado**. Mecanismo em
+    `internal/validator/validator.go:287-296` (case `originAnchorOK` de `ruleSeverity`). Este é o comportamento
+    da maioria dos projetos reais (que rodaram `trackfw init` e têm remote configurado).
+- Não transforma o aviso em violation em nenhum CLI novo — essa decisão está reservada para uma próxima versão major.

@@ -774,19 +774,17 @@ func TestCredentialGuardPresenceRequired_AmazonQ_MarkerSoEmNote_Violation(t *tes
 	}
 }
 
-// TestCredentialGuardPresenceRequired_Kiro_NaoTemRegraDePresencaDisco afirma: Kiro não está em
-// credentialGuardRequiredEntries — sua única regra de presença é guard_wiring_removed (que compara
-// com origin/main). Nenhum teste de fail-open por disk-only rule é necessário; o fail-open de
-// guard_wiring_removed é exercido pelos testes item-1 acima.
+// TestCredentialGuardPresenceRequired_Kiro_NaoTemViolacaoDePresencaDisco afirma: Kiro não está em
+// credentialGuardRequiredEntries com warnOnly=false — sua regra de presença é warning-grade
+// (warnOnly=true). validateCredentialGuardPresenceRequired (violation-grade) não dispara para Kiro.
+// validateCredentialGuardPresenceWarnings (warning-grade) dispara quando o arquivo existe sem
+// guard; após InjectKiroHooks deve ser zero.
 //
-// Reconciliação: Kiro não tem regra de presença disk-only em validateCredentialGuardPresenceRequired;
-// declarar isso explicitamente impede que um leitor futuro interprete a ausência de teste como
-// lacuna e adicione incorretamente Kiro a credentialGuardRequiredEntries.
-func TestCredentialGuardPresenceRequired_Kiro_NaoTemRegraDePresencaDisco(t *testing.T) {
-	// This test is intentionally documentation-only (no assertions about runtime behavior).
-	// It verifies that InjectKiroHooks generates a hook file and that calling the
-	// credential-guard presence rule on that file emits no disk-only presence violations
-	// (because Kiro is not in credentialGuardRequiredEntries).
+// Reconciliação (D17, REQ-2026-10-25 #619 ML-1A): Kiro está em credentialGuardRequiredEntries
+// com warnOnly=true — warning-grade, não violation-grade. validateCredentialGuardPresenceRequired
+// (violation-grade) não dispara para Kiro. validateCredentialGuardPresenceWarnings (warning-grade)
+// dispara quando o arquivo existe sem guard; após InjectKiroHooks deve ser zero.
+func TestCredentialGuardPresenceRequired_Kiro_NaoTemViolacaoDePresencaDisco(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
@@ -799,17 +797,31 @@ func TestCredentialGuardPresenceRequired_Kiro_NaoTemRegraDePresencaDisco(t *test
 		t.Fatalf("InjectKiroHooks: %v", err)
 	}
 
+	// Assertion 1: validateCredentialGuardPresenceRequired (warnOnly=false path) never fires for Kiro.
 	msgs, err := validator.ValidateCredentialGuardHookResolvableForTest()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-
-	// Kiro is not in credentialGuardRequiredEntries; no disk-only presence violation should fire.
 	for _, m := range msgs {
 		if strings.Contains(m, ".kiro") && strings.Contains(m, "has no credential guard entry") {
 			t.Errorf(
-				"Kiro disk-only presence violation fired unexpectedly — Kiro should not be in "+
-					"credentialGuardRequiredEntries; got: %s", m,
+				"Kiro disk-only presence VIOLATION fired unexpectedly (warnOnly=true means only "+
+					"warning, not violation): got: %s", m,
+			)
+		}
+	}
+
+	// Assertion 2: validateCredentialGuardPresenceWarnings (warnOnly=true path) fires ZERO warnings
+	// after InjectKiroHooks, because the generator writes all 3 required pairs.
+	warnMsgs, err := validator.ValidateCredentialGuardPresenceWarningsForTest()
+	if err != nil {
+		t.Fatalf("ValidateCredentialGuardPresenceWarnings unexpected error: %v", err)
+	}
+	for _, m := range warnMsgs {
+		if strings.Contains(m, ".kiro") {
+			t.Errorf(
+				"Kiro presence WARNING fired after InjectKiroHooks — generator and presence-entry "+
+					"matchers diverged: %s", m,
 			)
 		}
 	}
