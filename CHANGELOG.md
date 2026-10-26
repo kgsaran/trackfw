@@ -7,6 +7,22 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [11.1.0] - 2026-10-26
+
+### Breaking Changes
+
+Nenhum.
+
+### Added
+
+- **`credential_guard_presence_warning`: aviso de presença do credential guard nos CLIs sem regra de presença** (#619).
+  Em Claude, Codex, Gemini, Cursor, Copilot e Kiro, o `trackfw validate` passa a avisar quando o arquivo de hook de
+  projeto existe mas falta o credential guard no campo de comando de um par (evento, matcher) que bloqueia a execução,
+  por exemplo o guard só em `PostToolUse`. O aviso informa o arquivo, o evento, o matcher e a instrução `trackfw update`.
+  O rc não muda. Windsurf e Amazon Q continuam com violation, e as duas regras leem uma tabela única por CLI. Com
+  `origin/main` legível, `rules: credential_guard_presence_warning: off` só silencia se estiver commitado na `main`.
+  (D17 do ADR-2026-10-04, #623)
+
 ## [11.0.2] - 2026-10-25
 
 ### Breaking Changes
