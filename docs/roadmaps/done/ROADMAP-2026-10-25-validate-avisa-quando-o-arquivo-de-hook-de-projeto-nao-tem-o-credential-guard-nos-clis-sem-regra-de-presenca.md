@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-10-25
 req: "docs/req/REQ-2026-10-25-validate-avisa-quando-o-arquivo-de-hook-de-projeto-nao-tem-o-credential-guard-nos-clis-sem-regra-de-presenca.md"
 squad: "hades-tf, apolo-tf, hefesto-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, hefesto-tf"
 
 # Roadmap: validate avisa quando o arquivo de hook de projeto não tem o credential guard, nos CLIs sem regra de presença
 
-> Created: 2026-10-25 | Status: wip
+> Created: 2026-10-25 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-10-25-validate-avisa-quando-o-arquivo-de-hook-de-projeto-nao-tem-o-credential-guard-nos-clis-sem-regra-de-presenca.md
@@ -17,7 +17,7 @@ As REQs anteriores (#613 e #618) mostraram que a enumeração precisa cobrir `sc
 afirmam o contrato atual, e não só o Go de produção.
 
 ## Acceptance Criteria
-- [ ] AC1–AC6 da REQ, cada um com a evidência no ML que o fecha.
+- [x] AC1–AC6 da REQ, cada um com a evidência no ML que o fecha. (#623, 2c5ef0da)
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -139,10 +139,10 @@ aciona a sonda de binário. Localmente, o `trackfw` instalado no PATH deixava o 
   afetado, e o caso ficou numa issue própria.
 
 ### ML-3A — make quality, CI e PR
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** zeus-tf
 **Files affected:** nenhum arquivo de produto; só medição
 **Acceptance criteria:**
 - [x] `make quality` rc=0 com a máquina ociosa e o HOME isolado (falsificação 367 OK / 0 FAIL / guarda OK; os mesmos 333 rótulos de antes)
 - [x] Neste repositório, o `validate` do binário da branch não emite o aviso novo (a fiação está completa) — rc=0, 0 avisos de presença
-- [ ] CI verde; PR com `Closes #619`
+- [x] CI verde; PR com `Closes #619` (#623, 20/20 após o ML-3B, mergeado como 2c5ef0da; #619 fechada)
