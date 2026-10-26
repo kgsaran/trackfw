@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-10-25
 author: "zeus-tf (desenho) / KG (decisão: opção b)"
 adr: "docs/adr/ADR-2026-10-04-o-guard-de-hook-e-um-subcomando-go-do-trackfw-e-a-linha-de-hook-e-a-mesma-string-em-todo-shell.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-10-25-validate-avisa-quando-o-arquivo-de-hook-de-projeto-nao-tem-o-credential-guard-nos-clis-sem-regra-de-presenca.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-10-25-validate-avisa-quando-o-arquivo-de-hook-de-projeto-nao-tem-o-credential-guard-nos-clis-sem-regra-de-presenca.md"
 ---
 
 # REQ: validate avisa quando o arquivo de hook de projeto não tem o credential guard, nos CLIs sem regra de presença
 
-> Date: 2026-10-25 | Status: Open
+> Date: 2026-10-25 | Status: Done (#623, 2c5ef0da)
 | Linear Issue:
 | Jira Issue:
 | GitHub Issue: #619
@@ -41,7 +41,7 @@ no ADR-2026-10-04.
   aviso.
 - [x] **AC5 — Ponto único.** O Windsurf e o Amazon Q continuam com violation. A lista de eventos esperados por CLI fica num
   ponto único, compartilhado pela regra de violation e pela de aviso, e um teste de concordância pega um CLI sem entrada.
-- [ ] **AC6 — Fechamento.** `make quality` rc=0, CI verde, PR com `Closes #619` e release 11.1.0 (minor).
+- [x] **AC6 — Fechamento.** `make quality` rc=0, CI verde, PR com `Closes #619` e release 11.1.0 (minor).
 
 ## Negative scope
 
@@ -58,4 +58,4 @@ ADR: `docs/adr/ADR-2026-10-04-o-guard-de-hook-e-um-subcomando-go-do-trackfw-e-a-
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-10-25-validate-avisa-quando-o-arquivo-de-hook-de-projeto-nao-tem-o-credential-guard-nos-clis-sem-regra-de-presenca.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-10-25-validate-avisa-quando-o-arquivo-de-hook-de-projeto-nao-tem-o-credential-guard-nos-clis-sem-regra-de-presenca.md
