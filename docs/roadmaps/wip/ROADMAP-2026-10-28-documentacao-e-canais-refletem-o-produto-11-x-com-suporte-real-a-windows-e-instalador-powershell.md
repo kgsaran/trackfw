@@ -36,8 +36,8 @@ Os AC1–AC10 da REQ. O mapeamento por ML está em cada microlote.
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model (hades-tf)
-**Status:** ⬜ Pendente
-**Files affected:** `docs/seguranca/2026-10-28-wave0-docs-e-install-ps1.md` (único arquivo escrito)
+**Status:** ✅ Concluído — auditado em 2026-10-28, após dois corretivos: fixture sem porta de redirecionamento; consumidores de npm/pypi; namespace fechado
+**Files affected:** `docs/seguranca/2026-10-28-wave0-docs-e-install-ps1.md` (único arquivo escrito pelo hades-tf), `docs/roadmaps/backlog/ROADMAP-2026-10-18-reescrita-do-cli-parity-md-para-o-contrato-de-binario-unico-pos-v8.md`, `docs/roadmaps/abandoned/ROADMAP-2026-10-18-reescrita-do-cli-parity-md-para-o-contrato-de-binario-unico-pos-v8.md` (absorção movida pelo arquiteto no commit de governança, antes da Wave 0)
 **Actions:**
 1. **Completude da enumeração.** Varrer o repositório inteiro, não só os arquivos da REQ:
    - superfícies onde a documentação instrui instalação ou cola linha de hook:
@@ -65,8 +65,8 @@ Os AC1–AC10 da REQ. O mapeamento por ML está em cada microlote.
 5. **Residual declarado.**
 
 **Acceptance criteria:**
-- [ ] As cinco seções respondidas com evidência (comando e resultado), não com afirmação de uma linha
-- [ ] Nenhuma linha de implementação escrita
+- [x] As cinco seções respondidas com evidência (comando e resultado), não com afirmação de uma linha
+- [x] Nenhuma linha de implementação escrita (um arquivo solto `-ErrorAction`, resto de experimento, foi tirado da raiz pelo arquiteto)
 
 **Gates da wave:**
 ```bash
@@ -93,11 +93,29 @@ test -s docs/seguranca/2026-10-28-wave0-docs-e-install-ps1.md
    - PATH do usuário idempotente, preservando `REG_EXPAND_SZ`;
    - `TRACKFW_NO_MODIFY_PATH=1`;
    - aviso de outras cópias.
-2. Montar o gate com o mecanismo de fixture decidido no ML-0A. Cada cenário tem contra-braço:
+   **Prescrições da Wave 0** (`docs/seguranca/2026-10-28-wave0-docs-e-install-ps1.md` §2):
+   - o download usa `Invoke-WebRequest` **não qualificado**;
+   - **nenhuma** variável de ambiente ou parâmetro muda a origem do download (proibidos
+     `TRACKFW_BASE_URL`, `TRACKFW_MIRROR`, `TRACKFW_INSTALL_DRYRUN`);
+   - versão validada com
+     `-cmatch '\Av?[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]{1,3}|-beta[0-9]{1,3})?\z'`, antes de qualquer
+     download;
+   - o PATH do usuário é regravado preservando `REG_EXPAND_SZ` (não usar
+     `[Environment]::SetEnvironmentVariable`);
+   - diretório temporário novo e aleatório, criado com `New-Item -ErrorAction Stop`;
+   - fixture binária escrita com `[IO.File]::WriteAllBytes`.
+2. Montar o gate com a **função sombra `Invoke-WebRequest`** no escopo do gate, decidida no ML-0A.
+   É o análogo do stub de `curl`/`wget` no PATH usado pelo `check-install-checksum.sh`. O gate:
+   - roda primeiro uma verificação estática da lista de banidos (§2 do parecer);
+   - afirma que a sombra **foi chamada**, para que um bypass reprove em vez de ir à rede;
+   - executa o modo `iex` em processo filho, com a sombra redefinida dentro dele.
+
+   Cenários, cada um com contra-braço:
    - íntegro → instala;
    - adulterado, ausente ou duplicado → sem binário no destino (afirmar pela ausência do arquivo,
      não pelo exit);
-   - versão com `\n` → rejeitada;
+   - versão com `\n` ou `;` → rejeitada **e** zero chamadas de download;
+   - tarball com membro `..` ou absoluto → nada escrito fora do destino;
    - arquitetura inválida → rejeitada;
    - PATH que já contém o destino → não duplica;
    - `TRACKFW_NO_MODIFY_PATH=1` → PATH intocado.
@@ -117,9 +135,12 @@ test -s docs/seguranca/2026-10-28-wave0-docs-e-install-ps1.md
   corpo do METADATA
 - `scripts/check-wheel-metadata-readme.sh` (novo)
 - `Makefile`: registra o gate no `quality`
-- `pypi/pyproject.toml`, `npm/README.md` e `pypi/README.md`: removidos, se o ML-0A confirmar que
-  não têm consumidor
-- `.gitignore`: as cópias geradas no release não podem ser commitadas
+- `npm/README.md` e `pypi/README.md`: removidos do git, porque a Wave 0 mediu que o release
+  sobrescreve os dois (`release.yml:237` e `:309`)
+- `.gitignore`: as duas cópias geradas no release não podem ser commitadas
+- **`pypi/pyproject.toml` fica.** A Wave 0 mediu consumidores vivos: `internal/commands/release.go`
+  (`extractPyprojectVersion`), `scripts/check-manifest-version-gate.sh`,
+  `scripts/check-integration-assets.sh` e `scripts/check-gates-falsify.sh`
 
 **Actions:**
 1. Ler `.github/workflows/release.yml:230-347`. O release copia o `README.md` para `npm/` e
