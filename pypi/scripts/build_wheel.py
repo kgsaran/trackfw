@@ -74,10 +74,21 @@ def sha256_digest(data: bytes) -> str:
     return "sha256=" + base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
 
 
-def build_wheel(binary_path: Path, version: str, platform_tag: str, output_dir: Path) -> Path:
+def build_wheel(binary_path: Path, version: str, platform_tag: str, output_dir: Path, readme_path: Path) -> Path:
     binary_path = binary_path.resolve()
     output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Valida o README ANTES de abrir o ZipFile — evita criar uma .whl parcial.
+    # ML-1B (ROADMAP-2026-10-28-documentacao-e-canais-refletem-o-produto-11-x).
+    readme_path = readme_path.resolve()
+    if not readme_path.exists():
+        print(f"FAIL [build_wheel]: README não encontrado: {readme_path}", file=sys.stderr)
+        sys.exit(1)
+    if readme_path.stat().st_size == 0:
+        print(f"FAIL [build_wheel]: README vazio: {readme_path}", file=sys.stderr)
+        sys.exit(1)
+    readme_bytes = readme_path.read_bytes()
 
     name = "trackfw"
     # Normaliza para PEP 440 antes de usar em nomes de arquivo e metadados.
@@ -99,8 +110,10 @@ def build_wheel(binary_path: Path, version: str, platform_tag: str, output_dir: 
     scripts_prefix = f"{data_prefix}/scripts"
     bin_entry = f"{scripts_prefix}/{bin_name}"
 
-    # Conteúdo dos arquivos de metadados
-    metadata_content = (
+    # Conteúdo dos arquivos de metadados (core metadata 2.1+).
+    # Description-Content-Type e o corpo após linha em branco: PEP 566 (Metadata-Version 2.1).
+    # Cabeçalhos separados em variável própria — SABOTAGE-D1 remove somente a linha do Content-Type.
+    metadata_headers = (
         f"Metadata-Version: 2.1\n"
         f"Name: {name}\n"
         f"Version: {version}\n"
@@ -108,7 +121,10 @@ def build_wheel(binary_path: Path, version: str, platform_tag: str, output_dir: 
         f"Home-page: https://github.com/kgsaran/trackfw\n"
         f"License: MIT\n"
         f"Requires-Python: >=3.10\n"
+        f"Description-Content-Type: text/markdown\n"
     ).encode()
+    body = readme_bytes  # SABOTAGE-D2: substituir por body = b""  para neutralizar o corpo
+    metadata_content = metadata_headers + b"\n" + body
 
     wheel_content = (
         f"Wheel-Version: 1.0\n"
@@ -170,6 +186,15 @@ def main() -> None:
         help="Tag de plataforma (ex: manylinux_2_17_x86_64, macosx_11_0_arm64, win_amd64)",
     )
     parser.add_argument("--output", default="dist", help="Diretório de saída (padrão: dist/)")
+    parser.add_argument(
+        "--readme",
+        default=None,
+        help=(
+            "Caminho para o README.md a embutir como descrição longa (padrão: README.md na raiz "
+            "do repositório, resolvido a partir do diretório deste script). "
+            "O build falha se o arquivo não existir ou estiver vazio."
+        ),
+    )
     args = parser.parse_args()
 
     binary_path = Path(args.binary)
@@ -177,11 +202,22 @@ def main() -> None:
         print(f"Erro: binário não encontrado: {binary_path}", file=sys.stderr)
         sys.exit(1)
 
+    # Padrão: README.md na raiz do repositório (parent de pypi/scripts/ e de pypi/).
+    # Calcula a partir de __file__ para funcionar independente do cwd — check-wheel-filename.sh
+    # e smoke-integration-packages.sh chamam sem --readme.
+    # O release.yml copia root README.md → pypi/README.md antes de chamar este script, então
+    # o conteúdo é idêntico; o padrão aponta direto para a fonte sem precisar da cópia.
+    readme_path = (
+        Path(args.readme) if args.readme
+        else Path(__file__).resolve().parent.parent.parent / "README.md"
+    )
+
     whl = build_wheel(
         binary_path=binary_path,
         version=args.version,
         platform_tag=args.platform,
         output_dir=Path(args.output),
+        readme_path=readme_path,
     )
     print(f"Wheel criada: {whl}")
 

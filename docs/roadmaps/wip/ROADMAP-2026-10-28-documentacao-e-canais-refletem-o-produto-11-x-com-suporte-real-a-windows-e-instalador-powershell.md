@@ -129,7 +129,7 @@ test -s docs/seguranca/2026-10-28-wave0-docs-e-install-ps1.md
 - [ ] Relatório com uma frase por teste novo, dizendo que conclusão do ML ele afirma
 
 ### ML-1B — Página do PyPI e cópias mortas (ares-tf) — AC3
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-28: wheel construída pelo arquiteto, METADATA com Content-Type e corpo byte-igual ao README; gate rc=0 com 5 braços. Desvio aceito: o default do `--readme` é o README da raiz (via `__file__`), não `pypi/README.md` — conteúdo idêntico, e dois gates chamam sem `--readme`. A página do PyPI só muda na próxima release.
 **Files affected:**
 - `pypi/scripts/build_wheel.py`: grava `Description-Content-Type: text/markdown` e o README como
   corpo do METADATA
@@ -152,9 +152,9 @@ test -s docs/seguranca/2026-10-28-wave0-docs-e-install-ps1.md
 3. Rodar `make parity-rest`, porque o ML cria script novo.
 
 **Acceptance criteria:**
-- [ ] O gate falha com o README ausente e com o Content-Type removido (sabotagem medida)
-- [ ] `make parity-rest` verde
-- [ ] Relatório com uma frase por teste novo
+- [x] O gate falha com o README ausente e com o Content-Type removido (sabotagem medida)
+- [x] `make parity-rest` verde
+- [x] Relatório com uma frase por teste novo
 
 **Gates da wave:**
 ```bash

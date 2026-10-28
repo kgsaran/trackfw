@@ -175,6 +175,10 @@ parity-rest: build
 	scripts/check-platform-matrix-parity.sh
 	# ML-1A-D6write (v8): normalização semver→PEP440 no nome da wheel.
 	scripts/check-wheel-filename.sh
+	# ML-1B (ROADMAP-2026-10-28-documentacao-e-canais-refletem-o-produto-11-x): AC3 —
+	# METADATA da wheel contém Description-Content-Type e corpo igual ao README.md.
+	# Contra-braços auto-falsificantes: README ausente/vazio, Content-Type removido, corpo vazio.
+	scripts/check-wheel-metadata-readme.sh
 	# ML-1A (v8): D7 — conteúdo dos pacotes publicados.
 	scripts/check-channels-content.sh --self-test
 	# ML-1D (v8): AC9 — byte-identidade do shim.

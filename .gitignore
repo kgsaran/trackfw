@@ -33,3 +33,11 @@ docs/roadmaps/.trackfw-credential-guard.json
 # trackfw: per-agent write-scope leases (D4, ADR-2026-10-23) — contain absolute paths
 # of the dispatching machine; committing them would govern writes on a different checkout.
 .trackfw/leases/
+
+# Cópias do README raiz geradas pelo release.yml antes de publicar nos canais.
+# release.yml:237 (npm): cp ../README.md README.md (cwd: npm/)
+# release.yml:309 (pypi): cp README.md pypi/README.md
+# Não devem ser versionadas — o arquivo raiz README.md é a fonte de verdade.
+# ML-1B, ROADMAP-2026-10-28-documentacao-e-canais-refletem-o-produto-11-x.
+npm/README.md
+pypi/README.md
