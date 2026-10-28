@@ -77,7 +77,7 @@ test -s docs/seguranca/2026-10-28-wave0-docs-e-install-ps1.md
 > Dependencies: Wave 0 auditada.
 
 ### ML-1A — `install.ps1` + gate Windows (ares-tf) — AC4
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:**
 - `scripts/install.ps1` (novo)
 - `scripts/check-install-ps1.ps1` (novo)
@@ -129,7 +129,7 @@ test -s docs/seguranca/2026-10-28-wave0-docs-e-install-ps1.md
 - [ ] Relatório com uma frase por teste novo, dizendo que conclusão do ML ele afirma
 
 ### ML-1B — Página do PyPI e cópias mortas (ares-tf) — AC3
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:**
 - `pypi/scripts/build_wheel.py`: grava `Description-Content-Type: text/markdown` e o README como
   corpo do METADATA
