@@ -88,6 +88,9 @@ Direção que motiva a REQ: consolidação + adoção (Discussion #525, decisão
 - **Fora do repositório e sob responsabilidade do KG:** registrar defensivamente a organização
   `trackfw` no GitHub. A REQ remove as referências; o registro fecha a janela para quem copiou a
   instrução antiga.
+  ✅ **Feito em 2026-10-28:** `gh api orgs/trackfw` → `type=Organization created=2026-10-28T21:27:34Z
+  repos=0`; `gh api user/memberships/orgs/trackfw` → `role=admin state=active`. A exigência de 2FA
+  não pôde ser lida (o token não tem escopo `admin:org`).
 
 ## Linked ADR
 ADR: docs/adr/ADR-2026-10-28-instalador-powershell-publicado-na-release-com-o-mesmo-contrato-do-install-sh.md
