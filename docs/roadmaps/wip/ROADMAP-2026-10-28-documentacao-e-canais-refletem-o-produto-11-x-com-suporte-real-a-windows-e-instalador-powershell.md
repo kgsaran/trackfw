@@ -77,7 +77,7 @@ test -s docs/seguranca/2026-10-28-wave0-docs-e-install-ps1.md
 > Dependencies: Wave 0 auditada.
 
 ### ML-1A — `install.ps1` + gate Windows (ares-tf) — AC4
-**Status:** 🔄 Em andamento
+**Status:** 🔄 Em andamento — código auditado em 2026-10-28 (gate local rc=0: 14 PASS, 17 SKIP nomeados, pwsh 7.6.9 no macOS; build ok), depois de um corretivo para o cenário de travessia e os braços de sabotagem. Faltam os 17 cenários exclusivos do Windows no CI (exige PR). Residual aceito: o membro absoluto não tem contra-braço com `-P`, porque escrever na raiz do drive no CI é inseguro; a asserção de ausência continua valendo.
 **Files affected:**
 - `scripts/install.ps1` (novo)
 - `scripts/check-install-ps1.ps1` (novo)

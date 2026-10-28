@@ -42,6 +42,7 @@ release:
   prerelease: auto
   extra_files:
     - glob: scripts/install.sh
+    - glob: scripts/install.ps1
 
 changelog:
   sort: asc

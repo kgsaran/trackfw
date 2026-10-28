@@ -1284,3 +1284,28 @@ jobs:
 
       - name: "byte-identity gate (AC9 — ML-1D)"
         run: scripts/check-shim-byte-identity.sh
+
+  # ---------------------------------------------------------------------------
+  # ML-1A (ROADMAP-2026-10-28-documentacao-e-canais-refletem-o-produto-11-x):
+  # gate do instalador PowerShell. Roda em windows-latest sob Windows PowerShell
+  # 5.1 (shell: powershell) e PowerShell 7 (shell: pwsh). Falha se qualquer
+  # cenario de seguranca nao for detectado ou se o instalador nao concluir com
+  # sucesso no caminho feliz.
+  # ---------------------------------------------------------------------------
+  windows-install-ps1:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: "install.ps1 gate — Windows PowerShell 5.1"
+        shell: powershell
+        run: scripts/check-install-ps1.ps1 -ExpectEdition Desktop
+
+      - name: "install.ps1 gate — PowerShell 7"
+        shell: pwsh
+        run: scripts/check-install-ps1.ps1 -ExpectEdition Core
