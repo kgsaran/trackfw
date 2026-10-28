@@ -1,0 +1,308 @@
+---
+status: wip
+date: 2026-10-28
+req: "docs/req/REQ-2026-10-28-documentacao-e-canais-refletem-o-produto-11-x-com-suporte-real-a-windows-e-instalador-powershell.md"
+squad: "hades-tf, ares-tf, artemis-tf, apolo-tf, atena-tf"
+---
+
+# Roadmap: Documentação e canais refletem o produto 11.x, com suporte real a Windows e instalador PowerShell
+
+> Created: 2026-10-28 | Status: wip
+
+## Context
+REQ: docs/req/REQ-2026-10-28-documentacao-e-canais-refletem-o-produto-11-x-com-suporte-real-a-windows-e-instalador-powershell.md
+ADR: docs/adr/ADR-2026-10-28-instalador-powershell-publicado-na-release-com-o-mesmo-contrato-do-install-sh.md
+
+A auditoria de 2026-10-28 achou 33 divergências entre a documentação de usuário e o produto
+11.1.0. As altas e o risco de namespace estão na REQ. Este roadmap **absorve** o
+`ROADMAP-2026-10-18-reescrita-do-cli-parity-md-para-o-contrato-de-binario-unico-pos-v8`, porque a
+causa é a mesma: documentação anterior à v8. Aquele foi movido para `abandoned/` com ponteiro para
+este.
+
+**Dependências reais e motivo da ordem:**
+- README, VISION e site documentam o `install.ps1`, a matriz de Windows e a linha de hook. Por
+  isso a Wave 3 espera as Waves 1 e 2.
+- Os MLs de cada wave tocam arquivos disjuntos. Mesmo assim, o teto é de **2 agentes
+  simultâneos**, por custo de CPU.
+- O `Makefile` só é tocado pelo ML-1B e o `.github/workflows/quality.yml` só pelo ML-1A.
+
+## Acceptance Criteria
+Os AC1–AC10 da REQ. O mapeamento por ML está em cada microlote.
+
+## Status Legend
+⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
+
+## Wave 0 — Threat Model
+> Dependencies: none. Blocks all implementation.
+
+### ML-0A — Threat model (hades-tf)
+**Status:** ⬜ Pendente
+**Files affected:** `docs/seguranca/2026-10-28-wave0-docs-e-install-ps1.md` (único arquivo escrito)
+**Actions:**
+1. **Completude da enumeração.** Varrer o repositório inteiro, não só os arquivos da REQ:
+   - superfícies onde a documentação instrui instalação ou cola linha de hook:
+     `git grep -nE 'brew install|go install|pip install|npm install -g|irm |iex|LASTEXITCODE'`;
+   - leitores mecânicos de `docs/cli-parity.md` e do README;
+   - consumidores de `pypi/pyproject.toml`, `npm/README.md` e `pypi/README.md`, antes de removê-los.
+2. **Modelo de ameaça do `install.ps1`:**
+   - execução por `irm | iex`;
+   - checksum: ausente, duplicado, divergente, ou `checksums.txt` de outra tag;
+   - `TRACKFW_VERSION` e `TRACKFW_ARCH` com quebra de linha, `;`, `$()` ou caminho;
+   - `TRACKFW_INSTALL_DIR` com junção ou link;
+   - corrida em `%TEMP%`;
+   - extração por `tar.exe` com entrada `..` ou absoluta;
+   - alteração do PATH do usuário: duplicação, entrada vazia, `REG_EXPAND_SZ` perdido ao regravar
+     como `REG_SZ`;
+   - processo x64 emulado em ARM64;
+   - **decidir como o gate injeta fixture** (tarball e checksums locais) sem abrir no script de
+     produção uma porta que redirecione o download.
+3. **Namespace:** confirmar com `gh api` quais namespaces citados na documentação não são nossos
+   (`trackfw`, `kgsaran/homebrew-tap`) e qual o efeito de alguém registrá-los.
+4. **Alvos de falsificação nas duas direções, por superfície.** Exemplos:
+   - o gate da linha de hook do README falha se o README voltar à forma antiga **e** se o
+     `guardforms` mudar sem o README;
+   - o gate do METADATA falha com corpo vazio **e** com Content-Type ausente.
+5. **Residual declarado.**
+
+**Acceptance criteria:**
+- [ ] As cinco seções respondidas com evidência (comando e resultado), não com afirmação de uma linha
+- [ ] Nenhuma linha de implementação escrita
+
+**Gates da wave:**
+```bash
+test -s docs/seguranca/2026-10-28-wave0-docs-e-install-ps1.md
+```
+
+## Wave 1 — Canais (2 MLs em paralelo)
+> Dependencies: Wave 0 auditada.
+
+### ML-1A — `install.ps1` + gate Windows (ares-tf) — AC4
+**Status:** ⬜ Pendente
+**Files affected:**
+- `scripts/install.ps1` (novo)
+- `scripts/check-install-ps1.ps1` (novo)
+- `.goreleaser.yaml`: `extra_files` ganha `- glob: scripts/install.ps1`
+- `.github/workflows/quality.yml`: o job Windows roda o gate sob `powershell` e `pwsh`
+
+**Actions:**
+1. Implementar o contrato da ADR-2026-10-28 cláusula por cláusula, espelhando o
+   `scripts/install.sh`:
+   - checksum conferido antes de extrair;
+   - versão e arquitetura validadas no valor inteiro;
+   - destino `$env:LOCALAPPDATA\Programs\trackfw`;
+   - PATH do usuário idempotente, preservando `REG_EXPAND_SZ`;
+   - `TRACKFW_NO_MODIFY_PATH=1`;
+   - aviso de outras cópias.
+2. Montar o gate com o mecanismo de fixture decidido no ML-0A. Cada cenário tem contra-braço:
+   - íntegro → instala;
+   - adulterado, ausente ou duplicado → sem binário no destino (afirmar pela ausência do arquivo,
+     não pelo exit);
+   - versão com `\n` → rejeitada;
+   - arquitetura inválida → rejeitada;
+   - PATH que já contém o destino → não duplica;
+   - `TRACKFW_NO_MODIFY_PATH=1` → PATH intocado.
+3. Rodar o gate localmente com `pwsh` (o macOS tem `/opt/homebrew/bin/pwsh`) nos cenários que não
+   dependem do SO. Os cenários de registro e de PATH do Windows rodam só no CI.
+
+**Acceptance criteria:**
+- [ ] Gate verde no CI `windows-latest` sob `powershell` 5.1 **e** sob `pwsh` 7 (link da run)
+- [ ] Cada cenário falha quando o comportamento é removido do `install.ps1` (sabotagem medida e revertida)
+- [ ] `go build ./...` verde
+- [ ] Relatório com uma frase por teste novo, dizendo que conclusão do ML ele afirma
+
+### ML-1B — Página do PyPI e cópias mortas (ares-tf) — AC3
+**Status:** ⬜ Pendente
+**Files affected:**
+- `pypi/scripts/build_wheel.py`: grava `Description-Content-Type: text/markdown` e o README como
+  corpo do METADATA
+- `scripts/check-wheel-metadata-readme.sh` (novo)
+- `Makefile`: registra o gate no `quality`
+- `pypi/pyproject.toml`, `npm/README.md` e `pypi/README.md`: removidos, se o ML-0A confirmar que
+  não têm consumidor
+- `.gitignore`: as cópias geradas no release não podem ser commitadas
+
+**Actions:**
+1. Ler `.github/workflows/release.yml:230-347`. O release copia o `README.md` para `npm/` e
+   `pypi/`. Confirmar que o `build_wheel.py` lê o `pypi/README.md` copiado e falha com mensagem
+   quando ele não existe.
+2. Gate: copia o README, constrói uma wheel `linux amd64` com um binário qualquer e afirma no
+   METADATA o Content-Type e um corpo **igual** ao README. Contra-braço: a wheel sem README
+   reprova.
+3. Rodar `make parity-rest`, porque o ML cria script novo.
+
+**Acceptance criteria:**
+- [ ] O gate falha com o README ausente e com o Content-Type removido (sabotagem medida)
+- [ ] `make parity-rest` verde
+- [ ] Relatório com uma frase por teste novo
+
+**Gates da wave:**
+```bash
+test -f scripts/install.ps1
+grep -q 'scripts/install.ps1' .goreleaser.yaml
+sh scripts/check-wheel-metadata-readme.sh
+go build ./...
+```
+
+## Wave 2 — Medição e contrato (2 MLs em paralelo)
+> Dependencies: Wave 1 auditada. O motivo é o teto de CPU; não há dependência de arquivo.
+
+### ML-2A — Linha de hook sob `pwsh` 7 e `powershell` 5.1 (artemis-tf) — AC5
+**Status:** ⬜ Pendente
+**Files affected:** `internal/generators/guard_line_shell_test.go`
+
+**Actions:**
+1. Estender o `TestGuardLineShellMatrix` com braços `pwsh` e `powershell`. Eles ficam ativos
+   quando o executável existe (`exec.LookPath`). Quando não existe, o braço é reportado como
+   `t.Skip` com motivo, nunca como PASS silencioso.
+2. Cobrir os casos allow, deny, erro e ausente, com o payload em stdin. Afirmar o exit (0/2/2/2) e
+   a preservação do motivo do deny.
+3. Rodar com um PATH sem `trackfw` instalado, para não mascarar a sonda.
+
+**Acceptance criteria:**
+- [ ] Os braços rodam (não pulam) no job Windows do CI: nome do teste e linha do log citados
+- [ ] Localmente, o braço `pwsh` roda no macOS
+- [ ] Relatório com uma frase por teste novo; nome passado ao `go test -run` conferido com `-v`
+
+### ML-2B — Reescrita do `docs/cli-parity.md` (apolo-tf) — AC7
+**Status:** ⬜ Pendente
+**Files affected:** `docs/cli-parity.md` (único)
+
+**Actions:**
+1. Inventariar os leitores mecânicos:
+   `grep -rln 'cli-parity.md' internal scripts Makefile .github`. Listar as anotações
+   `gate=`/`partial=` e as strings fixadas que esses leitores consomem. Elas ficam intactas, byte a
+   byte.
+2. Classificar cada ocorrência de `three runtimes|all three|Node\.js|Python`:
+   - contrato de comportamento → reescrever como "o binário …";
+   - canal → mover para a seção de canais;
+   - histórico → passado, marcado como tal.
+3. Fazer a tabela "Command contract" bater com `internal/commands/root.go:54-86`:
+   - incluir `release`, `barrier`, `commit`, `doctor`, `audit-surface`, `guard` e `completion`;
+   - remover os aliases `gemini`, `cursor`, `copilot`, `windsurf` e `amazonq` (l.84).
+4. Corrigir o `brew install trackfw` (l.28) para `brew install kgsaran/trackfw/trackfw`. Atualizar
+   "Platforms (v8.0.0-rc1)" (l.32-39) com o estado atual do CI.
+
+**Acceptance criteria:**
+- [ ] Os testes Go do inventário (os que leem o arquivo) verdes, cada um rodado por nome
+- [ ] Nenhuma regra de contrato perdida: diff dos cabeçalhos `^#{2,4} ` antes e depois anexado ao relatório
+- [ ] Nenhuma afirmação de paridade entre runtimes no presente
+
+**Gates da wave:**
+```bash
+go test ./internal/generators/ -run TestGuardLineShellMatrix
+go build ./...
+```
+
+## Wave 3 — Documentação de usuário (2 MLs em paralelo)
+> Dependencies: Waves 1 e 2 auditadas. Elas produzem o `install.ps1`, a matriz medida e o contrato.
+
+### ML-3A — README, CONTRIBUTING e gate-design-principles (apolo-tf) — AC1, AC2, AC6
+**Status:** ⬜ Pendente
+**Files affected:** `README.md`, `CONTRIBUTING.md`, `docs/gate-design-principles.md`,
+`internal/guardforms/readme_line_test.go` (novo)
+
+**Actions:**
+1. Corrigir as divergências do README listadas na auditoria (anexada ao handoff):
+   - tap do Homebrew;
+   - linha de hook com `emulate`;
+   - texto de fail-closed do binário antigo (l.262-274);
+   - "next release" (l.27-28, 124-125, 187);
+   - OpenCode na lista de assistentes;
+   - `vault-skill` → `architecture-skill`;
+   - 12 agentes;
+   - tabela de comandos completa;
+   - credential guard atual;
+   - shim resolvido na execução.
+2. Nova seção **Windows**:
+   - matriz rota × arquitetura × shell, com cada célula marcada "medido (fonte)" ou "não
+     verificado", alimentada pelos relatórios de 1A, 2A e da auditoria;
+   - o `install.ps1`;
+   - as limitações vigentes: cmd.exe com a linha PS/POSIX, `sh` exigido pelo `barrier`, NTFS e
+     0600, as 5 falhas conhecidas, o `~/bin` do Git Bash à frente no PATH;
+   - as variáveis do `install.sh`.
+3. `readme_line_test.go`: extrai do README as linhas de hook documentadas e afirma que são iguais
+   às constantes de `guardforms`. O teste precisa falhar nas duas direções.
+4. CONTRIBUTING: build no Windows (o `bin/trackfw` sai sem `.exe`; ver a nota do vault de
+   2026-10-16). gate-design-principles: remover os gates de paridade removidos na v8 (l.17-18,
+   42, 165-167, 178) ou marcá-los como históricos.
+
+**Acceptance criteria:**
+- [ ] `readme_line_test.go` falha com o README antigo e com a constante alterada (sabotagem medida e revertida)
+- [ ] Nenhum comando de instalação no README sem execução ou conferência contra o registro (lista anexada)
+- [ ] Relatório com uma frase por teste novo
+
+### ML-3B — VISION e site (atena-tf) — AC1, AC8
+**Status:** ⬜ Pendente
+**Files affected:** `docs/visao-projeto/VISION.md`, `site/**` (pt e en)
+
+**Actions:**
+1. VISION:
+   - versão e "Current State" atualizados para a 11.x;
+   - tabela Distribution com um binário em três canais, o tap correto e o módulo
+     `github.com/kgsaran/trackfw`;
+   - vNext com a direção consolidação + adoção (#525);
+   - "What trackfw is NOT" passa a incluir gestão de times;
+   - o modelo de plugin de gerador só pode ser afirmado se existir no código; se não existir, vira
+     intenção marcada como tal.
+2. Site:
+   - Go ≥ 1.25;
+   - saída `trackfw 11.1.0`;
+   - instalação com pip, `install.sh` e `install.ps1`;
+   - dez alvos de agente;
+   - página de comandos com `guard`, `attention`, `doctor`, `push`, `branch prune`, `release`,
+     `audit-surface` e `agents models`;
+   - seção Windows resumida, apontando para o README.
+3. Conferir o build do site com o comando de `.github/workflows/deploy-docs.yml`.
+
+**Acceptance criteria:**
+- [ ] Build do site verde, com o comando exato citado
+- [ ] Verificação visual: a página de getting-started servida e lida no navegador (screenshot no relatório)
+
+**Gates da wave:**
+```bash
+go test ./internal/guardforms/ -run TestREADME
+sh -c "git grep -nE 'github\.com/trackfw/|trackfw/tap|kgsaran/tap' -- README.md CONTRIBUTING.md docs/visao-projeto docs/cli-parity.md docs/gate-design-principles.md site; test \$? -eq 1"
+```
+
+## Wave 4 — Medição real e red team (2 MLs em paralelo)
+> Dependencies: Wave 3 auditada.
+
+### ML-4A — `install.ps1` em VM Windows 11 ARM64 (ares-tf) — AC9
+**Status:** ⬜ Pendente
+**Files affected:** `docs/portabilidade/2026-10-28-install-ps1-vm-arm64.md` (novo, único)
+
+**Actions:** rodar o `install.ps1` da branch na VM ARM64, sob Windows PowerShell 5.1, contra a
+release real (`TRACKFW_VERSION=v11.1.0`). Registrar:
+- a arquitetura detectada;
+- o binário instalado e a saída de `trackfw version`;
+- o PATH do usuário antes e depois, com o tipo do valor no registro;
+- a reexecução idempotente;
+- o efeito de `TRACKFW_NO_MODIFY_PATH=1`;
+- o aviso de outra cópia no `~/bin` do Git Bash.
+
+O handoff traz lista fechada de ações e contador N/M de chamadas.
+
+**Acceptance criteria:**
+- [ ] Cada item com comando e resultado literal; rc lido sem pipe
+
+### ML-4B — Red team (hades-tf)
+**Status:** ⬜ Pendente
+**Files affected:** `docs/seguranca/2026-10-28-redteam-docs-e-install-ps1.md` (único)
+
+**Actions:** reimplementar, a partir da leitura da ADR e da REQ, os ataques do ML-0A contra o
+`install.ps1` entregue e contra o gate do README. Todo residual vira ML neste roadmap, não REQ nova.
+
+**Acceptance criteria:**
+- [ ] Parecer aprovado, ou corretivo despachado e reauditado
+
+**Gates da wave:**
+```bash
+test -s docs/portabilidade/2026-10-28-install-ps1-vm-arm64.md
+test -s docs/seguranca/2026-10-28-redteam-docs-e-install-ps1.md
+trackfw validate
+```
+
+## Fechamento
+- `make quality` com a máquina ociosa, rodado pelo arquiteto.
+- PR com `Closes` para as issues que houver.
+- O roadmap só vai para `done/` depois do merge.
