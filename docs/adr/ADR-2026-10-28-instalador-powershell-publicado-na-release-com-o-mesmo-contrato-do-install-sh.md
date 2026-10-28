@@ -56,8 +56,12 @@ O `install.sh` já tem um contrato endurecido e falsificado por três gates:
    de npm/PyPI, sem ganho que justifique.
 5. **Destino padrão `$env:LOCALAPPDATA\Programs\trackfw`**, por usuário e sem privilégio de
    administrador.
-6. **O instalador acrescenta o destino ao PATH do usuário** (`HKCU`, via
-   `[Environment]::SetEnvironmentVariable(..., 'User')`), somente se ainda não estiver lá. Fica
+6. **O instalador acrescenta o destino ao PATH do usuário** (`HKCU\Environment`), somente se
+   ainda não estiver lá. A gravação é feita direto no registro, preservando o tipo do valor:
+   `REG_EXPAND_SZ` continua `ExpandString`. *Corrigido em 2026-10-28 pela Wave 0
+   (`docs/seguranca/2026-10-28-wave0-docs-e-install-ps1.md` §2): a versão anterior desta
+   decisão citava `[Environment]::SetEnvironmentVariable(..., 'User')`, que grava `REG_SZ` e
+   perde a expansão de `%USERPROFILE%` e afins.* Fica
    desligado com `TRACKFW_NO_MODIFY_PATH=1`. Ele nunca toca o PATH de máquina e nunca reordena
    entradas existentes. Isto **diverge** do `install.sh`, que só imprime a instrução: no
    PowerShell, editar o PATH à mão é o atrito que esta ADR existe para remover.
