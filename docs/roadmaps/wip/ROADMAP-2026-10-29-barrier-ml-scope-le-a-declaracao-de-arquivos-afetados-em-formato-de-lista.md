@@ -101,7 +101,7 @@ go test ./internal/commands/ -run 'MLScope' -count=1
 > Dependencies: Wave 1 auditada.
 
 ### ML-2A — Red team do ml_scope (hades-tf)
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:** `docs/seguranca/2026-10-29-redteam-barrier-ml-scope.md`
 **Actions:**
 1. Reimplementar a regra a partir da leitura do contrato, sem conferir o diff, e confrontar com o binário da branch.

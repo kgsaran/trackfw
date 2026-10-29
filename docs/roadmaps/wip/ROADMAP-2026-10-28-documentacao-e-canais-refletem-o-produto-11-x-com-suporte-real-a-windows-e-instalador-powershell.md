@@ -168,7 +168,7 @@ go build ./...
 > Dependencies: Wave 1 auditada. O motivo é o teto de CPU; não há dependência de arquivo.
 
 ### ML-2A — Linha de hook sob `pwsh` 7 e `powershell` 5.1 (artemis-tf) — AC5
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:** `internal/generators/guard_line_shell_test.go`
 
 **Actions:**
