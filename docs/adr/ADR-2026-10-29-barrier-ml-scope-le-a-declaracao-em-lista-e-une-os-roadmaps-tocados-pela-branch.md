@@ -1,12 +1,12 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-10-29
 author: "zeus (trackfw_architect), decisão do KG"
 ---
 
 # ADR: barrier ml_scope lê a declaração em lista e une os roadmaps tocados pela branch
 
-> Date: 2026-10-29 | Status: Proposed
+> Date: 2026-10-29 | Status: Accepted
 
 Revisa a D2 do `ADR-2026-10-23-regras-de-escrita-dos-agentes-sao-aplicadas-pelo-harness-e-nao-pelo-texto-do-handoff.md`
 em dois pontos: a gramática de `**Files affected:**` e o conjunto de roadmaps que formam o escopo da branch. O resto da D2
@@ -44,7 +44,20 @@ Nenhum dos dois casos tem teste: `TestMLScopeFilesAffectedParsing` cobre só a f
 
    **Por que é a mesma confiança de hoje:** a D2 revisada já confia no conteúdo de `HEAD` porque só o arquiteto commita.
    Um roadmap a mais em `HEAD` foi commitado pela mesma autoridade que commita edições no roadmap-alvo.
-3. **Contrato e gerador acompanham.** A seção `ml_scope` de `docs/cli-parity.md` descreve as duas regras, com os
+**Fechado pela Wave 0** (`docs/seguranca/2026-10-29-wave0-barrier-ml-scope.md` §4.1):
+   - **Crases:** todas as crases de cada item entram como padrão, igual à forma em linha. A lista para em `- [ ]`/`- [x]`.
+     Fica como residual o custo de menção em prosa virar escopo: no ML-1B são 6 tokens a mais, nenhum deles no diff.
+   - **Membros da união:** roadmaps em `abandoned/` ou `backlog/`, em `done/` desde a merge-base, ou anteriores ao corte
+     contribuem só com a orquestração. Os outros contribuem com as waves 0..K, em que K é a wave mais alta com algum ML
+     iniciado, concluído ou cancelado. Um roadmap só com MLs ⬜ não contribui com padrões.
+3. **Padrão sem segmento literal é rejeitado.** Um token que vira vazio depois de `strings.Trim(tok, "*?[]/")` (`**`, `*`,
+   `/`, `**/*`) bloqueia o barrier com mensagem própria. Medido: 0 tokens assim no corpus. É um sinal de alarme, não uma
+   barreira completa: `**/*.*` passa, e isso fica como residual.
+4. **`req:` e `adr:` só concedem caminho dentro do diretório deles.** Medido na Wave 0: `req: "go.mod"` concedia `go.mod`
+   como orquestração. O caminho é normalizado com `path.Clean`, recusado se absoluto ou com `..`, e só vale se estiver sob
+   `req_dir` (no caso de `req:`) ou sob algum `adr_dirs` (no caso de `adr:`). É o mesmo mecanismo, na mesma função, e por
+   isso entra nesta ADR.
+5. **Contrato e gerador acompanham.** A seção `ml_scope` de `docs/cli-parity.md` descreve as duas regras, com os
    `trackfw-contract` atualizados. O gerador não muda de formato: o rótulo vazio seguido de lista passa a ser lido.
 
 ## Consequences

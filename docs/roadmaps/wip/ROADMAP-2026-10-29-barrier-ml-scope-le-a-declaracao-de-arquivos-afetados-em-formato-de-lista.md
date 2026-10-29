@@ -38,7 +38,7 @@ de novo com `bin/trackfw`, o binário da branch.
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model do ml_scope em lista e em união (hades-tf)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-10-29. 12 prescrições em §4.1 do parecer. Dois achados entraram na REQ como AC10 (glob sem segmento literal) e AC11 (`req:` e `adr:` sem checagem de prefixo; `req: "go.mod"` concedia `go.mod`, conferido no código). O `ml_scope` do barrier desta wave reprova pelo próprio defeito, como o Context já previa.
 **Files affected:** `docs/seguranca/2026-10-29-wave0-barrier-ml-scope.md`
 **Actions:**
 1. Completude da enumeração. Liste todo leitor de `Files affected` / `Arquivos afetados` (código Go, scripts,
@@ -59,9 +59,9 @@ de novo com `bin/trackfw`, o binário da branch.
    deveria contar.
 6. Residual declarado.
 **Acceptance criteria:**
-- [ ] As seis seções respondidas com evidência (comando e resultado), não com afirmação de uma linha
-- [ ] Decisão de crases e de recorte de waves escrita como prescrição para o ML-1A
-- [ ] Nenhuma linha de implementação escrita
+- [x] As seis seções respondidas com evidência (comando e resultado), não com afirmação de uma linha
+- [x] Decisão de crases e de recorte de waves escrita como prescrição para o ML-1A
+- [x] Nenhuma linha de implementação escrita
 
 **Gates da wave:**
 ```bash
@@ -72,9 +72,9 @@ grep -q 'Prescrições' docs/seguranca/2026-10-29-wave0-barrier-ml-scope.md
 ## Wave 1 — Implementação
 > Dependencies: Wave 0 auditada.
 
-### ML-1A — Parser em lista e escopo por união (apolo-tf) — AC1 a AC9
-**Status:** ⬜ Pendente
-**Files affected:** `internal/commands/barrier.go`, `internal/commands/barrier_ml_scope_test.go`, `docs/cli-parity.md`, `scripts/check-barrier.sh`
+### ML-1A — Parser em lista e escopo por união (apolo-tf) — AC1 a AC11
+**Status:** 🔄 Em andamento
+**Files affected:** `internal/commands/barrier.go`, `internal/commands/barrier_ml_scope_test.go`, `docs/cli-parity.md`
 **Actions:**
 1. `parseMLScopeFilesAffected`: aceitar os itens de lista depois do rótulo, com a regra de crases prescrita pela Wave 0.
 2. `checkMLScope`: montar o escopo como união dos roadmaps tocados pela branch (ADR-2026-10-29, decisão 2), com o
@@ -82,7 +82,7 @@ grep -q 'Prescrições' docs/seguranca/2026-10-29-wave0-barrier-ml-scope.md
 3. Testes em `barrier_ml_scope_test.go` para AC1 a AC6. Os de repositório git usam `t.TempDir()`, nunca a árvore real.
 4. `docs/cli-parity.md`: só a seção `ml_scope` (gramática e entradas), com os `trackfw-contract` apontando para os testes
    novos. Nenhuma outra seção.
-5. `scripts/check-barrier.sh`: só se a Wave 0 listar cenário que fixa a regra antiga.
+5. Seguir as 12 prescrições de `docs/seguranca/2026-10-29-wave0-barrier-ml-scope.md` §4.1. A p.10 diz que `scripts/check-barrier.sh` não muda.
 **Acceptance criteria:**
 - [ ] AC1 a AC6 da REQ, cada um com o nome do teste conferido por `go test -run <nome> -v`
 - [ ] Sabotagem medida e revertida: voltar o `break` em `- ` reprova o teste de AC1; remover a união reprova o de AC4

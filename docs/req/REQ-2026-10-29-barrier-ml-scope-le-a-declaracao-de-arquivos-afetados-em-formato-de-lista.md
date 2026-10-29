@@ -44,6 +44,10 @@ reduzir (Discussion #525). Decisão do KG em 2026-10-29: corrigir no mesmo PR, c
 - [ ] AC8. Com o binário da branch, `trackfw barrier` passa no `ml_scope` da Wave 1 do roadmap de documentação 11.x e da
   Wave 1 deste roadmap, sem reescrever nenhuma declaração existente.
 - [ ] AC9. `go test ./internal/commands/` verde e `scripts/check-barrier.sh` verde.
+- [ ] AC10. Padrão sem segmento literal (`**`, `**/*`, `*/**`, `**/**`, `*`, `**/`, `/`) bloqueia; `site/**` e `**/*.go`
+  passam. Achado da Wave 0.
+- [ ] AC11. `req:` e `adr:` fora de `req_dir`/`adr_dirs` (`go.mod`, `docs/req-x/f.md`, `docs/req/../../go.mod`) não
+  concedem escopo; `./docs/req/REQ-x.md` concede. Achado da Wave 0, reproduzido ao vivo.
 
 ## Negative scope
 
@@ -52,6 +56,7 @@ reduzir (Discussion #525). Decisão do KG em 2026-10-29: corrigir no mesmo PR, c
 - Não reescreve nenhum roadmap existente para a forma em linha.
 - Não muda o vínculo escrito branch↔roadmap (`.trackfw-branch-links.json`) nem a resolução de `commit`/`push`/`ship`.
 - Não cria regra nova de `validate`.
+- Não corrige os 14 roadmaps históricos com `req:` fora de `docs/req/`. Eles só perdem a concessão se forem reabertos.
 
 ## Linked ADR
 ADR: docs/adr/ADR-2026-10-29-barrier-ml-scope-le-a-declaracao-em-lista-e-une-os-roadmaps-tocados-pela-branch.md
