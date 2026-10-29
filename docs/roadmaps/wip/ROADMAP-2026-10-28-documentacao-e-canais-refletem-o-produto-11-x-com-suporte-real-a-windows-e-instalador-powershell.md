@@ -353,6 +353,16 @@ O handoff traz lista fechada de ações e contador N/M de chamadas.
 **Acceptance criteria:**
 - [x] Vetor B8b do red team reprova; sabotagem de uma forma antiga em `cli-parity.md` reprova; os dois revertidos
 
+### ML-4E — Residuais da reauditoria do install.ps1: `;` Unicode, `Join-Path` e caixa invariante (ares-tf)
+**Status:** 🔄 Em andamento
+**Files affected:** `scripts/install.ps1`, `scripts/check-install-ps1.ps1`
+**Actions:** achados A-1, A-2 e A-4 da seção "Reauditoria (2026-10-29)" de `docs/seguranca/2026-10-28-redteam-docs-e-install-ps1.md`.
+O A-3 (formas cmd.exe do `cli-parity.md` fora do gate) fica como residual, com o motivo escrito: a forma cmd.exe é
+byte-igual a uma menção do subcomando, então o gate não consegue distinguir as duas.
+**Acceptance criteria:**
+- [ ] Cada achado com cenário no gate e sabotagem medida e revertida
+- [ ] Job `windows-install-ps1` verde no CI sob PS 5.1 e 7 (run citada)
+
 **Gates da wave:**
 ```bash
 test -s docs/portabilidade/2026-10-28-install-ps1-vm-arm64.md
