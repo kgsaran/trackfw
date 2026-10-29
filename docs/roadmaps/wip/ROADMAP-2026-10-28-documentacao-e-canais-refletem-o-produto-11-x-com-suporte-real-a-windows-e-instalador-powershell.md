@@ -326,6 +326,33 @@ O handoff traz lista fechada de ações e contador N/M de chamadas.
 **Acceptance criteria:**
 - [ ] Parecer aprovado, ou corretivo despachado e reauditado
 
+### ML-4C — Corretivo do install.ps1: `;` no destino, `;;` no PATH e aviso do `~/bin` (ares-tf)
+**Status:** 🔄 Em andamento
+**Files affected:** `scripts/install.ps1`, `scripts/check-install-ps1.ps1`, `README.md`
+**Actions:** achados do red team (`docs/seguranca/2026-10-28-redteam-docs-e-install-ps1.md`) e da VM
+(`docs/portabilidade/2026-10-28-install-ps1-vm-arm64.md`):
+1. F-1: `TRACKFW_INSTALL_DIR` com `;` é rejeitado antes de qualquer escrita. Hoje `C:\tf;%TEMP%` passa e a reexecução
+   duplica o PATH.
+2. F-2: o PATH existente terminado em `;` não gera `;;`.
+3. Medido na VM: o aviso de outra cópia não cobre o `~/bin` do Git Bash (`%USERPROFILE%\bin\trackfw.exe`), que fica
+   fora do PATH do Windows. O instalador passa a avisar quando esse arquivo existe, sem executá-lo.
+4. Comentários "NAO MEDIDO" de arquitetura que a VM mediu (`PROCESSOR_ARCHITEW6432` vazia em ARM64 nativo;
+   `OSArchitecture` disponível no PS 5.1) passam a citar a medição.
+5. README: a limitação do `~/bin` descreve o aviso novo.
+**Acceptance criteria:**
+- [ ] Cenários novos no gate (`;` no destino, PATH com `;` final, aviso do `~/bin`), cada um com sabotagem medida e revertida
+- [ ] Gate local verde e job `windows-install-ps1` verde no CI sob PS 5.1 e 7 (run citada)
+
+### ML-4D — Corretivo do gate da linha de hook: cerca e `cli-parity.md` (artemis-tf)
+**Status:** 🔄 Em andamento
+**Files affected:** `internal/guardforms/readme_line_test.go`
+**Actions:**
+1. F-3: a cerca só fecha com o mesmo caractere e com comprimento ≥ ao da abertura. Hoje um `~~~` dentro de um bloco ```
+   cega o extrator.
+2. F-4: as formas PS/POSIX citadas em `docs/cli-parity.md` também são conferidas contra as constantes.
+**Acceptance criteria:**
+- [ ] Vetor B8b do red team reprova; sabotagem de uma forma antiga em `cli-parity.md` reprova; os dois revertidos
+
 **Gates da wave:**
 ```bash
 test -s docs/portabilidade/2026-10-28-install-ps1-vm-arm64.md
