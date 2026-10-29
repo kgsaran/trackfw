@@ -7,6 +7,53 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [11.2.0] - 2026-10-29
+
+### Breaking Changes
+
+Nenhum. Duas checagens do `ml_scope` ficaram mais estritas (ver Changed). No corpus deste repositório elas não
+reprovam nada, mas podem bloquear o barrier de um consumidor que use um desses padrões.
+
+### Added
+
+- **`install.ps1`: instalador PowerShell publicado na release, com o mesmo contrato do `install.sh`** (#627).
+  `irm https://github.com/kgsaran/trackfw/releases/latest/download/install.ps1 | iex`, ou baixe, leia e execute.
+  - Checksum SHA-256 do `checksums.txt` conferido antes de extrair: se faltar, se estiver duplicado ou se divergir,
+    a instalação aborta sem deixar binário.
+  - `TRACKFW_VERSION` validada no valor inteiro; `TRACKFW_ARCH` só aceita `amd64` ou `arm64`; `TRACKFW_INSTALL_DIR`
+    recusa `;` e variantes Unicode.
+  - Destino padrão `%LOCALAPPDATA%\Programs\trackfw`, sem administrador.
+  - Acrescenta o destino ao PATH do usuário de forma idempotente, preservando `REG_EXPAND_SZ`. Para não alterar o
+    PATH, use `TRACKFW_NO_MODIFY_PATH=1`.
+  - Avisa sobre outras cópias no PATH e sobre `%USERPROFILE%\bin\trackfw.exe`, que o Git Bash põe à frente.
+  - Compatível com Windows PowerShell 5.1 e PowerShell 7. Medido no CI `windows-latest` x64 e numa VM Windows 11
+    ARM64 contra a 11.1.0.
+- **Seção Windows no README**, com a matriz rota × arquitetura × shell. Cada célula diz se foi medida (com a fonte)
+  ou não verificada (#627).
+
+### Fixed
+
+- **A página do PyPI estava vazia.** A wheel passa a gravar o README como descrição
+  (`Description-Content-Type: text/markdown`), e um gate falha se ele faltar (#627).
+- **`barrier` `ml_scope` lia como vazia a declaração `**Files affected:**` em lista.** Eram 191 de 836 declarações
+  neste repositório. Os itens de lista agora fazem parte da declaração, que termina em linha em branco, novo campo,
+  cabeçalho, cerca ou critério `- [.]` (#627).
+- **`barrier` `ml_scope` montava o escopo a partir de um roadmap só.** Numa branch com mais de uma REQ, um roadmap
+  reprovava os arquivos do outro. O escopo agora é a união dos roadmaps tocados pela branch, cada um com as waves
+  já iniciadas (#627).
+- **Documentação:**
+  - o comando do Homebrew passa a ser `brew install kgsaran/trackfw/trackfw`;
+  - a linha de hook do README ganha `emulate -R sh`, que o #595 exigia, e um teste fixa a linha contra o código;
+  - o `VISION.md` e o site (pt e en) passam a descrever a 11.x;
+  - o `docs/cli-parity.md` vira o contrato do binário único, sem paridade entre runtimes no presente (#627).
+
+### Changed
+
+- **`barrier` `ml_scope`:** `req:` e `adr:` só concedem escopo dentro de `req_dir` e `adr_dirs`. Antes,
+  `req: "go.mod"` concedia `go.mod`. Um padrão sem segmento literal (`**`, `*`, `/`) agora bloqueia, com mensagem
+  que nomeia o roadmap, o ML e o token (#627).
+- **CI:** `windows-install-ps1` passa a ser check obrigatório da `main` (#628).
+
 ## [11.1.0] - 2026-10-26
 
 ### Breaking Changes
