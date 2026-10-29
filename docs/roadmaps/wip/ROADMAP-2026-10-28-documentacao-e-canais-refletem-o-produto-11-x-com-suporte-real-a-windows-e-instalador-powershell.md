@@ -224,7 +224,8 @@ go build ./...
 ### ML-3A — README, CONTRIBUTING e gate-design-principles (apolo-tf) — AC1, AC2, AC6
 **Status:** ✅ Concluído — auditado em 2026-10-29, depois de dois corretivos e um ajuste do arquiteto. (1) A matriz Windows afirmava ✅ em npm/pip x64 sem medição e ⚠️ em `install.ps1` x64 e `pwsh` 7, que o CI deste PR mediu. Agora toda célula ✅ cita um arquivo de `docs/portabilidade/` ou uma run de CI, e a inversão antiga do cmd.exe (medido em ARM64, não em x64) foi desfeita. (2) "ten" virou "twelve" nos presets, mas são 10 presets (`presetOrder`, `preset.go:176`) com 12 especialidades (`KnownAgentIDs`). O modo personalizado pede 12 nomes, e o arquiteto corrigiu a linha que ainda dizia "ten". (3) Comentário de `guard_generations.go:40` alinhado ao que foi medido, sem mudar constante. Gates: `TestREADMEHookLinesMatchCurrentConstants` PASS, com as sabotagens forma antiga, constante alterada e vácuo reprovando; `go test ./internal/guardforms/` rc=0. As células ⚠️ do `install.sh`/npm/pip ARM64 ganham fonte no ML-4A.
 **Files affected:** `README.md`, `CONTRIBUTING.md`, `docs/gate-design-principles.md`,
-`internal/guardforms/readme_line_test.go` (novo)
+`internal/guardforms/readme_line_test.go` (novo),
+`internal/guardforms/guard_generations.go` (só comentário; acrescentado na auditoria de 2026-10-29: o comentário contradizia a medição citada no README)
 
 **Actions:**
 1. Corrigir as divergências do README listadas na auditoria (anexada ao handoff):
