@@ -185,7 +185,7 @@ go build ./...
 - [x] Relatório com uma frase por teste novo; nome passado ao `go test -run` conferido com `-v`
 
 ### ML-2B — Reescrita do `docs/cli-parity.md` (apolo-tf) — AC7
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:** `docs/cli-parity.md` (único)
 
 **Actions:**
