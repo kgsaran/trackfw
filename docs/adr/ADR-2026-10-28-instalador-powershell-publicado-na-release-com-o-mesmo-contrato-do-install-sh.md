@@ -84,7 +84,9 @@ O `install.sh` já tem um contrato endurecido e falsificado por três gates:
   - Alterar o PATH do usuário é efeito persistente fora do diretório de instalação. Ele precisa
     ser idempotente e reversível, com a reversão documentada.
 - **Residual:** um `trackfw.exe` antigo que vem antes no PATH (por exemplo, o `~/bin` do Git Bash)
-  continua respondendo no lugar do novo. O instalador avisa, mas não remove.
+  continua respondendo no lugar do novo. O instalador avisa, mas não remove. *Precisado em 2026-10-29 pelo ML-4A
+  (VM ARM64): o aviso original só cobria o PATH do Windows, e o `~/bin` do Git Bash fica fora dele. O ML-4C
+  acrescentou o aviso para `%USERPROFILE%\bin\trackfw.exe`, sem executar nem ler o arquivo.*
 
 ## Alternatives Considered
 
