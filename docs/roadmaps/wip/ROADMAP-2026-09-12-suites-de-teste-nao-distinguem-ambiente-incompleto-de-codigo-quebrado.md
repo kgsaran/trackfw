@@ -44,7 +44,7 @@ ML-1B (Makefile) é disjunto e roda em paralelo com ML-1A.
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model do isolamento de ambiente dos testes (hades-tf)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-10-29. 10 prescrições. Três bloqueantes absorvidos abaixo: preservar GOCACHE/GOMODCACHE ao trocar HOME (5 `go build` em testes do `commands`, conferido por grep); `git --version` em vez de `LookPath` (LookPath não executa); AC3 exige `FAIL\t<pkg>`, porque "zero `--- FAIL`" passa com `os.Exit(0)`. Só `commands` precisa de isolamento de HOME (22 outros pacotes passam com HOME envenenado). O `commands` já tinha `Unsetenv CLAUDE_CONFIG_DIR`; falta o HOME.
 **Files affected:** `docs/seguranca/2026-10-29-wave0-isolamento-ambiente-dos-testes.md`
 **Actions:**
 1. Inventário: liste todo pacote em `internal/` cujos testes (ou o código que eles exercitam) leem
@@ -63,9 +63,9 @@ ML-1B (Makefile) é disjunto e roda em paralelo com ML-1A.
    ser sobrescrito).
 6. Prescrições numeradas para ML-1A, ML-1B e ML-2A, e residual declarado.
 **Acceptance criteria:**
-- [ ] As seis seções respondidas com evidência (comando e resultado)
-- [ ] Prescrições escritas em seção intitulada `Prescrições`
-- [ ] Nenhuma linha de implementação escrita
+- [x] As seis seções respondidas com evidência (comando e resultado)
+- [x] Prescrições escritas em seção intitulada `Prescrições`
+- [x] Nenhuma linha de implementação escrita
 
 **Gates da wave:**
 ```bash
@@ -83,13 +83,14 @@ grep -q 'Prescrições' docs/seguranca/2026-10-29-wave0-isolamento-ambiente-dos-
 **Files affected:** `internal/commands/netexec_test.go`, `internal/commands/testenv_isolation_test.go`
 **Actions:**
 1. Estender o `TestMain` existente em `internal/commands/netexec_test.go` (não criar outro: o Go aceita
-   um por pacote). Depois dos modos auxiliares HANG/SPAWN/SHORT_SLEEP e antes de `m.Run()`: criar HOME
-   temporário, `Setenv HOME` e `USERPROFILE`, `Unsetenv CLAUDE_CONFIG_DIR`, remover o diretório após
-   `m.Run()`. Copiar o molde de `internal/validator/main_test.go`.
-2. Criar `internal/commands/testenv_isolation_test.go` com o teste-sentinela equivalente a
-   `TestIsolatedHomeCoversBothChannels`.
-3. Aplicar as prescrições da Wave 0 sobre outros pacotes **somente** se a Wave 0 os apontar; nesse
-   caso o arquiteto amplia `Files affected` antes.
+   um por pacote). Depois dos modos auxiliares HANG/SPAWN/SHORT_SLEEP e antes de `m.Run()`, nesta
+   ordem (Wave 0, Prescrições 1 e 2): (a) capturar `GOCACHE`, `GOMODCACHE`, `GOPATH`, `GOENV` com
+   `go env <VAR>`; (b) `MkdirTemp`, `Setenv HOME` e `USERPROFILE` (o `Unsetenv CLAUDE_CONFIG_DIR` já
+   existe, mantenha); (c) re-`Setenv` as quatro variáveis Go capturadas; (d) após `m.Run()`, liberar
+   escrita (`chmod -R u+w`) e `RemoveAll` do HOME temporário.
+2. Criar `internal/commands/testenv_isolation_test.go` com o sentinela (Prescrição 3): `HOME` e
+   `USERPROFILE` iguais ao HOME temporário, e `agentconfig.ClaudeConfigDir(...)` dentro dele.
+3. Nenhum outro pacote: a Wave 0 mediu que só `commands` vaza.
 **Acceptance criteria:**
 - [ ] `env PATH=<sem trackfw> go test ./internal/commands/ -count=1` rc=0 com o HOME real do desenvolvedor (que tem o guard global)
 - [ ] o mesmo com `CLAUDE_CONFIG_DIR` apontando para um diretório com o settings do guard
@@ -128,14 +129,18 @@ make check-prereqs
 
 ### ML-2A — `git` ausente produz uma linha de diagnóstico, não 181 falhas (artemis-tf) — AC3
 **Status:** ⬜ Pendente
-**Files affected:** `internal/commands/netexec_test.go`, `internal/auditsurface/main_test.go`, `internal/pathguard/main_test.go`, `internal/validator/main_test.go`
+**Files affected:** `internal/commands/netexec_test.go`, `internal/commands/testenv_isolation_test.go`, `internal/auditsurface/main_test.go`, `internal/pathguard/main_test.go`, `internal/validator/main_test.go`
 **Actions:**
-1. No `TestMain` de cada um dos 4 pacotes, antes de `m.Run()` (e no `commands`, depois dos modos
-   auxiliares): `exec.LookPath("git")`; se falhar, imprimir em stderr
-   `ambiente incompleto: git não encontrado no PATH` e `os.Exit(2)`.
-2. Aplicar as prescrições da Wave 0 sobre o sentinela que impede o CI de ficar verde sem rodar.
+1. No `TestMain` de cada um dos 4 pacotes, como primeira instrução (no `commands`, logo depois dos
+   modos auxiliares e antes do isolamento de HOME): `exec.Command("git", "--version").Run()`; se
+   falhar, imprimir em stderr `ambiente incompleto: git não encontrado no PATH` e `os.Exit(2)`.
+   Não usar `exec.LookPath` (Wave 0, Prescrição 7: não executa, aceita git quebrado).
+2. Sentinela em cada um dos 4 pacotes, no próprio `main_test.go` (no `commands`, em
+   `testenv_isolation_test.go`): re-executa `os.Args[0] -test.run=^$` com `PATH` num `t.TempDir()`
+   vazio e afirma exit code 2, a linha no stderr e ausência de `PASS`. Segundo braço só fora do
+   Windows: `PATH` com um `git` falso que sai 127 (Prescrições 9 e 10).
 **Acceptance criteria:**
-- [ ] com PATH contendo todo `/usr/bin` menos `git`, os 4 pacotes emitem a linha e **zero** `--- FAIL`
+- [ ] com PATH contendo todo `/usr/bin` menos `git`, cada um dos 4 pacotes: rc≠0, a linha de diagnóstico no stderr, `FAIL` + nome do pacote na saída, nenhum `PASS`/`ok` e **zero** `--- FAIL`
 - [ ] com `git` presente, nenhuma linha de diagnóstico; os 4 pacotes verdes
 - [ ] `go test ./internal/pathguard/` verde
 
