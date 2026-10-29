@@ -294,7 +294,7 @@ sh -c "git grep -nE 'github\.com/trackfw/|trackfw/tap|kgsaran/tap' -- README.md 
 > Dependencies: Wave 3 auditada.
 
 ### ML-4A — `install.ps1` em VM Windows 11 ARM64 (ares-tf) — AC9
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-29. `docs/portabilidade/2026-10-28-install-ps1-vm-arm64.md`, 9/14 chamadas. Na VM Windows 11 ARM64, contra a v11.1.0 real, foram medidos: `install.ps1` sob PS 5.1, `install.sh` sob Git Bash, npm e pip a partir do registro. A VM terminou com o PATH do usuário igual ao inicial. A medição achou a lacuna do aviso do `~/bin`, corrigida no ML-4C.
 **Files affected:** `docs/portabilidade/2026-10-28-install-ps1-vm-arm64.md` (novo, único)
 
 **Actions:** rodar o `install.ps1` da branch na VM ARM64, sob Windows PowerShell 5.1, contra a
@@ -317,14 +317,14 @@ O handoff traz lista fechada de ações e contador N/M de chamadas.
 - [ ] Cada item com comando e resultado literal; rc lido sem pipe
 
 ### ML-4B — Red team (hades-tf)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — o parecer reprovou (F-1: `;` no destino quebrava a idempotência do PATH), os corretivos ML-4C e ML-4D foram feitos, e a reauditoria aprovou com ressalvas. Os residuais A-1, A-2 e A-4 foram corrigidos no ML-4E. O A-3 fica aceito, com o motivo escrito no ML-4E.
 **Files affected:** `docs/seguranca/2026-10-28-redteam-docs-e-install-ps1.md` (único)
 
 **Actions:** reimplementar, a partir da leitura da ADR e da REQ, os ataques do ML-0A contra o
 `install.ps1` entregue e contra o gate do README. Todo residual vira ML neste roadmap, não REQ nova.
 
 **Acceptance criteria:**
-- [ ] Parecer aprovado, ou corretivo despachado e reauditado
+- [x] Parecer aprovado, ou corretivo despachado e reauditado
 
 ### ML-4C — Corretivo do install.ps1: `;` no destino, `;;` no PATH e aviso do `~/bin` (ares-tf)
 **Status:** ✅ Concluído — auditado em 2026-10-29, depois de um corretivo no gate. O `sab-trailing-semicolon` restaurava o registro antes de ler o PATH; a ordem foi corrigida, e os outros cenários de registro foram varridos e estavam certos. CI `windows-latest`, run 40918775429, job `windows-install-ps1`: 39 PASS, 0 FAIL e 0 SKIP sob Desktop (5.1) e sob Core (7), incluindo os 9 cenários novos (`install-dir-semicolon`, `install-dir-semicolon-no-dir`, `sab-install-dir-semicolon`, `path-trailing-semicolon`, `path-trailing-semicolon-idempotent`, `sab-trailing-semicolon`, `gitbash-bin-warning`, `gitbash-bin-no-warning`, `sab-gitbash-bin-warning`).
@@ -354,14 +354,14 @@ O handoff traz lista fechada de ações e contador N/M de chamadas.
 - [x] Vetor B8b do red team reprova; sabotagem de uma forma antiga em `cli-parity.md` reprova; os dois revertidos
 
 ### ML-4E — Residuais da reauditoria do install.ps1: `;` Unicode, `Join-Path` e caixa invariante (ares-tf)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-29. CI `windows-latest`, run 40931646835, job `windows-install-ps1`: 52 PASS, 0 FAIL e 0 SKIP sob PS 5.1 e sob 7, incluindo os 13 cenários novos (`install-dir-semicolon-unicode-{037E,FE54,FF1B}`, `unc-userprofile*`, `trtr-*` e as sabotagens). Os dois arquivos continuam ASCII (`LC_ALL=C grep -c '[^ -~\t]'` = 0).
 **Files affected:** `scripts/install.ps1`, `scripts/check-install-ps1.ps1`, `vault/notes/index.md`
 **Actions:** achados A-1, A-2 e A-4 da seção "Reauditoria (2026-10-29)" de `docs/seguranca/2026-10-28-redteam-docs-e-install-ps1.md`.
 O A-3 (formas cmd.exe do `cli-parity.md` fora do gate) fica como residual, com o motivo escrito: a forma cmd.exe é
 byte-igual a uma menção do subcomando, então o gate não consegue distinguir as duas.
 **Acceptance criteria:**
-- [ ] Cada achado com cenário no gate e sabotagem medida e revertida
-- [ ] Job `windows-install-ps1` verde no CI sob PS 5.1 e 7 (run citada)
+- [x] Cada achado com cenário no gate e sabotagem medida e revertida
+- [x] Job `windows-install-ps1` verde no CI sob PS 5.1 e 7 (run citada)
 
 **Gates da wave:**
 ```bash
