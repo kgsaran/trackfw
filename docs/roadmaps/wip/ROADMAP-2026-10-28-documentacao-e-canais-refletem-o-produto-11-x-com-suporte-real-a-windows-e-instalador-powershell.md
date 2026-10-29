@@ -185,7 +185,7 @@ go build ./...
 - [x] Relatório com uma frase por teste novo; nome passado ao `go test -run` conferido com `-v`
 
 ### ML-2B — Reescrita do `docs/cli-parity.md` (apolo-tf) — AC7
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-29, depois de dois corretivos. O primeiro cuidou das 17 anotações, que agora descrevem o que cada gate prova hoje, sem afirmar mais. O segundo cuidou da prosa: cerca de 108 linhas com paridade no presente, que eram contrato, foram reescritas com o binário como sujeito ou marcadas pré-v8; as linhas sobre CLIs de agente ficaram intactas. Medido pelo arquiteto: `check-parity-contract-coverage.sh` rc=0, com contadores idênticos (324/74/72/53/125/0/0). Rodaram com rc=0: `check-barrier`, `check-agent-namespace-union`, `check-agent-models-parity`, `check-ref-separator-portability`, `check-output-encoding-declared`, `check-roadmap-barrier-contract`, `check-usage-silencing` e `check-pr-closing-keyword --self-test`. Cabeçalhos: 341 antes e depois, 0 removidos, 11 renomeados; nenhum leitor depende do texto deles. O censo final deixa 9 linhas, todas no passado, em continuação de parêntese pré-v8 ou sobre CLIs de agente.
 **Files affected:** `docs/cli-parity.md` (único)
 
 **Actions:**
@@ -208,9 +208,9 @@ go build ./...
    "Platforms (v8.0.0-rc1)" (l.32-39) com o estado atual do CI.
 
 **Acceptance criteria:**
-- [ ] Os testes Go do inventário (os que leem o arquivo) verdes, cada um rodado por nome
-- [ ] Nenhuma regra de contrato perdida: diff dos cabeçalhos `^#{2,4} ` antes e depois anexado ao relatório
-- [ ] Nenhuma afirmação de paridade entre runtimes no presente
+- [x] Os testes Go do inventário (os que leem o arquivo) verdes, cada um rodado por nome
+- [x] Nenhuma regra de contrato perdida: diff dos cabeçalhos `^#{2,4} ` antes e depois anexado ao relatório
+- [x] Nenhuma afirmação de paridade entre runtimes no presente
 
 **Gates da wave:**
 ```bash
