@@ -222,7 +222,7 @@ go build ./...
 > Dependencies: Waves 1 e 2 auditadas. Elas produzem o `install.ps1`, a matriz medida e o contrato.
 
 ### ML-3A — README, CONTRIBUTING e gate-design-principles (apolo-tf) — AC1, AC2, AC6
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:** `README.md`, `CONTRIBUTING.md`, `docs/gate-design-principles.md`,
 `internal/guardforms/readme_line_test.go` (novo)
 
@@ -257,7 +257,7 @@ go build ./...
 - [ ] Relatório com uma frase por teste novo
 
 ### ML-3B — VISION e site (atena-tf) — AC1, AC8
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:** `docs/visao-projeto/VISION.md`, `site/**` (pt e en)
 
 **Actions:**
