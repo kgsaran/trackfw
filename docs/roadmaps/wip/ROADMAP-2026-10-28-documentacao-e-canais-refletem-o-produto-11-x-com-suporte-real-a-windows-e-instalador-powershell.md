@@ -294,7 +294,7 @@ sh -c "git grep -nE 'github\.com/trackfw/|trackfw/tap|kgsaran/tap' -- README.md 
 > Dependencies: Wave 3 auditada.
 
 ### ML-4A — `install.ps1` em VM Windows 11 ARM64 (ares-tf) — AC9
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:** `docs/portabilidade/2026-10-28-install-ps1-vm-arm64.md` (novo, único)
 
 **Actions:** rodar o `install.ps1` da branch na VM ARM64, sob Windows PowerShell 5.1, contra a
@@ -317,7 +317,7 @@ O handoff traz lista fechada de ações e contador N/M de chamadas.
 - [ ] Cada item com comando e resultado literal; rc lido sem pipe
 
 ### ML-4B — Red team (hades-tf)
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:** `docs/seguranca/2026-10-28-redteam-docs-e-install-ps1.md` (único)
 
 **Actions:** reimplementar, a partir da leitura da ADR e da REQ, os ataques do ML-0A contra o
