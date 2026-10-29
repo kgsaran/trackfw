@@ -1023,7 +1023,7 @@ Cria e publica uma tag de release anotada com o changelog no corpo da mensagem.
 
 ```bash
 trackfw release tag <versão>
-trackfw release tag 11.2.0 --dry-run
+trackfw release tag 11.2.0
 ```
 
 ---

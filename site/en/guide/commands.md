@@ -1025,7 +1025,7 @@ Creates and publishes an annotated git release tag with changelog in the message
 
 ```bash
 trackfw release tag <version>
-trackfw release tag 11.2.0 --dry-run
+trackfw release tag 11.2.0
 ```
 
 ---
