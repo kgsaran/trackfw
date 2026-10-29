@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-12
 author: "Hefesto (Code Quality)"
 adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-12-suites-de-teste-nao-distinguem-ambiente-incompleto-de-codigo-quebrado.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-12-suites-de-teste-nao-distinguem-ambiente-incompleto-de-codigo-quebrado.md"
 ---
 
 # REQ: suites de teste nao distinguem ambiente incompleto de codigo quebrado
@@ -149,6 +149,74 @@ do cronograma da v8.**
 A decisão sobre a ordem de entrada (antes/depois da v8) é do arquiteto e depende do cronograma.
 Por isso o roadmap fica em `backlog/`.
 
+## Revisão de escopo — 2026-10-29 (zeus-tf) — este é o escopo vigente
+
+Retomada a pedido do KG, absorvendo o issue **#624** por **mesmo sintoma**: o resultado de
+`go test` depende da máquina de quem roda. Regra Dura de Causa Raiz: mesmo sintoma investiga no
+mesmo roadmap; só a medição autoriza separar.
+
+### Medido em `main` `d0dba293` (v11.2.0), macOS, binário instalado 11.2.0
+
+| comando | rc | `--- FAIL` |
+|---|---|---|
+| `env PATH=<sem trackfw> go test ./internal/commands/ -count=1` (HOME real) | 1 | 15 |
+| idem, com `HOME=<tmp>` (GOCACHE/GOMODCACHE/GOPATH preservados) | 0 | 0 |
+| `env PATH=<sem trackfw> go test ./... -count=1` (HOME real) | 1 | 15, todos em `internal/commands` |
+
+Os 15: `TestValidateTextUnchanged`, `TestValidateJSONFlag`, `TestBarrierTrustLocalGatesFlag`,
+`TestBarrierReentry_T3_LegitimateNested`, `TestBarrierReentry_T4_SequentialCallsPass`,
+`TestBarrierLapsed_TextModePrintsLapsedLine`, `TestBarrierLapsed_PassedWhenMetAndLapsed`,
+`TestBarrierLapsed_JustificationTruncatedAt120`, `TestBarrierLapsed_JustificationInTextAndJSON`,
+`TestBarrierFence_WellFormedRoadmapPassesThrough`, `TestBarrierContract_WaveVerdePassa`,
+`TestBarrierContract_SemHeadingMalformadaNaoIntroduceFalsoPositivo`,
+`TestBarrierContract_JSONDeterministico`, `TestBarrierCLI_EnglishHeaderAndWordStatusPass`,
+`TestBarrierCLI_CRLFGatesBlockFenceIsRecognized`.
+
+**Causa (confirmada pelo contra-braço):** os testes leem o `~/.claude/settings.json` real; o guard
+global está lá; a sonda de binário reprova sem `trackfw` no PATH. No CI não há settings global.
+
+**Fatos de código que condicionam a correção:** `internal/homedir/homedir.go` lê `HOME` e cai em
+`os.UserHomeDir()` (no Windows, `USERPROFILE`); o código de produto lê também `CLAUDE_CONFIG_DIR`;
+o pacote `commands` **já tem** um `TestMain` em `internal/commands/netexec_test.go`.
+**O molde já existe:** `internal/validator/main_test.go` isola `HOME`, `USERPROFILE` e remove
+`CLAUDE_CONFIG_DIR`, com o teste-sentinela `TestIsolatedHomeCoversBothChannels`. O `commands` não
+tem nada disso. Com `HOME` temporário e `CLAUDE_CONFIG_DIR=~/.claude` real, `go test ./...` deu rc=0
+(o vazamento medido é pelo `HOME`; remover `CLAUDE_CONFIG_DIR` entra como defesa, igual ao molde).
+
+### ACs vigentes
+
+- **AC1 e AC2 — RETIRADOS.** As suítes Node e Python não existem desde a v8 (`npm/tests/` ausente,
+  `pypi/tests/` só com `__pycache__`). Evidência: `docs/governanca/2026-10-17-triagem-backlog-pre-v8.md`.
+- **AC3 — ampliado e com mecanismo trocado.** Medido em 2026-10-29 com PATH que tem todo `/usr/bin`
+  menos `git` (e HOME temporário): **181 testes de topo reprovam (233 linhas `--- FAIL`) em 4
+  pacotes** — `internal/auditsurface`, `internal/commands`, `internal/pathguard`,
+  `internal/validator` — espalhados por ~20 arquivos. Não são 3.
+  **Decisão (zeus-tf):** em vez de `t.Skip` teste a teste, **falha rápida no `TestMain`** de cada um
+  dos 4 pacotes (todos já têm `TestMain`): com `git` ausente, o pacote imprime uma linha de
+  pré-requisito e sai com rc≠0 sem rodar teste. Motivo: `t.Skip` em 181 testes deixaria a suíte
+  **verde sem ter testado nada**, que é o sinal errado na direção oposta; o molde da REQ
+  (`check-serve-api-file-security.sh`) também é rc≠0 com diagnóstico, não skip. `git` é
+  pré-requisito duro de um CLI de governança de git.
+  Positivo: com `git` ausente, `go test` desses 4 pacotes emite a linha
+  `ambiente incompleto: git não encontrado no PATH` e **zero** `--- FAIL`. Negativo: com `git`
+  presente, nenhuma linha de diagnóstico e a suíte roda inteira.
+- **AC4 — remedido.** `make quality` (= `test lint parity`) qualifica pré-requisito ausente antes de
+  rodar. A lista de ferramentas sai da medição do que `parity-rest`/`parity-falsify` invocam hoje
+  (a lista antiga citava `node`/`npm`/`pytest` de suítes que não existem mais).
+- **AC5 (#624) — novo.** Os testes não leem o ambiente pessoal do desenvolvedor.
+  Positivo: com `PATH` sem `trackfw` e `HOME` **envenenado** (diretório com `.claude/settings.json`
+  contendo os hooks do guard global), `go test ./...` passa; o mesmo com `CLAUDE_CONFIG_DIR`
+  apontando para um diretório envenenado. Negativo: os testes que **precisam** de um HOME específico
+  continuam definindo o próprio via `t.Setenv` e passam.
+
+### Escopo negativo (não entra nesta REQ)
+
+- Nenhuma mudança de comportamento do binário em `internal/` fora de arquivos `_test.go`, salvo se a
+  medição provar que o código de produto ignora `HOME` ao ler o settings (aí volta ao arquiteto).
+- Nenhum gate novo de CI e nenhum job novo de workflow (direção de 2026-10-28: B congelado).
+- Nada de Node/Python; nada de `scripts/install.*`, site ou docs de usuário.
+- Não altera a sonda de binário nem o guard global — o defeito é o teste vazar o ambiente, não a sonda.
+
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->
 ADR: 
@@ -158,4 +226,4 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/backlog/ROADMAP-2026-09-12-suites-de-teste-nao-distinguem-ambiente-incompleto-de-codigo-quebrado.md
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-12-suites-de-teste-nao-distinguem-ambiente-incompleto-de-codigo-quebrado.md
