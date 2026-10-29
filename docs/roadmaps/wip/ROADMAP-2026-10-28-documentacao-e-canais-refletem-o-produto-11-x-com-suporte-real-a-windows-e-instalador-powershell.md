@@ -314,7 +314,7 @@ working context congelado. Depois do ML-4A, o arquiteto atualiza as células do 
 O handoff traz lista fechada de ações e contador N/M de chamadas.
 
 **Acceptance criteria:**
-- [ ] Cada item com comando e resultado literal; rc lido sem pipe
+- [x] Cada item com comando e resultado literal; rc lido sem pipe
 
 ### ML-4B — Red team (hades-tf)
 **Status:** ✅ Concluído — o parecer reprovou (F-1: `;` no destino quebrava a idempotência do PATH), os corretivos ML-4C e ML-4D foram feitos, e a reauditoria aprovou com ressalvas. Os residuais A-1, A-2 e A-4 foram corrigidos no ML-4E. O A-3 fica aceito, com o motivo escrito no ML-4E.
