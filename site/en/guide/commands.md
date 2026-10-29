@@ -17,7 +17,7 @@ trackfw init [--brownfield] [--ai-tools codex,...]
 | Flag | Description |
 |------|-------------|
 | `--brownfield` | Activates lenient mode for 30 days (violations become warnings) |
-| `--ai-tools` | Configures all nine AI targets non-interactively in all three runtimes |
+| `--ai-tools` | Configures all ten AI targets non-interactively |
 
 ### What gets generated
 
@@ -142,8 +142,7 @@ trackfw roadmap move <name> wip
 
 ## `trackfw agents` and `trackfw skills`
 
-Manage specialist agents and governance skills with the same contract in the
-Go/Homebrew, npm, and PyPI CLIs.
+Manage specialist agents and governance skills.
 
 ```bash
 trackfw agents list|install|uninstall|update [flags]
@@ -198,9 +197,8 @@ is adopted without overwrite and reported as `outdated`; `update` migrates it.
 Unknown unmanaged content is never adopted by update, even with `--force`.
 
 The identity parity gate is derived from the canonical integration catalog:
-every agent-capable surface automatically enters the Go/Node/Python matrix.
-Non-default surfaces are exercised as `target=surface`, the same format used by
-`--surface`.
+every agent-capable surface is exercised as `target=surface`, the same format
+used by `--surface`.
 
 The standalone `gemini`, `cursor`, `copilot`, `windsurf`, and `amazonq` commands
 have been removed. Use `agents` and `skills` with `--targets` (the target names
@@ -968,5 +966,98 @@ Displays the installed version of trackfw.
 
 ```bash
 trackfw version
-# trackfw v7.0.0
+# trackfw 11.1.0
+```
+
+---
+
+## `trackfw push`
+
+Governed git push for commits already created by `trackfw commit` or `git commit`. Pushes the current branch to origin without committing and without opening a PR/MR.
+
+```bash
+trackfw push
+trackfw push --dry-run
+```
+
+---
+
+## `trackfw doctor`
+
+Sweeps every catalog-managed agents/skills destination on disk and compares the findings against the integrations manifest. Distinguishes hand-modified artifacts from unknown content and reports the discrepancy.
+
+```bash
+trackfw doctor
+trackfw doctor --json
+```
+
+---
+
+## `trackfw guard`
+
+Hook guards enforced by trackfw at tool-use time.
+
+```bash
+trackfw guard write-scope <name>    # blocks writes to frozen paths
+trackfw guard git-branch <name>     # blocks raw git branch/commit/push operations
+trackfw guard credential <name>     # blocks credential patterns in tool payloads
+trackfw guard credential --global   # applies credential guard globally
+```
+
+See `trackfw guard <subcommand> --help` for per-guard options.
+
+---
+
+## `trackfw attention`
+
+Writes or clears the board attention signal that the `trackfw serve` Kanban picks up as a live banner.
+
+```bash
+trackfw attention signal    # write .trackfw-attention.json
+trackfw attention cleanup   # remove .trackfw-attention.json
+```
+
+---
+
+## `trackfw release tag`
+
+Creates and publishes an annotated git release tag with changelog in the message body.
+
+```bash
+trackfw release tag <version>
+trackfw release tag 11.2.0 --dry-run
+```
+
+---
+
+## `trackfw branch prune`
+
+Reports (and, with `--apply`, deletes) local branches already integrated into `origin/main`.
+
+```bash
+trackfw branch prune          # report only — keep / review / delete
+trackfw branch prune --apply  # delete classified-as-delete branches
+```
+
+Classifies into `keep`, `review`, and `delete`. The `review` category is never deleted automatically even with `--apply`.
+
+---
+
+## `trackfw audit-surface`
+
+Reports the executable surface of a git ref (hook wiring and instruction files) without checking it out.
+
+```bash
+trackfw audit-surface <ref>
+trackfw audit-surface FETCH_HEAD
+```
+
+---
+
+## `trackfw agents models`
+
+Lists the configured model versions for each agent target and shows the configuration source.
+
+```bash
+trackfw agents models
 ```

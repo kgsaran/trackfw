@@ -11,13 +11,33 @@ brew tap kgsaran/trackfw
 brew install trackfw
 ```
 
-### npm (Node.js >= 18)
+### npm
 
 ```bash
 npm install -g trackfw
 ```
 
-### Go (requires Go >= 1.21)
+### pip
+
+```bash
+pip install trackfw
+```
+
+### Shell script (macOS / Linux / Git Bash on Windows)
+
+```bash
+curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh
+```
+
+### PowerShell (Windows)
+
+```powershell
+irm https://github.com/kgsaran/trackfw/releases/latest/download/install.ps1 | iex
+```
+
+> Note: `install.ps1` ships as a release asset starting from the release after 11.1.0. For Windows installations today, use npm (`npm install -g trackfw`), pip (`pip install trackfw`), or the shell script in Git Bash.
+
+### Go (requires Go >= 1.25)
 
 ```bash
 go install github.com/kgsaran/trackfw/cmd/trackfw@latest
@@ -27,7 +47,7 @@ go install github.com/kgsaran/trackfw/cmd/trackfw@latest
 
 ```bash
 trackfw version
-# trackfw v2.1.0
+# trackfw 11.1.0
 ```
 
 ---
@@ -48,7 +68,7 @@ The wizard asks about:
 - **Backend framework** — Spring Boot, Gin, Express, FastAPI, etc.
 - **Git hooks** — husky, lefthook, or none
 - **CI/CD** — GitHub Actions or GitLab CI
-- **AI agents** — OpenAI Codex, Claude Code, Gemini CLI, Cursor, GitHub Copilot, Windsurf, and Amazon Q.
+- **AI agents** — Claude Code, OpenAI Codex, Gemini CLI, Google Antigravity, Cursor, GitHub Copilot, Windsurf, Amazon Q, OpenCode, and Kiro (10 targets).
 
 ### What gets generated
 
@@ -280,6 +300,14 @@ If there are issues:
 
   [warning] ROADMAP-2026-06-10-refactor-db.md in WIP for 9 days (stale)
 ```
+
+---
+
+---
+
+## Windows
+
+For detailed Windows setup — installation paths, supported shells (PowerShell 5.1, Git Bash, pwsh 7), measured support matrix, and known limitations — see the **Windows** section in the [trackfw README on GitHub](https://github.com/kgsaran/trackfw#windows).
 
 ---
 

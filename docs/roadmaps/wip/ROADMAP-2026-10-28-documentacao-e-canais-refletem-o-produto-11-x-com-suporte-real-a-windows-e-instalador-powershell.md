@@ -257,7 +257,7 @@ go build ./...
 - [ ] Relatório com uma frase por teste novo
 
 ### ML-3B — VISION e site (atena-tf) — AC1, AC8
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-29. Build do site com `cd site && npm ci && npm run build` (o comando do `deploy-docs.yml`) rc=0. Verificação visual feita pelo arquiteto no Chrome headless (`--screenshot`) sobre o `vitepress preview`, nas páginas de getting-started em pt e en. Conferidos contra o binário: os 10 alvos do `--ai-tools` (`init.go:50`) e `release tag`. Corretivo: o logo nunca existiu (`/trackfw/logo.svg` dava 404, imagem quebrada no cabeçalho do site publicado desde a criação). A chave `logo` foi removida; criar uma marca fica com o KG. O plugin de gerador não existe no código, e o VISION agora o marca como intenção.
 **Files affected:** `docs/visao-projeto/VISION.md`, `site/**` (pt e en)
 
 **Actions:**
@@ -280,8 +280,8 @@ go build ./...
 3. Conferir o build do site com o comando de `.github/workflows/deploy-docs.yml`.
 
 **Acceptance criteria:**
-- [ ] Build do site verde, com o comando exato citado
-- [ ] Verificação visual: a página de getting-started servida e lida no navegador (screenshot no relatório)
+- [x] Build do site verde, com o comando exato citado
+- [x] Verificação visual: a página de getting-started servida e lida no navegador (screenshot no relatório)
 
 **Gates da wave:**
 ```bash
