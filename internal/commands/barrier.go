@@ -752,6 +752,68 @@ func barrierGitShowHEAD(topLevel, relPath string) ([]byte, bool) {
 	return out, true
 }
 
+// barrierGitFileExistsAtCommit reports whether relPath exists at the given commit.
+// Returns false on any error (git unavailable, commit unknown, or path absent).
+func barrierGitFileExistsAtCommit(topLevel, commit, relPath string) bool {
+	ref := commit + ":" + filepath.ToSlash(relPath)
+	cmd := exec.Command("git", "cat-file", "-e", ref)
+	cmd.Dir = topLevel
+	return cmd.Run() == nil
+}
+
+// mlScopeComputeK returns the highest wave number with at least one ML satisfying
+// the K match-positive predicate (p.6, ADR-2026-10-29 D2). Returns -1 when no such
+// ML exists (K undefined; the member contributes only orchestration).
+//
+// K match-positive predicate:
+//   - roadmapdoc.StatusIsComplete(marker)                     → ✅, done, concluído
+//   - roadmapdoc.StatusCategory(marker) == StatusTerminated   → ❌ Cancelado, 🚫 Abandonado
+//   - roadmapdoc.StatusCategory(marker) == StatusPending
+//     AND first token ∈ {🔄, ❌} after VS16 (U+FE0F) strip  → 🔄 Em andamento, ❌ Bloqueado
+func mlScopeComputeK(lines []string, fenced []bool, waves []waveBlock) int {
+	k := -1
+	for _, wave := range waves {
+		waveInt, _ := splitWaveLabel(wave.Label)
+		if waveInt < 0 {
+			continue
+		}
+		mls := parseMLs(lines, fenced, wave.Start, wave.End)
+		for _, ml := range mls {
+			marker, found := mlStatusMarker(lines, fenced, ml)
+			if !found {
+				continue
+			}
+			if roadmapdoc.StatusIsComplete(marker) {
+				if waveInt > k {
+					k = waveInt
+				}
+				break // at least one ML in this wave qualifies
+			}
+			cat := roadmapdoc.StatusCategory(marker)
+			if cat == roadmapdoc.StatusTerminated {
+				if waveInt > k {
+					k = waveInt
+				}
+				break
+			}
+			if cat == roadmapdoc.StatusPending {
+				fields := strings.Fields(marker)
+				if len(fields) > 0 {
+					// Strip VS16 (U+FE0F) to normalise emoji variants.
+					first := strings.ReplaceAll(fields[0], "️", "")
+					if first == "🔄" || first == "❌" {
+						if waveInt > k {
+							k = waveInt
+						}
+						break
+					}
+				}
+			}
+		}
+	}
+	return k
+}
+
 // parseMLScopeFilesAffected scans lines[start:end] (respecting fenced[]) for a
 // **Files affected:** or **Arquivos afetados:** line and extracts all backtick-quoted
 // values from it, including continuation lines.
@@ -801,8 +863,18 @@ func parseMLScopeFilesAffected(lines []string, fenced []bool, start, end int) ([
 		// Found the label line — collect its tokens.
 		patterns := extractTokens(line)
 
-		// Collect continuation lines: non-blank, non-fenced, not a new bold field,
-		// not a heading, not a list criterion.
+		// Collect continuation lines and list items.
+		// Stops at: blank line, standalone bold field (**), heading (#), code fence.
+		// Any criterion marker "- [X]" where X is a single character (matched by
+		// roadmapdoc.CriterionLineRe = ^- \[.\]) stops the list BEFORE the generic
+		// list-item check so that acceptance-criteria items don't leak into scope
+		// (p.1, AC2). This includes "- [ ]", "- [x]", "- [X]", "- [~]", "- [-]", etc.
+		// Note: "- [a](url)" where the link text is exactly one character also matches
+		// the regex and stops the list — accepted cost of using CriterionLineRe.
+		// Links with longer text ("- [text](url)") do not match and do not stop.
+		// A list item starting with "- **" is still a list item (trimmed starts with
+		// "- ", so the "**" stop does not fire for it — §2.1 case 2).
+		// List items (- / *) contribute tokens by Regra B (p.1, p.2, §1.4c hybrid).
 		for j := i + 1; j < end && j < len(lines); j++ {
 			if j < len(fenced) && fenced[j] {
 				break
@@ -813,15 +885,23 @@ func parseMLScopeFilesAffected(lines []string, fenced []bool, start, end int) ([
 				break // blank line ends the declaration
 			}
 			if strings.HasPrefix(trimmed, "**") {
-				break // new bold field (e.g., **Acceptance criteria:**)
+				break // standalone bold field (e.g., **Acceptance criteria:**)
 			}
 			if strings.HasPrefix(trimmed, "#") {
 				break // heading
 			}
-			if strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ") {
-				break // list item
+			// Criterion marker stops BEFORE generic list check. Uses CriterionLineRe
+			// (^- \[.\]) to match any single-character marker, including "- [~]" and
+			// "- [-]". Single-character link text ("- [a](url)") is the accepted cost.
+			if roadmapdoc.CriterionLineRe.MatchString(trimmed) {
+				break
 			}
-			// Continuation line — collect its backtick tokens.
+			// List item (- / *): extract tokens and continue (AC1, §1.4c).
+			if strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ") {
+				patterns = append(patterns, extractTokens(cont)...)
+				continue
+			}
+			// Continuation/wrap line — collect its backtick tokens.
 			patterns = append(patterns, extractTokens(cont)...)
 		}
 
@@ -951,16 +1031,35 @@ func buildMLScopeOrchestrationSet(topLevel, roadmapRelPath, headContent string, 
 		}
 	}
 
-	// REQ from frontmatter `req:`.
-	reqPath := strings.TrimSpace(barrierFrontmatterField(headContent, "req"))
-	if reqPath != "" {
-		set = append(set, filepath.ToSlash(reqPath))
+	// REQ from frontmatter `req:` — validated against req_dir prefix (p.8, AC11).
+	// The raw value is cleaned with path.Clean (handles "./" prefix and ".."-traversal),
+	// then rejected if it is absolute, contains "..", or falls outside req_dir.
+	reqRaw := strings.TrimSpace(barrierFrontmatterField(headContent, "req"))
+	if reqRaw != "" {
+		reqCleaned := path.Clean(filepath.ToSlash(reqRaw))
+		reqPrefix := path.Clean(filepath.ToSlash(cfg.REQDir)) + "/"
+		reqAllowed := !path.IsAbs(reqCleaned) &&
+			!strings.HasPrefix(reqCleaned, "..") &&
+			strings.HasPrefix(reqCleaned, reqPrefix)
+		if reqAllowed {
+			set = append(set, reqCleaned)
 
-		// ADR from the REQ file's frontmatter `adr:` (read from HEAD if available).
-		if reqContent, ok := barrierGitShowHEAD(topLevel, filepath.ToSlash(reqPath)); ok {
-			adrPath := strings.TrimSpace(barrierFrontmatterField(string(reqContent), "adr"))
-			if adrPath != "" {
-				set = append(set, filepath.ToSlash(adrPath))
+			// ADR from the REQ file's frontmatter `adr:` (read from HEAD if available).
+			// Also validated against adr_dirs prefix (p.8, AC11).
+			if reqContent, ok := barrierGitShowHEAD(topLevel, reqCleaned); ok {
+				adrRaw := strings.TrimSpace(barrierFrontmatterField(string(reqContent), "adr"))
+				if adrRaw != "" {
+					adrCleaned := path.Clean(filepath.ToSlash(adrRaw))
+					if !path.IsAbs(adrCleaned) && !strings.HasPrefix(adrCleaned, "..") {
+						for _, adrDir := range cfg.ADRDirs {
+							adrPrefix := path.Clean(filepath.ToSlash(adrDir)) + "/"
+							if strings.HasPrefix(adrCleaned, adrPrefix) {
+								set = append(set, adrCleaned)
+								break
+							}
+						}
+					}
+				}
 			}
 		}
 	}
@@ -1073,8 +1172,21 @@ func checkMLScope(roadmapPath string, currentWaveInt int) barrierCheck {
 
 	// Step 9: collect scope patterns from all MLs in waves 0..currentWaveInt,
 	// and record any ML that is missing a declaration (post-cutoff, in-wave failure).
+	// Patterns with no literal path segments (e.g. "**") are rejected (p.3, AC10);
+	// the rejection message includes the roadmap path and ML id for diagnostics.
 	var scopePatterns []string
 	var declFailures []string
+	addPatterns := func(rdmPath, mlID string, patterns []string) {
+		for _, tok := range patterns {
+			if strings.Trim(tok, "*?[]/") == "" {
+				declFailures = append(declFailures,
+					fmt.Sprintf("%s %s: rejected: pattern %q without literal path segments matches every or no file without restriction",
+						rdmPath, mlID, tok))
+			} else {
+				scopePatterns = append(scopePatterns, tok)
+			}
+		}
+	}
 	for _, wave := range headWaves {
 		waveInt, _ := splitWaveLabel(wave.Label)
 		if waveInt > currentWaveInt {
@@ -1088,7 +1200,100 @@ func checkMLScope(roadmapPath string, currentWaveInt int) barrierCheck {
 					fmt.Sprintf("%s: no **Files affected:** declaration (post-cutoff roadmap requires declaration for all MLs in the wave)", ml.ID))
 				continue
 			}
-			scopePatterns = append(scopePatterns, patterns...)
+			addPatterns(relPath, ml.ID, patterns)
+		}
+	}
+
+	// Step 9.5: union — extend scope with patterns from all roadmap members touched
+	// by this branch (ADR-2026-10-29 D2, p.4–p.7).
+	//
+	// Members: paths in diffFiles that are .md files under rdDir in a known state dir,
+	// exist in HEAD, and are NOT the target roadmap.
+	//
+	// Contribution by member state:
+	//   abandoned/ or backlog/                        → orchestration only
+	//   done/ AND existed at merge-base               → orchestration only
+	//   date: pre-cutoff (same predicate as target)   → orchestration only
+	//   others                                         → orchestration + patterns 0..K
+	{
+		rdDir := path.Clean(filepath.ToSlash(cfg.RoadmapDir))
+		for _, diffPath := range diffFiles {
+			// Must be under roadmap_dir.
+			if !strings.HasPrefix(diffPath, rdDir+"/") {
+				continue
+			}
+			// Must be a .md file.
+			if !strings.HasSuffix(diffPath, ".md") {
+				continue
+			}
+			// Must be in a known state directory.
+			memberState := path.Base(path.Dir(diffPath))
+			knownState := false
+			for _, s := range roadmapAllStates {
+				if s == memberState {
+					knownState = true
+					break
+				}
+			}
+			if !knownState {
+				continue
+			}
+			// Must exist in HEAD (deleted paths — e.g. old state after a move — are skipped).
+			memberContent, memberOK := barrierGitShowHEAD(topLevel, diffPath)
+			if !memberOK {
+				continue
+			}
+			// Must not be the target.
+			if diffPath == relPath {
+				continue
+			}
+
+			// Add member orchestration (roadmap path, REQ, ADR, well-known dirs).
+			memberOrch := buildMLScopeOrchestrationSet(topLevel, diffPath, string(memberContent), cfg)
+			orchestration = append(orchestration, memberOrch...)
+
+			// Check date cutoff — same predicate as the target (barrier.go:1035).
+			memberDate := barrierFrontmatterField(string(memberContent), "date")
+			if memberDate != "" && isPreMLScopeCutoff(memberDate) {
+				continue // pre-cutoff: orchestration only
+			}
+
+			// State-based filter.
+			if memberState == "abandoned" || memberState == "backlog" {
+				continue // orchestration only
+			}
+			if memberState == "done" && barrierGitFileExistsAtCommit(topLevel, mergeBase, diffPath) {
+				continue // done/ existed at merge-base: orchestration only
+			}
+
+			// Compute K: highest wave number with at least one started/done/terminated ML.
+			memberLines := splitRoadmapLines(string(memberContent))
+			memberFenced := fenceMask(memberLines)
+			memberWaves, _ := parseWaves(memberLines, memberFenced)
+			k := mlScopeComputeK(memberLines, memberFenced, memberWaves)
+			if k < 0 {
+				continue // no started MLs: orchestration only
+			}
+
+			// Collect patterns from waves 0..K.
+			// No "undeclared ML" declFailures for union members — a missing declaration
+			// in member B must not block the barrier of target A.
+			// Broad-pattern rejections do fire for members (a "**" in member B would
+			// grant all files to target A — rejected regardless of which roadmap it came from).
+			for _, wave := range memberWaves {
+				waveInt, _ := splitWaveLabel(wave.Label)
+				if waveInt < 0 || waveInt > k {
+					continue
+				}
+				mls := parseMLs(memberLines, memberFenced, wave.Start, wave.End)
+				for _, ml := range mls {
+					patterns, hasDecl := parseMLScopeFilesAffected(memberLines, memberFenced, ml.Start, ml.End)
+					if !hasDecl {
+						continue // no declFailure for members
+					}
+					addPatterns(diffPath, ml.ID, patterns)
+				}
+			}
 		}
 	}
 

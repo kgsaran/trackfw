@@ -6,7 +6,7 @@ O `trackfw` foi desenhado desde o início para ser nativo ao fluxo de trabalho c
 
 ## Por que agentes de IA precisam de governança estruturada
 
-Agentes de IA como Claude Code, OpenAI Codex, Gemini CLI, Antigravity, Cursor, GitHub Copilot, Windsurf, Amazon Q e Kiro operam em sessões independentes. Sem um registro persistente de decisões e contexto, cada sessão começa do zero — o agente não sabe:
+Agentes de IA como Claude Code, OpenAI Codex, Gemini CLI, Google Antigravity, Cursor, GitHub Copilot, Windsurf, Amazon Q, OpenCode e Kiro (10 targets) operam em sessões independentes. Sem um registro persistente de decisões e contexto, cada sessão começa do zero — o agente não sabe:
 
 - Quais decisões arquiteturais já foram tomadas (e por quê)
 - Quais requisitos estão em andamento
@@ -295,7 +295,7 @@ O agente lê automaticamente `trackfw context --format=json` e inclui o resultad
 
 ## Instalação e lifecycle multi-CLI
 
-Agents e skills usam o mesmo contrato nos pacotes Go/Homebrew, npm e PyPI:
+Agents e skills são gerenciados com os seguintes comandos:
 
 ```bash
 trackfw agents list
@@ -310,7 +310,7 @@ trackfw skills uninstall --targets gemini,antigravity
 ```
 
 Os targets são Claude Code, Codex, Gemini CLI, Antigravity, Cursor, GitHub
-Copilot, Windsurf, Amazon Q e Kiro. As flags compartilhadas são:
+Copilot, Windsurf, Amazon Q, OpenCode e Kiro (10 targets). As flags compartilhadas são:
 
 | Flag | Uso |
 |---|---|

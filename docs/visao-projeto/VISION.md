@@ -1,6 +1,6 @@
 # trackfw — Project Vision
 
-> Version: v2.15.1 | Date: 2026-07-24
+> Version: 11.1.0 | Date: 2026-10-29
 
 ---
 
@@ -181,34 +181,34 @@ The governance structure itself (`docs/adr/`, `docs/req/`, `docs/roadmaps/`) is 
 
 ---
 
-## Extensibility — Generator Plugin Model
+## Extensibility — Generator Plugin Model (planned)
 
-Generators are the stack-specific components of trackfw. The architecture is designed to be community-extensible:
+Generators are the stack-specific components of trackfw. The long-term architecture intends to be community-extensible:
 
 - Core generators ship with trackfw (Go, Java, Node, Python, React, Vue, Angular)
-- Community generators can be added as plugins
-- The plugin model follows the same pattern as Prettier parsers or ESLint plugins — a generator is a named module that receives the `Config` struct and produces files
+- Community generators as plugins — a named module that receives the `Config` struct and produces files
 
-This means a Java/Maven shop and a Go/Makefile shop and a Python/Poetry shop all get governance structure that fits their workflow — without forking trackfw.
+**Status:** the plugin interface is not yet implemented in the codebase. This is a declared roadmap intent, not a current capability. Today all generators live in `internal/generators/`.
 
 ---
 
 ## Distribution
 
-trackfw ships across three native CLIs. Shared behavior and intentional
-runtime-specific exceptions are governed by the CLI parity contract.
+trackfw is a single Go binary delivered through three channels. There is no
+separate Node.js or Python implementation: every channel wraps the same binary.
 
-| Channel | Package | Implementation | Installation |
-|---|---|---|---|
-| Direct | GitHub Releases | Go binary | `curl -sSfL .../install.sh \| sh` |
-| Homebrew | `trackfw/tap/trackfw` | Go binary | `brew install trackfw/tap/trackfw` |
-| Go | `github.com/trackfw/trackfw` | Go binary | `go install github.com/trackfw/trackfw/cmd/trackfw@latest` |
-| npm | `trackfw` | Native Node.js (Node ≥ 18) | `npm install -g trackfw` |
-| PyPI | `trackfw` | Native Python (Python ≥ 3.10) | `pip install trackfw` |
+| Channel | Package / formula | Installation |
+|---|---|---|
+| GitHub Releases / shell | `kgsaran/trackfw` | `curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh \| sh` |
+| Homebrew (macOS / Linux) | `kgsaran/trackfw/trackfw` | `brew tap kgsaran/trackfw && brew install trackfw` |
+| npm | `trackfw` | `npm install -g trackfw` |
+| PyPI | `trackfw` | `pip install trackfw` |
+| Go module | `github.com/kgsaran/trackfw` | `go install github.com/kgsaran/trackfw/cmd/trackfw@latest` |
+| Windows PowerShell | — | `irm https://github.com/kgsaran/trackfw/releases/latest/download/install.ps1 \| iex` (asset ships from the release after 11.1.0) |
 
-The Node.js and Python CLIs are native reimplementations, not wrappers around a
-compiled binary. Their shared behavior and intentional Go-only exceptions are
-defined by `docs/cli-parity.md` and enforced by release smoke tests.
+The npm and PyPI packages ship the pre-compiled Go binary for the target
+platform. The Go module builds from source. Behavioral contract and channel
+contract are documented in `docs/cli-parity.md`.
 
 ---
 
@@ -230,20 +230,21 @@ defined by `docs/cli-parity.md` and enforced by release smoke tests.
 - Not a replacement for Git history (it complements, not duplicates)
 - Not a task tracker (use GitHub Issues, Linear, Jira for tasks — trackfw governs the *why*)
 - Not opinionated about how you write code — only about how you document decisions
+- Not a team management or demand-management tool — it governs delivery artifacts, not people, sprints, or capacity
 
 ---
 
-## Current State (v2.7.0)
+## Current State (11.x)
 
 | Version | Feature | Status |
 |---|---|---|
-| v0.1 | CLI scaffold, validate, init wizard, stack generators | ✅ Done |
-| v2.4 | JSON output, configurable rules (off/warning/error), governance_mode | ✅ Done |
-| v2.5 | trace_id_field (bidirectional REQ↔ROADMAP), by_agent namespacing, salvaguarda one-sided | ✅ Done |
-| v2.6 | req_has_adr / req_has_roadmap / blocked_has_req configurable | ✅ Done |
-| v2.7 | `branch_has_wip_roadmap` rule (gate pré-trabalho); Node.js → husky fallback (Windows/corp); agent protocol in rules block | ✅ Done |
-| v2.8 | Attention hooks auto-injected for 7 CLIs (Claude, Codex, Gemini, Kiro, Copilot, Cursor, Windsurf); permission-capable CLIs signal only when user action is required; 100% parity across Go, Node.js and Python CLIs | ✅ Done |
-| vNext | GitHub Actions official, trackfw serve UX, multi-repo support | 🔄 Planned |
+| v0.1–v2.x | CLI scaffold, validate, init wizard, stack generators, by_agent namespacing, JSON output, configurable rules | ✅ Done |
+| v8.0 | Single Go binary shipped through npm, PyPI, and GitHub/Homebrew — Node.js and Python implementations retired | ✅ Done |
+| v9.x | Guard hooks (write-scope, git-branch, credential); barrier deterministic gate; attention signal and board | ✅ Done |
+| v10.x | Guard line unified across shells with `emulate -R sh`; OpenCode and Kiro targets; Codex TOML agents | ✅ Done |
+| v11.0 | PowerShell installer (`install.ps1`); Windows ARM64 support; guard line measured under PS 5.1 and pwsh 7 | ✅ Done |
+| v11.1 | `audit-surface`, `agents models`, `doctor`; 10 agent targets (OpenCode added); barrier `ml_scope` check | ✅ Done |
+| vNext | Consolidation + adoption: stable CLI contract, deepen existing integrations before adding new gates. More gates paused pending adoption data. Open source forever. | 🔄 Planned |
 
 ---
 

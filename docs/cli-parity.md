@@ -25,18 +25,25 @@ channels — only packaging differs.
 
 | Channel | Install | What ships |
 |---|---|---|
-| **GitHub / Homebrew** | release archive / `brew install trackfw` | Go binary, prebuilt per platform |
+| **GitHub / Homebrew** | release archive / `brew install kgsaran/trackfw/trackfw` | Go binary, prebuilt per platform |
 | **npm** | `npm install -g trackfw` | ~80-line JS shim (`trackfw` package) + Go binary (`@trackfw-bin/<platform>`) resolved via `optionalDependencies` |
 | **PyPI** | `pip install trackfw` | Binary wheel, `gh-bin` format — zero Python files, Go binary placed in `.data/scripts/` |
+| **PowerShell installer** | `irm https://github.com/kgsaran/trackfw/releases/latest/download/install.ps1 \| iex` (or: download, read, run) | Go binary placed in `~/bin` or a user-specified directory; sets `PATH` in the user registry. Published as a release asset starting with the next release after v11.1.0; the URL returns 404 against v11.1.0. |
 
-**Platforms (v8.0.0-rc1):** `linux-x64`, `linux-arm64`, `darwin-x64`, `darwin-arm64`,
-`win32-x64`, `win32-arm64`.
+**Platforms (v11.1.0):** `linux-amd64`, `linux-arm64`, `darwin-amd64`, `darwin-arm64`,
+`windows-amd64`, `windows-arm64`.
 
-**Validation coverage measured at v8.0.0-rc1:** real-machine smoke tests covered
-**Windows arm64** and **macOS arm64** only. No real x64 machine was tested for any OS.
-The exec-bit assignment for the PyPI wheel (`external_attr` in the zip) was not
-exercised on a clean machine — on Linux and macOS, `pip install` passes but the
-binary fails with permission denied if the bit is absent. Does not apply to Windows.
+**Validation coverage (v11.1.0):**
+
+| Platform / channel | CI (windows-latest x64) | VM Windows 11 ARM64 |
+|---|---|---|
+| Go binary (GitHub / Homebrew) | not verified | measured (`docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md`) |
+| npm | not verified | measured |
+| pip | not verified | measured |
+| `install.sh` | not applicable (Linux/macOS only) | not applicable |
+| `install.ps1` | measured under PowerShell 5.1 and 7 (`windows-install-ps1` CI job) | not verified |
+
+macOS arm64 and linux x64/arm64: smoke-tested via CI only (no real-machine record beyond that).
 
 **Who is affected by the v8 change:**
 - Security policy allows `npm`/`pip` but blocks direct executable downloads: you
@@ -81,16 +88,22 @@ describes the expected behaviour; each `##` section below names the gate that pr
 | `ship` | Governed `git commit + push + open PR/MR` for `feat`/`fix`/`refactor`/`chore`/`docs` branches; hard governance gate for `feat`/`fix`/`refactor` only — `chore`/`docs` skip it (see below) |
 | `push` | Governed `git push` for already-committed work — never commits, never opens a PR/MR; same branch vocabulary and governance gate as `ship` (see below) |
 | `branch` | `new <type>/<slug>` — for `feat`/`fix`/`refactor`, gates `git checkout -b` on the same `branch_has_wip_roadmap` matching logic `trackfw validate` already applies, moving the check before branch creation instead of after; `chore`/`docs` create the branch without that gate, mirroring the housekeeping exemption `trackfw ship`/`trackfw commit` already grant those types (see below). `prune [--remote] [--apply]` — reports (and, with `--apply`, deletes) local branches already integrated into `origin/<default-branch>` via the touched-files heuristic (see below); `--remote` also evaluates and deletes remote branches in `origin` whose `merged_pr` is confirmed by the forge; `--dry-run` behavior is the default, `--apply` is opt-in |
-| `gemini` / `cursor` / `copilot` / `windsurf` / `amazonq` | Compatibility aliases (Go binary only; existed as Go-only in v7) |
 | `version` / `--version` | Both print the same single line: `trackfw <semver>`, no `v` prefix — see "Version output" below |
 | `changelog` | Reads `CHANGELOG.md` at project root; no flags prints the first `## [...]` section (`Unreleased` or latest version); `--version <x.y.z>` prints a specific section (accepts an optional leading `v`); `--all` prints the entire file. Error messages byte-identical: `CHANGELOG.md not found — nothing to show`, `version "<x>" not found in CHANGELOG.md` |
+| `release` | `tag <version>` — governed release publication; reads version and changelog from the commit record anchored by the tag; see `### \`trackfw release tag <version>\`` below |
+| `barrier` | Deterministic wave-release gate: `wave_headings`, `mls_complete`, `acceptance_evidence`, `gates`, `validate`, `ml_scope` — see `## trackfw barrier` below |
+| `commit` | Governed `git commit` for staged changes; same governance gate as `ship` for `feat`/`fix`/`refactor` branches; `chore`/`docs` skip the gate |
+| `doctor` | Detect artifacts on disk missing from or inconsistent with the managed manifest; `--remote` variant audits remote branch protection |
+| `audit-surface` | Report the executable surface of a git ref (hook wiring, instruction files) without checking it out |
+| `guard` | Pre-tool-use hook guards: `write-scope` (block writes outside declared scope) and others; see `## trackfw guard write-scope` below |
+| `completion` | Generate shell autocompletion script (bash/zsh/fish/powershell); cobra auto-registered, Go binary only |
 
 ## Version output
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 Both surfaces — the `version` subcommand and the `--version` flag — print **the same single line** to
-stdout, in all three runtimes:
+stdout:
 
 ```
 trackfw 5.0.0
@@ -103,13 +116,14 @@ Pinned literally:
 | Program name | Literal `trackfw`, then a single space |
 | Version | SemVer `<major>.<minor>.<patch>[-<prerelease>]`, **no `v` prefix**. Pre-release identifier is optional (stable releases have no suffix); when present it follows semver §9 (e.g. `rc1`, `alpha.1`). |
 | Line | Exactly one, terminated by `\n`, on **stdout** |
-| `version` ≡ `--version` | Byte-identical to each other, within and across runtimes |
+| `version` ≡ `--version` | Byte-identical to each other (single implementation) |
 
 **No `v` prefix.** The `v` is a Git *tag* convention, not a version-string convention — SemVer states
-that `v1.2.3` is not a semantic version. `npm/package.json` and `pypi/pyproject.toml` cannot carry it
-(npm rejects it), and those manifests are the source of the string in two of the three runtimes.
-Printing with `v` would force Node.js and Python to concatenate a prefix, creating two representations
-of the same version inside one runtime.
+that `v1.2.3` is not a semantic version. Before v8.0.0, `npm/package.json` and `pypi/pyproject.toml`
+could not carry the `v` prefix (npm rejects it), and those manifests were the source of the string in
+two of the three runtimes (pré-v8) — printing with `v` would have forced Node.js and Python to
+concatenate a prefix, creating two representations of the same version inside one runtime. In v8, the only source is
+`internal/version/version.go`; no prefix handling is needed.
 
 **The Git tag stays `v<x.y.z>`.** That is where the prefix belongs and it does not change.
 `scripts/install.sh` already strips it (`VERSION_BARE="${VERSION#v}"`) and is unaffected.
@@ -118,30 +132,32 @@ of the same version inside one runtime.
 
 <!-- trackfw-contract: gate=scripts/check-release-tag-parity.sh partial=cobre os 4 arquivos-fonte de versão (inclusive o fallback duplo de pypi/trackfw/__init__.py) só como pré-condição de `release tag`, indiretamente; não testa a leitura em si (internal/version/version.go, npm/package.json, importlib.metadata) fora desse fluxo -->
 
-| Runtime | Source |
+| Source | Notes |
 |---|---|
-| Go | `internal/version/version.go`, stored **without** the `v` |
-| Node.js | `npm/package.json` |
-| Python | `importlib.metadata`, with a literal fallback in `pypi/trackfw/__init__.py` |
+| `internal/version/version.go` | Stored **without** the `v`; consumed by both `version` subcommand and `--version` flag |
 
-In Go both surfaces consume `version.Version` — `internal/commands/version.go` for the subcommand and
+Both surfaces consume `version.Version` — `internal/commands/version.go` for the subcommand and
 the cobra `Version` field in `internal/commands/root.go` for the flag — so the stored value governs
 both.
+
+Before v8.0.0, the three runtimes had separate sources: Go used `internal/version/version.go`,
+Node.js used `npm/package.json`, and Python used `importlib.metadata` (with a fallback in
+`pypi/trackfw/__init__.py`).
 
 ### Gate assertion — pinned, and why the old one was vacuous
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
-The parity gate must apply **the same assertion to all three runtimes**:
+Before v8.0.0, the parity gate had to apply **the same assertion to all three runtimes**:
 
 ```
 ^trackfw [0-9]+\.[0-9]+\.[0-9]+$
 ```
 
-and must additionally compare the **bytes** of both surfaces across runtimes. The regex alone is not
+and had to additionally compare the **bytes** of both surfaces across runtimes. The regex alone was not
 sufficient evidence.
 
-This is pinned because the previous gate hid the divergence instead of catching it.
+Before v8.0.0, this was pinned because the previous gate hid the divergence instead of catching it.
 `scripts/check-cli-parity.sh` asserted `^trackfw .+` for Go and Python — loose enough to accept
 `trackfw v5.0.0` and `trackfw 5.0.0` equally, which is precisely why the `v` prefix survived every
 audit — and used a **different regex for Node.js**
@@ -152,19 +168,19 @@ A per-runtime exemption in a parity gate makes the difference permanent and invi
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
-`-v` is **not** a shorthand for `--version` in any runtime. All three reject it with a **non-zero exit**.
+`-v` is **not** a shorthand for `--version`. The binary rejects it with a **non-zero exit**.
 Resolved by `REQ-2026-07-30-reservar-v-para-verbose-e-remover-atalho-de-versao-no-go`; previously it was
 accepted **only by Go**, and nobody had decided that — cobra's `InitDefaultVersionFlag` registers
 `--version` with the shorthand `v` whenever the `Version` field is set and the shorthand is free. The
 flag was exposed by framework default, not by design.
 
-**`-v` and `--verbose` are reserved for a future verbose mode. No runtime may bind them to any other
+**`-v` and `--verbose` are reserved for a future verbose mode. They must not be bound to any other
 semantics.** In much of the ecosystem — `docker`, `kubectl`, `ansible`, `ssh`, `curl` — `-v` means
-*verbose*, not *version*; and none of the three CLIs has `--verbose` today. Keeping `-v` bound to
+*verbose*, not *version*; and the binary has no `--verbose` today. Keeping `-v` bound to
 version would burn the shorthand permanently, and freeing it later would be another breaking change.
-`--version` and the `version` subcommand already cover the use case in all three.
+`--version` and the `version` subcommand already cover the use case.
 
-**The reservation is contractual, not a surface.** No runtime accepts `-v` as a no-op. A flag that is
+**The reservation is contractual, not a surface.** The binary does not accept `-v` as a no-op. A flag that is
 accepted but does nothing is worse than `unknown option`: the caller passes it, expects verbose output,
 gets silence with no error, and cannot tell "reserved" from "broken".
 
@@ -175,7 +191,7 @@ per command, and in what format, needs a concrete use case. It gets its own REQ 
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
-After rejection, the three emit **different messages and exit codes**, because those are produced by the
+Before v8.0.0, the three runtimes emitted **different messages and exit codes** after rejection, because those were produced by the
 frameworks. Baseline measured with an arbitrary unknown flag (`--zzz`):
 
 | Runtime | Message | Exit |
@@ -187,7 +203,7 @@ frameworks. Baseline measured with an arbitrary unknown flag (`--zzz`):
 This divergence is **pre-existing and applies to every unknown flag**, not just `-v`. Argparse's exit 2
 is the POSIX convention for a usage error.
 
-The contract therefore requires only that `-v` **is not bound** and **exits non-zero** in all three. It
+The contract therefore requires only that `-v` **is not bound** and **exits non-zero**. The binary
 does **not** require a byte-identical message or an identical exit code: forcing that would mean
 overriding the error handling of cobra, commander and argparse globally — a far larger change affecting
 every command and every flag, which needs its own REQ if ever desired.
@@ -199,7 +215,7 @@ fail, and most likely reach for a hack in one framework's error path.
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
-`trackfw init` cria `vault/notes/` e gera `vault/notes/index.md` nos três CLIs.
+`trackfw init` cria `vault/notes/` e gera `vault/notes/index.md`.
 
 O comando `note new "<título>"` cria `vault/notes/<slug>-YYYY-MM-DD.md` com frontmatter
 (`title`, `tags`, `date`, `related`) e seções `## Problem`, `## Root cause`, `## Solution`.
@@ -290,18 +306,18 @@ inicializados depois desta versão recebem a regra; projeto já existente precis
 
 ## i18n locale keys — no orphan keys (ML-2A)
 
-<!-- trackfw-contract: gap reason=a seção fixa fato falsificável (errors.notFound ausente e sem consumidor nos 3 CLIs) mas nenhum gate compara chaves de locale entre runtimes; ver REQ-2026-08-16-conformidade-estrutural-e-comportamental-de-i18n-entre-os-tres-clis -->
+<!-- trackfw-contract: gap reason=a seção fixa fato falsificável (errors.notFound ausente e sem consumidor no binário) mas nenhum gate compara chaves de locale do binário; ver REQ-2026-08-16-conformidade-estrutural-e-comportamental-de-i18n-entre-os-tres-clis -->
 
 > ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md
 
 `errors.notFound` existed in the Node.js and Python locale files
 (`npm/src/i18n/locales/*.json`, `pypi/trackfw/i18n/locales/*.json`) but never in Go's
-(`internal/i18n/locales/*.json`), and had **no consumer in any of the three runtimes** — orphan in
+(`internal/i18n/locales/*.json`), and had **no consumer in the binary** — orphan in
 all three, not just missing in one. Removed from Node.js and Python rather than added to Go: a key
 nobody reads is dead weight, and adding it to Go would have created a third copy of unused
 content.
 
-The removal is scoped to this one key. Auditing all three locale trees during this ML surfaced 31
+The removal is scoped to this one key. Auditing all three locale trees (pré-v8) during this ML surfaced 31
 further keys that diverge between stacks (present/absent, or textually different) — those are
 **not** touched here; they are tracked by
 `docs/req/REQ-2026-08-16-conformidade-estrutural-e-comportamental-de-i18n-entre-os-tres-clis.md`,
@@ -323,11 +339,10 @@ clause of the parity contract.
 
 ## Canonical governance references
 
-<!-- trackfw-contract: gap reason=a regra de match literal sem fallback por basename (extractRefPath) é comportamento falsificável do validador mas nenhum gate cross-CLI testa a rejeição de uma referência por basename ou por diretório de estado errado nos 3 runtimes -->
+<!-- trackfw-contract: gap reason=a regra de match literal sem fallback por basename (extractRefPath) é comportamento falsificável do validador mas nenhum gate testa a rejeição de uma referência por basename ou por diretório de estado errado no binário Go; antes da v8 a lacuna abrangia os 3 runtimes -->
 
-REQ frontmatter fields `adr:` and `roadmap:` use the same canonical reference
-format in Go, Node.js, and Python: a complete path from the project root,
-including the `.md` suffix.
+REQ frontmatter fields `adr:` and `roadmap:` use a canonical reference format:
+a complete path from the project root, including the `.md` suffix.
 
 Examples:
 
@@ -778,7 +793,7 @@ precedence as `req_has_roadmap`. Unreadable date → fail-closed (treated as pos
 
 ### `req list` / `req move` — discovery layouts and conditional physical move
 
-<!-- trackfw-contract: gap reason=nenhum gate cross-CLI exercita req list/req move — nem a descoberta por layout (flat/by_agent) nem a discriminação in-place-vs-physical-move são comparadas entre Go, Node.js e Python -->
+<!-- trackfw-contract: gap reason=nenhum gate exercita req list/req move — nem a descoberta por layout (flat/by_agent) nem a discriminação in-place-vs-physical-move são cobertas por gate -->
 
 `req_dir` reuses the roadmap's own `roadmap_namespacing` field — there is no separate `req_namespacing`
 key (see ADR-2026-08-04). `req list` and `req move <name> <status>` do **not** implement their own
@@ -809,7 +824,7 @@ continues to be read by `internal/translog.ReadAll` for backward compatibility.
 
 ### REQ layout — union on read, single path on write
 
-<!-- trackfw-contract: gap reason=nenhum gate cross-CLI exercita a descoberta de REQ por layout nem o ciclo new-then-validate; a cobertura hoje e por teste unitario em cada runtime (internal/validator/validator_req_layout_test.go, npm/tests/req_layout_union.test.js, pypi/tests/test_req_layout_union.py), que nunca compara os 3 CLIs sobre a mesma arvore. O gate cross-CLI e o entregavel do ML-2A do ROADMAP-2026-09-03 -->
+<!-- trackfw-contract: gap reason=nenhum gate exercita a descoberta de REQ por layout nem o ciclo new-then-validate; a cobertura hoje é por teste unitário no binário (internal/validator/validator_req_layout_test.go) -->
 
 Governs ADR-2026-09-03. **A REQ has no state dimension** (invariant D1): `backlog`/`analyzing`/`wip`/
 `blocked`/`done`/`abandoned` are a *roadmap* concept; a REQ carries `status:` in its frontmatter. The
@@ -856,12 +871,11 @@ namespace resolver (`agents:` ∪ first-level subdirectories of `req_dir`).
 of `agents:`, or `default` when the list is empty or holds only empty strings; flat → `req_dir/`. *First
 non-empty*, not *index 0*: an empty string is not an agent name, it is an absent entry — which is already
 how the **read** side treats it (the namespace resolver discards `""`), so the writer/reader pair keeps a
-single notion of agent (D4). Measured in the three runtimes, `agents: ["", "zeus"]` → `req_dir/zeus/`;
+single notion of agent (D4). Measured in the binary, `agents: ["", "zeus"]` → `req_dir/zeus/`;
 `agents: [""]` → `req_dir/default/`; `agents: ["zeus"]` → `req_dir/zeus/`. `roadmap new` still tests index
-0 in all three runtimes and is listed as a residual above. The write
+0 and is listed as a residual above. The write
 directory is contained in the read union **by construction** — that containment is the contract, and the
-unit test that asserts it (`REQ created at the write dir is found by the resolver`) exists in all three
-runtimes.
+unit test that asserts it (`REQ created at the write dir is found by the resolver`) exists in the binary.
 
 **Canonical does not mean exclusive.** Choosing a canonical write layout never rejects the others: no
 project's `req_dir` is migrated, and a REQ sitting in `req_dir/*.md` inside a `by_agent` project stays
@@ -878,7 +892,7 @@ disappear.
 than the bug.** On APFS/NTFS, `req_dir/Backlog` and `req_dir/backlog` are the *same* directory but
 *different* strings: `Backlog` enters the agent list from disk and emits `req_dir/Backlog/*.md`, while the
 state loop emits the hardcoded-lowercase `req_dir/backlog/*.md`. Measured on APFS with **one** real file:
-`REQs (2)` and 4 violations in all three CLIs — green on Linux CI, red on the developer's machine.
+`REQs (2)` and 4 violations (pré-v8: in all three CLIs) — green on Linux CI, red on the developer's machine.
 **The mechanism is a verbatim-existence filter, not case folding and not inode identity:** a subdirectory
 candidate is only enumerated if its name appears **verbatim** in the parent's directory listing. The disk
 spelling is the authority — the disk is *measured* instead of the filesystem's case behaviour being
@@ -888,7 +902,7 @@ spelling is the authority — the disk is *measured* instead of the filesystem's
   `Backlog` and `backlog` are two real, distinct directories; folding collapses them and a real file
   disappears. Suppression is strictly worse than double counting. Verified by execution on a
   case-sensitive APFS volume: two distinguishable files under the two spellings, both still enumerated,
-  each violation once, in all three CLIs.
+  each violation once (pré-v8: in all three CLIs; in the binary: same behavior).
 - **Inode identity was rejected on portability, not taste.** Go has no portable hashable `(dev,ino)` key
   (`syscall.Stat_t` is absent on Windows; `os.SameFile` is pairwise → O(n²)), and an inode that repeats or
   reads as `0` on some Windows/network filesystems collapses distinct files — suppression again. The
@@ -907,49 +921,37 @@ stable across runtimes (`fs.readdirSync` guarantees no order).
 *superset* reads more than the four layouts (never vacuous, benign) while a *vacuous* read returns **zero
 REQs in the canonical layout** — it silently sees nothing. Both are listed; the species is named for each.
 
-- 🔴 **`serve` (`/api/chain`) does not go through the resolver in any runtime — and is VACUOUS in the
-  canonical layout in two of them.** Node (`npm/src/serve/api_chain.js:104-115`) and Python
-  (`pypi/trackfw/serve/api_chain.py:144-156`) still branch `flat` vs `req_dir/<agent>/<state>/`, which is
-  literally the `if/else` the single point exists to remove, and neither branch matches
-  `req_dir/<agent>/*.md`. Go (`internal/serve/api_chain.go:81`, `filepath.WalkDir`) is a recursive
-  **superset**. Measured on the same canonical `by_agent` fixture
+- 🔴 **`serve` (`/api/chain`) does not go through the resolver — and is VACUOUS in the
+  canonical layout.** The Go binary (`internal/serve/api_chain.go:81`, `filepath.WalkDir`) is a
+  recursive **superset**. Measured on the canonical `by_agent` fixture
   (`docs/req/apolo/REQ-2026-09-03-fixture.md`), `GET /api/chain`, nodes of `type: "req"`:
 
   ```
-  go -> 1 node    node -> 0 nodes    py -> 0 nodes
+  go -> 1 node
   ```
 
-  So in a `by_agent` project the board's `ADR → REQ → ROADMAP` chain view shows **zero** REQs in 2 of the
-  3 runtimes. Pre-existing, not a regression of the layout union (`serve` was untouched, and the branch
-  it does take never matched the old write layout either). Tracked as its own REQ — it is 3-CLI parity
-  work, so all three are named.
-- 🔴 **The Python `status` inventory counts REQs outside the single point — VACUOUS in `by_agent`.**
-  `pypi/trackfw/commands/status.py:50` (`_count_reqs_by_status`) calls `_list_files(req_dir)` (`:26`), a
-  **single-level** `os.listdir`, while the same file already imports and uses `resolve_req_files` at
-  `:133` — the divergence is internal to one file. Measured on the canonical fixture above,
-  `trackfw status`:
-
-  ```
-  go -> REQs 1    node -> REQs 1    py -> REQs 0
-  ```
-
-  Python-only: Go (`internal/validator/validator.go:877`, `inventoryBlock`) and Node
-  (`npm/src/validator/index.js:3315`, `getStatus`) both delegate. Tracked as its own REQ.
-- **`traceid` in the Node.js CLI does not go through the resolver — SUPERSET, never vacuous.** `npm/src/validator/traceid.js`
-  indexes REQs with a **recursive** walk of `req_dir`, so it is a strict *superset* of the four
-  layouts and is never vacuous — but it is a second layout notion inside that runtime, and it indexes
-  REQs nested deeper than the four patterns (`req_dir/a/b/c/REQ.md`), which Go and Python do not.
+  So in a `by_agent` project the board's `ADR → REQ → ROADMAP` chain view shows **zero** REQs in the
+  binary (pre-existing, not a regression of the layout union — `serve` was untouched, and the branch
+  it does take never matched the old write layout either). Tracked as its own REQ.
+  (Pré-v8: `api_chain.js` and `api_chain.py` branched `flat` vs `req_dir/<agent>/<state>/` and
+  produced zero nodes on the canonical fixture; Go already returned 1 node.)
+- 🔴 **`status` inventory counts REQs outside the single point — VACUOUS in `by_agent`.**
+  This was a Python-only pre-v8 issue. The binary (`internal/validator/validator.go:877`,
+  `inventoryBlock`) delegates to the resolver. Tracked as its own REQ.
+- **`traceid` in the Node.js CLI (pré-v8) did not go through the resolver — SUPERSET, never vacuous.**
+  `npm/src/validator/traceid.js` indexed REQs with a **recursive** walk of `req_dir`, making it a
+  strict *superset* of the four layouts. It indexed REQs nested deeper than the four patterns
+  (`req_dir/a/b/c/REQ.md`). In v8 the Go binary's unified resolver is the sole source.
   Measured: with the canonical case removed from all three resolvers, Go and Python drop to 5 rules
   seeing no REQ artifact while Node drops to 4 — the difference *is* this residual. Converging it
   **narrows** Node to the contract and requires the existing traceid tests to declare
   `roadmap_namespacing`, which is why it is declared here instead of done in passing.
-- **`trackfw sync` hardcodes `docs/req`** in all three CLIs and ignores `req_dir` entirely — a defect
+- **`trackfw sync` hardcodes `docs/req`** in the binary and ignores `req_dir` entirely — a defect
   of its own, unrelated to the layout union.
-- **`roadmap new` picks the first `agents:` entry without filtering empty strings** in all three CLIs
-  (`internal/generators/roadmap.go:108`, `npm/src/generators/roadmap.js:72`,
-  `pypi/trackfw/generators/roadmap.py:170`), so `agents: ["", "zeus"]` sends a **roadmap** to a degenerate
-  path while `req new` now correctly resolves `zeus` (see *Write is single* below). Pre-existing on `main`,
-  identical in the three runtimes, and a shared-guard change across the three writers — its own REQ.
+- **`roadmap new` picks the first `agents:` entry without filtering empty strings** in the binary
+  (`internal/generators/roadmap.go:108`), so `agents: ["", "zeus"]` sends a **roadmap** to a degenerate
+  path while `req new` now correctly resolves `zeus` (see *Write is single* below). Pre-existing on `main`
+  and a shared-guard change — its own REQ.
 - **`req move` still relocates REQs into `req_dir/<agent>/<state>/`**, which contradicts invariant D1.
   Read tolerates it; changing the move is explicitly out of this decision's scope.
 
@@ -959,7 +961,7 @@ never read by the rules before and their violations now surface. Nothing is move
 reachable by `req list`, only the validator ignored them.
 
 **Why this is a contract and not an implementation note.** The writer wrote flat, the reader looked in
-`<agent>/<state>/`, and the field in the field used `<agent>/` — none of the three agreed, so in every
+`<agent>/<state>/`, and the field used `<agent>/` — none of them agreed (pré-v8: across all three CLIs), so in every
 `by_agent` project the rules that consume REQ passed **without reading anything**: same REQ, same broken
 reference, `flat` → 2 violations, `by_agent` → 0 (issue #216). Measurable form of the fix: in a `by_agent`
 project, the number of rules seeing zero REQs must be **zero** — `ref_targets_exist`, `req_has_adr`,
@@ -995,24 +997,23 @@ permanente no CI que dilui o sinal das violações reais.
 
 ## JSON Schema artifacts
 
-<!-- trackfw-contract: gap reason=nenhum gate compara os 3 arquivos docs/schema/*.json publicados por init entre os 3 runtimes; check-artifact-parity.sh (removido na v8.0.0) tinha uma lista fixa de KINDS que não incluía os schemas -->
+<!-- trackfw-contract: gap reason=nenhum gate verifica os 3 arquivos docs/schema/*.json publicados por init no binário Go; check-artifact-parity.sh (removido na v8.0.0) tinha uma lista fixa de KINDS que não incluía os schemas — antes da v8 a mesma lacuna abrangia os 3 runtimes -->
 
 `trackfw init` publishes `docs/schema/adr.schema.json`,
 `docs/schema/req.schema.json`, and `docs/schema/roadmap.schema.json` as
-cross-runtime helper artifacts for external agents and automation. They describe
+helper artifacts for external agents and automation. They describe
 the expected frontmatter object after a caller has extracted it from Markdown.
 
-The Go, Node.js, and Python `trackfw validate` implementations do not load or
-execute those JSON Schemas automatically. `trackfw validate` remains governed by
-the internal validation rules documented in this contract, including
-frontmatter presence, folder/status coherence, reference integrity, and
+`trackfw validate` does not load or execute those JSON Schemas automatically.
+It remains governed by the internal validation rules documented in this contract,
+including frontmatter presence, folder/status coherence, reference integrity, and
 traceability checks.
 
 ## Validator `stale_wip` and inspection errors
 
-<!-- trackfw-contract: gap reason=o contrato de stale_wip (fonte .trackfw-log, fallback mtime, thresholds, severidade) e os diagnósticos de inspeção (ENOTDIR, arquivo ilegível) não têm gate cross-CLI; cobertura hoje é só por suíte de testes interna a cada runtime -->
+<!-- trackfw-contract: gap reason=o contrato de stale_wip (fonte .trackfw-log, fallback mtime, thresholds, severidade) e os diagnósticos de inspeção (ENOTDIR, arquivo ilegível) não têm gate de shell externo; cobertura hoje é por suíte de testes interna do binário -->
 
-The Go, Node.js, and Python validators share the same `stale_wip` contract:
+The binary `stale_wip` contract:
 
 - A roadmap's WIP age is measured from its latest transition into `wip/` in the
   transition log, read via the unified reader (`internal/translog.ReadAll`), which
@@ -1027,8 +1028,8 @@ The Go, Node.js, and Python validators share the same `stale_wip` contract:
 - If neither `.trackfw-log` nor `.trackfw-log-entries/` exists, or if the current
   roadmap has no parseable entry into `wip`, the backward-compatible fallback is
   the file `mtime`.
-- Git commit time is not part of the cross-runtime contract for WIP age. It
-  describes file edit history, not time spent in the WIP state.
+- Git commit time is not part of the WIP age contract. It describes file edit
+  history, not time spent in the WIP state.
 - The default stale threshold remains 7 days and the default rule severity
   remains `warning` unless `rules.stale_wip` overrides it.
 - Projects may override the threshold with `stale_wip_days` in `trackfw.yaml`.
@@ -1049,17 +1050,16 @@ Inspection failures must not degrade silently:
 | Expected file exists but cannot be `stat`ed or read | Emit a diagnostic for the owning rule and continue inspecting the remaining files. |
 | Invalid support file or invalid transition-log line | Emit a diagnostic and use the documented fallback for the affected artifact when available. |
 
-The implemented coverage is intentionally cross-runtime: Go tests the unified
-reader (`translog.ReadAll`) as source of truth — reading from `.trackfw-log-entries/`
-entries (ML-1A) and the legacy `.trackfw-log` (backward compatibility) — as well
-as configurable boundary behavior, `mtime` fallback, and `ENOTDIR`/walk-error
-diagnostics for `wip/`.
+The implemented coverage tests the unified reader (`translog.ReadAll`) as source
+of truth — reading from `.trackfw-log-entries/` entries (ML-1A) and the legacy
+`.trackfw-log` (backward compatibility) — as well as configurable boundary behavior,
+`mtime` fallback, and `ENOTDIR`/walk-error diagnostics for `wip/`.
 
 ## AI integration lifecycle
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
-The Go, Node.js, and Python runtimes expose the same public lifecycle:
+The binary exposes the public lifecycle:
 
 ```bash
 trackfw agents list|install|uninstall|update
@@ -1115,9 +1115,9 @@ OpenCode binary (1.18.13):
     JSON for an installed trackfw agent has `mode: "subagent"` and no `model` key at all (not
     `null` — absent), confirming the omission is honored end to end, not just at template level.
 
-This representation is implemented identically in `internal/integrations/render.go` (Go, canonical
-case), `npm/src/integrations/render.js`, and `pypi/trackfw/integrations/renderers.py`, and covered
-by `TestRenderOpenCodeAgent` (Go) and their Node.js/Python equivalents.
+This representation is implemented in `internal/integrations/render.go` and covered
+by `TestRenderOpenCodeAgent`. (Pré-v8: also present in `npm/src/integrations/render.js` and
+`pypi/trackfw/integrations/renderers.py`.)
 
 The "Declared harness targets — pinned list" table further down this document already lists
 `opencode` between `amazonq` and `kiro` (added in Wave 3 of the same REQ, alongside the
@@ -1150,14 +1150,14 @@ agent would cause a catalog load error at startup.
 
 The standalone `gemini`, `cursor`, `copilot`, `windsurf`, and `amazonq` names
 exist only in the Go distribution for historical compatibility. They are not
-part of the cross-runtime contract; use `agents` and `skills` in new automation.
+part of the public contract; use `agents` and `skills` in new automation.
 
 ## Install scope (`--scope`)
 
-<!-- trackfw-contract: gap reason=nenhum gate exercita a tabela de resolução de --scope sem flag/sem TTY (D5/D6/D8: default global em install/update, erro obrigatório em uninstall) nos 3 runtimes; os gates de integração existentes sempre passam --scope explícito -->
+<!-- trackfw-contract: gap reason=nenhum gate exercita a tabela de resolução de --scope sem flag/sem TTY (D5/D6/D8: default global em install/update, erro obrigatório em uninstall) no binário Go; os gates de integração existentes sempre passam --scope explícito — antes da v8 a lacuna abrangia os 3 runtimes -->
 
 `agents|skills install|update|uninstall`, and `trackfw init`'s AI-tools step,
-share one scope-resolution contract across the three runtimes
+share one scope-resolution contract
 (ADR-2026-07-25-escopo-de-instalacao-selecionavel-para-agents-e-skills):
 
 | Situation | Resolved scope | Notes |
@@ -1165,7 +1165,7 @@ share one scope-resolution contract across the three runtimes
 | `--scope project` / `--scope global` passed | exactly that value | Detected by *flag-set*, never by comparing the resolved value against `"project"` — `cmd.Flags().Changed("scope")` (Go), `options.scope !== undefined` (Node), `args.scope is not None` (Python). Never prompts. |
 | No `--scope`, no TTY, operation is `install` or `update` | `global` (`~/.claude/...`) | Breaking change vs. the pre-ADR default of `project`. |
 | No `--scope`, no TTY, operation is `uninstall` | **error** | `"uninstall requires --scope in non-interactive mode"` (D8) — see below. |
-| No `--scope`, TTY | interactive select, **`global` pre-selected** | Same wording/options in all three runtimes; fires even when `--targets` was already supplied — it is a gate independent of target/item selection. |
+| No `--scope`, TTY | interactive select, **`global` pre-selected** | Same wording/options in the binary; fires even when `--targets` was already supplied — it is a gate independent of target/item selection. |
 | `list` (any TTY state) | `global` if no `--scope` | Read-only command: never prompts (D6), but keeps the same default so it reports the destinations `install` actually wrote to. |
 
 **D8 — `uninstall` does not inherit the `global` default in non-interactive
@@ -1176,16 +1176,16 @@ repo start deleting files from the user's home directory instead. In TTY,
 before anything is destroyed.
 
 **Destination transparency (D5):** before writing anything, in every mutating
-command and in `init`'s AI-tools step, the three runtimes print the resolved
+command and in `init`'s AI-tools step, the binary prints the resolved
 destination paths (skipped only for `--json`, which is the deterministic
 channel scripts consume instead).
 
 ### Internal codex-sync paths fixed to `scope: "project"`
 
-<!-- trackfw-contract: gap reason=nenhum gate verifica que a escrita do Codex (install e o re-sync de update) cai em scope=project nos 3 runtimes; a seção mesma nota que não é alcançável pela flag pública --scope, então precisaria de fixture dedicada que hoje não existe -->
+<!-- trackfw-contract: gap reason=nenhum gate verifica que a escrita do Codex (install e o re-sync de update) cai em scope=project no binário Go; a seção mesma nota que não é alcançável pela flag pública --scope, então precisaria de fixture dedicada que hoje não existe — antes da v8 a lacuna abrangia os 3 runtimes -->
 
 Two call sites bypass the scope gate entirely and hardcode `project`, in all
-three runtimes:
+the binary:
 
 - The Codex generator itself — `internal/generators/codex.go:InstallCodex`,
   `npm/src/generators/codex.js:installCodex`,
@@ -1199,17 +1199,17 @@ three runtimes:
   `internal/generators/update.go:updateDetectedCodexIntegrations`,
   `npm/src/commands/update.js` (the `AGENTS.md`/`.codex` branch), and
   `pypi/trackfw/commands/update.py` — re-applies whatever Codex agent/skill
-  artifacts are already installed in the current project. All three runtimes
+  artifacts are already installed in the current project. The binary
   fix this to `scope: "project"` for the same reason: it operates on files
   that already live in the repo, not a fresh install a user is choosing a
   destination for.
 
-Neither is a parity gap: all three runtimes agree, and neither is reachable
+Neither is a parity gap: the binary handles both consistently, and neither is reachable
 through the public `--scope` flag.
 
 ## `update` refusing unmanaged content — message names the remedy (item 8, ML-2C)
 
-<!-- trackfw-contract: gap reason=a própria seção se autodeclara "Parity gap, not yet closed by a gate" — a paridade da mensagem foi verificada lendo o código-fonte dos 3 runtimes, não por um gate que roda os 3 binários e diffa stdout/stderr real -->
+<!-- trackfw-contract: gap reason=a própria seção se autodeclara "Parity gap, not yet closed by a gate" — a paridade da mensagem foi verificada lendo o código-fonte; antes da v8 o texto descrevia verificação nos 3 runtimes; desde a v8 existe só o binário Go, e a lacuna continua: nenhum gate roda o binário e diffa stdout/stderr contra um valor esperado -->
 
 > ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md
 
@@ -1223,7 +1223,7 @@ The defect fixed here was diagnosability, not the refusal itself: the error name
 `--force`'s own `--help` text promised "replace or remove modified managed artifacts" — leading a
 user straight into trying the operation that had just failed.
 
-**Message, byte-identical in all three runtimes:**
+**Message:**
 
 ```
 unmanaged artifact "<destination>" does not match a trackfw template — trackfw did not write these bytes.
@@ -1254,61 +1254,46 @@ a pattern, not an isolated incident. Fixing it needs detection (a `validate`/`do
 reordering persistence — out of scope for this ML; see
 `vault/notes/integrations-manifest-write-precedes-persist-janela-de-registro-parcial-2026-08-16.md`.
 
-**Parity gap, not yet closed by a gate.** The byte-identity claim above was verified by reading
-the source of the three implementations, **not** by a gate that runs all three CLIs and diffs
-their real stdout/stderr for this message. The three per-stack tests listed above assert the
-message *within* each runtime; none of them assert equality *across* runtimes. Until such a gate
-exists, a future edit to only one of the three copies would go undetected by `make quality`.
-Recommendation, not implemented here: add a scenario to a `check-integrations-parity.sh`-style
-script (or extend an existing one) that reproduces the unmanaged-artifact case against all three
-binaries and three-way-diffs the message, following the same pattern formerly used by
-`check-ship-parity.sh` and `check-branch-new-parity.sh` (both removed in v8.0.0).
+**Coverage gap, not yet closed by a gate.** The byte-identity claim above was verified by reading
+the source, **not** by a gate that runs the binary and diffs
+their real stdout/stderr for this message. (Pré-v8: the three per-stack tests asserted the
+message within each runtime but not equality across runtimes. Since v8, there is only one binary.)
 
-A related, still-open divergence found during the same investigation but **not** fixed here: the
-error-wrapper prefix in `internal/integrations`/its Node.js/Python equivalents also diverges — Go
-uses `Error:`, Python uses `trackfw agents update:`, and Node.js prints the raw source line of the
-`throw` (a stack-trace leak on an expected error path). Same class of problem as the `ship`
-stream/prefix divergence fixed above, but only `ship` was fixed by this roadmap; this one remains
-open for a future ML.
+A related divergence found during the same investigation but **not** fixed here: the
+error-wrapper prefix in `internal/integrations` (pré-v8: Go used `Error:`, Python used
+`trackfw agents update:`, and Node.js printed the raw source line of the `throw` — a
+stack-trace leak on an expected error path). The `ship` stream/prefix divergence was fixed
+by this roadmap; this one remains open for a future ML.
 
 ## Non-interactive `--targets` error message (pre-existing, not part of the
 
-<!-- trackfw-contract: gap reason=as duas strings divergentes (Go/Node vs Python) são pinadas literalmente e testadas cada uma dentro do próprio runtime; nenhum gate cross-CLI impede uma edição futura de afastar ainda mais os dois textos aqui fixados -->
+<!-- trackfw-contract: gap reason=pré-v8: as duas strings divergentes (Go/Node vs Python) eram pinadas literalmente e testadas cada uma dentro do próprio runtime sem gate cross-CLI; na v8 existe apenas o binário Go -->
 install-scope contract)
 
-`install|update|uninstall` without `--targets` and without a TTY fail with a
-message that already diverged before the install-scope ADR:
+`install|update|uninstall` without `--targets` and without a TTY fail with:
 
-- Go / Node: `"{operation} requires --targets in non-interactive mode"`
-- Python: `"--targets is required for non-interactive {action}"`
+`"{operation} requires --targets in non-interactive mode"`
 
-Both are asserted by existing tests in all three suites
-(`internal/commands/agents_skills_test.go`,
-`npm/tests/agents-skills.test.js`, `pypi/tests/test_agents_skills.py`).
-Left as-is by ML-2A: unifying the wording is a small, low-risk change, but it
-is orthogonal to install-scope reconciliation and would touch pre-existing,
-already-asserted strings in an unrelated code path. Tracked here rather than
-silently fixed, so a future REQ can pick it up deliberately.
+Asserted by `internal/commands/agents_skills_test.go`.
+(Pré-v8: the message diverged between Go/Node and Python — Python used
+`"--targets is required for non-interactive {action}"`. Left as-is by ML-2A.)
+Tracked here so a future REQ can pick it up deliberately.
 
 ## Non-zero exit codes for integration lifecycle errors
 
-<!-- trackfw-contract: gap reason=a divergência de exit code (1 em Go/Node, 2 em Python) é documentada como aceita e pré-existente, mas nenhum gate cross-CLI a verifica ativamente; uma mudança acidental do 2 do Python passaria despercebida -->
+<!-- trackfw-contract: gap reason=pré-v8: a divergência de exit code (1 em Go/Node, 2 em Python) era documentada como aceita e pré-existente; na v8 existe apenas o binário Go que usa exit 1 -->
 
-Go and Node exit `1` (the default for cobra/Node's uncaught-throw path) on
-integration errors (invalid `--scope`, missing `--targets`, `uninstall`
-without `--scope`, etc.). Python's `agents`/`skills` command handler
-(`pypi/trackfw/integrations/command.py`) catches
-`IntegrationError | OSError | ValueError` and exits `2`
-(`raise SystemExit(2) from error`) — a pre-existing Python-CLI convention,
-unrelated to and unaffected by the install-scope feature.
+The binary exits `1` on integration errors (invalid `--scope`, missing `--targets`,
+`uninstall` without `--scope`, etc.).
+(Pré-v8: Python's `agents`/`skills` handler caught `IntegrationError | OSError | ValueError`
+and exited `2` — a pre-existing Python-CLI convention.)
 
 ## Agent identity
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
-Agent identity is a cross-runtime contract, not a per-distribution feature. The
-Go, Node.js, and Python CLIs read the **same** configuration file and must
-produce the same artifact bytes for the same input.
+Agent identity is a stable binary contract. The binary reads the configuration
+file and produces consistent artifact bytes for the same input.
 
 ### Shared configuration
 
@@ -1331,7 +1316,7 @@ produce the same artifact bytes for the same input.
 The file is global — it is **not** mirrored per scope. Identity is a user
 preference, not project state, so the same file applies to both `global` and
 `project` scopes and to every repository on the machine. `schema_version` must
-be `1`; any other value is an error in all three runtimes. A missing file, an
+be `1`; any other value is an error. A missing file, an
 empty `agents` map, or a missing entry for a given agent `id` produces the
 current default output **byte for byte** — the feature is opt-in and cannot
 regress an existing installation.
@@ -1351,12 +1336,12 @@ name.
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 1. **Preset slugs are hardcoded.** Every themed preset ships an explicit
-   `display_name`/`slug` pair. Slugs are never derived at runtime, so the three
-   runtimes cannot diverge through differences in Unicode normalization
-   (`Ártemis` → `artemis` is a table entry, not a computation).
+   `display_name`/`slug` pair. Slugs are never derived at runtime, so Unicode
+   normalization differences cannot affect them (`Ártemis` → `artemis` is a
+   table entry, not a computation).
 2. **Dynamic slugification is used only in `custom` mode**, where the user
-   types the ten names freely. The algorithm is identical in all three
-   runtimes: NFD decomposition + diacritic removal (ASCII-fold), lowercase,
+   types the ten names freely. The algorithm: NFD decomposition + diacritic
+   removal (ASCII-fold), lowercase,
    `[ _]` → `-`, discard of every character outside `[a-z0-9-]`, collapse of
    repeated `-`, trim of leading and trailing `-`.
 3. **Invalid input is rejected with an error, never silently corrected.** A
@@ -1367,18 +1352,12 @@ name.
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
-The slug vectors live in a single fixture replicated **byte-identically** in
-the three packages:
-
-| Runtime | Path |
-|---|---|
-| Go | `internal/identity/testdata/slug_vectors.json` |
-| Node.js | `npm/tests/fixtures/slug_vectors.json` |
-| Python | `pypi/tests/fixtures/slug_vectors.json` |
-
+The slug vectors live in `internal/identity/testdata/slug_vectors.json`.
 It covers accents, uppercase, spaces, repeated separators, emoji, the empty
-string, and the over-length case. Each suite consumes the fixture directly;
-adding a vector in one runtime without propagating it is a contract break.
+string, and the over-length case.
+(Pré-v8: the fixture was replicated byte-identically across three packages —
+Go, Node.js, and Python — and adding a vector in one runtime without propagating
+it was a contract break.)
 
 ### Parity gate
 
@@ -1386,7 +1365,7 @@ adding a vector in one runtime without propagating it is a contract break.
 
 `scripts/check-identity-parity.sh` (removed in v8.0.0) was the cross-CLI gate for this contract. It
 verified that the three `slug_vectors.json` copies are byte-identical and that
-the three runtimes render the same artifact for the same `identity.json`.
+the binary renders the same artifact for the same `identity.json`.
 Target/surface coverage is derived from the canonical integration catalog
 (`internal/integrations/assets/catalog.json`): every surface whose `agents`
 support level is not `unsupported` is exercised, using the default target name
@@ -1403,19 +1382,16 @@ junto com o gate na v8.0.0.
 
 ### The wizard's UX is also part of the contract
 
-<!-- trackfw-contract: gap reason=a própria seção declara que a UX do wizard "has no automated cross-CLI test yet" e depende só de revisão manual -->
+<!-- trackfw-contract: gap reason=a própria seção declara que a UX do wizard não tem gate automatizado e depende só de revisão manual -->
 
 Identity is not only configured by `init` — `trackfw agents install` offers
-the same interactive wizard, and the two entry points must feel identical
-across the three CLIs. Specifically:
+the same interactive wizard, and the two entry points must feel identical.
+Specifically:
 
 - **Order of steps** — targets → agents → surface → preset or custom → names
   (custom only) → nickname → confirmation → install. Verified directly in
-  `runIdentityWizard` in all three CLIs (`internal/commands/identity_wizard.go`,
-  `npm/src/commands/identity-wizard.js`,
-  `pypi/trackfw/commands/identity_wizard.py`): the nickname prompt runs after
-  the preset/custom-names step and before validation and confirmation, in all
-  three.
+  `runIdentityWizard` (`internal/commands/identity_wizard.go`): the nickname prompt
+  runs after the preset/custom-names step and before validation and confirmation.
 - **Trigger rule** — the wizard appears in `agents install` only when
   `kind == agents` **and** stdin is a TTY **and** (`identity.json` is absent
   **or** `--identity` was passed). `skills install` never triggers it, and a
@@ -1427,18 +1403,17 @@ across the three CLIs. Specifically:
   from the catalog (e.g. `Architect — Architecture, ADRs and governed
   coordination`), never the raw `id`.
 
-Unlike the artifact bytes and the slug algorithm, this UX contract has **no
-automated cross-CLI test** yet — `check-identity-parity.sh` (removed in v8.0.0) validated the
-generated artifacts, not the wizard's interactive flow. Parity here is
-maintained by review: a change to the wizard's steps, labels, trigger rule,
-or confirmation layout in one CLI must be ported to the other two in the same
-change.
+This UX contract has **no automated gate** yet — `check-identity-parity.sh`
+(removed in v8.0.0) validated the generated artifacts, not the wizard's interactive
+flow. Parity here is maintained by review: a change to the wizard's steps,
+labels, trigger rule, or confirmation layout must be verified against both entry
+points in the same change.
 
 ## `trackfw ship`
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
-`trackfw ship` runs a seven-step governed delivery sequence in all three runtimes:
+`trackfw ship` runs a seven-step governed delivery sequence:
 
 ```
 1. Validates branch name — must match feat|fix|refactor|chore|docs/<slug>
@@ -1502,11 +1477,11 @@ remote URL regardless of the host.
 
 ### Graceful degradation
 
-<!-- trackfw-contract: gap reason=nenhum gate testa o passo 7 com o CLI de forge ausente (fallback de URL impresso, exit 0) nem o texto de --dry-run correspondente, byte a byte entre os 3 runtimes; check-ship-parity.sh (removido na v8.0.0) desabilitava comandos externos mas rodava majoritariamente com --no-pr, sem chegar ao passo 7 -->
+<!-- trackfw-contract: gap reason=nenhum gate testa o passo 7 com o CLI de forge ausente (fallback de URL impresso, exit 0) nem o texto de --dry-run correspondente no binário Go; check-ship-parity.sh (removido na v8.0.0) desabilitava comandos externos mas rodava majoritariamente com --no-pr, sem chegar ao passo 7 — antes da v8 a lacuna abrangia os 3 runtimes -->
 
 When the forge CLI is not available in `$PATH` (or `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1`
 is set), step 7 prints the fallback browser URL and exits 0 — it does not fail the
-delivery sequence. This behaviour is identical across all three runtimes.
+delivery sequence. This behaviour is implemented once in the Go binary.
 
 `--dry-run` queries CLI availability at step 7 and prints the same fallback URL when the
 CLI is absent, making graceful degradation verifiable without executing a real push:
@@ -1520,7 +1495,7 @@ CLI is absent, making graceful degradation verifiable without executing a real p
   https://github.com/org/repo/compare/feat/my-feature?expand=1
 ```
 
-This text is identical in Go, Node.js, and Python.
+This is the text emitted by the binary.
 
 ### Behavioural divergence from `trackfw validate`
 
@@ -1550,26 +1525,17 @@ pass (exit 0) but `trackfw ship` abort. This is intentional. The error message f
 
 > ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md
 
-`ship`'s step 2 (`CheckShipGovernance` in Go, `checkShipGovernance`/`check_ship_governance` in
-Node.js/Python) no longer contains its own copy of the `branch_has_wip_roadmap` matching logic.
-It delegates to the exact same validator functions `trackfw validate` and `trackfw branch new`
-already use — `validator.validateBranchHasWIPRoadmap` / `validator.validateWIPHasREQ` in Go,
-their Node.js (`npm/src/validator/index.js`) and Python (`pypi/trackfw/validator.py`)
-equivalents. Before this fix, Node.js and Python reimplemented the rule from scratch, with their
-own wording **and without ever scanning `done/`** — a branch with a matching roadmap only in
-`done/` would pass in Go and incorrectly fail in Node.js/Python. This was a behavioral
-divergence, not only a wording one.
+`ship`'s step 2 (`CheckShipGovernance`) does not contain its own copy of the
+`branch_has_wip_roadmap` matching logic. It delegates to the exact same validator functions
+`trackfw validate` and `trackfw branch new` already use — `validator.validateBranchHasWIPRoadmap`
+/ `validator.validateWIPHasREQ`. (Pré-v8: Node.js and Python reimplemented the rule from scratch,
+with their own wording and without ever scanning `done/` — a branch with a matching roadmap only in
+`done/` would pass in Go and incorrectly fail in Node.js/Python.)
 
-**Error stream and prefix.** The message and stream are byte-identical across the three
-runtimes: **stderr**, prefixed with `Error: `. This was already Go's actual behavior without any
-code change — `internal/commands/root.go`'s `Execute()` wrapper prints `Error: <msg>` to stderr
-for any `RunE` that does not opt out via `cmd.SilenceErrors` (unlike `branch.go`/`commit.go`,
-which deliberately silence it to print without the prefix), and `ship.go` never set
-`SilenceErrors`. The fix was entirely on the Node.js/Python side: `runShip`/`run_ship` gained a
-`writeErr`/`write_err` parameter (default: writes `Error: <msg>\n` to stderr), used only for the
-final one-line summary of each abort path; the detailed body (violation list, remediation hints,
-the `Note: ...` block) still goes to **stdout** via `writeln`, exactly as Go already did through
-`deps.out`.
+**Error stream and prefix.** The message is emitted on **stderr**, prefixed with `Error: `.
+`internal/commands/root.go`'s `Execute()` wrapper prints `Error: <msg>` to stderr for any `RunE`
+that does not opt out via `cmd.SilenceErrors` (unlike `branch.go`/`commit.go`, which deliberately
+silence it to print without the prefix), and `ship.go` never sets `SilenceErrors`.
 
 Coberto por `scripts/check-ship-parity.sh` (removed in v8.0.0; cenários
 `feat-still-gated-non-regression` e `invalid-branch-vocabulary`). Em v8.0.0 (uma
@@ -1603,9 +1569,9 @@ usage block while refusing a write.
 
 `--force-with-lease` pushes with `git push --force-with-lease` instead of a plain push — for the
 post-rebase case, where a plain push is rejected as non-fast-forward. Raw `--force` is **never**
-exposed as a flag in any of the 3 CLIs (Python additionally sets `allow_abbrev=False` on the
-`ship` subparser, so `argparse` cannot silently resolve a bare `--force` to `--force-with-lease`
-by prefix matching — the only other `--f...` flag on the parser).
+exposed as a flag. (Pré-v8: Python additionally set `allow_abbrev=False` on the `ship` subparser,
+so `argparse` could not silently resolve a bare `--force` to `--force-with-lease` by prefix
+matching — the only other `--f...` flag on the parser.)
 
 The flag only runs step 6's push once a new gate (step 2.5, before any write) has confirmed the
 branch already has an **open** PR/MR via the resolved forge CLI (`gh`, `glab`, or `az`) — the safe
@@ -1632,18 +1598,17 @@ already clean), `--force-with-lease` pushes the existing local commits without r
 this exception does not apply without the flag; a plain `ship` with nothing staged still aborts
 exactly as before.
 
-**Stderr-text parity fix (ML-1B).** Building this gate found a real divergence: Go's
+**Stderr-text fix (ML-1B).** Building this gate found a real divergence (pré-v8): Go's
 `exec.Command().Output()` error alone formats as the generic `"exit status N"`, discarding the
 forge CLI's actual diagnostic text — while Node's `spawnSync` and Python's `subprocess.run`
 already surfaced the real stderr. `defaultCheckPROpen` and `defaultGitExec`
 (`internal/commands/ship.go`) now capture `cmd.Stderr` explicitly and use its trimmed text in the
-refusal/error message, matching Node.js/Python byte-for-byte. This affects both the "cannot
-verify" force-with-lease refusal and every `git commit`/`git push` failure message `ship` ever
-prints, not only the force-with-lease path.
+refusal/error message. This affects both the "cannot verify" force-with-lease refusal and every
+`git commit`/`git push` failure message `ship` ever prints, not only the force-with-lease path.
 
 **Gate: `scripts/check-ship-force-parity.sh`** (removed in v8.0.0; was registered in the `parity` Make target; covered in v8 by `internal/commands/ship_test.go`). Real bare
 git remotes only — never a mocked `git`, per the project's standing gate-fixture convention (see
-`check-branch-prune-parity.sh`). Five scenarios, each diffed byte-for-byte across the 3 runtimes
+`check-branch-prune-parity.sh`). Before v8.0.0, five scenarios, each diffed byte-for-byte across the 3 runtimes
 on stdout, stderr, and exit code:
 
 - `no-forge-cli`, `forge-zero-pr`, `forge-unverifiable`, `forge-pr-open-pushes` — the four paths
@@ -1749,8 +1714,8 @@ forge) — it plays no role in deciding what gets tagged. A repointed `origin/HE
 therefore **neutralized, not refused**: the command silently uses the forge's real branch and
 publishes against its sha, ignoring the repoint (Scenario 11 below).
 
-The sha-divergence refusal message names both sides (`releaseTagCommitDivergesFmt` — kept
-byte-identical across the 3 CLIs, same convention as every other refusal in this command).
+The sha-divergence refusal message names both sides (`releaseTagCommitDivergesFmt`, same
+convention as every other refusal in this command).
 
 `defaultBaseBranch`/`_default_base_branch` (shared with `ship`'s PR-body commit range) was also
 fixed to strip the literal `refs/remotes/origin/` prefix instead of cutting at the last `/` —
@@ -1809,8 +1774,8 @@ stub answers all four `gh api` calls the command makes (the two GET commit-targe
 two POST publish calls); only the two POST calls are recorded to the scenario's call log, so the
 "refusal must never publish" assertions stay meaningful on every scenario that reaches
 precondition 6 (forge resolution), where both GET calls happen before the identity check.
-Seventeen scenarios (21 RT_LABELs — scenario 3 splits into 3a–3e), byte-diffed across the 3
-runtimes on stdout, stderr, and exit code:
+Seventeen scenarios (21 RT_LABELs — scenario 3 splits into 3a–3e), each verified on stdout,
+stderr, and exit code (pré-v8: byte-diffed across 3 runtimes; in v8: single binary):
 
 - Scenarios 1–9 exercise the nine refusal paths above (3 split into 3a–3e, one isolated
   mismatch per version-file check).
@@ -1861,7 +1826,7 @@ runtimes on stdout, stderr, and exit code:
   loudly red). Decoy commit carries the same tree as `main`, so P3/P4 (`git show <sha>:path`)
   succeed on valid objects.
 - **Scenario 15 (ML-2B) — git object absent**: proves that when the forge returns a sha whose
-  git objects do not exist locally, all 3 CLIs refuse naming both the path and the sha. Uses the
+  git objects do not exist locally, the binary refuses naming both the path and the sha. Uses the
   same pin+delete technique (forgeLocalSHA = "" → cross-check skipped → reaches P3 → `git show
   FAKE_ABSENT_SHA:<path>` fails). FAKE_ABSENT_SHA (40 × 'a') is proven absent by a vacuity
   guard (`git cat-file -e`). No-publish guard: no `git/tags` POST may be reached.
@@ -1880,7 +1845,7 @@ runtimes on stdout, stderr, and exit code:
   87 sabotages (`deps.readCommittedFile(objectSHA, "CHANGELOG.md")` →
   `deps.readCommittedFile("HEAD", "CHANGELOG.md")` in an isolated Go copy).
 - **Scenario 17 (ML-4A) — `refs/replace/` object-identity bypass**: proves that
-  `--no-replace-objects` (first argument after `git` in all 3 CLIs) blocks the attack where an
+  `--no-replace-objects` (first argument after `git`) blocks the attack where an
   adversary writes `.git/refs/replace/<forge-sha>` = `<attacker-sha>` as a raw file (no git
   command; bypasses any branch guard). Without the flag, `git show <forge-sha>:CHANGELOG.md`
   follows the redirect and returns the attacker's content. Three-axis fixture: HEAD at 9.9.7
@@ -1890,11 +1855,10 @@ runtimes on stdout, stderr, and exit code:
   Three vacuity guards: V1 (origin/main tracking ref gone — cross-check skipped, same as S14–16);
   V2 (attack genuine — raw `git show` without flag returns "refs-replace-forged"); V3 (fix works —
   `git --no-replace-objects show` returns "forge-only"). Post-run guard: replace ref still present
-  and still active after all three CLI invocations, proving the fix suppresses a live redirect.
-  Provenance assertions per runtime: message contains "forge-only" AND does NOT contain
-  "refs-replace-forged". The per-runtime assertion makes the scenario correlated-revert-proof:
-  all three stacks dropping the flag → each runtime fires independently; `assert_three_way` catches
-  single-stack revert. `scripts/check-gates-falsify.sh`'s Cenário 158 sabotages
+  and still active after the binary invocation, proving the fix suppresses a live redirect.
+  Provenance assertion: message contains "forge-only" AND does NOT contain
+  "refs-replace-forged". (Pré-v8: `assert_three_way` caught single-stack revert across the three
+  runtimes.) `scripts/check-gates-falsify.sh`'s Cenário 158 sabotages
   (`"--no-replace-objects", "show"` → `"show"` in an isolated Go copy) and proves this provenance
   assertion catches the false negative.
 
@@ -1925,10 +1889,10 @@ trackfw push              pushes
 trackfw ship -m "..."     commit + push + PR (composition)
 ```
 
-| Flag | Go | Node.js | Python | Notes |
-|------|-----|---------|--------|-------|
-| `--dry-run` | yes | yes | yes | Print what would be done without executing write commands |
-| `--force-with-lease` | yes | yes | yes | Governed force-push; requires an open PR/MR on the branch (verified via forge CLI) |
+| Flag | Notes |
+|------|-------|
+| `--dry-run` | Print what would be done without executing write commands |
+| `--force-with-lease` | Governed force-push; requires an open PR/MR on the branch (verified via forge CLI) |
 
 **Boundary with `ship` and `commit`:** `push` is not a partial `ship` with fewer steps — it is a
 standalone command for the common case where `trackfw commit` was already run and only the push
@@ -2074,7 +2038,7 @@ raising the count to 2 and classifying the command as allowed (false negative).
 
 ### Shared matching logic — never duplicated
 
-<!-- trackfw-contract: gap reason=nenhum gate compara a mensagem de `trackfw validate` com a de `trackfw branch new` no mesmo fixture/runtime para provar que são byte-idênticas entre si — cada comando é validado isoladamente entre os 3 runtimes, não um contra o outro -->
+<!-- trackfw-contract: gap reason=nenhum gate compara a mensagem de `trackfw validate` com a de `trackfw branch new` no mesmo fixture para provar que são byte-idênticas entre si — cada comando é validado isoladamente; antes da v8 a lacuna abrangia os 3 runtimes, cada um testado de forma independente, não um contra o outro -->
 
 The slug-matching rule is implemented once per runtime and called from both places:
 
@@ -2096,7 +2060,7 @@ same way.
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 `trackfw branch new` never reformats, wraps, or replaces `git checkout -b`'s own stdout, stderr,
-or exit code. This was **not** true by default in two of the three runtimes and required an
+or exit code. Before v8.0.0, this was **not** true by default in two of the three runtimes and required an
 explicit fix — see
 `vault/notes/branch-new-exit-code-leak-vs-propagation-2026-08-04.md` for the full incident:
 
@@ -2113,12 +2077,12 @@ explicit fix — see
 - **Python** was correct from the first version — `_default_git_checkout`
   (`pypi/trackfw/commands/branch.py`) returns `subprocess.run(...).returncode` directly.
 
-The net effect, confirmed empirically against real `git` subprocesses (not fakes) in all three
-runtimes: for the "branch already exists" scenario, stdout, stderr, and exit code (`128`) are
-byte-for-byte and numerically identical across Go, Node.js, and Python. No runtime prints an
-extra diagnostic line, and none substitutes a fixed exit code for Git's own.
+The net effect, confirmed empirically against real `git` subprocesses (not fakes): for the
+"branch already exists" scenario, stdout, stderr, and exit code (`128`) are propagated verbatim.
+No extra diagnostic line is printed, and the binary does not substitute a fixed exit code for
+Git's own. (Pré-v8: verified byte-for-byte across Go, Node.js, and Python.)
 
-This matters because dependency-injected unit tests (all three runtimes inject a fake
+This matters because dependency-injected unit tests (Go unit tests inject a fake
 `execGitCheckout`/`exec_git_checkout` for testability) never exercise the production wrapper —
 the only way to verify "propagate literally" is to run a real `git` subprocess and compare, which
 is exactly what `scripts/check-branch-new-parity.sh` (removed in v8.0.0) did.
@@ -2127,15 +2091,15 @@ is exactly what `scripts/check-branch-new-parity.sh` (removed in v8.0.0) did.
 
 <!-- trackfw-contract: gate=scripts/check-gates-falsify.sh -->
 
-`scripts/check-branch-new-parity.sh` (removed in v8.0.0) cobria três cenários, cada um afirmando
-que stdout, stderr e exit code são byte-idênticos entre os três runtimes:
+`scripts/check-branch-new-parity.sh` (removed in v8.0.0) cobria três cenários, afirmando que
+stdout, stderr e exit code eram byte-idênticos entre os três runtimes (pré-v8):
 
 1. **No match** — blocks, `git checkout -b` never runs.
 2. **Match + `--dry-run`** — reports "would create", exit 0, never touches `git`.
 3. **Match, real `git`, target branch already exists** — the only scenario that exercises the
    production `defaultGitCheckout` wrapper end-to-end rather than an injected fake; asserts
-   Git's own diagnostic and exit code (`128`) are propagated unmodified in all three runtimes,
-   and that no runtime leaks a Go-style `exit status N` artifact.
+   Git's own diagnostic and exit code (`128`) are propagated unmodified by the binary,
+   and that the binary does not leak a Go-style `exit status N` artifact.
 
 Era registrado no alvo `parity` de `make quality`. Em v8.0.0 (uma implementação em Go), os
 cenários 1 e 2 são cobertos por `internal/commands/branch_test.go`; o cenário 3 (real `git`,
@@ -2193,11 +2157,11 @@ would show it `delete`-worthy), but it can never report a branch as deletable th
 would show as pending. This holds because staleness only means `diverg` is computed against an
 *older* (but still valid) snapshot of `origin/<default-branch>`'s content — a merge landing later can only
 ever remove divergence that a stale ref still sees, never introduce divergence that a fresh ref
-would not have shown. Proven with a real-git fixture in all three CLIs (`TestRunBranchPrune_RealGitRepo_StaleOriginMain_IsConservativeNotWrong`
-and Node/Python equivalents): a branch genuinely merged upstream by someone else is reported
-`pending_work` (kept) while the local clone's `origin/<default-branch>` is stale after a broken remote URL,
-and becomes `content_identical` (deletable) the moment a real fetch succeeds — same branch, same
-local commits, only the freshness of `origin/<default-branch>` changed.
+would not have shown. Proven with a real-git fixture (`TestRunBranchPrune_RealGitRepo_StaleOriginMain_IsConservativeNotWrong`):
+a branch genuinely merged upstream by someone else is reported `pending_work` (kept) while the
+local clone's `origin/<default-branch>` is stale after a broken remote URL, and becomes
+`content_identical` (deletable) the moment a real fetch succeeds — same branch, same local commits,
+only the freshness of `origin/<default-branch>` changed.
 
 ### Why not `git branch -d`, and why not a naive `git diff`
 
@@ -2259,8 +2223,7 @@ misclassified a branch with brand-new, never-merged documentation as `review_doc
 unmerged work, even though the branch itself was never at risk of being auto-deleted (the
 failure-closed guarantee held; the *advice* was wrong).
 
-"Doc/config" is decided by `isDocOrConfigPath` (Go), `isDocOrConfigPath` (Node.js),
-`is_doc_or_config_path` (Python): the existing doc-path check (`docs/`, `vault/`, or a `.md`
+"Doc/config" is decided by `isDocOrConfigPath` in the binary: the existing doc-path check (`docs/`, `vault/`, or a `.md`
 extension) plus a conservative, best-effort list of non-runtime config extensions
 (`.yaml`, `.yml`, `.json`, `.toml`, `.ini`, `.cfg`) and filenames (`.gitignore`,
 `.gitattributes`, `.editorconfig`, `trackfw.yaml`, `LICENSE`). Misclassification here can never
@@ -2324,7 +2287,7 @@ git's own independent ancestry check too, at no extra cost. It falls back to `gi
 by construction, per the "Why not `git branch -d`" section above). All safety already lives in
 `evaluateBranchIntegration` and the current-branch/worktree re-check immediately before this call
 — which flag ultimately performs the deletion carries no additional safety meaning. Both codepaths
-are proven with a real-git fixture in all three CLIs (a plain-merge branch deleted via `-d` alone;
+are proven with a real-git fixture (pré-v8: in all three CLIs; in v8: the binary only): a plain-merge branch deleted via `-d` alone;
 a squash-merged branch where `-d` is first confirmed to fail, then `_default_delete_branch` falls
 back to `-D` and succeeds).
 
@@ -2430,7 +2393,7 @@ A branch é preservada; o comando continua com as demais.
 
 `scripts/check-branch-prune-parity.sh` (removed in v8.0.0) built a **real** local bare repository as `origin` (no
 mock of `git` — see `vault/notes/` precedent, Cenário 50 in `check-gates-falsify.sh`) and asserted
-byte-identical stdout/stderr/exit code across all three runtimes for:
+byte-identical stdout/stderr/exit code for:
 
 1. **Dry-run (default)** — reports two integrated branches (one squash-merged same-session, one
    stale-but-integrated after `main` advanced further — the AC2 discriminant) as deletable and a
@@ -2479,7 +2442,7 @@ in the binary.
 | Exit 2 | Usage/resolution error (roadmap not found, wave not found, malformed `--wave`) |
 
 Exit code 2 is **not** `blocked`: a barrier that could not be evaluated is distinct from a
-barrier that evaluated to a failure. The three runtimes must agree on this distinction.
+barrier that evaluated to a failure. The binary enforces this distinction.
 
 **Exit-2 messages must be specific.** The message on `stderr` must name the unresolved entity —
 the roadmap basename that could not be found, or the wave number that does not exist in the
@@ -2509,13 +2472,12 @@ the command still exits 2 without emitting a document.
 
 Pinning the text matters because these messages are the only observable difference between "the
 CLI does not implement barrier" and "barrier ran and could not resolve its input". A runtime that
-paraphrases them satisfies its own tests while breaking cross-runtime equivalence.
+paraphrases them would satisfy its own tests while producing a different observable result.
 
 The third message was added when the wave label grammar was introduced. Before that it was
-**unpinned, and all three runtimes diverged**: Go said `%q is not a valid wave number`, Python said
-`number {token!r} is not parseable`, and Node.js dumped the whole line without naming the cause at
-all. `<token>` is the captured label, **never** the whole line — a caller must be able to tell which
-token was rejected. `<n>` is 1-based. After ML-1D (REQ #392) this message is a **warning** emitted
+Before v8.0.0, **the label was unpinned and all three runtimes diverged**: Go said `%q is not a valid wave number`, Python said
+`number {token!r} is not parseable`, and Node.js dumped the whole line without naming the cause at all.
+`<token>` is the captured label, **never** the whole line — a caller must be able to tell which token was rejected. `<n>` is 1-based. After ML-1D (REQ #392) this message is a **warning** emitted
 to `stderr` (cascade isolation — no longer triggers exit 2). After ML-1E (REQ #392) the same
 information also appears in the `wave_headings` check failures in the `--json` output, and the
 overall verdict is `"blocked"` (exit 1) rather than `"passed"`. The message format is unchanged.
@@ -2716,7 +2678,7 @@ before-position warning, so the test would pass while the bug survives).
 
 #### Ordering has no call site — helper is optional
 
-<!-- trackfw-contract: gap reason=a seção fixa fato falsificável hoje (Go tem compareWaveLabels coberto por teste unitário; Node.js e Python declinaram) e uma exigência positiva ("não fixe esta assimetria em nenhuma direção"), mas nenhum gate cross-CLI compara os três runtimes nesse ponto; regra de desempate da Emenda 1 aplicada — autodeclaração de "sem superfície hoje" não prevalece sobre fato falsificável presente -->
+<!-- trackfw-contract: gap reason=a seção fixa fato falsificável (Go tem compareWaveLabels coberto por teste unitário) e uma exigência positiva ("não fixe esta assimetria em nenhuma direção"), mas nenhum gate prova isso; antes da v8 o texto citava que Node.js e Python declinaram implementar compareWaveLabels — desde a v8 existe só o binário Go; a lacuna persiste: nenhum gate verifica o comportamento de ordenação de waves no binário -->
 
 
 No runtime currently lists or compares waves; `--wave` resolution is exact-match only. The ordering
@@ -2728,7 +2690,7 @@ parity, and deleting Go's loses the tested proof.
 
 ### States
 
-<!-- trackfw-contract: gate=scripts/check-barrier.sh partial=os estados pending e running só aparecem mid-run ou em documento abortado; os cenários do gate comparam apenas o documento JSON final (passed/blocked), nunca um snapshot mid-run; not_evaluated cobre o caso do gate não confiável e os cenários 14-17 do check-barrier.sh verificam os casos cross-CLI -->
+<!-- trackfw-contract: gate=scripts/check-barrier.sh partial=os estados pending e running só aparecem mid-run ou em documento abortado; os cenários do gate comparam apenas o documento JSON final (passed/blocked), nunca um snapshot mid-run; not_evaluated cobre o caso do gate não confiável e os cenários 14-17 do check-barrier.sh verificam esses casos -->
 
 
 | State | Meaning |
@@ -2754,7 +2716,7 @@ review. Decision: ADR-2026-08-23.
 
 #### Discriminant (AC4, AC11)
 
-<!-- trackfw-contract: gap reason=o discriminante origin/main é documentação de decisão de desenho (ML-2A); nenhum gate cross-CLI exercita especificamente o discriminante — isso é responsabilidade dos testes unitários Go (TestRoadmapTrustForGates_*) que não são cross-CLI -->
+<!-- trackfw-contract: gap reason=o discriminante origin/main é documentação de decisão de desenho (ML-2A); nenhum gate de shell exercita especificamente o discriminante — isso é responsabilidade dos testes unitários Go (TestRoadmapTrustForGates_*) -->
 
 The discriminant is **git**: a roadmap whose content **differs from `origin/main`**, or that **does
 not exist in `origin/main`**, is untrusted for gate execution. The comparison is byte-for-byte.
@@ -2783,7 +2745,7 @@ guard that requires conscious opt-in for the dangerous case stays effective. The
 #### not_evaluated cases (fail-closed posture)
 
 <!-- trackfw-contract: gate=scripts/check-barrier.sh -->
-<!-- trackfw-contract: gap reason=não há gate que simule ausência de remote ou falha de git invocation cross-CLI — seriam testes de integração dependentes de ambiente, não cross-CLI -->
+<!-- trackfw-contract: gap reason=não há gate de shell que simule ausência de remote ou falha de git invocation — seriam testes de integração dependentes de ambiente -->
 
 The trust check is **fail-closed**: gates execute **only** when the roadmap content is proven
 byte-for-byte identical to `origin/main`. Every other condition — including errors — yields
@@ -2826,7 +2788,7 @@ Note: "cannot read local roadmap file" was removed (F1 — the trust function no
 already-read buffer as a parameter; re-reading is no longer needed, so this path is unreachable).
 "git not found in PATH" was added (F5 — spawn failure is now separated from git exit-nonzero).
 
-All three runtimes must emit these byte-for-byte. The text report symbol for `not_evaluated` is
+The binary emits these byte-for-byte. The text report symbol for `not_evaluated` is
 `✗` (same as `blocked`) — only one symbol, the status string carries the distinction.
 
 #### AC13 — The slash command lives in the repository (declared residual)
@@ -2862,10 +2824,10 @@ CLI, knowing what they accept.
 
 ### Roadmap parsing rules (string-level — no heuristics)
 
-<!-- trackfw-contract: gate=scripts/check-barrier.sh partial=regras 3, 4 e 5 são exercitadas cross-CLI pelos cenários isolated-check; a regra 6 (fence não-terminado) tem cenários Go: internal/commands/barrier_fence_test.go · internal/commands/roadmap_show_fence_test.go · internal/generators/roadmap_fence_test.go · internal/serve/api_board_test.go · internal/validator/validator_unterminated_fence_ml3b_test.go · internal/roadmapdoc/fencecheck_test.go; "ML cujo corpo não pode ser delimitado" é letra morta: ParseMLs nunca falha -->
+<!-- trackfw-contract: gate=scripts/check-barrier.sh partial=regras 3, 4 e 5 são exercitadas pelos cenários isolated-check do gate; a regra 6 (fence não-terminado) tem cenários Go: internal/commands/barrier_fence_test.go · internal/commands/roadmap_show_fence_test.go · internal/generators/roadmap_fence_test.go · internal/serve/api_board_test.go · internal/validator/validator_unterminated_fence_ml3b_test.go · internal/roadmapdoc/fencecheck_test.go; "ML cujo corpo não pode ser delimitado" é letra morta: ParseMLs nunca falha -->
 
 
-These are literal parsing rules. All three runtimes must implement them identically.
+These are literal parsing rules. The binary implements them.
 
 1. **Wave heading.** A wave starts at a line matching `^## Wave <label> ` (H2, the literal word
    `Wave`, the **label**, then a space). The wave ends at the next `^## ` line or EOF. See
@@ -2880,18 +2842,13 @@ These are literal parsing rules. All three runtimes must implement them identica
    line matching this pattern **inside** a fenced code block is not a real ML heading — see
    "Contrato gerador↔`barrier`: dialeto e vocabulário" below for the fence rule.
 2-bis. **CRLF normalization boundary (ML-3C, REQ-2026-08-28).** Roadmap content is split into
-   lines once per runtime, and a trailing `\r` is stripped at that boundary
-   (`splitRoadmapLines` in Go/Node, `_split_roadmap_lines` in Python) — never per-regex. All
-   markers below therefore see LF-terminated lines regardless of the file's line endings.
-
-   **Asymmetry, deliberate and documented:** the normalization is only *load-bearing* in Node.
-   JavaScript's `.` excludes `\r` (it is an ECMAScript `LineTerminator`), so
-   `/^\*\*Status:\*\*(.*)$/` fails to match a CRLF line — that was the defect. Go's RE2 `.`
-   includes `\r`, and every comparison goes through `strings.TrimSpace`; Python's text-mode
-   `open()` applies universal newlines before the parser runs. In those two runtimes the boundary
-   function is a no-op today, kept for cross-runtime symmetry and as a guard for any future marker
-   that does not route through those primitives. A file with **lone CR** endings is handled by
-   Python only — pre-existing, out of scope, no defect forces it.
+   lines once, and a trailing `\r` is stripped at that boundary (`splitRoadmapLines`) — never
+   per-regex. All markers below therefore see LF-terminated lines regardless of the file's
+   line endings.
+   (Pré-v8: the boundary was `splitRoadmapLines` in Go/Node, `_split_roadmap_lines` in Python.
+   The normalization was only *load-bearing* in Node — JavaScript's `.` excludes `\r`, so the
+   regex failed to match CRLF lines. Go's RE2 `.` includes `\r`; comparisons go through
+   `strings.TrimSpace`. In v8 the Go implementation applies the same stripping.)
 
 3. **ML completion.** An ML is complete when its body contains a line, **at column 0 and
    outside any fenced code block**, matching `^\*\*Status:\*\*`, and the **first whitespace-
@@ -2984,12 +2941,12 @@ These are literal parsing rules. All three runtimes must implement them identica
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 The `**Gates da wave:**` block (rule 5 above) is a **contract written in POSIX shell**, not a
-script interpreted by whatever shell the host OS defaults to. All three CLIs execute it with
-`sh`, resolved through `$PATH`, on every operating system — the Go CLI delivers the gate text
-via **stdin** (`exec.Command("sh"); c.Stdin = strings.NewReader(command)`) rather than argv
-(`exec.Command("sh", "-c", command)`) to avoid Windows argv mangling (see rule 5 transport note
-above); Node and Python previously used `spawnSync(cmd, { shell: true })` /
-`subprocess.run(cmd, shell=True)`, which run through the host shell — `cmd.exe` on Windows.
+script interpreted by `sh`, resolved through `$PATH`, on every operating system. The binary
+delivers the gate text via **stdin** (`exec.Command("sh"); c.Stdin = strings.NewReader(command)`)
+rather than argv (`exec.Command("sh", "-c", command)`) to avoid Windows argv mangling (see rule 5
+transport note above).
+(Pré-v8: Node and Python used `spawnSync(cmd, { shell: true })` / `subprocess.run(cmd, shell=True)`,
+which ran through the host shell — `cmd.exe` on Windows.)
 
 **The evidence that decided this, not a preference.** A scan of every `**Gates da wave:**` block
 across the project's roadmaps found **83 commands**: 35 `grep`/`sed`/`awk`, 14 `test`/`[`, 8
@@ -3007,7 +2964,7 @@ command that ran and exited non-zero — the `gates` check reports `status: "not
 **distinct from `passed` and `blocked`** (same third state already used by
 `roadmapTrustForGates`, see "Pinned failure strings for `not_evaluated`" above), and the wave
 still reports `status: "blocked"` overall — **"could not measure" is fail-closed, never silently
-treated as "passed."** All three runtimes emit, byte-for-byte:
+treated as "passed."** The binary emits, byte-for-byte:
 
 ```
 gates not evaluated: sh not found in PATH — install a POSIX shell (e.g. Git Bash, WSL) to evaluate gates
@@ -3031,18 +2988,15 @@ translating syntax, were both rejected: the intersection is close to empty (excl
 detection would make the `barrier` reinterpret artifact content instead of treating it as a fixed
 contract.
 
-**Consequence not to describe as a no-op, even in POSIX (declared residual, ML-0A).** Moving
-Node/Python from `spawnSync(cmd, { shell: true })` / `subprocess.run(cmd, shell=True)` to an
-explicit `spawnSync('sh', ['-c', command])` / `subprocess.run(["sh", "-c", cmd])` is not
-functionally inert on macOS/Linux, even though the *syntax accepted* does not change there.
-Measured with a fake `sh` prepended to `$PATH`: Node's `shell: true` and Python's `shell=True`
-are **pinned to the fixed path `/bin/sh`**; the explicit `sh` invocation is **resolved through
-`$PATH`** — the same resolution Go's `exec.LookPath` has always done. This resolution is
-**required** for Windows (Git for Windows' `sh.exe` is never at `/bin/sh`, only reachable via
-`$PATH`), so it cannot be avoided while still meeting the ADR's goal — but it is a real,
-structural amplification of surface in POSIX too: **whoever controls the `$PATH` ordering of the
-process running `trackfw barrier` now controls which binary interprets gate content, in Node and
-Python — a property that previously only existed for Go.** Declared, not treated as a non-event;
+**Consequence not to describe as a no-op, even in POSIX (declared residual, ML-0A).** (Pré-v8:
+moving Node/Python from `spawnSync(cmd, { shell: true })` / `subprocess.run(cmd, shell=True)` to
+an explicit `spawnSync('sh', ['-c', command])` / `subprocess.run(["sh", "-c", cmd])` was not
+functionally inert on macOS/Linux, even though the *syntax accepted* did not change there.
+Node's `shell: true` and Python's `shell=True` were **pinned to the fixed path `/bin/sh`**; the
+explicit `sh` invocation is **resolved through `$PATH`** — the same resolution Go's `exec.LookPath`
+has always done. In v8 only the Go binary exists and `exec.LookPath` resolution applies unconditionally.)
+This resolution is **required** for Windows (Git for Windows' `sh.exe` is never at `/bin/sh`, only
+reachable via `$PATH`), so it cannot be avoided while still meeting the ADR's goal. Declared, not treated as a non-event;
 composes with the already-open REQ for `roadmapTrustForGates` fail-open cases (see "Fail-open
 cases" above) — an environment where both fail-open trust *and* a `$PATH`-adulterated `sh` align
 has no accidental syntax mitigation left in the middle. Full measurement and argument:
@@ -3066,12 +3020,12 @@ contrato entre duas superfícies que já tinham paridade **cada uma consigo mesm
 runtimes — os 3 geradores escreviam o mesmo texto entre si, os 3 barriers procuravam o mesmo
 texto entre si — mas divergiam **entre gerador e verificador**
 (`REQ-2026-08-28-barrier-so-reconhece-cabecalho-de-aceite-em-portugues-mas-os-3-geradores-de-
-roadmap-escrevem-em-ingles.md`). Nenhum gate de paridade cross-CLI pegava isso, porque paridade
+roadmap-escrevem-em-ingles.md`). Nenhum gate de paridade detectava isso, porque paridade
 mede se as implementações concordam entre si, não se o contrato gerador↔verificador está correto.
 
 **1. Cabeçalho de aceite — duas formas aceitas, inglês é canônico.** `**Acceptance criteria:**`
 e `**Critérios de aceite:**` são ambas reconhecidas (regra 4 acima). O inglês é a forma
-**canônica** — é o que os 3 geradores escrevem, e o que o resto do template já usa
+**canônica** — é o que o gerador escreve, e o que o resto do template já usa
 (`**Status:**`, `**Files affected:**`, `**Actions:**`). A forma portuguesa **continua aceita
 sem prazo de remoção**: 99 dos 143 roadmaps do corpus histórico a usam, inclusive em `done/`, e
 migrar artefato concluído é reescrita de registro (ADR-2026-08-29, decisões 1–2, Alternatives
@@ -3127,7 +3081,7 @@ consciência de cerca) o mesmo caso **bloqueia** indevidamente. A direção de f
 de "conservador demais" para "permissivo demais" — a classe de regressão que este ADR existe
 para evitar.
 
-**4. Marcadores exigem coluna 0, nos 3 runtimes.** `**Status:**`, `**Acceptance criteria:**` /
+**4. Marcadores exigem coluna 0.** `**Status:**`, `**Acceptance criteria:**` /
 `**Critérios de aceite:**` e `### ML-` só contam ancorados no início da linha (`^`). Um
 marcador indentado (por exemplo, uma citação em bloco ou uma lista aninhada que reproduza o
 literal) não é reconhecido como o status/aceite/heading real do ML — descoberto como divergência
@@ -3168,8 +3122,8 @@ Evaluated in this fixed order; the run continues through all checks so the repor
 | `validate` | `trackfw validate --json` reports `violations: 0` |
 | `ml_scope` | Every file touched since `merge-base(origin/main, HEAD)` (diff + status) is covered by a `**Files affected:**` declaration in waves 0..N or by the orchestration set; `skipped` when outside a git repo, when the roadmap date predates 2026-07-18, or when the roadmap has not been committed yet; `blocked` when any file is undeclared or when `origin/main` is unavailable (the diff cannot be computed — fail-closed per Wave 0 contract) |
 
-`trackfw validate` is invoked in-process (Go/Node/Python each call their own validator), not by
-shelling out to a `trackfw` binary that may not be on `PATH`.
+`trackfw validate` is invoked in-process, not by shelling out to a `trackfw` binary that may
+not be on `PATH`.
 
 **Breaking change — ML-4B/ML-4C (REQ #392, 2026-09-18):** `roadmap_wave0_required` was promoted
 to `error` severity. A roadmap in `wip/` without `## Wave 0` now causes `validate` to report ≥ 1
@@ -3214,15 +3168,31 @@ The `ml_scope` check verifies that every file touched by the current branch is c
 <!-- trackfw-contract: gate=internal/commands/barrier_ml_scope_test.go,scripts/check-barrier.sh -->
 
 - **Roadmap from HEAD, not disk.** `git show HEAD:<roadmap>` is used to read the `**Files affected:**` lines. An uncommitted disk edit cannot expand scope. A roadmap not yet committed results in `skipped`.
-- **Touched files.** `git diff --name-only -z $(git merge-base origin/main HEAD) HEAD` (committed changes) plus `git status --porcelain=v1 -z --untracked-files=all` (modified, staged, untracked), excluding gitignored files.
-- **Wave N scope.** The union of `**Files affected:**` from every ML in waves 0..N.
+- **Touched files.** `git diff --name-only -z $(git merge-base origin/main HEAD) HEAD --no-renames` (committed changes, both sides of renames listed separately) plus `git status --porcelain=v1 -z --untracked-files=all --no-renames` (modified, staged, untracked), excluding gitignored files.
+- **Wave N scope.** The union of `**Files affected:**` from every ML in waves 0..N of the target roadmap, plus the union contribution from every roadmap member (see Union below).
 - **Orchestration set (always permitted).** The roadmap file itself; the REQ from frontmatter `req:`; the ADR from the REQ's frontmatter `adr:`; `docs/agents-working-context/`; `vault/notes/`; `.claude/agent-memory/`; `<roadmap_dir>/.trackfw-log`; `<roadmap_dir>/.trackfw-log-entries/`; `<req_dir>/.trackfw-log`; `<req_dir>/.trackfw-log-entries/`. The roadmap counts as orchestration in every state directory of `roadmap_dir` with the same basename (`backlog/`, `analyzing/`, `wip/`, `blocked/`, `done/`, `abandoned/`), so a roadmap moved between states in the branch (e.g. `done/` → `wip/` on reopen) does not produce a spurious out-of-scope failure for the deleted old-state path.
 
 #### `**Files affected:**` grammar
 
 <!-- trackfw-contract: gate=internal/commands/barrier_ml_scope_test.go,scripts/check-barrier.sh -->
 
-Each backtick-quoted token on the `**Files affected:**` line (including continuation lines) is a path pattern. A continuation line is any non-blank line after the label line that does not start with `**`, `#`, or a list marker (`- `, `* `).
+Each backtick-quoted token on the `**Files affected:**` label line and on any subsequent list item or continuation line is a path pattern. The declaration collects tokens until one of the following stop conditions is met:
+
+- **Blank line** — ends the declaration.
+- **Standalone bold field** — a line whose trimmed form starts with `**` (e.g. `**Acceptance criteria:**`). A list item that begins with `- **` is still a list item and does not stop the parser.
+- **Heading** — a line starting with `#`.
+- **Code fence** — a line starting with `` ` `` `` ` `` ` `` ` `` (three or more backticks).
+- **Checkmark item** — any line matching `^- \[.\]` (a single character between the brackets) stops before acceptance-criteria items leak into scope. This covers `- [ ]`, `- [x]`, `- [X]`, `- [~]`, `- [-]`, and any other single-character marker. Generic Markdown links whose text is longer than one character (`- [text](url)`) are not stop conditions; a link with exactly one character in its text (`- [a](url)`) matches the pattern and does stop — this is the accepted cost of using the shared `CriterionLineRe` regex.
+
+List items (`- ` or `* ` prefix) contribute all their backtick tokens (Rule B — the same extraction primitive as the label line). This supports the **hybrid form**: tokens on the label line and tokens in list items below are all collected.
+
+```markdown
+**Files affected:** `inline.go`       ← tokens on the label line
+- `list-a.go` and `list-b.go`         ← all backtick tokens per item
+- `list-c.go`: updated                ← annotation text outside backticks is ignored
+```
+
+Non-list continuation lines (wrap lines with no `- `/`* ` prefix) also contribute their backtick tokens.
 
 | Form | Example | Matches |
 |---|---|---|
@@ -3232,6 +3202,45 @@ Each backtick-quoted token on the `**Files affected:**` line (including continua
 | Double-star glob | `` `internal/**/*.go` `` | Any `.go` under `internal/` at any depth |
 
 Text outside backticks (including `"a definir"`) is ignored. A label line with no backticks declares zero files (valid declaration; no files are permitted beyond the orchestration set).
+
+#### Broad-pattern rejection
+
+<!-- trackfw-contract: gate=internal/commands/barrier_ml_scope_test.go -->
+
+A pattern whose stripped form (after removing `*`, `?`, `[`, `]`, `/`) is empty is rejected because it matches every file or no file without meaningful restriction. Examples: `**`, `**/*`, `*/**`, `**/**`, `*`, `**/`, `/`. Prefixed patterns such as `site/**` or `**/*.go` are accepted.
+
+When a broad pattern is found, the check is `blocked` with a failure entry:
+
+```
+<roadmap-path> <ML-id>: rejected: pattern "<tok>" without literal path segments matches every or no file without restriction
+```
+
+This applies to patterns from the target roadmap and from union members.
+
+#### Union of roadmap members
+
+<!-- trackfw-contract: gate=internal/commands/barrier_ml_scope_test.go -->
+
+Every `.md` file under `roadmap_dir` that (a) appears in the branch diff, (b) exists in HEAD, (c) is in a known state directory, and (d) is **not** the target roadmap is a **union member**. Each member contributes its orchestration set (roadmap path, REQ, ADR, well-known dirs) to the allowed set unconditionally.
+
+**Contribution by member state:**
+
+| Member state | Condition | Scope contribution |
+|---|---|---|
+| `abandoned/` or `backlog/` | — | Orchestration only |
+| `done/` | Existed at merge-base | Orchestration only |
+| `date:` before 2026-07-18 | — | Orchestration only |
+| All other cases | — | Orchestration + patterns from waves 0..K |
+
+**K** is the highest wave number in the member that has at least one ML satisfying the K match-positive predicate: `StatusIsComplete` (✅), `StatusTerminated` (❌ Cancelado, 🚫 Abandonado), or `StatusPending` with first emoji `🔄` or `❌` (🔄 Em andamento, ❌ Bloqueado). All-`⬜` members contribute only orchestration (K undefined). A missing `date:` field is treated as post-cutoff.
+
+Union members never produce "undeclared ML" failures — a missing declaration in member B does not block the barrier of target A. Broad-pattern rejections do fire for members (a `**` in member B would grant all files to target A).
+
+#### Orchestration: `req:` and `adr:` validation
+
+<!-- trackfw-contract: gate=internal/commands/barrier_ml_scope_test.go -->
+
+The `req:` frontmatter value is cleaned with `path.Clean` (handles `./` prefix and `..` traversal) then accepted only if: (1) not an absolute path, (2) does not start with `..`, and (3) starts with `path.Clean(req_dir) + "/"`. The ADR path from the REQ's frontmatter `adr:` is validated the same way against each directory in `adr_dirs`. Paths that fail validation are silently discarded; no error is reported.
 
 #### Date cutoff
 
@@ -3246,14 +3255,14 @@ Roadmaps with a `date:` frontmatter value strictly before `2026-07-18` exit `ski
 | Status | Condition |
 |---|---|
 | `passed` | Every touched file is in scope |
-| `blocked` | At least one file is out of scope, or an ML has no declaration; also when `origin/main` is unavailable — fail-closed (never pass in silence) |
+| `blocked` | At least one file is out of scope; an ML has no `**Files affected:**` declaration; a broad pattern (e.g. `**`) is found; or `origin/main` is unavailable — fail-closed (never pass in silence) |
 | `skipped` | Not a git repo; roadmap not in HEAD; date before 2026-07-18 |
 
 `skipped` is **non-blocking** — the overall barrier status is not `blocked` by a `skipped` `ml_scope`.
 
 ### JSON document
 
-<!-- trackfw-contract: gate=scripts/check-barrier.sh partial=o cenário 6 usa uma fixture 100% verde (todos os checks passed) e prova só que os 3 runtimes concordam ENTRE SI byte a byte; não afirma os textos pinados de evidence/failures ("<ML-id>: <n> criteria met", "<command>: exit 0") contra um valor esperado — grep por "criteria met"/"exit 0'" no script não retorna asserção correspondente, e nenhum cenário deste gate produz um failures[] não-vazio para comparar -->
+<!-- trackfw-contract: gate=scripts/check-barrier.sh partial=o cenário 6 desde a v8 roda só o binário Go (loop "for runtime in go; do # ML-3A (v8): node py removidos"); escreve go.norm.json mas o arquivo não é lido de volta — afirma exit 0 e JSON parseable (pipefail), sem comparação cross-runtime nem pin do conteúdo; o cenário 14 afirma um failures[] não-vazio (mensagem "not committed in origin/main"), mas os textos de evidence ("<ML-id>: <n> criteria met", "<command>: exit 0") continuam sem asserção correspondente -->
 
 
 ```json
@@ -3306,8 +3315,8 @@ Roadmaps with a `date:` frontmatter value strictly before `2026-07-18` exit `ski
 }
 ```
 
-Evidence and failure string formats are **pinned** — the three runtimes must emit these literally,
-so that a diff of two runtimes' JSON output for the same fixture is empty:
+Evidence and failure string formats are **pinned** — the binary emits these literally,
+so that a diff of two channels' JSON output for the same fixture is empty:
 
 | Check | `evidence` entry | `failures` entry |
 |---|---|---|
@@ -3316,7 +3325,7 @@ so that a diff of two runtimes' JSON output for the same fixture is empty:
 | `acceptance_evidence` | `<ML-id>: <n> criteria met` | `<ML-id>: <n> unmet acceptance criteria` or `<ML-id>: no acceptance block` |
 | `gates` | `<command>: exit 0` | `<command>: exit <code>` · `line <n>: incomplete command — each line of the gates block runs as a separate sh -c (rule 5): <cmd>` (fragment detected by `sh -n` or odd-`\` rule before any gate executes; see rule 5) |
 | `validate` | `<v> violations, <w> warnings` | `<v> violations, <w> warnings` |
-| `ml_scope` | `scope: <n> file(s) checked, <m> out of scope` (when run) · `skipped: <reason>` (when skipped) | `out of scope: <path>` (for each undeclared file) · `undeclared ML: <ML-id> has no Files affected declaration` (for each ML without a declaration in a post-cutoff wip roadmap) |
+| `ml_scope` | `all <n> touched file(s) are within scope` (passed, when files touched) · `in scope: <path>` (each in-scope file on passed or blocked) · `no files touched since merge-base` (passed, when no files touched) · `skipped: <reason>` (when skipped) | `out of scope: <path>` (for each undeclared file) · `<ML-id>: no **Files affected:** declaration (post-cutoff roadmap requires declaration for all MLs in the wave)` (for each ML without a declaration in a post-cutoff wip roadmap) · `<roadmap-path> <ML-id>: rejected: pattern "<tok>" without literal path segments matches every or no file without restriction` (broad-pattern rejection) · `origin/main not available — cannot compute scope diff (configure a remote or run with a fetched origin/main)` (when origin/main is unavailable) |
 
 Determinism contract:
 
@@ -3329,12 +3338,12 @@ Determinism contract:
 
 ### Edge cases not reached by the eight mandated scenarios
 
-<!-- trackfw-contract: gap reason=os quatro casos de borda (bloco de aceite vazio, wave sem MLs, wave sem título, processo morto por sinal) só têm cobertura em testes unitários por runtime (barrier_test.go/barrier.js/barrier.py); nenhum cenário de check-barrier.sh os exercita cross-CLI -->
+<!-- trackfw-contract: gap reason=os quatro casos de borda (bloco de aceite vazio, wave sem MLs, wave sem título, processo morto por sinal) só têm cobertura em testes unitários Go (barrier_test.go); nenhum cenário de check-barrier.sh os exercita -->
 
 
-These were surfaced while implementing the runtimes. They are pinned here because each is a point
-where three independent implementations would otherwise drift silently — no contract test exercises
-them, so the parity gate is the only thing that would catch it, and only much later.
+These were surfaced during the multi-runtime era (before v8.0.0). They are pinned here because each is a point
+where a new implementation would otherwise handle them differently — the contract test is the
+only thing that would catch drift, and only much later.
 
 | Case | Resolution |
 |---|---|
@@ -3393,7 +3402,7 @@ directory.
 
 ### `trackfw.yaml` fields consumed by `update` and `sync` — single loader, `Update`/`Sync` namespaces
 
-<!-- trackfw-contract: gap reason=nenhum gate cross-CLI exercita o efeito dos 12 campos Update/Sync (hooks, ci, backend, frontend, pkg_manager, agent_conventions, linear_*, jira_*) na saída gerada; há só testes unitários por runtime e a prova de falsificação do carregador unificado em check-gates-falsify.sh, que garante que o loader é chamado, não que os três runtimes reagem identicamente a um dado valor de campo -->
+<!-- trackfw-contract: gap reason=nenhum gate exercita o efeito dos 12 campos Update/Sync (hooks, ci, backend, frontend, pkg_manager, agent_conventions, linear_*, jira_*) na saída gerada do binário Go; há só testes unitários e a prova de falsificação do carregador unificado em check-gates-falsify.sh, que garante que o loader é chamado — antes da v8 a lacuna abrangia os 3 runtimes; desde a v8 existe só o binário Go, e a lacuna persiste -->
 
 
 Since `REQ-2026-08-02-unificar-a-leitura-do-trackfw-yaml-em-um-unico-carregador-nos-tres-clis`, all
@@ -3530,13 +3539,13 @@ exclusively by `ci_trigger_invalid` (ML-1A) to avoid a double violation on the s
 
 ### `credential_guard.mode` — `trackfw.yaml` field consumed by `scripts/trackfw-credential-guard.sh`
 
-<!-- trackfw-contract: gate=internal/generators/credential_guard_test.go partial=TestCredentialGuardScript_ParityAcrossStacks compara byte a byte o script GERADO entre Go, Node e Python (que embute a leitura de mode via grep/sed), mas nenhum gate cross-CLI testa o fallback silencioso de um valor mode não reconhecido para "warn" nem a divergência real de comportamento warn vs block em runtime -->
+<!-- trackfw-contract: gate=internal/generators/credential_guard_test.go partial=TestCredentialGuardScript_ParityAcrossStacks verifica o script gerado pelo binário Go; pré-v8: comparava byte a byte entre Go, Node e Python; nenhum gate testa o fallback silencioso de um valor mode não reconhecido para "warn" nem a divergência real de comportamento warn vs block -->
 
 
 Since `ADR-2026-08-05-hook-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes`, a
-nested `credential_guard:` mapping is read from `trackfw.yaml` by the shared config loader in all
-three runtimes (`ProjectConfig.CredentialGuard.Mode` in Go, `cfg.credentialGuard.mode` in Node.js,
-`cfg["credential_guard"]["mode"]` in Python), the same pattern already used for `link_fields`.
+nested `credential_guard:` mapping is read from `trackfw.yaml` by the shared config loader in
+the Go binary (`ProjectConfig.CredentialGuard.Mode`), the same pattern already used for `link_fields`.
+Before v8.0.0, Node.js used `cfg.credentialGuard.mode` and Python used `cfg["credential_guard"]["mode"]`.
 
 | Field (YAML key) | Type | Default (absent) | Consumed by |
 |---|---|---|---|
@@ -3551,12 +3560,11 @@ credential_guard:
 consistent with how every other unrecognized-shape field in this parser behaves (e.g.
 `roadmap_namespacing`, `forge`). This is a deliberate ML-1A design choice: `credential_guard` is a
 single low-stakes enum, not worth a dedicated malformed-config error path shared byte-for-byte
-across three YAML libraries (unlike `MalformedConfigMessage`, which exists specifically because
-syntax errors must fail the same way in all three CLIs).
+across YAML libraries (unlike `MalformedConfigMessage`, which exists specifically because
+syntax errors must fail consistently).
 
-**`scripts/trackfw-credential-guard.sh`** (generated by `GenerateCredentialGuardScript` in Go,
-`generateCredentialGuardScript` in Node.js/`hooks.js`, `_generate_credential_guard_script` in
-Python/`init_gen.py` — byte-identical across the three, proven by
+**`scripts/trackfw-credential-guard.sh`** (generated by `GenerateCredentialGuardScript` in
+`internal/generators/`, proven by
 `internal/generators/credential_guard_test.go:TestCredentialGuardScript_ParityAcrossStacks`) reads
 `credential_guard.mode` from `trackfw.yaml` itself via a plain `grep`/`sed` extraction — the same
 "generated shell keeps its own reader" pattern documented above for `roadmap_dir`, and for the same
@@ -3637,11 +3645,9 @@ Confirmed against the official Codex CLI documentation
 Merge/idempotency follows the same pattern established for Claude Code in ML-2A: a pre-existing
 third-party entry for the same matcher (e.g. a hand-written `PreToolUse[matcher:"Bash"]` hook) is
 merged into (not overwritten or duplicated by) the new `trackfw-credential-guard.sh` command — see
-`mergeClaudeHookArray` (Go), the shared `mergeClaudeHookArray` (Node.js), and the new
-`_merge_codex_hook_entry` helper (Python, added in this ML to bring Codex's Python injector to
-matcher-merge parity with Go/Node — previously it only checked "is this exact command present
-anywhere in the array", which would have produced sibling `{"matcher": "Bash", ...}` blocks instead
-of merging into an existing one).
+`mergeClaudeHookArray` (Go). (Pré-v8: also Node.js's `mergeClaudeHookArray` and Python's
+`_merge_codex_hook_entry` — the Python helper was added to bring Codex's Python injector to
+matcher-merge parity with Go/Node.)
 
 #### Gemini CLI wiring (ML-2C) — `BeforeTool`/`AfterTool` matcher `"run_shell_command"`
 
@@ -3707,15 +3713,14 @@ a bespoke "does any entry anywhere contain this command" check it previously use
 divergence ML-2A fixed in Go and ML-2B fixed in Python for Codex, which would otherwise append a
 second `{"matcher": "run_shell_command", ...}` group instead of merging into an existing third-party
 one. Side effect of that rewrite: the `name`/`timeout: 10000` fields the Python injector previously
-wrote into Gemini hook entries (fields Go/Node never wrote) were dropped, so all three stacks now
-produce the same entry shape (`{"matcher", "hooks": [{"type", "command"}]}`) — informational-only
-fields were traded for exact cross-stack structural parity ahead of ML-3A's structural gate.
+wrote into Gemini hook entries (fields Go/Node never wrote, pré-v8) were dropped, so the binary
+now produces the correct entry shape (`{"matcher", "hooks": [{"type", "command"}]}`) — informational-only
+fields were traded for structural correctness ahead of ML-3A's structural gate.
 
 **Known gap, found during this ML — fixed in a dedicated follow-up commit right after ML-2C:**
-`GenerateCredentialGuardScript` (Go) / `generateCredentialGuardScript` (Node.js) /
-`_generate_credential_guard_script` (Python) — the functions that actually write
-`scripts/trackfw-credential-guard.sh` to disk — were not called from any real command flow
-(`trackfw init`/`discover`/`update`) in any of the three stacks; only tests invoked them directly.
+`GenerateCredentialGuardScript` — the function that actually writes
+`scripts/trackfw-credential-guard.sh` to disk — was not called from any real command flow
+(`trackfw init`/`discover`/`update`) in any of the stacks (pré-v8); only tests invoked it directly.
 Every hook wired so far (Claude Code, Codex, Gemini) pointed at a script that was never generated by
 the CLI itself in normal usage. This pre-dated ML-2C (already true for ML-2A/ML-2B). **Fixed** in
 commit `6b267c4` (`fix(hooks): conecta geracao do trackfw-credential-guard.sh aos fluxos reais`):
@@ -3750,9 +3755,10 @@ page's embedded Next.js `renderedPage` JSON, stripped of markup):
   "powershell": "YOUR_POWERSHELL_COMMAND", "cwd": "OPTIONAL/WORKING/DIRECTORY", "env": {"VAR": "VALUE"},
   "timeoutSec": 30}` — this is **exactly** the shape Python already used (`type`/`bash`/`cwd`/
   `timeoutSec`), confirming Python was correct. The `{"hooks": [{"event", "run"}]}` array-of-flat-objects
-  shape Go/Node emitted does not match any format documented by GitHub and was not a legacy/deprecated
-  variant found anywhere in the retrieved doc — it appears to have been an unverified guess baked in
-  before this REQ. **Go and Node were aligned to Python's pre-existing (correct) format in this ML.**
+  shape Go/Node emitted (pré-v8) does not match any format documented by GitHub and was not a
+  legacy/deprecated variant found anywhere in the retrieved doc — it appears to have been an
+  unverified guess baked in before this REQ. **Go and Node were aligned to Python's pre-existing
+  (correct) format in this ML; the binary now uses that format.**
 
 **Matcher — real support confirmed, contrary to the pre-ML assumption that Copilot had none.** The
 "Matcher filtering" table lists `preToolUse -> toolName` and `postToolUse -> toolName` — "Optional regex
@@ -3959,7 +3965,7 @@ of `hooks/types` confirms: "Triggers when the agent is about to invoke a tool. C
 tool usage." This is unambiguous: `PreToolUse` intercepts tool invocations — including shell commands —
 before execution, resolving the ADR's doubt in favor of implementing the wiring (not re-scoping).
 
-**Pre-existing format was wrong on all three field names — corrected here, same file.** Before this ML,
+**Pre-existing format was wrong on all three field names — corrected here, same file.** Before this ML (pré-v8),
 all three stacks emitted `{"hooks": [{"name", "description", "event": "PreToolUse", "matcher":
 {"tool_name": ".*"}, "action": {...}}]}`. None of `"event"` (as a top-level hook field), `matcher` as an
 object, or the top-level payload missing `"version"` match the documented schema. The real schema, per
@@ -3998,7 +4004,7 @@ documents the `matcher` vocabulary for tool hooks precisely: built-in categories
 `web`/`spec` (`shell` = "all built-in shell command-related tools"), `*` for "all tools (built-in and
 MCP)", `@mcp`/`@powers`/`@builtin` source prefixes (regex-matched), and canonical tool names with
 aliases — explicitly worked example: `"execute_bash"` or `"shell"` — "Match shell command execution".
-`.*` (a regex wildcard, previously emitted by all three stacks for the pre-existing signal/cleanup hooks)
+`.*` (a regex wildcard, previously emitted by all three stacks pré-v8 for the pre-existing signal/cleanup hooks)
 does **not** appear anywhere in this vocabulary; `*` (a literal asterisk, "all tools") is the documented
 match-everything value and is what this ML uses for the realigned signal/cleanup entries.
 `trackfw-credential-guard-pre`/`-post` use `matcher: "shell"` (the broader category alias, matching every
@@ -4064,7 +4070,7 @@ suficiente, um exemplo completo do payload JSON que chega via **stdin em runtime
 formato do arquivo de configuração `hooks.json`/`settings.json`, esse sim confirmado para os 6). Ver
 ML-4A no roadmap para o detalhamento CLI a CLI dessa decisão.
 `trackfw-credential-guard.sh` é comprovadamente agnóstico a nomes de campo (varre o payload bruto
-inteiro via regex), então a ausência de teste nesses 3 CLIs é uma lacuna de **evidência documentada**,
+inteiro via regex), então a ausência de teste nesse CLI é uma lacuna de **evidência documentada**,
 não uma lacuna de cobertura de detecção real.
 
 ##### Achados transversais (Waves 2-4)
@@ -4078,17 +4084,15 @@ não uma lacuna de cobertura de detecção real.
    dedicado, `$ROADMAP_DIR/.trackfw-credential-guard.json`, que nenhum outro script gerado toca —
    elimina a race independentemente do modelo de concorrência de cada CLI (ver seção
    `credential_guard.mode` acima).
-2. **Bug crítico: o script nunca era gerado em fluxo real.** `GenerateCredentialGuardScript`/
-   `generateCredentialGuardScript`/`_generate_credential_guard_script` — as funções que de fato escrevem
-   `scripts/trackfw-credential-guard.sh` em disco — não eram chamadas por nenhum comando real
-   (`trackfw init`/`discover`/`update`) nos 3 stacks até a auditoria do ML-2C detectar o problema; todo
-   o wiring feito em ML-2A/2B/2C apontava para um script que só existia se algo o gerasse manualmente
-   por teste. **Corrigido em commit dedicado** logo após o ML-2C (Go: `scaffold.go:Scaffold`,
-   `update.go:Update` + `runProjectTarget("agent-hooks")`, `discover.go:InstallGates`; Node.js:
-   `init.js:scaffold`, `discover.js`, `update.js`; Python: `hooks.py:inject_hooks_detected` +
-   `init_gen.py:scaffold` + `discover.py`) — confirmado end-to-end pelo orquestrador (`trackfw init`
-   num diretório novo gera o script executável e o wiring com matcher `Bash`).
-3. **Divergências de paridade Go/Node/Python corrigidas por CLI, durante as Waves 2-3:**
+2. **Bug crítico: o script nunca era gerado em fluxo real.** `GenerateCredentialGuardScript` — a
+   função que de fato escreve `scripts/trackfw-credential-guard.sh` em disco — não era chamada por
+   nenhum comando real (`trackfw init`/`discover`/`update`) nos stacks (pré-v8) até a auditoria do
+   ML-2C detectar o problema; todo o wiring feito em ML-2A/2B/2C apontava para um script que só
+   existia se algo o gerasse manualmente por teste. **Corrigido em commit dedicado** logo após o
+   ML-2C (Go: `scaffold.go:Scaffold`, `update.go:Update` + `runProjectTarget("agent-hooks")`,
+   `discover.go:InstallGates`) — confirmado end-to-end pelo orquestrador (`trackfw init` num diretório
+   novo gera o script executável e o wiring com matcher `Bash`).
+3. **Divergências de paridade Go/Node/Python (pré-v8) corrigidas por CLI, durante as Waves 2-3:**
    - **Codex (ML-2B):** o merge do Python (`inject_codex_hooks`) só checava presença do comando em
      qualquer lugar do array, sem mesclar num matcher já existente — corrigido com o novo helper
      `_merge_codex_hook_entry`.
@@ -4177,13 +4181,13 @@ target order, not filesystem order. `summary` always carries all four counters, 
 
 ### Declared project targets — pinned list
 
-<!-- trackfw-contract: gate=scripts/check-update-parity.sh partial=o gate garante que os 3 runtimes concordam entre si sobre o array de targets (comparação estrutural go-vs-node/go-vs-py), mas nenhum cenário afirma independentemente que a contagem/ordem bate com os 5 ids documentados — os 3 runtimes concordando com uma lista errada ainda passaria (mesmo padrão do achado "OpenCode agent representation" do lote 1) -->
+<!-- trackfw-contract: gate=scripts/check-update-parity.sh partial=desde a v8 o gate pina só o binário Go (cabeçalho: "Node.js and Python CLIs no longer exist"); a comparação estrutural go-vs-node/go-vs-py foi removida; o cenário 3 afirma exit 0 e scope=="project" mas não afirma a contagem/ordem exata dos 5 ids documentados — o binário emitindo uma lista errada ainda passaria -->
 
 
 `trackfw update` declares this fixed sequence of 5 ids, in this exact order:
 `agent-rules`, `agent-hooks`, `codex-project-agents`, `validate-script`, `claude-commands`.
 
-All three runtimes declare all five. A runtime that cannot manage a target still declares it and
+The binary declares all five. A channel that cannot manage a target still declares it and
 reports its honest state — silently shortening the list makes the JSON incomparable across runtimes.
 
 #### Declared residual — `codex-project-agents` is structurally outside the hash-comparison guarantee
@@ -4242,7 +4246,7 @@ dry-run state. Broken symlinks outside the set are irrelevant by construction; b
 | 11 (Gap E) | `agent_conventions` in `trackfw.yaml` — dry-run and real-run agree on CLAUDE.md state |
 | 12 (Gap C) | `.github/copilot-instructions.md` present — Copilot hooks written in both dry-run and real run |
 | 13 (Gap A/B) | `.windsurf/hooks.json` and `.amazonq/cli-agents/q_cli_default.json` appear in output paths |
-| 14 (R-novo-1) | `.claude/commands/trackfw` already correct — dry-run and real-run both report `skipped` in all 3 runtimes |
+| 14 (R-novo-1) | `.claude/commands/trackfw` already correct — dry-run and real-run both report `skipped` in the binary |
 
 **Falsification (Scenarios 175–176 of `check-gates-falsify.sh`):**
 
@@ -4255,7 +4259,7 @@ dry-run state. Broken symlinks outside the set are irrelevant by construction; b
 
 #### Declared residual — declared path or file within a declared directory is unreadable or a special file
 
-<!-- trackfw-contract: gap reason=o comportamento de abort (em vez de failed-por-target) ao encontrar arquivo ilegivel (chmod 000, socket, fifo) em um caminho declarado ou dentro de um diretório declarado é semanticamente defensável (o arquivo é necessário para o target) e consistente nos 3 CLIs; não há comportamento a fixar, logo não há gate; documentado como R-novo-2 da barreira de 2026-08-27 -->
+<!-- trackfw-contract: gap reason=o comportamento de abort (em vez de failed-por-target) ao encontrar arquivo ilegivel (chmod 000, socket, fifo) em um caminho declarado ou dentro de um diretório declarado é semanticamente defensável (o arquivo é necessário para o target) e consistente no binário; não há comportamento a fixar, logo não há gate; documentado como R-novo-2 da barreira de 2026-08-27 -->
 
 When a file in the declared `relPaths` set (or within a declared directory, after the R-novo-1 fix
 that made `copyPath` recurse) is unreadable (e.g. `chmod 000`) or is a special file (socket, FIFO),
@@ -4266,8 +4270,8 @@ entire dry-run to abort rather than reporting `failed` for the individual target
 Error: preparing dry-run sandbox: sandbox: copying CLAUDE.md: open /tmp/.../CLAUDE.md: permission denied
 ```
 
-This behaviour is the same in all three runtimes (Go, Node.js, Python) and is **semantically
-correct**: the file is needed by the target, so the sandbox cannot be built without it. Treating it
+Before v8.0.0, this behaviour was the same in all three runtimes (Go, Node.js, Python) and was **semantically
+correct**; in v8, the Go binary alone implements this. The file is needed by the target, so the sandbox cannot be built without it. Treating it
 as `failed` per-target would require the sandbox to proceed with a missing or substitute hash for a
 file that may be central to the before/after comparison.
 
@@ -4291,7 +4295,7 @@ Wave 6 round.
 
 ### Declared harness targets — pinned list
 
-<!-- trackfw-contract: gate=scripts/check-update-parity.sh partial=mesmo padrão da lista de targets do projeto — os 3 runtimes concordando entre si sobre os 35 ids não prova que a lista bate com os 35 documentados; nenhum cenário afirma a contagem/ordem exata de forma independente -->
+<!-- trackfw-contract: gate=scripts/check-update-parity.sh partial=desde a v8 o gate pina só o binário Go; a comparação go-vs-node/go-vs-py foi removida; os cenários 1 e 2 afirmam não-vazio e estados mas não afirmam a contagem/ordem exata dos 35 ids documentados — o binário emitindo uma lista com ids errados ainda passaria -->
 
 
 The harness target list is **not** derived at runtime; it is this fixed sequence of 35 ids, in this
@@ -4451,8 +4455,7 @@ anything on disk right now. `kiro-credential-guard` intentionally does **not** a
 the pinned contract (`TargetResult.Message`/`message` key, see "message only when present, last"
 above and `TestUpdateHarnessCmd_JSONKeyOrderMatchesCliParityContract`) reserves `message` for `failed`
 targets only — inventing a message on `updated` would violate that contract. The v3 prerequisite is
-documented here and in the Go/Node/Python doc comments above
-`harnessCredentialGuardTargetKiro`/`credentialGuardTargetKiro`/`_credential_guard_kiro_result`
+documented here and in the Go doc comments above `harnessCredentialGuardTargetKiro`
 instead; release notes pointing users at `trackfw update harness` should mention it too.
 
 ### Suporte por CLI — visão consolidada, escopo GLOBAL (ML-5A, `ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness.md`)
@@ -4486,11 +4489,10 @@ de um roadmap anterior e não relacionado
    `~/.trackfw/config.yaml` para configurar `credential_guard.mode` no escopo global — complexidade
    não demandada; revisável se houver demanda real por `block` global. O script global reusa o
    conteúdo canônico do script de projeto, só muda o destino de escrita.
-2. **Erro de autoria do roadmap no ML-2A (só Go listado), corrigido com follow-up de paridade.** O ML
-   original só listava arquivos Go — violação da regra dura de paridade 3 CLIs do `CLAUDE.md`. O
-   agente Go sinalizou a violação em vez de expandir escopo por conta própria; corrigido com um
-   follow-up dedicado cobrindo Node.js/Python, com `check-update-parity.sh` confirmando os 22 ids
-   idênticos nos 3 stacks. Todos os MLs seguintes (2B-2F) já exigiram os 3 stacks desde o início.
+2. **Erro de autoria do roadmap no ML-2A (só Go listado), corrigido com follow-up de paridade.**
+   (Pré-v8: o ML original só listava arquivos Go — violação da regra dura de paridade 3 CLIs do
+   `CLAUDE.md`. Corrigido com follow-up dedicado cobrindo Node.js/Python, com `check-update-parity.sh`
+   confirmando os 22 ids idênticos nos 3 stacks.)
 3. **Investigação do Codex resolvida: hooks habilitados por padrão, não opt-in.** Re-fetch de
    `developers.openai.com/codex/hooks` (2026-08-06) confirma que `[features] hooks = false`
    (`codex_hooks` como alias depreciado) só serve para DESLIGAR hooks — nunca é necessário como
@@ -4502,7 +4504,7 @@ de um roadmap anterior e não relacionado
 5. **Kiro sem sonda de versão v3 possível — pré-requisito documentado, não sondado.** `--v3` é uma
    flag de modo de lançamento do binário instalado, não um valor que algum comando `--version`
    reporte; não há fato de versão instalada persistente para sondar de um processo externo (trackfw
-   nunca invoca o Kiro diretamente). Decisão: documentar o pré-requisito nos doc comments dos 3 stacks
+   nunca invoca o Kiro diretamente). Decisão: documentar o pré-requisito nos doc comments do binário
    e em `docs/cli-parity.md`, sem tentar sondagem de subprocesso e sem usar `TargetResult.Message`
    (reservado a `state: failed`).
 6. **D15 (ADR-2026-10-04 adendo 2026-10-24): wiring por-projeto sempre emitido.** Os 7
@@ -4518,26 +4520,25 @@ de um roadmap anterior e não relacionado
 7. **Gate de paridade estrutural novo (ML-4A) cobrindo os 6 arquivos globais.**
    `scripts/check-harness-hooks-parity.sh` — gate dedicado (não extensão de
    `check-agent-hooks-parity.sh`, entry points/fixtures diferentes) — roda `trackfw update harness
-   --targets <6 ids>-credential-guard --install-missing` uma vez por runtime, cada um contra o seu
-   próprio `$HOME` de fixture isolado, e compara estruturalmente os 6 arquivos resultantes (com
-   normalização textual do path absoluto de fixture antes do `json.loads`). 12/12 `OK` (6 CLIs ×
-   go-vs-node/go-vs-py). Prova negativa (P4) registrada em `check-gates-falsify.sh` (Cenário 45,
-   corrompe o `matcher` do Kiro global). Ver "Hooks GLOBAIS de credential-guard ... — paridade
-   estrutural (ROADMAP-2026-08-06, ML-4A)" mais abaixo para o detalhamento completo.
+   --targets <6 ids>-credential-guard --install-missing` contra o seu próprio `$HOME` de fixture
+   isolado, e verifica estruturalmente os 6 arquivos resultantes (com normalização textual do path
+   absoluto de fixture antes do `json.loads`). (Pré-v8: 12/12 `OK` por 6 CLIs × go-vs-node/go-vs-py;
+   na v8: verificação só do binário Go.) Prova negativa (P4) registrada em `check-gates-falsify.sh`
+   (Cenário 45, corrompe o `matcher` do Kiro global). Ver "Hooks GLOBAIS de credential-guard ... —
+   paridade estrutural (ROADMAP-2026-08-06, ML-4A)" mais abaixo para o detalhamento completo.
 
 Each `<tool>-<kind>` target is a **roll-up over every catalog item** for that pair, not one row per
 item; per-item granularity already exists via `trackfw agents update` and `trackfw skills update`.
 Roll-up precedence: `failed` > `updated` > `skipped`; all-not-installed → `missing`.
 
-`path` is rendered **tilde-abbreviated** (`~/.claude/agents`), never as an absolute path. Absolute
-paths make the JSON machine-dependent and break byte-comparison across runtimes.
+`path` is rendered **tilde-abbreviated** (`~/.claude/agents`), never as an absolute path. Absolute paths make the JSON machine-dependent and break byte-comparison.
 
-This list was pinned after the first implementation round produced three different answers — Go
+This list was pinned after the first implementation round (pré-v8) produced three different answers — Go
 declared 3 targets, Node.js and Python 19 — because the contract specified states, flags and key
 order but left the target set to interpretation. Leaving a set unpinned is the same failure mode as
 leaving a string unpinned.
 
-**Parity auditing note:** compare these documents across runtimes with key order **preserved**
+**Auditing note:** compare these documents with key order **preserved**
 (`object_pairs_hook=OrderedDict` and `dumps` without `sort_keys`). Normalizing key order hides
 declaration-order drift — that is exactly how the `gates` check divergence survived Wave 2 of the
 barrier roadmap and had to be fixed later in ML-2E.
@@ -4547,7 +4548,7 @@ barrier roadmap and had to be fixed later in ML-2E.
 <!-- trackfw-contract: gate=scripts/check-update-parity.sh -->
 
 
-Escopo desta seção: o preflight de `mutationInstall` no `IntegrationManager` dos três runtimes.
+Escopo desta seção: o preflight de `mutationInstall` no `IntegrationManager` do binário.
 Afeta todo caller de `install` — `trackfw init --ai-tools`, `trackfw agents install`,
 `trackfw skills install` e `trackfw update --install-missing`.
 
@@ -4573,7 +4574,7 @@ artifact "/home/<user>/.gemini/agents/trackfw-architect.md" is outdated; use upd
 
 ### Contrato
 
-<!-- trackfw-contract: gate=scripts/check-update-parity.sh partial=cenários 6/7/8 exercitam cross-CLI só a linha outdated+owned da tabela (skip, bytes preservados, exit 0); a linha modified (erro, exige --force) não tem cenário no gate — grep por "modified"/"--force" no script não retorna teste correspondente -->
+<!-- trackfw-contract: gate=scripts/check-update-parity.sh partial=cenários 6/7/8 exercitam só a linha outdated+owned da tabela (skip, bytes preservados, exit 0); a linha modified (erro, exige --force) não tem cenário no gate — grep por "modified"/"--force" no script não retorna teste correspondente -->
 
 
 | Estado do artefato | `owned` | `install` sem `--force` |
@@ -4614,9 +4615,9 @@ O observador é chamado **uma vez por artefato pulado**, na fase de preflight, n
 
 
 A primeira rodada de implementação pinou os **nomes** dos parâmetros e deixou os **valores** à
-interpretação. Os três runtimes produziram três respostas para `reason`: a linha de aviso completa
-(Go), a etiqueta `'outdated+owned'` (Node.js) e a etiqueta `"outdated"` (Python). Nome de parâmetro
-não é contrato; valor é.
+interpretação. (Pré-v8: os três runtimes produziram três respostas para `reason`: a linha de aviso
+completa (Go), a etiqueta `'outdated+owned'` (Node.js) e a etiqueta `"outdated"` (Python).) Nome de
+parâmetro não é contrato; valor é.
 
 - **`destination`**: o caminho de exibição **tilde-abreviado** — exatamente a mesma string que
   aparece dentro de `reason`. Nunca o caminho absoluto.
@@ -4625,8 +4626,8 @@ não é contrato; valor é.
 
 **Os callers NÃO devem compor, abreviar nem derivar o comando de remediação.** Um caller recebe
 `reason` e escreve em stderr *verbatim*, sem acrescentar nada. Esta frase existe porque a primeira
-rodada produziu **dois sites de composição dentro do mesmo runtime** (`init.js` e `integrations.js`
-no Node.js), que podem divergir entre si sem que nenhum teste de paridade entre runtimes perceba.
+rodada produziu **dois sites de composição dentro do mesmo runtime** (pré-v8: `init.js` e
+`integrations.js` no Node.js), que podiam divergir entre si.
 
 #### Origem do comando de remediação — pinada
 
@@ -4640,10 +4641,10 @@ sobre o escopo de nível de comando. Ambas acertam apenas enquanto o lote é de 
 corretas por acidente, não por construção. Um lote de escopo misto produziria a remediação errada
 para parte dos artefatos.
 
-A abreviação tilde vive **no manager**. Não existe helper compartilhado utilizável em todos os
-runtimes: o `tildeify` existe apenas em `npm/src/lib/update-engine.js`; o `update.go` usa constantes
-hardcoded (`const displayPath = "~/.claude/..."`), não um helper; e em Python o `_tildeify` de
-`commands/update_harness.py` é inalcançável de `integrations/manager.py` por import circular
+A abreviação tilde vive **no manager** do binário. (Pré-v8: não existia helper compartilhado
+utilizável em todos os runtimes — `tildeify` só em `npm/src/lib/update-engine.js`; `update.go`
+usava constantes hardcoded; em Python `_tildeify` de `commands/update_harness.py` era inalcançável
+de `integrations/manager.py` por import circular.
 (`integrations` → `commands` → `integrations`). Quando o helper não for importável sem ciclo,
 **inline a lógica com a salvaguarda de `Clean`/barra dupla** — reimplementar sem ela reintroduz o bug
 de `$HOME` com barra dupla corrigido no ML-6H.
@@ -4663,7 +4664,7 @@ em todos os call sites: `install` só é invocado para targets `not-installed` �
 
 ### Aviso ao usuário — string pinada
 
-<!-- trackfw-contract: gate=scripts/check-update-parity.sh partial=cenários 6 (global) e 7 (projeto) comparam a linha de warning inteira byte-a-byte entre os 3 runtimes e afirmam exit 0; a asserção de que as linhas de sucesso "✓ <tool> agents and skills" continuam sendo impressas não é verificada pelo gate -->
+<!-- trackfw-contract: gate=scripts/check-update-parity.sh partial=cenários 6 (global) e 7 (projeto) afirmam que o binário Go emite o prefixo da linha de warning ("warning: skipping outdated artifact ") e exit 0 — desde a v8 não há comparação cross-runtime (go-vs-node/go-vs-py foi removida); o texto completo da linha (incluindo caminho tilde-abreviado) não é afirmado byte a byte -->
 
 
 Emitido em **stderr**, uma linha por artefato pulado, com o caminho **tilde-abreviado** (mesma regra
@@ -4690,24 +4691,24 @@ em stderr é a única indicação de skip.
 
 ### Implementação canônica
 
-<!-- trackfw-contract: gate=scripts/check-update-parity.sh partial=a convergência atual de Node.js e Python para o formato do Go é a mesma prova byte-a-byte dos cenários 6/7; a diretriz "Go não deve ser alterado para se alinhar aos outros dois" é decisão de manutenção, não comportamento observável por gate -->
+<!-- trackfw-contract: gate=scripts/check-update-parity.sh partial=a convergência pré-v8 de Node.js e Python para o formato do Go era a prova byte-a-byte dos cenários 6/7; a diretriz "Go não deve ser alterado para se alinhar aos outros dois" é decisão de manutenção, não comportamento observável por gate -->
 
 
-O runtime **Go** é a referência: o manager compõe a linha completa, derivando a remediação de
-`item.plan.Claim.Scope` por artefato, e os callers apenas imprimem `reason`. Node.js e Python
-convergem para essa forma. Go não deve ser alterado para se alinhar aos outros dois.
+O binário Go é a referência: o manager compõe a linha completa, derivando a remediação de
+`item.plan.Claim.Scope` por artefato, e os callers apenas imprimem `reason`.
+(Pré-v8: Node.js e Python convergiam para essa forma.)
 
 ### Nota de teste
 
-<!-- trackfw-contract: gate=scripts/check-update-parity.sh partial=a comparação byte-a-byte atual das strings de aviso (cenários 6/7) é a prova viva desta seção; a história do teste antigo invertido em npm/tests/agents-skills.test.js e a ausência prévia de cobertura equivalente em Go/Python são fatos de histórico de teste, não verificáveis por gate cross-CLI -->
+<!-- trackfw-contract: gate=scripts/check-update-parity.sh partial=a comparação byte-a-byte atual das strings de aviso (cenários 6/7) é a prova viva desta seção; a história do teste antigo invertido em npm/tests/agents-skills.test.js e a ausência prévia de cobertura equivalente em Go/Python são fatos de histórico de teste pré-v8 -->
 
 
-`npm/tests/agents-skills.test.js` continha `assert.throws(() => manager.install([plan]),
-/outdated.*update/i)` — asserção que codificava o contrato antigo e é **invertida** por esta seção.
-Go e Python não tinham cobertura equivalente; ambos passam a tê-la. Auditoria de paridade compara as
-strings de aviso **byte-a-byte** entre os três runtimes.
+(Pré-v8: `npm/tests/agents-skills.test.js` continha `assert.throws(() => manager.install([plan]),
+/outdated.*update/i)` — asserção que codificava o contrato antigo e era **invertida** por esta seção.
+Go e Python não tinham cobertura equivalente. Após a convergência, os três runtimes comparavam as
+strings de aviso byte-a-byte.) Em v8: coberto pelo binário Go e `check-update-parity.sh`.
 
-## Regra `branch_has_wip_roadmap` — comportamento unificado nos 3 runtimes
+## Regra `branch_has_wip_roadmap` — comportamento do binário
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
@@ -4895,7 +4896,7 @@ Gate: `internal/validator/validator_adr_prefix_test.go`
 
 
 Os quatro comandos de geração de artefatos produzem arquivos **byte-a-byte idênticos**
-nos três runtimes para a mesma entrada. Isso inclui conteúdo e nome de arquivo.
+para a mesma entrada. Isso inclui conteúdo e nome de arquivo.
 
 ### Frontmatter e formato — contrato explícito
 
@@ -4963,7 +4964,7 @@ Python, fora do escopo desta REQ.
 
 Arquivo: `docs/adr/ADR-YYYY-MM-DD-<slug>.md`
 
-**`--scope project|global`** (default `project`, os 3 CLIs): `project` preserva o
+**`--scope project|global`** (default `project`): `project` preserva o
 comportamento acima, byte a byte. `global` escreve em
 `~/.trackfw/adr/ADR-YYYY-MM-DD-<slug>.md` — mesmo diretório-base de
 `~/.trackfw/scripts/` (credential-guard) e `~/.trackfw/identity.json` — sem exigir
@@ -4981,13 +4982,9 @@ vinculado (`NewADRDraft`/`newADRDraft`/`new_adr_draft`, usado por `--from-req`)
 também não ganha escopo global — um ADR nascido de uma REQ é inerentemente do
 projeto onde a REQ vive.
 
-**Exceção Python-only pré-existente, sem relação com `--scope`:** `pypi` já tinha
-`--status <status>` e `--dir <path>` em `adr new` antes desta feature — Go/Node.js
-não têm equivalente. `--dir` e `--scope global` são mutuamente exclusivos em Python
-(erro claro se ambos forem passados); nos demais casos os dois flags continuam
-funcionando como antes. `adr list` não existia em Python antes desta feature — foi
-criado do zero, espelhando a saída de Go/Node.js (`nome-do-arquivo` alinhado a 60
-colunas + status, ordem alfabética, `No ADRs found in <dir>` quando vazio).
+(Pré-v8: o `pypi` já tinha `--status <status>` e `--dir <path>` em `adr new` antes desta feature —
+Go/Node.js não tinham equivalente. `adr list` não existia em Python antes desta feature — foi
+criado do zero, espelhando a saída de Go/Node.js.)
 
 ```
 ---
@@ -5015,7 +5012,7 @@ author: ""
 
 #### `roadmap new <title>`
 
-<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->.md" — linhas 272/388 do gate), o ciclo E2E backlog→analyzing em layout flat e by_agent, e uma asserção de conteúdo esperado (não só diff cross-stack) que os 3 KINDS acima contêm os literais `## Wave 0 — Threat Model`, `**Gates da wave:**` e `ML-0A` (AC14, ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push, ML-2A — fecha a lacuna em que uma regressão sincronizada removendo Wave 0 dos 3 stacks passava despercebida no diff cross-stack sozinho, provado por check-gates-falsify.sh Cenário 166); as transições subsequentes da máquina de estados (analyzing→wip→blocked→done→abandoned) não são exercitadas por este gate -->
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
 Arquivo: `docs/roadmaps/backlog/ROADMAP-YYYY-MM-DD-<slug>.md`
@@ -5095,13 +5092,13 @@ prefixo `docs/req/` e sufixo `.md`; basename solto e link Markdown não são
 formato canônico.
 
 Estados válidos para `roadmap move`, `roadmap list`, `roadmap show`, validação e
-resolução de paths nos três runtimes:
+resolução de paths:
 
 ```
 backlog → analyzing → wip → blocked → done → abandoned
 ```
 
-Ao mover um roadmap para `analyzing`, os três CLIs devem manter pasta,
+Ao mover um roadmap para `analyzing`, o binário mantém pasta,
 frontmatter (`status: analyzing`), header (`| Status: analyzing`) e
 `docs/roadmaps/.trackfw-log` sincronizados. Em `roadmap_namespacing: by_agent`,
 o log preserva o prefixo do agente, por exemplo
@@ -5138,23 +5135,23 @@ related: []
 <!-- Como foi resolvido ou mitigado? O que deve ser feito? -->
 ```
 
-### Slug — normalização NFKD portável nos três runtimes
+### Slug — normalização NFKD portável no binário
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
-Os três runtimes usam a mesma semântica: NFKD decomposition → remoção de
+O binário usa a semântica: NFKD decomposition → remoção de
 combining marks (diacríticos) → lowercase → substituição de sequências
 `[^a-z0-9]+` por hífen → colapso de hífens múltiplos → trim.
 
-| Exemplo de título | Slug gerado (todos os runtimes) |
+| Exemplo de título | Slug gerado |
 |---|---|
 | `"Autenticação e Sessão"` | `autenticacao-e-sessao` |
 | `"ADR Config (v2)"` | `adr-config-v2` |
 | `"Minha Requisição #1"` | `minha-requisicao-1` |
 
-> **Os exemplos da tabela não discriminam.** Medido: os três dão o mesmo slug tanto sob
-> "colapsar `[^a-z0-9]+`" quanto sob "deletar não-alfanuméricos", porque neles todo trecho
+> **Os exemplos da tabela não discriminam.** Medido: os três runtimes (pré-v8) davam o mesmo slug
+> tanto sob "colapsar `[^a-z0-9]+`" quanto sob "deletar não-alfanuméricos", porque neles todo trecho
 > não-alfanumérico é adjacente a espaço ou a borda. Um gate montado sobre qualquer um deles
 > fica verde com a semântica errada — foi o que aconteceu com
 > `pypi/trackfw/generators/adr.py`. Por isso `check-artifact-parity.sh` (removed in v8.0.0) exercitava
@@ -5162,11 +5159,11 @@ combining marks (diacríticos) → lowercase → substituição de sequências
 > separa as duas semânticas. Não troque esse título por um da tabela.
 
 Títulos com qualquer combinação de acentos (á é í ó ú), cedilha (ç), til (ã õ),
-crase (à) e caracteres não-alfanuméricos produzem slugs idênticos nos três
-runtimes. O gate `check-artifact-parity.sh` (removed in v8.0.0) usava título acentuado
+crase (à) e caracteres não-alfanuméricos produzem slugs consistentes. O gate
+`check-artifact-parity.sh` (removed in v8.0.0) usava título acentuado
 (`"Autenticação e Sessão"`) para validar esse comportamento.
 
-### Data — hora local nos três runtimes
+### Data — hora local no binário
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
@@ -5183,7 +5180,7 @@ essa condição e falha explicitamente.
 
 `scripts/check-artifact-parity.sh` (removed in v8.0.0) era o gate transversal que verificava esse contrato.
 Para cada tipo de artefato (req, adr, roadmap, slash-command roadmap, note,
-vault/notes/index.md), ele invocava os três runtimes com título posicional ASCII,
+vault/notes/index.md), ele invocava os três runtimes (pré-v8) com título posicional ASCII,
 confirmava que exatamente um arquivo foi gerado por runtime (vacuity guard), e fazia
 diff byte-a-byte acumulando todos os erros antes de sair — o diagnóstico nomeava
 o tipo e os runtimes divergentes. O mesmo gate executava um ciclo E2E
@@ -5216,7 +5213,7 @@ gravando flat, o validator procurando `<agente>/<estado>/`). Nenhum dos três fo
 
 `scripts/check-artifact-closed-cycle.sh` (removed in v8.0.0) fechava esse ciclo **executando o CLI**, nunca importando o
 módulo — a fronteira comando↔validator é exatamente onde os defeitos moram. Para cada uma das 18
-combinações (3 artefatos × 3 CLIs × `flat`/`by_agent`) ele gera com `req new`/`adr new`/`note new` e
+combinações (3 artefatos × 3 CLIs (pré-v8) × `flat`/`by_agent`) ele gera com `req new`/`adr new`/`note new` e
 depois pergunta ao `validate --json`:
 
 | Artefato | Asserção | O que prova |
@@ -5248,16 +5245,16 @@ intactos:
 - **Cenário 185** — gerador: o default de `--status` do `adr new` do Python vira `Rascunho`;
   reprova em `adr/python/flat/status-literal-read-back`.
 
-## CLAUDE.md — seção `## Architect responses` byte-idêntica nos 3 runtimes (ML-1A, ROADMAP-2026-08-21-regra-de-verbosidade-no-asset-do-arquiteto-e-nas-regras-semeadas)
+## CLAUDE.md — seção `## Architect responses` byte-idêntica (ML-1A, ROADMAP-2026-08-21-regra-de-verbosidade-no-asset-do-arquiteto-e-nas-regras-semeadas)
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 `trackfw init` / `trackfw discover --init` grava `CLAUDE.md` em cada runtime a partir de um
 gerador embutido (`internal/generators/claudemd.go`, `npm/src/generators/init.js`,
 `pypi/trackfw/generators/init_gen.py`). O `CLAUDE.md` completo **não** é byte-idêntico entre os
-3 runtimes (Python inclui `## Architecture Directives (mandatory)` como seção de cabeçalho
-separada; Go e Node.js não). A seção `## Architect responses`, acrescentada pelo ML-1A desta
-ROADMAP, **deve** ser byte-idêntica nos 3 runtimes — ela define o protocolo de verbosidade do
+Before v8.0.0, the 3 runtimes diverged here (Python included `## Architecture Directives (mandatory)` as a separate
+heading; Go and Node.js did not). A seção `## Architect responses`, acrescentada pelo ML-1A desta
+ROADMAP, **deve** ser byte-idêntica — ela define o protocolo de verbosidade do
 agente Arquiteto e qualquer divergência silenciosa introduziria comportamento distinto por runtime.
 
 O gate `check-artifact-parity.sh` (removed in v8.0.0) isolava e verificava apenas essa seção via `awk` (extrai de
@@ -5346,7 +5343,7 @@ dos quais nenhum teste (`pypi/tests/test_generators_init.py`,
 `pypi/tests/test_codex.py`) dependia. Essa divergência é anterior a este ML
 (introduzida no ML-2B, nunca detectada por falta de gate) — corrigida aqui
 removendo a decoração `timeout`/`statusMessage` de Python, alinhando-o a
-Go/Node, o mesmo movimento que o ML-2C já tinha feito para os campos
+Go/Node (pré-v8), o mesmo movimento que o ML-2C já tinha feito para os campos
 `name`/`timeout: 10000` que a versão anterior do Python escrevia nas entradas
 do Gemini.
 
@@ -5372,15 +5369,15 @@ invocações — mesmo padrão de `check-update-parity.sh` (`run_update`/`run_in
 máquina onde o credential-guard já foi instalado globalmente (via `trackfw update harness`), o
 dedup de projeto (ver "Agent hooks por CLI" e achado #6 acima) pulava silenciosamente a entrada de
 credential-guard de projeto, e o guard de vacuidade `credential-guard-present` abaixo reprovava
-os 6 CLIs × 3 runtimes de forma idêntica — um falso negativo ambiental, não uma regressão de
+os 6 CLIs de forma idêntica — um falso negativo ambiental, não uma regressão de
 código. Ver `vault/notes/check-agent-hooks-parity-unisolated-home-false-failure-2026-08-08.md`.
 Efeito colateral aceito: este gate agora só exercita o caminho "sem guard global instalado"; o
 caminho de dedup (entrada de projeto pulada) é coberto separadamente por
-`internal/generators/credential_guard_dedup_test.go` (Go, 9 testes) e equivalentes Node/Python
-(achado #6 acima), não por um gate shell.
+`internal/generators/credential_guard_dedup_test.go` (Go, 9 testes) e equivalentes Node/Python (pré-v8,
+achado #6 acima), não por um gate shell.
 
 Para cada um dos 6 arquivos de hook gerados, dois guards de vacuidade (P2) rodam
-antes de qualquer diff: (1) o arquivo existe e não está vazio nos 3 runtimes;
+antes de qualquer diff: (1) o arquivo existe e não está vazio no binário;
 (2) o arquivo referencia `scripts/trackfw-credential-guard.sh` pelo menos uma
 vez em cada runtime — sem isso, uma regressão que removesse a entrada de
 credential-guard identicamente nos 3 stacks ainda "passaria" numa comparação
@@ -5720,8 +5717,7 @@ REQ nova a partir do parecer de Hades.
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
-> Fontes: `internal/validator/validator_credential_guard.go` (implementação, os 3 CLIs têm
-> equivalente em `npm/src/` e `pypi/trackfw/`), `docs/adr/ADR-2026-08-12-defesa-do-credential-guard-vive-no-escopo-global-controle-que-mora-onde-o-agente-escreve-nao-e-controle.md`
+> Fontes: `internal/validator/validator_credential_guard.go` (implementação; pré-v8: equivalentes em `npm/src/` e `pypi/trackfw/`), `docs/adr/ADR-2026-08-12-defesa-do-credential-guard-vive-no-escopo-global-controle-que-mora-onde-o-agente-escreve-nao-e-controle.md`
 > (decisão de arquitetura), `docs/req/REQ-2026-08-12-credential-guard-de-escopo-global-como-caminho-padrao-consentimento-explicito-verificacao-da-premissa-de-sandbox-e-a-via-do-credential-guard-mode.md`
 > (follow-up ainda não implementado). Continuação direta de §"Semântica de falha de hook por CLI"
 > (acima) — aquela seção **mediu** o problema (fail-open em 4 de 6 CLIs); esta seção documenta **o
@@ -5775,7 +5771,7 @@ como as demais regras do validador — `applyRule`/`applyRuleTagged`, `internal/
 
 ### 2. O que ela NÃO cobre — com o mesmo destaque
 
-<!-- trackfw-contract: gap reason=cada afirmação de não-cobertura é comportamento falsificável do trackfw (ex.: substituir o script por "exit 0" e confirmar que a regra não acusa; editar credential_guard.mode e confirmar que a regra não verifica) — nenhum gate ou teste, cross-CLI ou por runtime, exercita esses cenários adversariais; o achado 2.1 citado é só argumento de código-lido, não um teste executado -->
+<!-- trackfw-contract: gap reason=cada afirmação de não-cobertura é comportamento falsificável do trackfw (ex.: substituir o script por "exit 0" e confirmar que a regra não acusa; editar credential_guard.mode e confirmar que a regra não verifica) — nenhum gate ou teste exercita esses cenários adversariais; o achado 2.1 citado é só argumento de código-lido, não um teste executado -->
 
 
 - **Verifica no momento em que `validate` roda, não no momento da invocação do hook.** Entre um
@@ -5799,7 +5795,7 @@ como as demais regras do validador — `applyRule`/`applyRuleTagged`, `internal/
 
 ### 3. A decisão de arquitetura — escopo global é a defesa real
 
-<!-- trackfw-contract: gap reason=a tabela de mitigações rejeitadas afirma um fato falsificável de output gerado ("failClosed: true não usado hoje pelo gerador do trackfw") — grep confirma zero ocorrência de "failClosed" em todo internal/generators/*.go e em qualquer check-*.sh; nenhum gate afirma essa ausência, e o comparador estrutural não discrimina "os 3 runtimes omitem a chave" de "os 3 runtimes deveriam omitir a chave" -->
+<!-- trackfw-contract: gap reason=a tabela de mitigações rejeitadas afirma um fato falsificável de output gerado ("failClosed: true não usado hoje pelo gerador do trackfw") — grep confirma zero ocorrência de "failClosed" em todo internal/generators/*.go e em qualquer check-*.sh; nenhum gate afirma essa ausência no binário Go; antes da v8 a nota citava que o comparador estrutural não discriminava "os 3 runtimes omitem a chave" de "os 3 runtimes deveriam omitir a chave" — desde a v8 existe só o binário Go, e a lacuna persiste -->
 
 
 Depois de avaliar três mitigações adicionais de escopo de **projeto**, a decisão registrada em
@@ -5881,13 +5877,13 @@ arquivo global que este gate exercita, mas nunca o escreve.
 <todos os 6 ids>-credential-guard --install-missing` uma vez por runtime (Go
 compilado, Node.js, Python), cada runtime contra o seu PRÓPRIO fixture de
 `$HOME` isolado (nunca o `$HOME` real de quem roda o gate) — um `$HOME`
-compartilhado entre os 3 runtimes foi descartado porque `--install-missing` é
+Before v8.0.0, o estado compartilhado entre os 3 runtimes foi descartado porque `--install-missing` é
 merge idempotente: o segundo e o terceiro runtime a escrever no mesmo `$HOME`
 reportariam `state: skipped` em vez de `state: updated`, enfraquecendo
 silenciosamente a garantia central do gate (que cada stack, escrevendo do
 zero, produz a mesma estrutura). Os mesmos dois guards de vacuidade (P2) do
 gate por-projeto rodam antes de qualquer diff (arquivo existe e não está
-vazio nos 3 runtimes; arquivo referencia `trackfw-credential-guard.sh` pelo
+vazio no binário; arquivo referencia `trackfw-credential-guard.sh` pelo
 menos uma vez). A comparação estrutural reusava o mesmo comparador `python3`
 inline do gate por-projeto (mesmo motivo: nenhum `jq`) — com uma etapa extra
 de normalização textual ANTES do `json.loads`: cada um dos 6 arquivos embute
@@ -5927,8 +5923,8 @@ mecanismo ativo.
 `scripts/trackfw-credential-guard.sh` tem duas variantes de texto — **escopo de projeto** (gerado
 por `trackfw init`/`discover`/`update` dentro do repositório) e **escopo global**
 (`~/.trackfw/scripts/trackfw-credential-guard.sh`, gerado por `trackfw update harness`) — que
-compartilham a mesma leitura de `credential_guard.mode` (`credentialGuardModeResolution` em Go,
-equivalentes em Node/Python) mas divergem no **fallback** quando essa chave não está presente:
+compartilham a mesma leitura de `credential_guard.mode` (`credentialGuardModeResolution` em Go;
+pré-v8: equivalentes em Node/Python) mas divergem no **fallback** quando essa chave não está presente:
 
 | Escopo | Constante (Go) | Fallback (`DEFAULT_MODE`) sem `trackfw.yaml`/sem a chave | `trackfw.yaml` com `credential_guard.mode` explícito no cwd |
 |---|---|---|---|
@@ -6084,7 +6080,7 @@ removed by
 [`ADR-2026-08-15-remocao-do-subsistema-de-plugins-em-vez-de-gate-de-binario-de-terceiro.md`](adr/ADR-2026-08-15-remocao-do-subsistema-de-plugins-em-vez-de-gate-de-binario-de-terceiro.md).
 trackfw no longer downloads, installs, manages, or executes third-party code.
 This also closes the previously-documented exception where Python never had
-plugin installation: with the removal, the three CLIs converge on the same
+plugin installation: with the removal, the three CLIs (pré-v8) converge on the same
 behavior and the exception is no longer needed. The command row above has been
 deleted rather than marked `no`.
 
@@ -6092,13 +6088,13 @@ Removal included the argument-dispatch fallback that used to turn ANY
 unrecognized top-level command into an attempt to execute a `trackfw-<name>`
 binary found on `PATH` (`internal/commands/root.go`'s old `RunPlugin` call). An
 unrecognized command is now always an "unknown command" error — see the next
-section for the canonical, cross-CLI message this produces.
+section for the canonical message this produces.
 
 ## Unknown top-level command — canonical message
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
-`trackfw <unrecognized>` produces, in **all three CLIs**, on **stderr**, **exit
+`trackfw <unrecognized>` produces, in **the binary**, on **stderr**, **exit
 code 1**:
 
 ```
@@ -6109,7 +6105,7 @@ Run 'trackfw --help' for usage.
 
 The `Did you mean "..."?` line is present only when a close-enough command
 exists; with no eligible candidate, only the first and third lines are
-printed. Before this contract, the three frameworks' default behavior diverged
+printed. Before this contract (pré-v8), the three frameworks' default behavior diverged
 in every dimension — text, quoting, exit code, and whether a suggestion was
 offered at all:
 
@@ -6121,12 +6117,12 @@ NODE (commander) exit 1  error: unknown command 'x'
 PY (argparse)    exit 2  trackfw: error: argument COMMAND: invalid choice: 'x' (choose from ...)
 ```
 
-None of the three frameworks' built-in suggestion mechanisms are used to
+None of the three frameworks' built-in suggestion mechanisms were used to
 produce the canonical message — cobra's `Command.SuggestionsFor`, commander's
 `suggestSimilar` (Damerau-Levenshtein, threshold 3, similarity ratio) and
 argparse's `invalid choice` listing all use different distance functions and
-thresholds, which would make the three CLIs disagree on whether/what to
-suggest for the same typo. Instead, all three reimplement the same plain
+thresholds, which would make the three CLIs (pré-v8) disagree on whether/what to
+suggest for the same typo. Instead, the binary implements the same plain
 (no-transposition) Levenshtein distance and the same suggestion-picking rule:
 
 - a candidate is eligible when its case-insensitive Levenshtein distance to
@@ -6145,7 +6141,7 @@ argparse error (missing/invalid flags, `unrecognized arguments: ...`, etc.),
 which stay `2` as before, consistent with the pre-existing, deliberately
 unpinned exit-code divergence for unknown *flags* noted below.
 
-Verified byte-for-byte across the three runtimes, plus the falsification
+Before v8.0.0, verified byte-for-byte across the three runtimes; in v8, verified in the binary plus the falsification
 vector (a real `trackfw-vaildate` executable placed on `PATH`, which the
 removal above must never invoke) by `scripts/check-unknown-command-parity.sh`
 (removed in v8.0.0; was added to `make parity`). Em v8.0.0 (uma implementação
@@ -6169,7 +6165,7 @@ the fixed list that Node.js (`program.commands`) and Python
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
-`trackfw` **with no argument at all** behaves identically across the three runtimes: **exit
+`trackfw` **with no argument at all** behaves: **exit
 `0`**, help printed to **stdout**, **stderr empty**. This used to diverge — Go exited `0`
 with help on stdout while Node.js's default commander behavior exited `1` with help on
 stderr — and was documented as a known gap when the plugin subsystem was removed (commit
@@ -6182,7 +6178,7 @@ root-command-with-no-`.action()` behavior was overridden to match.
 
 Non-regression, measured alongside the fix: an actually unknown command (e.g. `trackfw zzz`)
 is unaffected by this change and keeps the contract from "Unknown top-level command — canonical
-message" above — **exit `1`**, message on **stderr**, identical across the three runtimes.
+message" above — **exit `1`**, message on **stderr**.
 
 
 ## Detecção de adulteração do credential-guard: as duas regras novas, e o que elas não veem (ROADMAP-2026-08-12-deteccao-de-adulteracao)
@@ -6196,7 +6192,7 @@ message" above — **exit `1`**, message on **stderr**, identical across the thr
 
 ### As três vias, e quem cobre cada uma
 
-<!-- trackfw-contract: gate=scripts/check-gates-falsify.sh partial=os Cenários 47/49/50 provam não-vacuidade de cada uma das 3 regras (hook_resolvable/script_integrity/mode_downgrade), mas por desenho comentado nos próprios cenários ("por que só o CLI Go") testam só o CLI Go — paridade de severidade/âncora entre os 3 runtimes depende só de suítes de teste unitário internas por stack, sem gate cross-CLI -->
+<!-- trackfw-contract: gate=scripts/check-gates-falsify.sh partial=os Cenários 47/49/50 provam não-vacuidade de cada uma das 3 regras (hook_resolvable/script_integrity/mode_downgrade) e testam só o CLI Go — por desenho desde antes da v8; desde a v8 existe só o binário Go; os comentários dos cenários citam "testes unitários dos 3 stacks" como cobertura complementar, referência histórica — esses stacks foram removidos na v8 -->
 
 | Via | Regra | Âncora | Severidade |
 |---|---|---|---|
@@ -6313,7 +6309,7 @@ uma violação **não suprimível**. É **intencional** — é o carve-out funci
 
 ### Por que o filtro de ambiente é por PREFIXO, não por lista
 
-<!-- trackfw-contract: gate=scripts/check-gates-falsify.sh partial=o Cenário 54 prova os dois vetores (GIT_DIR/GIT_WORK_TREE e GIT_CONFIG_COUNT=abc) contra o binário real, com controle autodiscriminante provando que cada vetor é genuíno — mas roda só contra o CLI Go; Node.js/Python têm filtro equivalente (npm/src/validator/git-exec.js, pypi/trackfw/validator.py) sem gate cross-CLI comparando os 3 -->
+<!-- trackfw-contract: gate=scripts/check-gates-falsify.sh partial=o Cenário 54 prova os dois vetores (GIT_DIR/GIT_WORK_TREE e GIT_CONFIG_COUNT=abc) contra o binário real, com controle autodiscriminante provando que cada vetor é genuíno; pré-v8: Node.js/Python tinham filtro equivalente (npm/src/validator/git-exec.js, pypi/trackfw/validator.py) sem gate cross-CLI comparando os 3 -->
 
 A primeira correção usou uma **denylist de 8 nomes** ("variáveis que redirecionam o repositório") e
 **não fechava o problema**. O vetor real é **fazer o `git` falhar por qualquer motivo** — todo call
@@ -6352,7 +6348,7 @@ script canônico Go (`internal/generators/scaffold.go`, const `gitBranchGuardScr
 `GenerateGitBranchGuardScript`/`GenerateGlobalGitBranchGuardScript`) escreve
 `scripts/trackfw-git-branch-guard.sh` (projeto) / `~/.trackfw/scripts/trackfw-git-branch-guard.sh`
 (global). **Estado final (Wave 1-4 concluídas):** o script existe, é gerado por `trackfw init`/
-`trackfw update`/`trackfw update harness` nos 3 CLIs, e está ligado (wiring de hook/deny real) nos 7
+`trackfw update`/`trackfw update harness` no binário (pré-v8: nos 3 CLIs), e está ligado (wiring de hook/deny real) nos 7
 runtimes.
 
 **ML-2A (ADR-2026-10-04, ROADMAP-2026-09-22):** a linha de hook emitida pelo gerador deixou de ser
@@ -6432,7 +6428,7 @@ Os arquivos de configuração deste repositório foram migrados neste ML para a 
 diferenciação "arquiteto livre, especialista bloqueado" **não foi implementada em nenhum runtime**
 nesta REQ — o deny é global para todos os agentes, inclusive o arquiteto/orquestrador (Zeus ou
 equivalente), em todos os 7 runtimes. Motivo: (a) nenhum runtime tinha essa diferenciação de fato
-implementada quando checado — mesmo os 3 runtimes com suporte nativo a subagentes (Claude via hook
+implementada quando checado — mesmo o binário com suporte nativo a subagentes (Claude via hook
 `subagent_name`, Gemini via subagentes nativos, Amazon Q via custom agents) exigiriam trabalho
 adicional fora do escopo desta REQ; (b) coerente com a regra já existente no CLAUDE.md de que o
 arquiteto não deveria commitar código de implementação mesmo — ele passa a usar `trackfw commit`/
@@ -6606,7 +6602,7 @@ para não elevar a severidade da regra (o hook ainda funciona em POSIX/macOS).
 A primeira implementação do wiring (ML-3A) escreveu caminhos/formatos **inventados** para Windsurf e
 Amazon Q, sinalizados no próprio comentário de código como não confirmados contra documentação
 oficial. Uma verificação posterior confirmou que ambos estavam estruturalmente errados — corrigido
-nos 3 CLIs (Go `internal/generators/agentfiles.go`, Node `npm/src/generators/hooks.js`, Python
+no binário Go (`internal/generators/agentfiles.go`; pré-v8: também Node `npm/src/generators/hooks.js` e Python
 `pypi/trackfw/generators/hooks.py`), com paridade estrutural confirmada via
 `check-agent-hooks-parity.sh` (ROADMAP-2026-08-20/ML-1B — a menção anterior a
 `check-harness-hooks-parity.sh` nesta frase era falsa e nunca poderia ter sido verdadeira: os dois
@@ -6632,17 +6628,17 @@ existentes (`.tool_input.command`, `.command`, `.hook_input.command`).
 
 ### Campos mínimos do custom agent Amazon Q — Go como canônico (2026-08-20, ML-1A-bis)
 
-<!-- trackfw-contract: gap reason=a decisão de alinhar Node/Python ao conjunto mínimo do Go é por assimetria de risco, não por verificação contra a doc viva da AWS ou um `q chat --agent` real; nenhum gate cross-CLI confirma o schema real do Amazon Q, só a byte-identidade entre os 3 CLIs (ML-1B) -->
+<!-- trackfw-contract: gap reason=a decisão de alinhar Node/Python ao conjunto mínimo do Go (pré-v8) é por assimetria de risco, não por verificação contra a doc viva da AWS ou um `q chat --agent` real; nenhum gate confirma o schema real do Amazon Q -->
 
 Investigação do ML-1A (roadmap `ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md`)
-mediu uma 6ª divergência real entre os 3 CLIs: Node e Python escreviam, na criação do
+mediu uma 6ª divergência real entre os 3 CLIs (pré-v8): Node e Python escreviam, na criação do
 `.amazonq/cli-agents/q_cli_default.json`, 6 campos que o Go **deliberadamente omite** (doc comment
 de `InjectAmazonQHooks`, `internal/generators/agentfiles.go`) — `prompt`, `mcpServers`,
 `toolAliases`, `allowedTools`, `resources`, `useLegacyMcpJson`.
 
-**Decisão: o Go é o canônico.** Node (`npm/src/generators/hooks.js`) e Python
+**Decisão: o Go é o canônico.** (Pré-v8: Node (`npm/src/generators/hooks.js`) e Python
 (`pypi/trackfw/generators/hooks.py`) foram alinhados a ele — o conjunto mínimo escrito na criação
-passou a ser só `name`, `description` e `tools`. O motivo é assimetria de risco, citada no próprio
+passou a ser só `name`, `description` e `tools`.) O motivo é assimetria de risco, citada no próprio
 comentário do Go: um campo extra que o schema real não espera arrisca falhar a validação do agente;
 um campo opcional ausente normalmente não. Entre as duas, escrever de menos é o lado seguro.
 
@@ -6650,13 +6646,13 @@ um campo opcional ausente normalmente não. Entre as duas, escrever de menos é 
 contra a documentação viva da AWS (`command-line-custom-agents-configuration.html`) nem contra um
 `q chat --agent` real — é a mesma ressalva que o comentário do Go já carregava ("verify this
 defaults set against the live doc ... before treating it as final") e que segue sem ser feita. O
-que ML-1A-bis resolve é a **divergência entre os 3 CLIs**, não a **correção contra o schema real do
+que ML-1A-bis resolve é a **divergência entre os 3 CLIs (pré-v8)**, não a **correção contra o schema real do
 Amazon Q**.
 
 **Contrato de merge preservado:** o alinhamento é só sobre o que uma instalação **nova** cria. Um
 arquivo `q_cli_default.json` pré-existente com qualquer um dos 6 campos (ex.: `mcpServers`
-configurado manualmente pelo usuário) não é tocado — os 3 injectors usam
-merge-só-se-ausente (`setdefault`/`hasOwnProperty`/`_, exists := root[k]`), então nenhum campo já
+configurado manualmente pelo usuário) não é tocado — o injector usa
+merge-só-se-ausente (`_, exists := root[k]` em Go; pré-v8: `setdefault`/`hasOwnProperty` em Python/Node), então nenhum campo já
 presente é removido por este lote.
 
 ### Fix de robustez do `match_subcommand` (2026-08-14, ML-4A, achado por teste manual E2E)
@@ -6675,9 +6671,9 @@ fosse o primeiro token de um segmento:
    mencionasse "git commit"/"git push" em qualquer lugar da string — reproduzido ao vivo nesta
    sessão contra o próprio arquiteto.
 
-Fix (byte-idêntico nos 3 CLIs): `match_subcommand` divide o comando em segmentos reais e exige que o
+Fix: `match_subcommand` divide o comando em segmentos reais e exige que o
 **basename** do primeiro token de cada segmento seja `git` antes de inspecionar o subcomando. Um bug
-adicional foi descoberto durante o port para Node/Python: usar `| while read` (pipe, cria subshell)
+adicional foi descoberto durante o port para Node/Python (pré-v8): usar `| while read` (pipe, cria subshell)
 faz `return`/`exit` dentro do loop não propagar para a função chamadora — corrigido trocando para o
 padrão heredoc (`done <<EOF...EOF`) que o Go já usava, evitando o subshell. Ver vault notes
 `git-branch-guard-pipe-into-while-loses-return-status-2026-08-14.md` e
@@ -6714,7 +6710,7 @@ interpretador de shell); essa ressalva geral permanece registrada na REQ vincula
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 Criado para fechar a lacuna que só `check-branch-new-parity.sh` cobria antes — verificava que as
-mensagens de bloqueio/aviso do novo comando `trackfw commit` são byte-idênticas entre os 3 CLIs em 3
+mensagens de bloqueio/aviso do novo comando `trackfw commit` eram byte-idênticas entre os 3 CLIs (pré-v8) em 3
 cenários (commit em `main`/`master`, commit em `feat/` sem roadmap em `wip/`, commit em branch
 não-governada). Era registrado em `make quality`/`parity`. Encontrou um bug real de ordenação de output
 no Python (`pypi/trackfw/commands/commit.py`): `sys.stdout.write()` sem `flush()` antes de um
@@ -6872,17 +6868,17 @@ para o que ela NÃO garante.
 | Provenance | `.trackfw/thirdparty-provenance.json` (`entries: {...}`, `schema_version: 2`) | destino **relativo à raiz do projeto** (não o destino absoluto usado nas chaves do `integrations-manifest.json`) | `checksum_sha256`/`approved_by`/etc: aprovador externo (D10.2). `installed_sha256`: `third-party install`, ver abaixo (D2-bis) |
 | References | `.trackfw/thirdparty-references.json` | id do agente-alvo → lista de skills de terceiro referenciadas | `third-party install --apply-to` |
 
-Os 3 schemas são cobertos byte-idênticos entre Go/Node/Python por `scripts/check-thirdparty-parity.sh`
+Os 3 schemas eram cobertos byte-idênticos entre Go/Node/Python (pré-v8) por `scripts/check-thirdparty-parity.sh`
 (Parte B), incluindo o round-trip completo via `third-party install` real (não apenas fixtures
 hand-authored).
 
 **Nota de paridade crítica — domínio de chave absoluto vs. relativo:** o `integrations-manifest.json`
-usa como chave o destino **absoluto** resolvido (`Manager.resolve()` em Go e equivalentes em
-Node/Python). Os 3 schemas de `.trackfw/thirdparty-*` usam o destino **relativo à raiz do projeto**
+usa como chave o destino **absoluto** resolvido (`Manager.resolve()` em Go; pré-v8: equivalentes em
+Node/Python). Os schemas de `.trackfw/thirdparty-*` usam o destino **relativo à raiz do projeto**
 (o valor pré-`resolve()`). Uma implementação inicial que usasse o destino absoluto do manifest como
 chave de busca em `thirdparty-provenance.json` nunca encontraria a entrada — falso-positivo
 sistemático do lado (i) da regra abaixo. Confirmado empiricamente contra o comando real (não por
-inspeção do ADR), nos 3 CLIs.
+inspeção do ADR) nos 3 CLIs (pré-v8).
 
 ### Escopo default diverge do catálogo (exceção D4)
 
@@ -6897,7 +6893,7 @@ aceitando `global` explicitamente quando desejado.
 
 ### D4-bis — `--scope global` continua permitido, mas com aviso e confirmação próprios (ML-4C)
 
-<!-- trackfw-contract: gap reason=grep confirma zero ocorrência de "scope global"/"yes-global-scope-unverified" em check-thirdparty-parity.sh — o aviso, a mensagem de recusa e a flag `--yes-global-scope-unverified` não têm nenhum gate cross-CLI -->
+<!-- trackfw-contract: gap reason=grep confirma zero ocorrência de "scope global"/"yes-global-scope-unverified" em check-thirdparty-parity.sh — o aviso, a mensagem de recusa e a flag `--yes-global-scope-unverified` não têm nenhum gate dedicado -->
 
 Achado do `hades-tf`, decisão de KG (2026-08-15): `--scope global` tira o artefato do perímetro de
 `thirdparty_artifact_has_provenance` — a regra só lê o manifest do **projeto**
@@ -6912,12 +6908,12 @@ silencioso:
   **`--yes-global-scope-unverified`**, é exigida adicionalmente. As duas flags têm propósitos
   distintos: uma confirma confiança na origem do conteúdo, a outra confirma que o usuário entende que
   esta instalação específica nunca passará por `trackfw validate`.
-- Aviso e mensagem de recusa são **texto idêntico** nos 3 CLIs (constantes dedicadas em cada porte,
+- Aviso e mensagem de recusa são **texto idêntico** no binário (pré-v8: constantes dedicadas em cada porte,
   nunca inline, para não divergirem silenciosamente em uma edição futura).
 
 ### `trackfw validate` — regra `thirdparty_artifact_has_provenance` (D2)
 
-<!-- trackfw-contract: gate=scripts/check-thirdparty-parity.sh partial=a branch (i) (violação por Claim.origin sem entrada de provenance) tem mensagem comparada byte-a-byte pela Parte C; a branch (ii) tem o caminho de não-falso-positivo coberto (D2-bis, instalação legítima produz zero violações nos 3 CLIs) — mas a DETECÇÃO real da branch (ii) (installed_sha256 divergente após adulterar o arquivo instalado) não é exercitada cross-CLI: grep não encontra fixture de tamper/append no script; a cobertura desse caminho é só testes unitários por stack (branch_ii_quarantine_deletion_still_detects_tamper e equivalentes), nunca comparados entre os 3 CLIs via gate -->
+<!-- trackfw-contract: gate=scripts/check-thirdparty-parity.sh partial=a branch (i) (violação por Claim.origin sem entrada de provenance) tem mensagem comparada byte-a-byte pela Parte C; a branch (ii) tem o caminho de não-falso-positivo coberto (D2-bis, instalação legítima produz zero violações); mas a DETECÇÃO real da branch (ii) (installed_sha256 divergente após adulterar o arquivo instalado) não é exercitada por gate; a cobertura desse caminho é só testes unitários (branch_ii_quarantine_deletion_still_detects_tamper e equivalentes) -->
 
 Bidirecional, e **nunca faz fetch de rede** (D6 — a regra só lê `.trackfw/` e os artefatos já
 instalados no disco):
@@ -6949,8 +6945,7 @@ também esteja no domínio normalizado. Comparar `sha256(arquivo instalado)` dir
 `checksum_sha256` (a leitura literal do texto original de D2) produz **falso-positivo em toda
 instalação legítima** cujo conteúdo bruto não fosse já exatamente `TrimSpace + uma única quebra de
 linha` — o caso comum de qualquer markdown com linha em branco final. Coberto por um teste de
-regressão load-bearing nos 3 CLIs (`branch_ii_legitimate_install_does_not_false_positive` /
-equivalentes), que mantém `checksum_sha256` e `installed_sha256` com valores **deliberadamente
+regressão load-bearing no binário (`branch_ii_legitimate_install_does_not_false_positive`), que mantém `checksum_sha256` e `installed_sha256` com valores **deliberadamente
 diferentes** na fixture, para provar que a ramificação (ii) usa o campo certo.
 
 **Por que não usar o registro de quarentena como ponte (a solução do ML-3A, tecnicamente correta e
@@ -6962,7 +6957,7 @@ temporário) dependência obrigatória de um **gate permanente**: apagar ou colo
 fetch de rede, D6). `installed_sha256` remove essa dependência — a quarentena continua sendo escrita
 e commitada (valor de auditoria/reconstrução), mas sua ausência deixou de ser erro da ramificação
 (ii). Coberto pelos testes `branch_ii_quarantine_deletion_does_not_break_clean_install` /
-`branch_ii_quarantine_deletion_still_detects_tamper` (e equivalentes Node/Python), que apagam
+`branch_ii_quarantine_deletion_still_detects_tamper`, que apagam
 `.trackfw/thirdparty-quarantine/` inteiro antes de validar.
 
 **Quem escreve `installed_sha256`:** apenas `third-party install`, depois que o `manager.install`
@@ -6971,17 +6966,16 @@ entrada de proveniência já existente (escrita pelo aprovador), preserva todos 
 intocados, e grava de volta só com `installed_sha256` preenchido. `checksum_sha256` nunca é tocado
 por este código — é sempre o valor que o aprovador gravou.
 
-**Ordem de campos e paridade byte-a-byte:** `installed_sha256` entra **logo após**
+**Ordem de campos:** `installed_sha256` entra **logo após**
 `checksum_sha256` na ordem canônica de campos (`url`, `checksum_sha256`, `installed_sha256`,
-`installed_at`, `approved_by`, `review_reference`, `scope`, `marker_override`) — a mesma ordem nos 3
-CLIs (Go: ordem de declaração do struct `ProvenanceEntry`; Python:
-`provenance.py:_ENTRY_FIELD_ORDER`; Node: construção explícita do objeto em
+`installed_at`, `approved_by`, `review_reference`, `scope`, `marker_override`) — ordem de declaração do struct `ProvenanceEntry` em Go. (Pré-v8: a mesma ordem nos 3
+CLIs — Python: `provenance.py:_ENTRY_FIELD_ORDER`; Node: construção explícita do objeto em
 `commands/thirdparty.js`, deliberadamente **não** via spread de object, que apenas apenderia o campo
-no fim). `scripts/check-thirdparty-parity.sh` compara `thirdparty-provenance.json` byte a byte entre
-os 3 CLIs após um install real — essa ordem é o que garante que a comparação passe.
+no fim. `scripts/check-thirdparty-parity.sh` comparava `thirdparty-provenance.json` byte a byte entre
+os 3 CLIs após um install real.)
 - Claims sem `origin` (manifests legados, escritos antes deste campo existir) ou com
   `origin == ""` são tratados como catálogo e nunca são flagados — retrocompatibilidade explícita,
-  testada nos 3 CLIs.
+  testada no binário.
 
 **🔴 Limitação documentada (D11), mesmo destaque das demais seções deste documento:** esta regra só
 enxerga artefatos instalados através do próprio fluxo `third-party` do trackfw. Um arquivo de
@@ -6992,7 +6986,7 @@ gravou.
 
 ### Limitação do critério de markers (D3) — o que ele NÃO cobre
 
-<!-- trackfw-contract: gate=scripts/check-thirdparty-parity.sh partial=a não-cobertura de homoglifos é comprovada cross-CLI (Parte A do gate, caso cyrillic_pass, que DEVE passar) — mas paráfrase, indireção, fragmentação e conteúdo auto-modificável são limitações declaradas sem nenhum gate ou fixture que demonstre a evasão descrita -->
+<!-- trackfw-contract: gate=scripts/check-thirdparty-parity.sh partial=a não-cobertura de homoglifos é comprovada pelo gate (Parte A, caso cyrillic_pass, que DEVE passar) — mas paráfrase, indireção, fragmentação e conteúdo auto-modificável são limitações declaradas sem nenhum gate ou fixture que demonstre a evasão descrita -->
 
 O checker de markers (`checkMarkers`/`check_markers`/equivalentes) procura por um conjunto fechado
 de padrões textuais suspeitos (heading H1–H6 com determinado formato, blocos de código cercados por
@@ -7025,7 +7019,7 @@ volume que chega à revisão humana.
 <!-- trackfw-contract: gate=scripts/check-thirdparty-parity.sh -->
 
 Dois achados da barreira da Wave 4 (o do fence pelos **dois** auditores independentemente; o do
-comentário HTML só pelo `hades-tf`), ambos reproduzidos pelo arquiteto nos 3 CLIs antes da correção,
+comentário HTML só pelo `hades-tf`), ambos reproduzidos pelo arquiteto nos 3 CLIs (pré-v8) antes da correção,
 e um terceiro achado do `hefesto-tf` (casefold divergente). Nenhum dos três estava listado acima como
 lacuna declarada de D3 — eram bugs no passo de normalização, não evasões aceitas:
 
@@ -7039,20 +7033,20 @@ lacuna declarada de D3 — eram bugs no passo de normalização, não evasões a
   contradizia a própria justificativa escrita do passo ("um agente LLM lê comentário HTML no fluxo de
   tokens") — `<!-- ## Git authority -->` passava limpo. Correção: o passo 1 passa a **neutralizar**
   (remover só os delimitadores `<!--`/`-->`), mantendo o conteúdo interno no fluxo escaneado.
-- **(c) Casefold divergente.** Go/Node usavam lowercase simples (`strings.ToLower`/
+- **(c) Casefold divergente (pré-v8).** Go/Node usavam lowercase simples (`strings.ToLower`/
   `toLowerCase()`); Python usava `str.casefold()` (casefold Unicode completo). Sem exploit conhecido
   contra os 6 marcadores ASCII, mas era uma divergência silenciosa e não testada num passo de
-  normalização de segurança. Unificado: os 3 CLIs usam lowercase simples agora (Python trocou de
-  `casefold()` para `lower()`).
+  normalização de segurança. Unificado: o binário usa lowercase simples (Python trocou de
+  `casefold()` para `lower()` antes da v8).
 
 **Não-regressão testada explicitamente:** rodar o checker contra o próprio
 `docs/seguranca/2026-08-15-skills-de-terceiro-via-url.md` (que lista os 6 marcadores dentro de um
-fence **fechado**) continua retornando zero marcadores nos 3 CLIs — as correções (a)/(b) não afetam
+fence **fechado**) continua retornando zero marcadores no binário — as correções (a)/(b) não afetam
 conteúdo dentro de um fence fechado.
 
 ### D6-bis — a query string da URL de origem é redigida antes de persistir (ML-4C)
 
-<!-- trackfw-contract: gap reason=grep confirma zero ocorrência de "RedactURL"/"redact_url"/"[redacted]" em qualquer script de scripts/*.sh — a redação de query string/userinfo antes de persistir em quarentena/provenance não tem nenhum gate cross-CLI que a exercite -->
+<!-- trackfw-contract: gap reason=grep confirma zero ocorrência de "RedactURL"/"redact_url"/"[redacted]" em qualquer script de scripts/*.sh — a redação de query string/userinfo antes de persistir em quarentena/provenance não tem nenhum gate que a exercite -->
 
 Achado do `hades-tf`: a URL completa (com query string) era gravada **verbatim** em
 `.trackfw/thirdparty-quarantine/<checksum>.json` e, potencialmente, em
@@ -7073,7 +7067,7 @@ nada quebra.
 
 <!-- trackfw-contract: gate=scripts/check-thirdparty-parity.sh partial=a própria seção já declara o limite da Parte D (só StateNotInstalled, StateModified sem gate) -->
 
-Registrado em `make quality`/`parity`. Cobre, nos 3 CLIs:
+Registrado em `make quality`/`parity`. Cobre (pré-v8: nos 3 CLIs; v8: no binário Go):
 
 - Parte A — presença do corpus de casos de markers (heading H1/H6, fence com crase/til,
   **fence não fechada** [ML-4C: agora RECUSA, não passa — D3-ter(a)], **fechador mais curto que o
@@ -7081,21 +7075,20 @@ Registrado em `make quality`/`parity`. Cobre, nos 3 CLIs:
   comentário HTML [ML-4C: agora RECUSA — D3-ter(b), neutralizado em vez de apagado], casefold
   simples vs. casefold Unicode completo [ML-4C: novo caso, D3-ter(c)], não-regressão contra o
   próprio parecer de segurança [ML-4C: novo caso], prosa comum, espaços múltiplos, fence seguida de
-  heading real) nos 3 conjuntos de testes — os 2 primeiros casos em negrito são onde uma
+  heading real). Os 2 primeiros casos em negrito são onde uma
   implementação via regex divergiria de um line-scanner explícito; Go usa line-scanner porque RE2
-  não suporta backreferences, e Node/Python replicam o mesmo algoritmo (não usam backreferences)
-  para não divergir nesses casos.
-- Parte B — round-trip completo dos 3 schemas D9 via `third-party install` real (stdout, conteúdo
+  não suporta backreferences (pré-v8: Node/Python replicavam o mesmo algoritmo).
+- Parte B — round-trip completo dos schemas D9 via `third-party install` real (stdout, conteúdo
   instalado, `thirdparty-references.json`, claim do manifest com `origin=thirdparty`) byte/semântica
-  idêntica entre os 3 CLIs.
+  idêntica no binário (pré-v8: entre os 3 CLIs).
 - Parte C — mensagem de violação da regra D2 branch (i) byte-idêntica (normalizada por caminho
-  absoluto do diretório temporário) entre os 3 CLIs, via `trackfw validate --json`.
+  absoluto do diretório temporário) no binário, via `trackfw validate --json`.
 - Parte D — mensagem de remediação D10.1 (`--apply-to` contra agente em escopo divergente/ausente/
-  modificado) byte-idêntica entre os 3 CLIs, extraída apenas da linha `cannot attach reference:...`
-  — comparar a saída bruta de erro top-level não foi possível porque Node/Python não envolvem o
+  modificado) byte-idêntica no binário, extraída apenas da linha `cannot attach reference:...`
+  (pré-v8: comparar a saída bruta de erro top-level não foi possível porque Node/Python não envolviam o
   entrypoint do CLI em um handler top-level equivalente ao de Go/cobra, produzindo stack
-  trace/traceback estruturalmente diferentes; essa divergência é pré-existente e de escopo do
-  projeto inteiro (não específica de `third-party`), documentada como fora de escopo deste ML.
+  trace/traceback estruturalmente diferentes; essa divergência era pré-existente e de escopo do
+  projeto inteiro).
 
 **🔴 Bug real encontrado por este gate, corrigido no ML-3A:** `pypi/trackfw/commands/thirdparty.py`
 usava `f"...{agent_id!r}..."` (repr do Python → aspas simples, ex. `'backend'`) nas 4 mensagens de
@@ -7107,8 +7100,7 @@ para essa correção.
 
 **🔴 Lacuna conhecida, não coberta por este gate:** a Parte D só exercita a mensagem D10.1 para o
 caso "agente não instalado" (`StateNotInstalled`). O caso irmão "agente modificado manualmente fora
-do trackfw" (`StateModified`) tem sua própria mensagem D10.1 e não é comparado entre os 3 CLIs por
-este script.
+do trackfw" (`StateModified`) tem sua própria mensagem D10.1 e não tem gate dedicado.
 
 ## `trackfw serve` — endereço de escuta, `--host` e aviso de exposição (REQ-2026-08-16, ML-1A/1B/1C)
 
@@ -7148,7 +7140,7 @@ Gate: `internal/serve/api_board_test.go` (`TestBoardHandler_UnterminatedFence_Fi
 
 <!-- trackfw-contract: gate=scripts/check-serve-address-parity.sh -->
 
-| item | valor, idêntico nos 3 runtimes |
+| item | valor |
 |---|---|
 | host padrão | `127.0.0.1` — **loopback IPv4**, nunca wildcard |
 | opt-in de exposição | flag `--host`, e **nada mais** (sem env, sem `trackfw.yaml`) |
@@ -7181,9 +7173,9 @@ convenção compartilhada.
 
 <!-- trackfw-contract: gap reason=as alegações empíricas ("curl localhost devolve 200 nos 3 com bind IPv4"; `--host ::ffff:127.0.0.1`/`127.0.0.2` não bindam em nenhum dos 3) são medições declaradas — grep confirma zero ocorrência de "curl"/"ffff:127"/"127.0.0.2" em check-serve-address-parity.sh, sem gate que as reproduza -->
 
-- **Porta padrão diverge:** Go `4080`, Node e Python `8080`. Pré-existente a esta REQ, fora do seu
+- **Porta padrão (pré-v8 divergia):** Go `4080`, Node e Python `8080`. Pré-existente a esta REQ, fora do seu
   escopo, e **deliberadamente não corrigida aqui** para não misturar mudança de interface com uma
-  correção de segurança urgente.
+  correção de segurança urgente. Em v8 apenas o binário Go porta `4080`.
 - **Prefixo da linha de URL diverge:** Go `trackfw serve — listening on <url>`, Node
   `trackfw serve: <url>`, Python `trackfw dashboard: <url>`. O gate compara a **URL**, não a linha.
 - **Mensagem de erro de bind diverge:** cada runtime propaga o erro da própria stdlib.
@@ -7211,9 +7203,9 @@ a falsificação fica vermelha. A vacuidade se denuncia sozinha em vez de virar 
 
 <!-- trackfw-contract: gate=scripts/check-serve-browser-security.sh -->
 
-Após o servidor subir, Node.js e Python abrem o browser usando **argv**, nunca interpolação de
-shell. O Go não abre browser — só imprime a URL; ausência de browser-open no Go é divergência
-intencional, não regressão.
+(Pré-v8: após o servidor subir, Node.js e Python abriam o browser usando **argv**, nunca interpolação de
+shell. O Go não abre browser — só imprime a URL; ausência de browser-open no Go era divergência
+intencional, não regressão.)
 
 | Runtime | Implementação |
 |---------|--------------|
@@ -7228,8 +7220,8 @@ A contenção para esse residual é **AC4 (`isValidHost` / `_is_valid_host`)** �
 hostname RFC-1123, IPv4 ou IPv6 sem zone ID são rejeitados antes de chegar ao browser-open path.
 Um host legítimo como `my-host.example.com` não contém metacaracteres de `cmd.exe`.
 
-**Contrato sobre IPv6 scoped addresses (zone ID com `%`):** todos os 3 CLIs rejeitam qualquer
-host contendo `%`, incluindo zone IDs sintaticamente limpos como `fe80::1%eth0`.
+**Contrato sobre IPv6 scoped addresses (zone ID com `%`):** o binário rejeita qualquer
+host contendo `%`, incluindo zone IDs sintaticamente limpos como `fe80::1%eth0`. (Pré-v8: todos os 3 CLIs rejeitavam.)
 
 Razão da decisão (auditoria 2026-09-11, hades-tf BLOQUEIA):
 
@@ -7241,8 +7233,8 @@ Razão da decisão (auditoria 2026-09-11, hades-tf BLOQUEIA):
 2. **`HTTPServer` 2-tuple bind descarta o zone ID** — `socket.getaddrinfo` retorna `scope_id=0`,
    tornando os scoped addresses não-funcionais com a API de bind atual. Aceitar um zone ID
    significaria aceitar um host que não funciona.
-3. **Go (`net.ParseIP`) já rejeita** todos os scoped addresses. Paridade exige que os 3 CLIs
-   concordem: rejeitar `%` nos três é a única posição coerente.
+3. **Go (`net.ParseIP`) já rejeita** todos os scoped addresses. (Pré-v8: paridade exigia que os 3 CLIs
+   concordassem: rejeitar `%` nos três era a única posição coerente.)
 
 | Runtime | Implementação da guarda de `%` |
 |---------|-------------------------------|
@@ -7250,7 +7242,7 @@ Razão da decisão (auditoria 2026-09-11, hades-tf BLOQUEIA):
 | Node.js | `if (host.includes('%')) return false` antes de `net.isIPv6()` — adicionado neste ML |
 | Python | `if "%" in host: return False` antes de `ipaddress.ip_address()` — adicionado neste ML |
 
-**Validação de `--host` (AC4):** todos os 3 CLIs rejeitam `--host` inválido com mensagem clara.
+**Validação de `--host` (AC4):** o binário rejeita `--host` inválido com mensagem clara.
 
 - Go: `serve.IsValidHost(host)` — erro retornado ao cobra antes do `serve.Start`.
 - Node.js: `isValidHost(host)` — `process.exit(1)` antes do `server.listen`.
@@ -7327,18 +7319,18 @@ isso o remédio nomeia a recusa literalmente em vez de escolher um lado.
   **sem nunca instalar** (zero entrada no manifesto, conteúdo não bate template) — reproduz
   `Registered=false, State=modified`. **Reinterpretado pelo ML-2C** (antes chamado
   "alien-file-not-flagged", esperava `no mismatches found`): é exatamente o estado que
-  `ClassifyDoctor` deixava de reportar; o fixture não mudou, só a expectativa — os 3 CLIs agora
-  relatam exatamente um finding `unknown-content` cujo remédio cita `unmanaged artifact`
+  `ClassifyDoctor` deixava de reportar; o fixture não mudou, só a expectativa — o binário agora
+  relata exatamente um finding `unknown-content` cujo remédio cita `unmanaged artifact`
   literalmente.
 - **(e) registrado sob claim diferente, conteúdo atual** — install real seguido de retargetar o
   `item` da claim da entrada do manifesto (hash intocado) — reproduz `Registered=true,
-  Managed=false, State=current` e prova que os 3 CLIs ficam em silêncio (o discriminante do
+  Managed=false, State=current` e prova que o binário fica em silêncio (o discriminante do
   Cenário 71).
 - **(f) registrado sob claim diferente, conteúdo divergido** — igual a (e), mas **também** com um
   byte anexado ao artefato em disco, reproduzindo `Registered=true, Managed=false,
   State=modified`. Adicionado pelo ML-2C: é o **único** fixture do gate capaz de discriminar o
   `!Registered` correto de um `!Managed` incorreto na classe `unknown-content` — (e) sozinho não
-  alcança esse `case` porque seu `State` permanece `current`. Prova que os 3 CLIs ficam em silêncio
+  alcança esse `case` porque seu `State` permanece `current`. Prova que o binário fica em silêncio
   (o discriminante do Cenário 72).
 
 ### Restrições duras do fixture (cada uma já custou um ciclo nesta série)
@@ -7350,33 +7342,31 @@ isso o remédio nomeia a recusa literalmente em vez de escolher um lado.
 2. **Install-e-mutar, nunca bytes de template hardcoded** — hardcode apodrece em silêncio na
    próxima mudança de template do catálogo.
 3. **Identidade fixada explicitamente** (`identity.json` escrito em `$HOME` antes do install) —
-   sem isso, o fallback zero-value de `identity.Load` faz os 3 CLIs concordarem por construção,
-   fechando a paridade vacuamente independente de a renderização sensível a identidade estar
+   sem isso, o fallback zero-value de `identity.Load` faz o binário concordar consigo mesmo por construção,
+   fechando o teste vacuamente independente de a renderização sensível a identidade estar
    correta.
 4. **Edição do manifesto via `python3`, nunca `sed -i`** — divergência BSD vs GNU já custou uma
    falha de CI só-em-Linux nesta série.
 5. **Resolução física do caminho do fixture (`pwd -P`)** — no macOS, `/tmp` e `$TMPDIR` são
    symlinks para `/private/...`; a resolução de cwd do Go só é física após `EvalSymlinks`
-   explícito, enquanto Node e Python são sempre físicos. Sem normalizar o `project`/`home` do
-   fixture com `pwd -P` antes de instalar, o manifesto fica gravado com a chave não-canônica do Go
-   e toda leitura via Node/Python falha o lookup — reportando "não registrado" para **qualquer**
-   artefato, independentemente do que foi de fato instalado. Mesmo fix que
-   `scripts/check-thirdparty-parity.sh` já aplica.
+   explícito. Sem normalizar o `project`/`home` do
+   fixture com `pwd -P` antes de instalar, o manifesto fica gravado com a chave não-canônica
+   e leituras falham o lookup. (Pré-v8: Node e Python eram sempre físicos — a diferença de
+   resolução produzia lookups falhos entre runtimes.) Mesmo fix que
+   `scripts/check-thirdparty-parity.sh` aplica.
 
 ### Dois defeitos reais de paridade que este gate encontrou e corrigiu no produto (não no gate)
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
-- **`--json` com zero achados:** o Go emitia `null` (slice nil serializada por `encoding/json`)
-  onde Node e Python sempre emitem `[]`. Corrigido inicializando `ClassifyDoctor` com
-  `[]DoctorFinding{}` (`internal/integrations/doctor.go`) — a forma canônica escolhida é a que
-  Node/Python já usavam.
-- **Linha em branco final do relatório de texto:** o Go deixava uma linha em branco à direita do
-  último finding; Node e Python já normalizavam isso (`.replace(/\n$/, '')` /
-  `.rstrip("\n")`). Corrigido em `printDoctorReport` (`internal/commands/doctor.go`) para não
-  emitir a quebra final — a forma canônica é a que os outros dois já usavam.
+- **`--json` com zero achados (pré-v8):** o Go emitia `null` (slice nil serializada por `encoding/json`)
+  onde Node e Python sempre emitiam `[]`. Corrigido inicializando `ClassifyDoctor` com
+  `[]DoctorFinding{}` (`internal/integrations/doctor.go`).
+- **Linha em branco final do relatório de texto (pré-v8):** o Go deixava uma linha em branco à direita do
+  último finding; Node e Python já normalizavam isso. Corrigido em `printDoctorReport`
+  (`internal/commands/doctor.go`).
 
-Nenhuma divergência de **nomes de campo** no `--json` foi encontrada: `finding`, `claim`
+Nenhuma divergência de **nomes de campo** no `--json` foi encontrada (pré-v8): `finding`, `claim`
 (`target`/`surface`/`scope`/`kind`/`item`), `destination`, `remedy` já casavam nos 3 CLIs.
 
 ---
@@ -7404,14 +7394,14 @@ por caminho, não por manifesto (ADR-2026-08-27).
 As quatro classes têm `claim` zerado (`kind`, `item`, `target`, `surface`, `scope` = string vazia)
 — artefatos de scaffold nunca têm entrada no manifesto.
 
-### Propriedade por caminho — artefatos cobertos pelos 3 CLIs
+### Propriedade por caminho — artefatos cobertos pelo binário
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
-Os seguintes artefatos são verificados pelos 3 CLIs (sempre que `trackfw.yaml` existe). Até
-REQ-2026-08-28 os dois workflows de CI eram exclusivos de Go/Node — a exclusão foi fechada (ver
-"Contrato do pin de versão nos templates de CI" abaixo); os 3 CLIs cobrem os 8 artefatos desta
-tabela hoje.
+Os seguintes artefatos são verificados pelo binário (sempre que `trackfw.yaml` existe). (Pré-v8: até
+REQ-2026-08-28 os dois workflows de CI eram exclusivos de Go/Node — a exclusão foi fechada, ver
+"Contrato do pin de versão nos templates de CI" abaixo; os 3 CLIs cobriam os 8 artefatos desta
+tabela.)
 
 | artefato | condicional |
 |---|---|
@@ -7451,16 +7441,16 @@ quem mais precisa do aviso era justamente quem não o recebia.
 seu conteúdo corresponde a **qualquer** dos templates de runtime conhecidos — pertencimento a
 conjunto, não igualdade a um único template.
 
-A divergência de bytes entre os runtimes para este arquivo é **pré-existente, intencional e
-documentada**: Go/Node produzem uma forma `#!/usr/bin/env sh` cfg-dependente (com blocos de
-build por backend/frontend); Python produz uma forma simples `#!/usr/bin/env bash` agnóstica de
-backend (`_VALIDATE_SCRIPT_CONTENT`). Aceitar qualquer das formas conhecidas elimina o
-falso-positivo que ocorria quando o doctor de um runtime julgava um arquivo escrito por outro.
+(Pré-v8: a divergência de bytes entre os runtimes para este arquivo era **pré-existente, intencional e
+documentada**: Go/Node produziam uma forma `#!/usr/bin/env sh` cfg-dependente (com blocos de
+build por backend/frontend); Python produzia uma forma simples `#!/usr/bin/env bash` agnóstica de
+backend (`_VALIDATE_SCRIPT_CONTENT`). Aceitar qualquer das formas conhecidas eliminava o
+falso-positivo que ocorria quando o doctor de um runtime julgava um arquivo escrito por outro.)
 
 | forma conhecida | conteúdo | runtime de origem |
 |---|---|---|
-| Go/Node form | `buildValidateScript(cfg)` renderizado a partir do `trackfw.yaml` do projeto | Go (`internal/generators/scaffold.go`) · Node.js (`npm/src/generators/init.js`) |
-| Python form | `#!/usr/bin/env bash\nset -euo pipefail\ntrackfw validate\n` (`_VALIDATE_SCRIPT_CONTENT`) | Python (`pypi/trackfw/generators/init_gen.py`) |
+| Go/Node form (pré-v8) | `buildValidateScript(cfg)` renderizado a partir do `trackfw.yaml` do projeto | Go (`internal/generators/scaffold.go`) · (pré-v8: Node.js `npm/src/generators/init.js`) |
+| Python form (pré-v8) | `#!/usr/bin/env bash\nset -euo pipefail\ntrackfw validate\n` (`_VALIDATE_SCRIPT_CONTENT`) | Pré-v8: Python (`pypi/trackfw/generators/init_gen.py`) |
 
 **O que continua sendo acusado:** arquivo que não casa com **nenhuma** das formas conhecidas —
 editado à mão, corrompido, ou gerado por uma versão futura que alterou o template sem atualizar
@@ -7469,23 +7459,20 @@ artefato.
 
 **Escopo da exceção: apenas `scripts/trackfw-validate.sh`.** Todos os demais artefatos de scaffold
 (`trackfw-attention-signal.sh`, `trackfw-attention-cleanup.sh`, `trackfw-credential-guard.sh`,
-`trackfw-git-branch-guard.sh`, slash commands, CI workflows) têm bytes pinados entre os runtimes
-por gate e continuam usando igualdade a template único.
+`trackfw-git-branch-guard.sh`, slash commands, CI workflows) têm bytes pinados por gate e continuam
+usando igualdade a template único.
 
-**Parity liability:** `pypi/trackfw/integrations/scaffold_doctor.py` mantém um mirror de
-`_build_go_node_validate_script` que replica a lógica de `buildValidateScript(cfg)`. Se Go ou
-Node alterarem o template, esse mirror deve ser atualizado no mesmo commit. Os testes de
-pertencimento nos 3 runtimes (`TestValidateScriptMembership` em Go,
-`scaffold_doctor_membership.test.js` em Node, `test_scaffold_doctor_membership.py` em Python)
-detectam a deriva antes que chegue à main.
+(Pré-v8 parity liability: `pypi/trackfw/integrations/scaffold_doctor.py` mantinha um mirror de
+`_build_go_node_validate_script` que replicava a lógica de `buildValidateScript(cfg)`. Os testes de
+pertencimento em Go, Node e Python detectavam a deriva antes que chegasse à main.)
 
-### Cobertura por runtime — tabela completa
+### Cobertura por runtime — tabela completa (pré-v8)
 
 <!-- trackfw-contract: gate=scripts/check-ci-workflow-pin-parity.sh partial=v8-ML-3A: scripts cross-runtime removidos -->
 
-| artefato | Go | Node.js | Python |
+| artefato | Go (v8) | Node.js (pré-v8) | Python (pré-v8) |
 |---|---|---|---|
-| `scripts/trackfw-validate.sh` | sim — **set-membership** (Go/Node form ∪ Python form) | sim — **set-membership** | sim — **set-membership** |
+| `scripts/trackfw-validate.sh` | sim — **set-membership** | sim — **set-membership** | sim — **set-membership** |
 | `scripts/trackfw-attention-signal.sh` | sim | sim | sim |
 | `scripts/trackfw-attention-cleanup.sh` | sim | sim | sim |
 | `scripts/trackfw-credential-guard.sh` | sim | sim | sim |
@@ -7494,16 +7481,14 @@ detectam a deriva antes que chegue à main.
 | `.github/workflows/trackfw-gate.yml` | sim (AC13: `ci: github-actions`) | sim (AC13) | sim (AC13/AC16, REQ-2026-08-28) |
 | `.gitlab-ci-trackfw.yml` | sim (AC13: `ci: gitlab-ci`) | sim (AC13) | sim (AC13/AC16, REQ-2026-08-28) |
 
-**Exclusão apagada (AC16, REQ-2026-08-28):** até aqui esta seção documentava uma exclusão
+**(Pré-v8) Exclusão apagada (AC16, REQ-2026-08-28):** até aqui esta seção documentava uma exclusão
 "principiada" do Python para os dois workflows de CI — o `update` do Python não declarava
 `ci-workflow` em `PROJECT_TARGET_IDS`, então o `doctor` nunca podia acusar divergência sem um
 remédio funcional. A REQ-2026-08-28 mediu que a premissa da exclusão nunca foi verdadeira: o
 Python **nunca gerou** workflow de CI (não havia `--ci` no `init`, nem gerador em
 `pypi/trackfw/generators/`) — não era uma exclusão de propriedade, era uma lacuna de escopo. A
-REQ fechou a lacuna: Python agora gera os 2 templates (`build_github_actions_workflow_content`,
-`build_gitlab_ci_workflow_content` em `pypi/trackfw/generators/init_gen.py`), declara
-`ci-workflow` em `PROJECT_TARGET_IDS` (`pypi/trackfw/commands/update.py`) e cobre os 2 arquivos
-no `doctor` (`pypi/trackfw/integrations/scaffold_doctor.py`) — nas mesmas condições que Go e
+REQ fechou a lacuna: Python passou a gerar os 2 templates e cobrir os 2 arquivos
+no `doctor` nas mesmas condições que Go e
 Node. Ver "Contrato do pin de versão nos templates de CI" abaixo para o detalhe do que ficou
 byte-idêntico entre os 3.
 
@@ -7547,7 +7532,7 @@ fonte de versão do próprio runtime:
   dado a ela (`releases/latest`) nunca casa com `@latest` (registrado na seção 1 do resultado do
   ML-0A do roadmap).
 
-**`trackfw update` gerencia os três arquivos, nos 3 CLIs, com uma assimetria deliberada
+**`trackfw update` gerencia os três arquivos, no binário, com uma assimetria deliberada
 (AC17):** o alvo `ci-workflow` sempre reescreve `trackfw-gate.yml`/`.gitlab-ci-trackfw.yml` quando
 declarado (condição: `ci: github-actions`/`gitlab-ci` no `trackfw.yaml`), mas **só refresca**
 `trackfw-validate.yml` **quando o arquivo já existe em disco** — nunca cria. Quem decide se esse
@@ -7558,7 +7543,7 @@ um projeto com `ci: none` que rodou `discover` teria o arquivo fora de qualquer 
 mesmo binário não reporta `updated` na segunda chamada.
 
 **Gate falsificável:** `scripts/check-ci-workflow-pin-parity.sh` dumpa os 9 builders (3 templates
-× 3 runtimes) em sandbox e compara byte a byte, nomeando o par que diverge quando falha; falsifica
+) em sandbox e compara byte a byte, nomeando a divergência quando falha; falsifica
 nas duas direções — template sem `TRACKFW_VERSION`, com versão diferente da que o binário
 reporta, sem `timeout-minutes`/`timeout: 10 minutes`, e `trackfw-validate.yml` com `@latest` em
 vez de `@v<versão>` — todos reprovam com a razão que o **próprio gate** emite. Guarda de vacuidade
@@ -7580,7 +7565,7 @@ que declara dependência desta REQ.
 <!-- trackfw-contract: gate=scripts/check-ci-workflow-job-id-collision.sh -->
 
 Os dois workflows de CI que o produto gera (tabela da seção anterior) declaravam o **mesmo job id**
-`governance` nos 3 CLIs. `trackfw-validate.yml` dispara em `push` **e** `pull_request`; um projeto
+`governance` nos 3 CLIs (pré-v8). `trackfw-validate.yml` dispara em `push` **e** `pull_request`; um projeto
 que rodou `init`/`update` (que instalava `trackfw-gate.yml` — ver nota abaixo) e também
 `discover --init` (que instala `trackfw-validate.yml`) produzia **três check-runs homônimos** por PR — confirmado ao vivo no PR
 #241 deste repositório (`"governance=SUCCESS"` × 3 no mesmo push). O GitHub casa check exigido por
@@ -7599,7 +7584,7 @@ imprevisivelmente — um portão que parece fechado sem estar.
 > A coexistência dos dois deixou de ser produzida pelo produto pela outra porta. Projeto que **já**
 > tem os dois instalados os mantém (D3: nada é removido automaticamente, porque o job id removido
 > pode ser um required check que o produto não tem como verificar), e o `doctor` **avisa**. Paridade
-> perfeita no erro: os 3 CLIs concordavam entre si e os 3 estavam errados; nenhum gate de paridade
+> perfeita no erro: os 3 CLIs (pré-v8) concordavam entre si e os 3 estavam errados; nenhum gate de paridade
 > byte-a-byte (inclusive `check-ci-workflow-pin-parity.sh` acima) pegaria isso, porque paridade
 > mede concordância entre os runtimes, não correção do valor em si.
 
@@ -7621,7 +7606,7 @@ dito (qual dos dois — ou os dois — exigir) é decisão da Wave 2 deste roadm
 dois cobrem a mesma propriedade por caminhos de instalação redundantes, o argumento natural é exigir
 apenas um.
 
-**Gate falsificável:** `scripts/check-ci-workflow-job-id-collision.sh` — 6 pontos (2 workflows × 3
+**Gate falsificável:** `scripts/check-ci-workflow-job-id-collision.sh` — 6 pontos (pré-v8: 2 workflows × 3
 CLIs) via `assert_count` (não `assert_has`: a assinatura de um workflow podendo aparecer mais de uma
 vez por engano exige contagem exata, não presença), mais anti-regressão do id antigo colidente
 (`  governance:`, ancorado com indentação + dois-pontos) nos mesmos 6 arquivos, mais a checagem de
@@ -7648,7 +7633,7 @@ presente (silêncio), conteúdo errado (`scaffold-divergent`, não importa o mod
 
 | artefato | execBit | razão |
 |---|---|---|
-| `scripts/trackfw-validate.sh` | `true` | gerado com `0755` nos 3 runtimes |
+| `scripts/trackfw-validate.sh` | `true` | gerado com `0755` |
 | `scripts/trackfw-attention-signal.sh` | `true` | idem |
 | `scripts/trackfw-attention-cleanup.sh` | `true` | idem |
 | `scripts/trackfw-credential-guard.sh` | `true` | idem |
@@ -7750,7 +7735,7 @@ outro sendo promovido a admin do repositório:
 genuinamente não tem proteção quanto quando a credencial não tem acesso de admin ao repositório.
 Mapear 404 direto para "finding" sem checar `permissions.admin` primeiro produziria exatamente o
 defeito simétrico que o ADR nomeia: um token sem escopo geraria uma `finding` afirmando que o
-portão está ausente quando na verdade a checagem nunca rodou. Por isso a ordem é fixa nos 3 CLIs:
+portão está ausente quando na verdade a checagem nunca rodou. Por isso a ordem é fixa no binário:
 `auth status` → `repos/{owner}/{repo}` (resolve `default_branch` **e** `permissions.admin`) →
 somente com `admin=true`, a chamada de `branches/<branch>/protection` decide entre finding e
 control.
@@ -7760,7 +7745,7 @@ control.
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 A resposta de branch protection carrega tanto o campo legado `required_status_checks.contexts`
-quanto o mais novo `required_status_checks.checks` (com `app_id` por check). Os 3 CLIs tratam
+quanto o mais novo `required_status_checks.checks` (com `app_id` por check). O binário trata
 "configurado" como `len(contexts) > 0 || len(checks) > 0` — ler só `contexts` faria o cenário de
 controle (repositório com o portão configurado através da API nova) reprovar por engano, o que
 tenderia a "consertar" enfraquecendo a checagem em vez de corrigir a leitura.
@@ -7776,7 +7761,7 @@ falso positivo exatamente no fluxo legítimo que a Wave 0 deste roadmap listou c
 quebrar". Esta checagem não precisa de rede, mas só roda atrás de `--remote` como as outras duas —
 sem a flag, `doctor` não ganha nenhum caminho de código novo (critério de aceite "zero regressão").
 
-### Mecanismo do gate cross-CLI: stub de `gh`, não rede real
+### Mecanismo do gate: stub de `gh`, não rede real
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
@@ -7812,7 +7797,7 @@ tier de nenhum agente — só especifica a versão dentro do tier.
 
 ### Formato
 
-<!-- trackfw-contract: none reason=este subtítulo documenta a sintaxe YAML do campo; a verificação de que os 3 CLIs lêem e aplicam corretamente esse formato está nos Cenários 1–4 do gate -->
+<!-- trackfw-contract: none reason=este subtítulo documenta a sintaxe YAML do campo; a verificação de que o binário lê e aplica corretamente esse formato está nos Cenários 1–4 do gate -->
 
 ```yaml
 agent_models:
@@ -7820,7 +7805,7 @@ agent_models:
   opus: "5"         # compõe para claude-opus-5 no target claude
 ```
 
-### As três regras de composição (aplicadas nos 3 CLIs identicamente)
+### As três regras de composição (aplicadas pelo binário)
 
 <!-- trackfw-contract: gate=scripts/check-agent-models-parity.sh -->
 
@@ -7870,8 +7855,8 @@ implícito é aplicado; o campo é completamente opcional.
 | 3 — Config ausente | Sem `agent_models`, o target `claude`/backend mantém o alias `sonnet` sem composição | Cross-runtime |
 | 4 — Escape hatch | `sonnet: "claude-sonnet-4-5-20250929"` é passado literalmente como `model: claude-sonnet-4-5-20250929` | Cross-runtime |
 
-O Caso 2 é verificado **por-runtime** (não cross-runtime) porque um vazamento correlacionado
-identicamente nos 3 runtimes passaria numa verificação cross-runtime — o problema ainda existiria
+O Caso 2 é verificado **por um único runtime** porque um vazamento que se manifestasse identicamente
+em múltiplos runtimes (pré-v8) passaria numa verificação cross-runtime — o problema ainda existiria
 e o usuário só o descobriria em produção.
 
 ### Nota de implementação: três guards no switch de representação
@@ -7912,7 +7897,7 @@ O escopo escolhe o arquivo, exclusivamente — sem merge, sem fallback entre esc
 
 <!-- trackfw-contract: gate=scripts/check-agent-models-parity.sh -->
 
-Quando `~/.trackfw/trackfw.yaml` existe mas não tem `agent_models` E o `trackfw.yaml` do cwd tem `agent_models`, o comando emite para stderr (byte-idêntico nos 3 CLIs):
+Quando `~/.trackfw/trackfw.yaml` existe mas não tem `agent_models` E o `trackfw.yaml` do cwd tem `agent_models`, o comando emite para stderr (byte-idêntico no binário):
 
 ```
 trackfw: agents global: agent_models configurado em trackfw.yaml do projeto mas não vale para escopo global. Mova a chave para ~/.trackfw/trackfw.yaml.
@@ -7924,7 +7909,7 @@ O valor do projeto **não é aplicado**: o tier canônico (`model: sonnet`, `mod
 
 <!-- trackfw-contract: gate=scripts/check-agent-models-parity.sh -->
 
-Quando `~/.trackfw/trackfw.yaml` está ausente ou não tem `agent_models` E o cwd também não tem `agent_models`, o comando emite para stderr (byte-idêntico nos 3 CLIs):
+Quando `~/.trackfw/trackfw.yaml` está ausente ou não tem `agent_models` E o cwd também não tem `agent_models`, o comando emite para stderr (byte-idêntico no binário):
 
 ```
 trackfw: agents global: agent_models não configurado em ~/.trackfw/trackfw.yaml — usando tier canônico. Configure em ~/.trackfw/trackfw.yaml para pinar versões.
@@ -7936,7 +7921,7 @@ trackfw: agents global: agent_models não configurado em ~/.trackfw/trackfw.yaml
 
 Se `~/.trackfw/trackfw.yaml` existe mas contém YAML inválido, o comando:
 - **Não faz exit 1** — diferente do `trackfw.yaml` de projeto, que é fatal.
-- Emite o aviso abaixo para stderr (byte-idêntico nos 3 CLIs).
+- Emite o aviso abaixo para stderr (byte-idêntico no binário).
 - Usa o tier canônico como fallback.
 
 ```
@@ -7958,7 +7943,7 @@ trackfw: aviso: "~/.trackfw/trackfw.yaml" tem YAML malformado — config global 
 | 6 — Dois cwds, pin global | home com `agent_models`, cwd-a vazio, cwd-b com `sonnet: "9.9"` distinto | Saída byte-idêntica entre cwds; vacuity guard: `model: claude-opus-5` |
 | 7 — Pin só no projeto | `~/.trackfw/trackfw.yaml` sem `agent_models`, cwd com `agent_models` | Aviso "wrong place" em stderr; `model: sonnet` (não composto) |
 | 8 — Pin em lugar nenhum | Sem `~/.trackfw/trackfw.yaml`, sem `trackfw.yaml` no cwd | Aviso "not configured" em stderr; `model: sonnet` |
-| 9 — Escopo de projeto (não-regressão) | Global com `sonnet: "4.6"`, projeto com `sonnet: "9.9"` | Vacuity guard: `model: claude-sonnet-9-9`; cross-runtime byte-idêntico |
+| 9 — Escopo de projeto (não-regressão) | Global com `sonnet: "4.6"`, projeto com `sonnet: "9.9"` | Vacuity guard: `model: claude-sonnet-9-9`; verificado no binário |
 | 10 — Config global malformada | `~/.trackfw/trackfw.yaml` com YAML inválido | Exit 0; aviso malformed em stderr; `model: sonnet` |
 
 ### Validação de valor de `agent_models` e quoting do target claude (D-1..D-4, REQ-2026-08-30)
@@ -8007,7 +7992,7 @@ Implemented: Wave 1 / ML-1A (2026-08-27, apolo-tf)
 | Slash commands | Reported as `slash-command path` (AC15). |
 | False positive guard | The command opens ONLY the 8 exact wiring-file paths. It never greps file content for hook-path strings. `docs/cli-parity.md` and `internal/generators/agentfiles.go` are never opened (AC16, by construction). |
 | No judgment | The command names what executes; it never judges whether a script is hostile (AC5, AC6). |
-| Byte-identical | Text output and `--json` are byte-identical across all 3 CLIs. |
+| Byte-identical | Text output and `--json` are byte-identical (single Go binary in v8; pré-v8: byte-identical across all 3 CLIs). |
 
 ### Text output format
 
@@ -8079,7 +8064,7 @@ Lifecycle inventory: `package.json` (discovered: root first, then `npm/package.j
 }
 ```
 
-Note: `base` field is omitted from JSON across all 3 CLIs when not provided.
+Note: `base` field is omitted from JSON when not provided.
 
 ---
 
@@ -8125,7 +8110,7 @@ Um namespace que é um symlink apontando para fora do projeto **não** pode ser 
 pelo resolvedor — do contrário, `roadmap move` (cujo diretório de destino deriva do diretório onde o
 `src` foi encontrado) escreve fora da árvore do projeto através dele. Reproduzido ao vivo durante o
 threat-model desta REQ (ML-0A): com a lista `agents:` vazia (o caminho de fallback pré-união, hoje o
-caminho *incondicional* de todo projeto `by_agent`), Node.js e Python seguiam o symlink e o Go não —
+caminho *incondicional* de todo projeto `by_agent`), Node.js e Python (pré-v8) seguiam o symlink e o Go não —
 por desenho de API, não por acidente:
 
 | Runtime | Primitiva exigida | Por que não segue symlink |
@@ -8136,7 +8121,7 @@ por desenho de API, não por acidente:
 
 `entry.IsDir()`/`dirent.isDirectory()`/`entry.is_dir(follow_symlinks=False)` **preservados
 literalmente** é o requisito — uma "simplificação" para `os.Stat`/`fs.statSync`/`os.path.isdir()`
-reintroduz o vetor. É a Direção B2 da falsificação abaixo, provada apenas em Node/Python: o Go não tem
+reintroduz o vetor. É a Direção B2 da falsificação abaixo, provada apenas em Node/Python (pré-v8): o Go não tem
 uma variante "um edit errado" equivalente, porque seguir symlink ali exigiria trocar a primitiva
 inteira, não corromper um literal.
 
@@ -8187,9 +8172,9 @@ aviso; "nunca `off`" descreve o **default**, não uma trava incondicional contra
 diretamente no binário desta branch (`rules: agent_namespace_hidden: off` em `trackfw.yaml` suprime o
 aviso, exit continua não-zero só pelas outras violações do fixture).
 
-Mensagem byte-idêntica nos 3 CLIs (confirmado por leitura direta das 3 fontes — `internal/validator/
-validator.go`, `npm/src/validator/index.js`, `pypi/trackfw/validator.py`); o gate reforça isso
-indiretamente usando o mesmo literal exato como marcador nos 3 runtimes, mas não faz uma comparação
+Mensagem byte-idêntica no binário Go (confirmado por leitura direta de `internal/validator/validator.go`;
+pré-v8: confirmado nas 3 fontes — incluindo `npm/src/validator/index.js` e `pypi/trackfw/validator.py`); o gate reforça isso
+indiretamente usando o mesmo literal exato como marcador no binário, mas não faz uma comparação
 byte-a-byte dedicada como faz para `agent_namespace_undeclared` (AC4) — ver Direção B3 abaixo, que
 falsifica só a propriedade "nunca fica em silêncio total", não a paridade de texto:
 
@@ -8215,7 +8200,7 @@ vinha de uma string digitada em `agents:` pelo operador. Depois da união, `agen
 - Um namespace com um `[` desbalanceado derrubava `validate` inteiro com `syntax error in pattern`
   (`ErrBadPattern` do `path/filepath` subindo cru, inclusive vazando texto puro no canal `--json`).
 
-**Corrigido nos 3 runtimes** trocando a leitura de `wip/`/estado por listagem direta de diretório com
+**Corrigido** (before v8.0.0, no binário Go; pré-v8 Node/Python também alinhados) trocando a leitura de `wip/`/estado por listagem direta de diretório com
 filtro de sufixo `.md` em código, nunca por padrão de glob interpretando um nome vindo do disco:
 
 - Go: `ListMDFiles` (`internal/validator/validator.go`) — `os.ReadDir` + filtro `.md`, sem
@@ -8227,7 +8212,7 @@ filtro de sufixo `.md` em código, nunca por padrão de glob interpretando um no
   bug observado).
 
 É a Direção B4 da falsificação abaixo — provada só em Go, o único runtime onde o defeito existiu
-(Node/Python nunca usaram glob interpretando um nome de disco nesse ponto).
+(Node/Python pré-v8 nunca usaram glob interpretando um nome de disco nesse ponto).
 
 ### A regra `agent_namespace_undeclared`
 
@@ -8237,7 +8222,7 @@ Em `roadmap_namespacing: by_agent`, um namespace presente em `roadmap_dir` e/ou 
 `agents:` é **violação** (severidade `error`, mesmo default de toda regra sem entrada em
 `ruleDefaults`/`diskRuleSeverity` — não é aviso), deduplicada por nome (não por árvore: um namespace
 ausente das duas árvores ao mesmo tempo gera uma única violação, nomeando ambas). Mensagem
-byte-idêntica nos 3 CLIs:
+byte-idêntica no binário (pré-v8: nos 3 CLIs):
 
 ```
 agent namespace "<nome>" exists in <árvore[, árvore]> but is not declared in agents: — add it to trackfw.yaml
@@ -8285,13 +8270,13 @@ roda `roadmap list` contra `agents: [zulu, alfa]` (ordem alfabética deliberadam
 declarada) mais um namespace só-disco (`extra`), e afirma que os 3 aparecem nessa ordem exata nos 3
 CLIs — mais uma **Direção C** de falsificação (`direction-c/{go,node,python}/detects-order-regression`)
 que corrompe cada resolvedor com um `sort()`/`sort.Strings()`/`.sort()` final e confirma que o gate
-reprova. A ordenação continua sendo o contrato ativo consumido pelo `roadmap list` do Python (alinhado
+reprova. A ordenação continua sendo o contrato ativo consumido pelo `roadmap list` do binário (pré-v8: alinhado
 ao Go/Node.js desde o `ML-2A`) — agora com prova direta, não apenas por herança de um cenário
 retargetado para outra finalidade.
 
 ### `gap` conhecido — formatação do `roadmap list` do Python
 
-<!-- trackfw-contract: gap reason=o roadmap list do Python formata a saída por agente diferente de Go/Node.js — "[zulu]" seguido de "[backlog] arquivo" por linha, contra "[zulu/backlog]" seguido só do arquivo em Go/Node.js. Divergência de formatação pré-existente, encontrada durante o ML-2A (REQ-2026-08-29), fora do escopo desta REQ — a ordenação (que é o que este roadmap corrige e sobre o que os gates acima dependem) já está alinhada nos 3 CLIs; só a apresentação de linha diverge. Nenhum gate cross-CLI compara a saída completa do roadmap list byte-a-byte entre os 3 CLIs neste ponto -->
+<!-- trackfw-contract: gap reason=pré-v8: o roadmap list do Python formatava a saída por agente diferente de Go/Node.js — "[zulu]" seguido de "[backlog] arquivo" por linha, contra "[zulu/backlog]" seguido só do arquivo em Go/Node.js. Divergência de formatação pré-existente, encontrada durante o ML-2A (REQ-2026-08-29), fora do escopo desta REQ — a ordenação (que é o que este roadmap corrige e sobre o que os gates acima dependem) já estava alinhada no binário; só a apresentação de linha divergia. Nenhum gate compara a saída completa do roadmap list byte-a-byte neste ponto -->
 
 ### Não-regressão de `flat`
 
@@ -8315,7 +8300,7 @@ reprovar com o diagnóstico que ele mesmo emite:
 | B1 | Filtro de infraestrutura desligado — `node_modules` vira "namespace não declarado" | Go, Node.js, Python | — |
 | B2 | Varredura de disco volta a seguir symlink (AC12) | Node.js, Python | Go é imune por desenho de API (`entry.IsDir()` nunca segue symlink) — não há uma corrupção de "um literal errado" equivalente em Go; ver seção de segurança acima |
 | B3 | Filtro de infraestrutura volta a incluir "qualquer nome iniciado por `.`" (ML-4A, achado 1 corretivo) — `.ghost` com conteúdo real vira totalmente invisível de novo | Go, Node.js, Python | — |
-| B4 | `ListMDFiles`/`_list_md_files` volta a `filepath.Glob` sobre um nome de namespace vindo do disco (ML-4A, achado 2 corretivo) — namespace `*` volta a cross-matchear o `wip/` de outros namespaces | Go | Node.js e Python nunca usaram padrão de glob interpretando um nome de disco nesse ponto (Node é `readdir`-based; Python usava `glob.glob`, que já degradava graciosamente antes da correção, sem o efeito de cross-match observado em Go) — não há regressão equivalente a injetar |
+| B4 | `ListMDFiles`/`_list_md_files` volta a `filepath.Glob` sobre um nome de namespace vindo do disco (ML-4A, achado 2 corretivo) — namespace `*` volta a cross-matchear o `wip/` de outros namespaces | Go | (Pré-v8: Node.js e Python nunca usaram padrão de glob interpretando um nome de disco nesse ponto — Node era `readdir`-based; Python usava `glob.glob`, que já degradava graciosamente antes da correção, sem o efeito de cross-match observado em Go) — não há regressão equivalente a injetar |
 | C | Ordenação declarado-primeiro regride para alfabética pura (`sort()`/`sort.Strings()`/`.sort()` final no resolvedor) | Go, Node.js, Python | — (falsificação de uma via só, sem par oposto — ver comentário no cabeçalho do script) |
 
 Cada direção usa uma prova de não-vacuidade própria: o binário/árvore **limpo** é verificado primeiro
@@ -8323,16 +8308,15 @@ contra o mesmo fixture (o namespace declarado nunca é acusado; a violação do 
 sempre presente antes de qualquer corrupção — sem isso, a ausência do namespace declarado no diagnóstico
 não distinguiria "a regra funciona" de "a regra não rodou").
 
-## Escrita de artefatos em LF nos 3 runtimes — Python precisa de `newline="\n"` explícito (item 5, issue #216, REQ-2026-08-31)
+## Escrita de artefatos em LF — comportamento do binário e contexto histórico do Python (item 5, issue #216, REQ-2026-08-31)
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
-Os 3 runtimes escrevem artefato de texto (REQ, ADR, roadmap, nota, script gerado, config) em **LF**,
+O binário escreve artefatos de texto (REQ, ADR, roadmap, nota, script gerado, config) em **LF**,
 sempre — independente do SO onde o processo roda. Go e Node.js escrevem bytes crus e nunca traduzem
 `\n`. Python precisa da mesma garantia **explícita**: `open(path, "w"/"a", ...)` e
 `Path.write_text(...)` sem `newline=` usam `newline=None`, que traduz `\n` para `os.linesep` — CRLF
-no Windows. Sem `newline="\n"` em toda chamada de escrita de texto em `pypi/trackfw/`, os três
-runtimes produzem artefato diferente byte a byte para a mesma entrada — quebrando o contrato de
+no Windows. Sem `newline="\n"` em toda chamada de escrita de texto em `pypi/trackfw/`, Before v8.0.0, os três runtimes produziam artefato diferente byte a byte para a mesma entrada — quebrando o contrato de
 "Contrato de artefatos gerados" acima — e os `scripts/*.sh` gerados (hooks, guards) saem com `\r` no
 shebang, que falha em POSIX com `bad interpreter: ...^M: no such file or directory`.
 
@@ -8349,9 +8333,9 @@ aproveitado integralmente — `docs/analises/2026-08-31-aproveitamento-dos-prs-2
 
 ## UTF-8 na saída do CLI, independente da codepage do console (item 1, issue #216, REQ-2026-08-31)
 
-<!-- trackfw-contract: gap reason=coberto por teste unitário Python-only (pypi/tests/test_cli_encoding.py::TestCliEmConsoleCp1252, roda em qualquer SO via PYTHONIOENCODING=cp1252 forçado), não por gate scripts/check-*.sh cross-CLI — Go e Node.js já escrevem UTF-8 sem consultar codepage e não têm código equivalente a comparar, então não há paridade de 3 runtimes a verificar aqui, só a correção do único runtime que precisava dela -->
+<!-- trackfw-contract: gap reason=não coberto por gate scripts/check-*.sh; antes da v8 havia um teste unitário Python-only (pypi/tests/test_cli_encoding.py::TestCliEmConsoleCp1252) para o único runtime que precisava de correção; Go já escrevia UTF-8 sem consultar codepage; desde a v8 existe só o binário Go, e a lacuna persiste: nenhum gate exercita o binário sob codepage alternativa e verifica a saída -->
 
-Os 3 runtimes escrevem UTF-8 na saída padrão/erro, sem consultar a codepage do console e sem
+O binário escreve UTF-8 na saída padrão/erro, sem consultar a codepage do console e sem
 depender de nenhuma variável de ambiente. Go e Node.js já faziam isso (nenhum dos dois consulta
 `chcp`/codepage do console em nenhum ponto do código). O Python passou a fazer via
 `_force_utf8_output()` (`pypi/trackfw/cli.py`), chamada logo no início de `main()`: reconfigura
@@ -8394,8 +8378,8 @@ versionado.
 `normalizeRefSeparator`/`_normalize_ref_separator` (substituição incondicional de `\` por `/`, não
 `filepath.ToSlash` — este último é no-op em Linux/macOS, o que não normalizaria um valor sujo
 herdado de um commit feito no Windows, exatamente o defeito a curar) antes de gravá-lo no
-frontmatter da REQ pareada, nos 3 runtimes. O `.trackfw-log` (modo `by_agent`) usa concatenação
-explícita `agent + "/" + basename` nos 3 runtimes — Go e Node já seguiam o padrão; Python foi
+frontmatter da REQ pareada. O `.trackfw-log` (modo `by_agent`) usa concatenação
+explícita `agent + "/" + basename` no binário — before v8.0.0, Go e Node já seguiam o padrão; Python foi
 corrigido para igualar.
 
 **Leitura tolerante (AC3):** todo ponto que resolve uma referência de conteúdo versionado no
@@ -8458,7 +8442,7 @@ neste SO nunca reproduz o defeito (só aparece com separador nativo do Windows) 
 runtime exigiria runner Windows no CI. O gate mira **substrings de chamada de função específicas em
 arquivos específicos** (18 checagens de escrita/leitura desta REQ, das **40** que o script tem hoje
 — as outras 22 são do ML-2A/ADR-2026-09-04, documentadas na seção seguinte —, cobrindo cada site
-conhecido nos 3 runtimes; uma delas, `assert_count`, exige exatamente 2 ocorrências porque `referenceExists` e
+conhecido no binário; uma delas, `assert_count`, exige exatamente 2 ocorrências porque `referenceExists` e
 `validateREQRoadmapLifecycle` produzem coincidentemente a mesma linha de normalização em
 `validator.go`, e um `grep -qF` simples passaria com apenas um dos dois normalizando) — nunca grepa
 `\` solto em `docs/**`, que reprovaria sobre a própria documentação deste defeito. As assinaturas
@@ -8481,7 +8465,7 @@ Origem: `lourivalgarciajunior`, issue #216, item 10.
 
 ## Separador POSIX na fronteira de emissão (ADR-2026-09-04, ML-2A)
 
-<!-- trackfw-contract: gate=scripts/check-ref-separator-portability.sh partial=cobertura estrutural (22 assinaturas novas, uma por sitio de emissao); a composicao com o separador nativo do Windows so o runner de Windows exercita — em macOS/Linux filepath.Join/path.join/os.path.join nunca produzem "\", entao a metade "emite /" e falsificavel localmente injetando a forma do Windows na ENTRADA da funcao de emissao (feito: probe base-vs-novo nos 3 runtimes), nunca gerando-a pelo SO -->
+<!-- trackfw-contract: gate=scripts/check-ref-separator-portability.sh partial=cobertura estrutural (14 assinaturas Go-only; antes da v8 eram mais, incluindo Node/Python, removidas no ML-3A); a composicao com o separador nativo do Windows so o runner de Windows exercita — em macOS/Linux filepath.Join nunca produz "\", entao a metade "emite /" e falsificavel localmente injetando a forma do Windows na ENTRADA da funcao de emissao (feito: probe base-vs-novo nos 3 runtimes antes da v8), nunca gerando-a pelo SO -->
 
 O critério é o **consumidor**, não o SO: o trackfw emite `/` nos artefatos que ele mesmo autora e
 cujo consumidor **não é o sistema de arquivos**. Onde o consumidor **é** o SO, o separador
@@ -8514,15 +8498,15 @@ devolvido verbatim pelo frontend em `GET /api/file?path=…`, onde o servidor re
 fecha; evidência: o node ID do `/api/chain` do Go e o `path` do board do Python **já** emitiam `/` e
 alimentam o mesmo handler.
 
-🔴 **A fixture de proveniência era o defeito, nos 3 CLIs.** Ela montava a chave com
+🔴 **A fixture de proveniência era o defeito (pré-v8: nos 3 CLIs).** Ela montava a chave com
 `filepath.Rel`/`path.relative`/`os.path.relpath` — separador **nativo** —, enquanto a produção grava
-por concatenação explícita com `/` (`ResolveThirdPartySkillDestination`). Em Windows: Go e Python
+por concatenação explícita com `/` (`ResolveThirdPartySkillDestination`). Em Windows (pré-v8): Go e Python
 **reprovavam o produto certo** (produto normaliza, fixture não), e o Node **passava por acidente**
 (fixture e produto ambos nativos). Corrigir só o produto do Node teria virado o Node de verde para
 vermelho. As 3 fixtures passaram a normalizar a chave.
 
 **Categoria 3 — string de comando de shell: zero pontos de emissão.** Medido, não presumido: os
-`command` de hook são literais `"$CLAUDE_PROJECT_DIR/scripts/…"` nos 3 runtimes
+`command` de hook são literais `"$CLAUDE_PROJECT_DIR/scripts/…"` no binário
 (`internal/generators/agentfiles.go`, `pypi/trackfw/generators/hooks.py`, par Node) e o gate de wave
 é **lido do markdown** do roadmap pelo `barrier`, nunca montado a partir de um caminho. Nada a
 corrigir — e registrar isso é o que impede alguém de "aplicar a ADR" ali depois.
@@ -8542,10 +8526,9 @@ porque o consumidor é texto, e por nenhuma outra razão.
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
-Os três CLIs escrevem artefatos sensíveis (identidade, manifesto de integrações, registro de
+O binário escreve artefatos sensíveis (identidade, manifesto de integrações, registro de
 quarentena de terceiro) por escrita atômica: arquivo temporário no mesmo diretório, permissão
-aplicada, `write`/`fsync`, `rename`/`replace` para o destino final. **O contrato não é "os 3
-runtimes preservam a garantia de descritor" — isso seria falso hoje.** Estado real, medido:
+aplicada, `write`/`fsync`, `rename`/`replace` para o destino final. (Pré-v8: os três CLIs; o contrato não era "os 3 runtimes preservam a garantia de descritor".) Estado real, medido:
 
 | runtime | primitiva de permissão | opera sobre | garantia TOCTOU |
 |---|---|---|---|
@@ -8561,10 +8544,9 @@ justamente os que não se pode enfraquecer. O fallback é condicionado à ausên
 decisão medida, não palpite de SO (ver `docs/seguranca/2026-09-01-modelo-de-ameaca-da-escrita-
 atomica-no-windows.md`, seção 3.2, tabela de vetores de regressão silenciosa).
 
-**Residual aceito, nomeado explicitamente para não ser lido como "resolvido":** mesmo com o
-fallback correto nos três runtimes, o `os.replace`/`fs.renameSync`/`os.Rename` final ainda opera
+**Residual aceito, nomeado explicitamente para não ser lido como "resolvido":** o `os.Rename` final ainda opera
 sobre o **caminho** do temporário, não sobre o descritor — uma janela de TOCTOU pré-existente,
-independente desta REQ, presente hoje nos três (seção 6 do parecer de ameaça). Não é regressão desta
+independente desta REQ (pré-v8: presente nos três runtimes; seção 6 do parecer de ameaça). Não é regressão desta
 REQ e não é fechada por este gate; acompanhamento fica para REQ própria.
 
 ### Triplicação deliberada no Python — não extraída, gateada
@@ -8600,11 +8582,11 @@ tres-escritas-atomicas-do-cli-python-no-windows.md`.
 
 <!-- trackfw-contract: gate=scripts/check-output-encoding-declared.sh partial=a asserção é ESTÁTICA sobre o texto-fonte. Ela prova que a declaração existe, é exportada, tem valor alias de utf_8 e precede a primeira invocação de python3 no arquivo; NÃO prova por observação de runtime que aquele python3 enxergou utf-8. Provar comportamentalmente exigiria executar os 38 gates com um python3 instrumentado, e dois deles inviabilizam isso no caminho de make parity (check-gates-falsify ~3m05s; check-barrier executa git). O mecanismo foi provado por execução UMA vez, com stub de python3 e PYTHONIOENCODING=cp1252 no ambiente: sem a declaração o filho vê cp1252, com ela vê utf-8. Formas recusadas por decisão e não por descuido: assignment sem export, e a forma de prefixo por invocação no alvo 1 (semanticamente válida, mas asseverá-la exigiria parsear pipeline de bash; zero falso positivo hoje, os 37 usam export). Tambem sao recusados handler de erro diferente de :strict (medido: com utf-8:surrogatepass um surrogate solto preservado por json.load sai como os bytes ED A0 80, UTF-8 invalido; e o handler vale tambem para o decode do stdin, onde :replace reintroduz a corrupcao silenciosa que o ML-0A reprovou) e o nome da variavel em outra caixa (pythonioencoding= e outra variavel em shell POSIX; o (?i:...) cobre so o grupo de aliases do valor). CORRECAO DO ML-2B: a afirmacao anterior desta anotacao — de que o rastreador de heredoc era heuristico mas 'comprovadamente inerte' — foi FALSIFICADA (achado B1 do parecer de qualidade de 2026-09-02): um comentario INLINE citando << armava HEREDOC_RE e derrubava o arquivo inteiro da populacao, e com isso um gate sem a declaracao passava com exit 0. O gate agora usa dois predicados: populacao (loose, sem estado de heredoc, usado para first_py3 e para a assercao (c) da allowlist) e declaracao (strict, com exclusao de heredoc). Residual declarado, agora na direcao FECHADA: do lado da declaracao o mesmo comentario inline com << ainda esconde a declaracao seguinte e o gate reprova com 'NAO declara' um arquivo que declara — ruidoso, nunca permissivo; o remedio para quem topar com isso e mover o << para comentario de linha inteira, nao reverter a separacao. Ver vault/notes/gate-literal-regex-syntax-equivalent-bypass-2026-09-01.md e vault/notes/comentario-inline-com-heredoc-derruba-arquivo-da-populacao-do-gate-2026-09-02.md -->
 
-**Infra de gate — exceção explícita da regra dura de paridade dos 3 CLIs**, pelo mesmo critério já
+**Infra de gate — exceção explícita da regra dura de paridade (pré-v8: dos 3 CLIs)**, pelo mesmo critério já
 aplicado no ML-1B (37 gates): `scripts/check-*.sh` é ferramenta do repositório, não superfície de
 CLI; não há nada a implementar em `internal/`, `npm/src/` ou `pypi/trackfw/`. O **alvo 2** deste
-gate, porém, incide sobre os 3 runtimes — ele exige que o literal `attentionSignalScript` mantenha o
-prefixo `PYTHONIOENCODING=utf-8` **nos três**, byte-idêntico.
+gate incide sobre o binário — ele exige que o literal `attentionSignalScript` mantenha o
+prefixo `PYTHONIOENCODING=utf-8` no binário, byte-idêntico.
 
 **Alvo 1 — ferramenta.** Todo `scripts/check-*.sh` que invoca `python3` em linha de código declara
 `export PYTHONIOENCODING=utf-8` antes da primeira invocação. Formas equivalentes são aceitas
@@ -8636,7 +8618,7 @@ Ligado a `parity:` no `Makefile` — e, por isso, ao `make quality` e ao job `pa
 reduzido de `release.yml` (3 gates), por decisão já registrada na
 `REQ-2026-08-04-job-parity-do-ci-so-roda-4-de-14-scripts-do-make-parity...`.
 
-## Palavra-chave de fechamento de issue no corpo do PR — fora do contrato dos 3 CLIs, registrada mesmo assim
+## Palavra-chave de fechamento de issue no corpo do PR — fora do contrato do binário, registrada mesmo assim
 
 <!-- trackfw-contract: gate=scripts/check-pr-closing-keyword.sh partial=o gate pergunta se a frase AFIRMA fechamento, nao se a palavra-chave portuguesa esta adjacente ao `#N`. Reescrito no ML-N1 da REQ-2026-09-05 (2026-09-25); a redacao anterior descrevia adjacencia literal e afirmava que "a forma errada CITADA como exemplo nao reprova", o que foi MEDIDO COMO FALSO. As zonas do corpo se partem em dois baldes com comportamento OPOSTO no proprio GitHub, medido por closingIssuesReferences em 7 PRs-sonda com braco de controle (#427 prosa=[426]; #428 cerca, #429 code span, #431 bloco indentado = []; #432 blockquote, #433 tabela, #434 aspas retas = [430]). Balde CODIGO (cerca, code span, bloco indentado): o GitHub IGNORA a palavra-chave ali, logo a isencao inglesa seria falsa e a mascara e subtraida dos DOIS matchers -- uma linha de fechamento em crase nao isenta, e ACUSAR e o trabalho do gate. Balde NAO-CODIGO (blockquote `> ...`, linha de tabela `| ... |`, span entre aspas RETAS): o GitHub HONRA a palavra-chave ali, logo a isencao e real; passe PROPRIO, subtraido so do matcher portugues, IMPLEMENTADO no ML-N2 (2026-09-25) e falsificado zona a zona nos dois lados -- cada zona suprime a acusacao portuguesa E deixa a isencao inglesa atravessar. O AC3 da REQ foi AMPLIADO para admitir o span entre aspas, por decisao do arquiteto e com razao medida: a frase canonica do issue #258 (`O corpo da minha PR #247 dizia "Fecha #246" ...`), que e a propria descricao deste defeito, passa EXCLUSIVAMENTE pela zona de aspas -- retiradas as aspas nao sobra sinal nenhum e o gate acusa (medido rc=1). Aspas sao o quinto de cinco mecanismos de zona, nao o unico, que era o que o AC3 proibia. A indentacao do balde de CODIGO passa a ser medida no corpo COMO O AUTOR ESCREVEU, e nao depois do mascaramento de code span: apagar um span no inicio da linha FABRICAVA 4 espacos a esquerda e silenciava a declaracao -- uma linha iniciada por code span seguida de `Fecha #246.`, apos linha em branco, media rc=0 antes do ML-N2 e mede rc=1 depois. Isso reconcilia a divida de largura declarada pelo ML-N1: as 80 linhas do censo do parecer sao a contagem linha-a-linha sobre o corpo cru (54 dentro de cerca, 26 fora, NENHUMA abrindo bloco apos linha em branco, logo 0 efetivamente apagadas), e as 304 que o ML-N1 media eram indentacao FABRICADA pelo passe anterior. Corpus A (358 PRs mergeados, 357 com corpo) antes e depois do ML-N2: rc=0 353 / rc=1 4 / rc=2 1, acusados #247/#312/#325/#330 -- veredito identico PR a PR, medido tambem em ablacao separada de cada uma das duas mudancas. Supressao por polaridade (negacao a esquerda do verbo, na mesma clausula) e heuristica DECLARADA, nao analise sintatica: ela nao fecha em regex ("Nao e verdade que fecha #12" deve acusar e "Sem contar o #99, fecha a #12" nao, com a mesma janela), e por isso toda supressao e IMPRESSA no log, nos dois caminhos de saida. Nao coberto e declarado: verbos fora das 4 familias, preterito perfeito (relata acao passada, nao declara fechamento -- #233 mediria falso positivo), segunda referencia coordenada por palavra, e zonas nao medidas (comentario HTML, <pre>/<code>, ASPAS CURVAS, cerca com atributo de linguagem). As aspas CURVAS sao residual DECLARADO e preso por cenario de autoteste (`residual-aspas-curvas-nao-sao-zona`): a sonda #434 mediu so as RETAS e o corpus A tem ZERO ocorrencia de curvas, entao trata-las junto seria extrapolacao por analogia -- a mesma que a secao 10.1 do parecer ja viu refutada duas vezes. `~~~` e analogia HERDADA e nao medida: o FENCE_RE o casa e o gate o trata como zona de codigo, sem sonda que o confirme. A largura da zona de TABELA e divida declarada: 1354 linhas apagadas no corpus A, ZERO com declaracao portuguesa e `#N`, e a forma estrita (`^| ... |$`) apaga exatamente as mesmas 1354 que a forma larga. Costura medida entre o passe de nao-codigo e a leitura de polaridade: a zona de aspas apaga DENTRO da linha, entao um token de negacao que vive numa CITACAO deixa de suprimir a declaracao do autor -- `Ele disse "nao" e fecha a #246` saia rc=0 e passa a sair rc=1, unica divergencia em 7 arranjos de negacao x zona exercitados, e na direcao fail-closed (a clausula como o autor a escreveu AFIRMA o fechamento). Presa pelo par de cenarios `costura-negacao-*`. Falso negativo por construcao nas 6 zonas: quem declarar o fechamento DENTRO de blockquote, tabela ou aspas nao e avisado -- preco escolhido para nao acusar quem apenas CITA. Nao e defesa contra evasao adversaria: o autor do corpo nao e um adversario, e alguem que quer fechar a issue e erra o idioma. Ver vault/notes/gate-literal-regex-syntax-equivalent-bypass-2026-09-01.md e docs/seguranca/2026-09-25-discriminante-do-gate-de-palavra-chave.md -->
 
@@ -8714,23 +8696,23 @@ nascer com defeito.
 
 <!-- trackfw-contract: gate=scripts/check-gates-falsify.sh partial=v8-ML-3A: scripts cross-runtime removidos -->
 
-**O defeito, medido nos 3 CLIs em 2026-09-06.** `trackfw req new` (Go/Node/Python) grava
+**O defeito, medido nos 3 CLIs (pré-v8) em 2026-09-06.** `trackfw req new` (Go/Node/Python) gravava
 `adr: ""` e `roadmap: ""` **sempre vazios** no frontmatter da REQ gerada — o valor real vive no
 CORPO, em `## Linked ADR / ADR: <path>` e `## Linked Roadmap / Roadmap: <path>`. Os três
 scanners de `/api/chain` liam **só** o bloco YAML de frontmatter. Resultado: nenhuma REQ gerada
 pelo próprio CLI jamais produziu aresta REQ→ADR ou REQ→Roadmap no grafo do dashboard — não era
 o caso de borda que o achado original do ML-3B media (caminho de estado desatualizado), era o
-formato canônico inteiro nunca resolvendo, nos 3 CLIs. Medido contra os 2 vínculos reais da
+formato canônico inteiro nunca resolvendo, nos 3 CLIs (pré-v8). Medido contra os 2 vínculos reais da
 árvore (REQ-2026-09-03-as-217..., REQ-2026-09-05-tres-defeitos...): 0 arestas antes, 1 cada
-depois, nos 3 CLIs.
+depois.
 
-**A correção.** Os três passam a extrair o campo com uma varredura do CONTEÚDO inteiro
-(`ExtractRefPath`/`extractRefPath`/`extract_ref_path`, exportada de `internal/validator`,
+**A correção.** O binário passou a extrair o campo com uma varredura do CONTEÚDO inteiro
+(`ExtractRefPath`, exportada de `internal/validator`; pré-v8: `extractRefPath`/`extract_ref_path` em
 `npm/src/validator`, `pypi/trackfw/validator` respectivamente) em vez de só o frontmatter —
 mesma função usada por `validateRefTargetsExist`/`validateREQRoadmapLifecycle`, para não
-duplicar a variação linha-a-linha em dois lugares por runtime.
+duplicar a variação linha-a-linha.
 
-**A divergência de MECANISMO entre os 3 CLIs para o mesmo resultado — declarada de propósito.**
+**A divergência de MECANISMO entre os 3 CLIs (pré-v8) para o mesmo resultado — declarada de propósito.**
 O achado do ML-3B (`trackfw roadmap move` deixa o campo `roadmap:` gravado com a pasta de
 ESTADO antiga, ex. `wip/` quando o arquivo já foi para `done/`) afeta os três scanners de forma
 **desigual**, por causa de como cada um já casava o valor extraído contra o node real:
@@ -8749,8 +8731,8 @@ ESTADO antiga, ex. `wip/` quando o arquivo já foi para `done/`) afeta os três 
   `path.basename()`/`os.path.basename()` primeiro; um vínculo em formato de caminho completo,
   que é o formato canônico gravado pelo gerador, nunca batia.)
 
-Logo: **Go precisa do fallback de estado do ML-3B; Node e Python não precisam, porque o
-mecanismo de resolução deles nunca dependeu de igualdade de caminho completo.** Os três chegam
+Logo (pré-v8): **Go precisava do fallback de estado do ML-3B; Node e Python não precisavam, porque o
+mecanismo de resolução deles nunca dependeu de igualdade de caminho completo.** Os três chegavam
 ao mesmo resultado observável nos 2 vínculos medidos, por mecanismos genuinamente diferentes —
 declarado aqui para que uma auditoria futura não confunda a ausência do fallback em Node/Python
 com uma lacuna de paridade.
@@ -8760,7 +8742,7 @@ REQ→ADR, ROADMAP→REQ e ROADMAP→ADR — **REQ→ROADMAP não existia em có
 de frontmatter ou corpo. Corrigido junto (mesma causa: nenhum dos três scanners nunca tinha
 produzido esta aresta a partir do formato canônico do gerador).
 
-**Falsificação.** `scripts/check-gates-falsify.sh`, Cenário 194, cobre Node e Python nas duas
+**Falsificação.** `scripts/check-gates-falsify.sh`, Cenário 194, cobre Node e Python (pré-v8) nas duas
 direções (aresta presente para vínculo com pasta de estado velha; nenhum nó inventado para
 basename ausente em todos os estados) invocando `handleChain`/`get_chain` diretamente via
 `node -e`/`python3 -c`, com o mesmo padrão de corromper a IMPLEMENTAÇÃO (não a asserção) dos
@@ -9230,7 +9212,7 @@ When a pattern such as `*.entry`, `.*`, or `*-entries` covers these paths, entri
 
 ## `trackfw guard write-scope` — proteção de caminhos congelados e escopo por despacho (ADR-2026-10-23, ML-3A, ML-3B)
 
-<!-- trackfw-contract: gate=internal/commands/guard_write_scope_test.go,internal/guard/writescope.go partial=guard_write_scope_test.go cobre os itens do contrato ML-3A (D3, subprocess) e ML-3B (D4, unit + subprocess) via binário real; writescope.go implementa o guard; NÃO há gate cross-runtime (v8: implementação única em Go) -->
+<!-- trackfw-contract: gate=internal/commands/guard_write_scope_test.go,internal/guard/writescope.go partial=guard_write_scope_test.go cobre os itens do contrato ML-3A (D3, subprocess) e ML-3B (D4, unit + subprocess) via binário real; writescope.go implementa o guard; NÃO há gate cross-runtime (v8: implementação única em Go; pré-v8: não existia gate comparando os 3 runtimes) -->
 
 > REQ: `docs/req/REQ-2026-10-23-regras-de-escrita-dos-agentes-sao-aplicadas-pelo-harness-e-nao-pelo-texto-do-handoff.md`
 > ADR: `docs/adr/ADR-2026-10-23-regras-de-escrita-dos-agentes-sao-aplicadas-pelo-harness-e-nao-pelo-texto-do-handoff.md`

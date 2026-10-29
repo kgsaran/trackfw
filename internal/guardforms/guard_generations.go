@@ -37,9 +37,11 @@ const (
 	// WriteScopeCurrentPSPOSIX is the canonical write-scope guard command for the
 	// POSIX/PS shell family (used by Claude Code via settings.json PreToolUse).
 	// Matcher: Write|Edit|NotebookEdit (list exact, §Z of Wave 0 / ADR-2026-10-23).
-	// No cmd.exe form: Claude Code on Windows uses PowerShell via claudeShellMatcher,
-	// not cmd.exe; write-scope is wired only in the Write|Edit|NotebookEdit PreToolUse
-	// envelope, which Claude Code always executes with sh/PowerShell, not cmd.exe.
+	// No cmd.exe form: Claude Code runs PreToolUse hooks under Git Bash or PowerShell
+	// on Windows, never cmd.exe (see README "Windows"); claudeShellMatcher
+	// (`Bash|PowerShell`) names the tool matchers, not the executing shell.
+	// write-scope is wired only in the Write|Edit|NotebookEdit envelope, which is
+	// never executed by cmd.exe.
 	WriteScopeCurrentPSPOSIX = `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard write-scope; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
 )
 

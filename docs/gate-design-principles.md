@@ -3,6 +3,11 @@
 > Extraídos do ADR `docs/adr/ADR-2026-07-26-principios-de-design-de-gates-verificaveis.md`.
 > Aplica-se a todo gate do trackfw: scripts de paridade em `scripts/check-*.sh`, regras do
 > validator e verificações de CI.
+>
+> **Nota histórica (v8.0.0):** os scripts `check-cli-parity.sh`, `check-integration-cli-parity.sh`,
+> `check-validate-parity.sh` e `check-identity-parity.sh` foram removidos após a v8, quando o
+> trackfw passou a ter uma única implementação em Go. Os exemplos neste documento preservam os
+> nomes originais porque registram os defeitos que motivaram os princípios.
 
 ---
 
@@ -43,8 +48,10 @@ nas sessões seguintes — o CI estava verde.
 - Se a lista de exceções (`go_only_commands`) precisar crescer, ela é uma variável
   documentada no topo do script, não um valor espalhado pelo grep.
 
-**Exemplo corrigido:** `check-integration-cli-parity.sh` agora lê os targets diretamente
-de `$CATALOG_FILE` via `jq`, tornando a lista imune ao crescimento do catálogo.
+**Exemplo corrigido (histórico):** `check-integration-cli-parity.sh` foi atualizado para ler
+os targets diretamente de `$CATALOG_FILE` via `jq`, tornando a lista imune ao crescimento do
+catálogo. O script foi removido na v8 (implementação única em Go); a lição permanece: contagens
+devem vir do catálogo, nunca de uma constante literal.
 
 ---
 
@@ -150,10 +157,11 @@ assert_fails_with "nome-do-cenario" \
 O script roda como parte do alvo `parity` no `Makefile`, após os gates positivos.
 **Um gate novo que não tem entrada em `check-gates-falsify.sh` não passou pela P4.**
 
-Para regras do validator: adicionar um caso de teste negativo nas suítes existentes
-(`internal/validator/validator_test.go`, `npm/tests/validator.test.js`,
-`pypi/tests/test_validator.py`). O cenário monta o estado de violação e afirma que a regra
+Para regras do validator: adicionar um caso de teste negativo na suíte Go
+(`internal/validator/`). O cenário monta o estado de violação e afirma que a regra
 reporta a violação esperada — não apenas que não reporta quando está ok.
+(`npm/tests/validator.test.js` e `pypi/tests/test_validator.py` foram removidos na v8;
+a única implementação é Go.)
 
 **Seis provas registradas na implementação desta REQ:**
 
@@ -161,10 +169,10 @@ reporta a violação esperada — não apenas que não reporta quando está ok.
 |---|---|---|
 | `static-assets/byte-drift` | `check-static-assets.sh` | `"Static asset byte drift"` |
 | `integration-assets/byte-drift` | `check-integration-assets.sh` | `"Integration asset byte drift"` |
-| `identity-parity/slug-drift` | `check-identity-parity.sh` | `"slug vectors drift"` |
-| `validate-parity/rule-removed` | `check-validate-parity.sh` | `"validate JSON contract differs between runtimes"` |
-| `cli-parity/missing-command` | `check-cli-parity.sh` | `"node: missing command 'note'"` |
-| `integration-cli-parity/missing-agents` | `check-integration-cli-parity.sh` | `"node: root help missing agents"` |
+| `identity-parity/slug-drift` | `check-identity-parity.sh` *(removido na v8)* | `"slug vectors drift"` |
+| `validate-parity/rule-removed` | `check-validate-parity.sh` *(removido na v8)* | `"validate JSON contract differs between runtimes"` |
+| `cli-parity/missing-command` | `check-cli-parity.sh` *(removido na v8)* | `"node: missing command 'note'"` |
+| `integration-cli-parity/missing-agents` | `check-integration-cli-parity.sh` *(removido na v8)* | `"node: root help missing agents"` |
 
 ---
 
@@ -175,8 +183,10 @@ Checklist antes de commitar:
 - [ ] **P1:** a contagem/lista esperada vem de uma fonte de verdade, não de uma constante.
 - [ ] **P2:** o gate falha com mensagem clara se não consegue obter o que precisa para verificar.
       Verificar substituições de comando `$(...)` e lados esquerdos de pipe separadamente.
-- [ ] **P3:** o resultado é o mesmo em Python 3.10, 3.13+, Node 18, Node 22, macOS e Linux,
-      com e sem TTY, com qualquer locale.
+- [ ] **P3:** o resultado é o mesmo em macOS, Linux e Windows (Go binary), com e sem TTY,
+      com qualquer locale. Desde a v8, não há implementações Node.js ou Python separadas;
+      a paridade entre runtimes não é mais um requisito de checagem para gates Go nativos.
+      Para scripts em `scripts/check-*.sh`, verificar comportamento com bash ≥ 5 e macOS sh.
 - [ ] **P4:** há um cenário em `scripts/check-gates-falsify.sh` (para scripts de paridade)
       ou um caso de teste negativo (para regras do validator) provando que o gate reprova
       o cenário que deveria reprovar.

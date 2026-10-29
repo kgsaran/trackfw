@@ -41,6 +41,14 @@ brew install trackfw
 npm install -g trackfw
 ```
 
+```bash [pip]
+pip install trackfw
+```
+
+```bash [install.sh]
+curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh
+```
+
 ```bash [Go]
 go install github.com/kgsaran/trackfw/cmd/trackfw@latest
 ```

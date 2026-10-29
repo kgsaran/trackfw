@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: abandoned
 date: 2026-10-18
 req: ""
 squad: ""
@@ -7,9 +7,11 @@ squad: ""
 
 # Roadmap: Reescrita do cli-parity.md para o contrato de binário único pós-v8
 
-> Created: 2026-10-18 | Status: backlog
+> Created: 2026-10-18 | Status: abandoned
 
 ## Context
+> **Absorvido em 2026-10-28** pelo `ROADMAP-2026-10-28-documentacao-e-canais-refletem-o-produto-11-x-com-suporte-real-a-windows-e-instalador-powershell` (ML-2B). Mesma causa: documentação anterior à v8 (Regra Dura de Causa Raiz).
+
 <!-- What problem does this roadmap solve? Link the REQ. -->
 REQ: (a criar ao sair do backlog — doc-only pela §7, mas o volume justifica rastreio)
 

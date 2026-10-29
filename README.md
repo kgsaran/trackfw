@@ -10,7 +10,7 @@
 
 **trackfw** is an open-source governance CLI for AI-native software delivery. It enforces a traceable chain from architectural decision to shipped code — without SaaS, accounts, or databases. Markdown files are state.
 
-It is designed for teams looking for an ADR / REQ / ROADMAP governance framework with native support for AI coding assistants such as Codex, Claude Code, Gemini CLI, Antigravity, Cursor, GitHub Copilot, Windsurf, Amazon Q, and Kiro.
+It is designed for teams looking for an ADR / REQ / ROADMAP governance framework with native support for AI coding assistants such as Codex, Claude Code, Gemini CLI, Antigravity, OpenCode, Cursor, GitHub Copilot, Windsurf, Amazon Q, and Kiro.
 
 ```
 ADR → REQ → ROADMAP → backlog / wip / blocked / done / abandoned
@@ -19,19 +19,23 @@ ADR → REQ → ROADMAP → backlog / wip / blocked / done / abandoned
 Every piece of work traces back to a decision. Every decision links to a requirement. Every requirement lands in a roadmap. No orphan work, no undocumented choices.
 
 > 🚧 **Platform support: Linux and macOS are supported. Windows support is partial.**
-> The CLIs install on Windows and core governance commands run. Since v9.3.0, guard
+> The binary installs on Windows and core governance commands run. Since v9.3.0, guard
 > hooks call `trackfw guard <name>` (the Go binary) instead of a POSIX shell script —
 > measured blocking and allowing correctly in PowerShell 5, cmd.exe, and Git Bash on
 > Windows; Claude Code and Codex CLI proven end-to-end. Guard and attention
 > (`trackfw guard <name>`, `trackfw attention signal|cleanup`) are Go subcommands — no
-> POSIX shell, `jq`, or `python3` required; native attention is in `main` and ships in
-> the next release after v10.0.0. **Caveat:** Claude Code on Windows executes hooks
-> through Git Bash, which it locates at `C:\Program Files\Git\bin\bash.exe`; a machine
-> without Git installed has not been measured. **Measured 2026-10-21 (Windows ARM64,
-> Claude Code 2.1.304):** guard allowed and denied by real PreToolUse events on Bash and
-> PowerShell tools; attention appeared with the question and cleared after the response
-> in an interactive session — only Claude Code was measured end-to-end in this round.
-> Windows CI still reports known test failures. There are limits worth knowing; **read
+> POSIX shell, `jq`, or `python3` required; native attention is available since v10.1.0.
+> **Caveat:** Claude Code on Windows executes hooks through Git Bash (if installed) or
+> PowerShell, locating bash at the hardcoded path `C:\Program Files\Git\bin\bash.exe`
+> (overridable via `CLAUDE_CODE_GIT_BASH_PATH`). Git Bash path: measured on ARM64 VM
+> (`docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md:810`;
+> `docs/portabilidade/2026-10-20-jornadas-agentes-windows.md` A7). PowerShell fallback:
+> vendor docs only (`docs/portabilidade/2026-09-05-contrato-de-execucao-de-hook-por-cli-de-agente-no-windows.md`);
+> a machine without Git installed has not been measured. **Measured 2026-10-21 (Windows ARM64, Claude Code
+> 2.1.304):** guard allowed and denied by real PreToolUse events on Bash and PowerShell
+> tools; attention appeared with the question and cleared after the response in an
+> interactive session — only Claude Code was measured end-to-end in this round. Windows
+> CI still reports known test failures. There are limits worth knowing; **read
 > [Windows support (partial)](#windows-support-partial) before adopting on Windows.**
 
 ---
@@ -93,7 +97,7 @@ curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.s
 ### Homebrew
 
 ```bash
-brew install kgsaran/tap/trackfw
+brew install kgsaran/trackfw/trackfw
 ```
 
 ### Go
@@ -109,8 +113,8 @@ npm install -g trackfw
 ```
 
 From v8.0.0, the npm package is a ~80-line JavaScript shim that resolves
-`@trackfw-bin/<platform>` at install time and executes the Go binary. **It is no
-longer pure Node.js — it contains a compiled binary.** The binary arrives through
+`@trackfw-bin/<platform>` at require() time (execution, not postinstall) and executes
+the Go binary. **It is no longer pure Node.js — it contains a compiled binary.** The binary arrives through
 the `npm` channel rather than as a separate download, so organisations whose policy
 allows `npm install` but blocks direct executable downloads remain served.
 
@@ -121,10 +125,10 @@ declaration.
 Shared behavior follows the [command contract](docs/cli-parity.md).
 
 > **The npm package delivers the same Go binary, and guard and attention hooks run it from
-> `PATH`.** Since v9.3.0, guard hooks call `trackfw guard <name>` directly; attention hooks
-> call `trackfw attention signal|cleanup` (ships in the next release after v10.0.0) — no
-> POSIX shell, `jq`, or `python3` required. On Windows, the npm shim is a `.ps1` that
-> PowerShell's `ExecutionPolicy Restricted` blocks — see
+> `PATH`.** Since v9.3.0, guard hooks call `trackfw guard <name>` directly; since v10.1.0,
+> attention hooks call `trackfw attention signal|cleanup` — no POSIX shell, `jq`, or
+> `python3` required. On Windows, the npm shim is a `.ps1` that PowerShell's
+> `ExecutionPolicy Restricted` blocks — see
 > [Windows support](#windows-support-partial) before relying on the hooks.
 
 ### Windows support (partial)
@@ -155,6 +159,38 @@ policy. Use `trackfw.cmd` instead, or run from `cmd.exe`.
 pip install trackfw
 ```
 
+**PowerShell installer (from the next release after v11.1.0):**
+
+> **Note:** `install.ps1` is published as a release asset starting from the release
+> after v11.1.0. It is not present in the v11.1.0 release.
+
+```powershell
+irm https://github.com/kgsaran/trackfw/releases/latest/download/install.ps1 | iex
+```
+
+Or download, read, then execute (recommended):
+
+```powershell
+Invoke-WebRequest -Uri https://github.com/kgsaran/trackfw/releases/latest/download/install.ps1 -OutFile install.ps1
+# Review the script before running:
+# notepad install.ps1
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+The installer verifies the SHA-256 checksum before extracting, installs to
+`%LOCALAPPDATA%\Programs\trackfw`, and adds that directory to the user `PATH` (preserving
+`REG_EXPAND_SZ` entries). Environment variables honored before invoking:
+
+| Variable | Default | Description |
+|---|---|---|
+| `TRACKFW_VERSION` | latest | Pin a version, e.g. `v11.1.0`. Must match `v?MAJOR.MINOR.PATCH[-rcN]`. |
+| `TRACKFW_ARCH` | auto-detected | Override arch: `amd64` or `arm64` (case-sensitive). |
+| `TRACKFW_INSTALL_DIR` | `%LOCALAPPDATA%\Programs\trackfw` | Absolute path (drive-qualified or UNC). |
+| `TRACKFW_NO_MODIFY_PATH` | unset | Set to `1` to skip PATH modification. |
+
+To reverse the PATH addition: open **System Properties → Environment Variables**, find
+the user `PATH`, and remove the `trackfw` entry. (No uninstaller script is provided.)
+
 **Git Bash / MSYS2 / Cygwin (shell installer):**
 
 ```bash
@@ -164,6 +200,14 @@ curl -fsSL https://github.com/kgsaran/trackfw/releases/latest/download/install.s
 This installs the binary to `$HOME/bin`. Inside Git Bash (and MSYS2/Cygwin), `~/bin` is
 on `PATH` automatically. In PowerShell and `cmd.exe` it is not — add `%USERPROFILE%\bin`
 to your user `PATH` if you want to call `trackfw` from those shells.
+
+The `install.sh` script also honours these environment variables:
+
+| Variable | Default | Description |
+|---|---|---|
+| `TRACKFW_VERSION` | latest | Pin a version, e.g. `v11.1.0`. |
+| `TRACKFW_ARCH` | auto-detected | Override arch: `amd64` or `arm64`. |
+| `TRACKFW_INSTALL_DIR` | `$HOME/bin` (user) or `/usr/local/bin` (root) | Override install directory. |
 
 **Tarball (manual):**
 
@@ -184,15 +228,19 @@ where.exe trackfw          # in PowerShell or cmd.exe — shows Windows-register
 type -a trackfw            # in Git Bash — also shows ~/bin entries
 ```
 
-Keep a single copy. Starting with the next release after v10.0.0, `install.sh` lists
-every other `trackfw` binary it finds on `PATH` after installing (it never executes them).
+Keep a single copy. Since v10.1.0, `install.sh` lists every other `trackfw` binary it
+finds on `PATH` after installing (it never executes them). On Git Bash, `~/bin` is
+prepended to `PATH` by the login profile — this copy responds to hooks before any other
+entry, even if you installed via npm or pip. See
+[Pitfall: `~/bin` before PATH](#pitfall-more-than-one-trackfw-on-path) above.
 
 **What we know works**
 
-- All four channels install (`npm install -g trackfw`, `pip install trackfw`,
-  `curl … | sh` via `scripts/install.sh` on Git Bash / MSYS2 / Cygwin, and the
-  published `trackfw_<version>_windows_amd64.tar.gz` / `windows_arm64.tar.gz`). From v8.0.0 all
-  channels deliver the same Go binary; no separate Node.js or Python implementation.
+- All installation channels deliver the same Go binary: `npm install -g trackfw`,
+  `pip install trackfw`, `curl … | sh` via `scripts/install.sh` on Git Bash / MSYS2 /
+  Cygwin, the published `trackfw_<version>_windows_amd64.tar.gz` / `windows_arm64.tar.gz`,
+  and `install.ps1` (from the release after v11.1.0). No separate Node.js or Python
+  implementation since v8.0.0.
 - Core governance commands — `req new`, `roadmap new`, `roadmap move`, `status`,
   `validate` — run, and artifacts are written with LF endings.
 - **ARM64:** `windows_arm64` is published for npm (`@trackfw-bin/win32-arm64`), PyPI
@@ -204,7 +252,40 @@ every other `trackfw` binary it finds on `PATH` after installing (it never execu
 **What we know does not work yet**
 
 - Our Windows CI still reports **known test failures**. They are mapped by root cause,
-  not unknown — but they are not zero.
+  not unknown — but they are not zero. Current list:
+  `TestChecksum_StableAndMatchesSHA256Sum`, `TestFilenameUniqueness_DiretorioNaoLegivel_P2`,
+  `TestFolderStatus_DiretorioNaoLegivel_P2`, `TestShip_Integration_GracefulDegradation_RealBinary`,
+  `TestStaleWIPReportsWIPWalkError` (tracked in `.github/windows-known-failures.json`).
+- `sh` is required for the `barrier` command — not available in PowerShell or cmd.exe without
+  Git for Windows.
+- File permissions set to `0600` via `os.Chmod` are accepted by Windows but have no enforcement.
+- The PS/POSIX hook line run from `cmd.exe` exits 1 instead of 2 (passes through on 6 of 8
+  CLIs) — documented as limitation; see [guard hooks](#guard-hooks-on-windows--measured-state-since-v930).
+- `~/bin` in Git Bash's PATH precedes other PATH entries — an older binary there intercepts
+  hooks before the one you installed. `install.ps1` warns when `%USERPROFILE%\bin\trackfw.exe`
+  exists (without executing it); `install.sh` has warned since v11.1.0. See [Pitfall: more than one `trackfw` on `PATH`](#pitfall-more-than-one-trackfw-on-path).
+
+**Support matrix — measured state (2026-10-29)**
+
+Each cell: ✅ measured | ⚠️ not verified | — not applicable.
+
+| Installation route | x64 | ARM64 | Source |
+|---|---|---|---|
+| `npm install -g trackfw` | ⚠️ | ✅ | x64: tested on `windows-latest` runner with local tarballs only (`windows-probe.yml`); registry install on a real x64 machine not verified. ARM64: `npm install --prefix … trackfw@11.1.0` from the registry, `trackfw.cmd version` → 11.1.0 on Windows 11 ARM64 VM (`docs/portabilidade/2026-10-28-install-ps1-vm-arm64.md`, 2026-10-29); earlier 9.2.0 global install (`docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md`) |
+| `pip install trackfw` | ⚠️ | ✅ | x64: not verified. ARM64: `pip install trackfw==11.1.0` in a venv from the registry, `trackfw.exe version` → 11.1.0 (`docs/portabilidade/2026-10-28-install-ps1-vm-arm64.md`, 2026-10-29); earlier 9.2.0 (`docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md`) |
+| `install.sh` (Git Bash) | ⚠️ | ✅ | ARM64: `TRACKFW_VERSION=v11.1.0`, checksum verified, binary PE machine `0xAA64`, `version` → 11.1.0 (`docs/portabilidade/2026-10-28-install-ps1-vm-arm64.md`, 2026-10-29). x64 is simulated only (`check-install-version-pin.sh`, scenario `mingw64-x64-sim`). MSYS2/Cygwin: not measured. |
+| `install.ps1` | ✅ | ✅ | x64: PR #627, run 40846363727, job `windows-install-ps1`, 30 scenarios each under `powershell` (Edition Desktop, 5.1) and `pwsh` (Edition Core, 7), local fixture (asset ships from next release). ARM64: Windows PowerShell 5.1 on a Windows 11 ARM64 VM against the real v11.1.0 release — ARM64 detected, binary PE machine `0xAA64`, user PATH type preserved, idempotent re-run, `TRACKFW_NO_MODIFY_PATH=1` honoured, documented reversal checked (`docs/portabilidade/2026-10-28-install-ps1-vm-arm64.md`, 2026-10-29). |
+| Tarball (manual) | ⚠️ | ✅ | ARM64: `trackfw_9.2.0_windows_arm64.tar.gz` extracted and binary executed on ARM64 VM (`docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md`, 2026-10-04). x64: not verified. |
+
+| Shell | Core commands | Guard hooks | Source |
+|---|---|---|---|
+| Git Bash | ✅ | ✅ | Core: `trackfw init` on ARM64 VM (`docs/portabilidade/2026-10-12-medicao-vm-windows-9.5.0.md`). Guard (current D12 form): ARM64 VM 2026-10-21, allow=0 deny=2 err=2 absent=2 (`docs/portabilidade/2026-10-21-guard-zsh-candidato-windows.md`); Claude Code 2.1.304 end-to-end (`docs/portabilidade/2026-10-20-jornadas-agentes-windows.md`). All ARM64. |
+| PowerShell 5.1 | ✅ | ✅ | Core: `trackfw --version` and `trackfw attention signal/cleanup` measured on ARM64 VM (`docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md`, `docs/portabilidade/2026-10-20-jornadas-agentes-windows.md`). Guard: ARM64 VM 2026-10-21 (`docs/portabilidade/2026-10-21-guard-zsh-candidato-windows.md`); also x64 CI run 40882950230 job `windows-full-suites`, `TestGuardLineShellMatrix/.../powershell/{RC0-allow,RC2-deny,RC1-deny-normalizado,absent}` 4 forms. |
+| PowerShell 7 (`pwsh`) | ⚠️ | ✅ | Core: not verified. Guard: x64 CI run 40882950230 job `windows-full-suites`, `TestGuardLineShellMatrix/.../pwsh/{RC0-allow,RC2-deny,RC1-deny-normalizado,absent}` 4 forms; `pwsh` not installed on the ARM64 test VM. |
+| cmd.exe | ✅ | ✅ | Core: `trackfw --version` via `cmd /c` and `trackfw attention signal/cleanup` on ARM64 VM (`docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md`, `docs/portabilidade/2026-10-20-jornadas-agentes-windows.md`). Guard: cmd.exe form (`trackfw guard git-branch \|\| exit 2`) measured on ARM64 VM, exit 0/2/2/2/2 (`docs/portabilidade/2026-10-07-linha-de-hook-fail-closed-sem-trackfw.md:682-689`); same form generalizes to other hook names. PS/POSIX form exits 1 in cmd.exe (fail-open; same doc). x64 cmd.exe not measured. |
+
+Windows CI matrix: **x64 only**. ARM64 CI is not currently run.
+
 **Guard hooks on Windows — measured state (since v9.3.0)**
 
 Since v9.3.0, guard hooks call `trackfw guard <name>` (the Go binary) instead of a
@@ -215,25 +296,52 @@ Bash — a team with mixed OS can commit one config and have it work on all mach
 The hook line emitted depends on the shell the agent CLI uses on Windows — a fact of
 the vendor, not of the OS:
 
-| Agent CLI | Shell on Windows | Hook line emitted (D11, ML-6C) | Basis |
+| Agent CLI | Shell on Windows | Hook line emitted (D12, v10.1.0) | Basis |
 |---|---|---|---|
-| Claude Code | Git Bash (if installed), else PowerShell | `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <name>; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE` | vendor docs (2026-10-04) |
-| Codex CLI | PowerShell | `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <name>; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE` | vendor source (2026-10-04) |
-| Gemini CLI | PowerShell | `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <name>; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE` | vendor source (2026-10-04) |
-| Cursor | PowerShell | `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <name>; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE` | vendor bundle (2026-09-06) |
-| Windsurf | PowerShell | `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <name>; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE` | vendor docs (2026-10-04) |
-| GitHub Copilot | PowerShell / cross-platform `command` field | `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <name>; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE` | vendor docs (2026-10-04) |
-| Kiro | cmd.exe | `trackfw guard <name> \|\| exit 2` | vendor docs (2026-10-04) |
-| Amazon Q | cmd.exe | `trackfw guard <name> \|\| exit 2` | vendor source (2026-10-04) |
+| Claude Code | Git Bash (if installed), else PowerShell | PS/POSIX form (see below) | Git Bash half: measured ARM64 VM (`docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md:810`; hardcoded path `C:\Program Files\Git\bin\bash.exe` and env var override confirmed in `docs/portabilidade/2026-10-20-jornadas-agentes-windows.md` A7). PowerShell fallback: vendor docs only (`docs/portabilidade/2026-09-05-contrato-de-execucao-de-hook-por-cli-de-agente-no-windows.md`). |
+| Codex CLI | PowerShell (prefers `pwsh` when installed) | PS/POSIX form | vendor source (2026-10-04) |
+| Gemini CLI | PowerShell (prefers `pwsh` when installed) | PS/POSIX form | vendor source (2026-10-04) |
+| Cursor | PowerShell | PS/POSIX form | vendor bundle (2026-09-06) |
+| Windsurf | PowerShell | PS/POSIX form | vendor docs (2026-10-04) |
+| GitHub Copilot | PowerShell / cross-platform `command` field | PS/POSIX form | vendor docs (2026-10-04) |
+| Kiro | cmd.exe | cmd.exe form | vendor docs (2026-10-04) |
+| Amazon Q | cmd.exe | cmd.exe form | vendor source (2026-10-04) |
 
-The D11 line (ML-6C, issue #538) is **fail-closed** for both POSIX shells and PowerShell:
-if `trackfw` is absent from `PATH`, the hook exits with code 2 instead of 0. The seed
-`$LASTEXITCODE=2` is a PowerShell assignment; in sh/bash the `=2: command not found` error
-is silently discarded by `2>${null-/dev/null}`. `LASTEXITCODE=$((2*!!$?))` normalizes any
-non-zero exit to 2 in sh/bash. The 4th segment `$LASTEXITCODE=2*!!$LASTEXITCODE
-2>${null-/dev/null}` provides the same normalization in PowerShell (via `!` as `-not`),
-and is inert (CommandNotFound, stderr suppressed) in sh/bash. For cmd.exe: `|| exit 2` is
-the native short-circuit.
+The exact hook lines emitted by `trackfw init` and `trackfw update` since v10.1.0 (D12).
+Copy these verbatim or run `trackfw init`/`trackfw update` — do not reconstruct them:
+
+**PS/POSIX form** (Claude Code, Codex, Gemini, Cursor, Windsurf, Copilot — credential guard):
+
+```
+emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE
+```
+
+**PS/POSIX form** (git-branch guard):
+
+```
+emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE
+```
+
+**cmd.exe form** (Kiro, Amazon Q):
+
+```
+trackfw guard credential || exit 2
+trackfw guard git-branch || exit 2
+```
+
+The D12 line (v10.1.0, issue #595) is **fail-closed** for both POSIX shells and PowerShell.
+The leading `emulate -R sh 2>${null-/dev/null}` instructs zsh to run as POSIX sh — without
+it, zsh's EQUALS/NOMATCH expansions abort the assignment `$LASTEXITCODE=2` with an error,
+leaving the seed unset and allowing all exits. The seed `$LASTEXITCODE=2` is a PowerShell
+assignment; in sh/bash the `=2: command not found` error is silently discarded. `LASTEXITCODE=$((2*!!$?))` normalizes any non-zero exit to 2 in sh/bash. The 4th segment
+`$LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}` provides the same normalization in
+PowerShell, and is inert (CommandNotFound, stderr suppressed) in sh/bash. For cmd.exe:
+`|| exit 2` is the native short-circuit.
+
+**Under PowerShell**, a `deny` exit also emits two `CommandNotFound` error blocks to stderr
+(one for `emulate`, one for the `$LASTEXITCODE=2*...` segment) alongside the guard's own
+deny reason. The deny reason is preserved — it is the last line of stderr. Measure 2026-10-29
+(CI run 40882950230, job `windows-full-suites`, `TestGuardLineShellMatrix`).
 
 **What was measured in the VM (Windows 11 ARM64, 2026-10-06):** PowerShell 5, cmd.exe,
 and Git Bash (non-login, explicit PATH to the branch binary) all block
@@ -253,17 +361,23 @@ hook line verified in each shell but were not run agent-to-end:
 | GitHub Copilot | Not verified (no account) | — |
 | Amazon Q | Not verified (no account) | — |
 
-**Claude Code on Windows uses the PowerShell shell tool**, not Bash. The hook emitted by
-trackfw carries `matcher: "Bash|PowerShell"` so it fires on both macOS/Linux (where Claude
-Code names the tool `Bash`) and Windows (where it names it `PowerShell`). Run
-`trackfw update` to migrate existing configs that carry only `"Bash"` — it also handles the
-`.sh`-to-binary-hook migration.
+**Claude Code on Windows uses Git Bash (if installed) as its shell tool**, falling back to
+PowerShell when Git Bash is absent (Git Bash path measured on ARM64 VM:
+`docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md:810`
+and `docs/portabilidade/2026-10-20-jornadas-agentes-windows.md` A7;
+PowerShell fallback: vendor docs only,
+`docs/portabilidade/2026-09-05-contrato-de-execucao-de-hook-por-cli-de-agente-no-windows.md`). The hook emitted by trackfw carries
+`matcher: "Bash|PowerShell"` so it fires in both cases — on macOS/Linux (where the tool is
+named `Bash`) and on Windows Git Bash and PowerShell alike. Run `trackfw update` to migrate
+existing configs that carry only `"Bash"` — it also handles the `.sh`-to-binary-hook
+migration.
 
-**Caveat — old trackfw binary in Git Bash's PATH:** Claude Code runs the hook command
-through Git Bash (login shell), whose login profile puts `~/bin` at the front of `PATH`.
-If an older trackfw binary (without the `guard` subcommand) lives in `~/bin`, the hook
-exits 1 ("unknown command") and fails open on most CLIs — remove or update that binary.
-Since v9.3.0, `trackfw validate` reports this condition.
+**Caveat — old trackfw binary in Git Bash's PATH:** when Claude Code runs the hook through
+Git Bash (login shell), the Git Bash login profile (`/etc/profile`) prepends `~/bin`
+(`%USERPROFILE%\bin`) to `PATH`. If an older trackfw binary (without the `guard` subcommand)
+lives in `~/bin`, the hook finds it first, exits 1 ("unknown command"), and fails open on
+most CLIs — remove or update that binary. Since v9.3.0, `trackfw validate` reports this
+condition.
 
 **The guard requires a `trackfw` binary with the `guard` subcommand in the PATH of the
 agent CLI's process.** `trackfw validate` now reports three new conditions:
@@ -351,6 +465,8 @@ trackfw ship -m "feat(auth): add login flow"
 | Command | Description |
 |---|---|
 | `trackfw init` | Interactive wizard — scaffolds governance + AI integrations |
+| `trackfw update` | Update trackfw-managed artifacts (hooks, agents, skills) in the current project |
+| `trackfw configure` | Interactive wizard to create/recreate `trackfw.yaml` |
 | `trackfw adr new "title"` | Create a new Architecture Decision Record |
 | `trackfw adr list` | List all ADRs with status |
 | `trackfw req new "title"` | Create a REQ with guided ADR discovery |
@@ -361,12 +477,28 @@ trackfw ship -m "feat(auth): add login flow"
 | `trackfw roadmap move <name> <state>` | Move roadmap between states |
 | `trackfw roadmap list` | List all roadmaps grouped by state |
 | `trackfw validate` | Check governance consistency (use as CI gate) |
+| `trackfw baseline` | Snapshot current violations to `.trackfw-baseline.json`; validate compares against it |
 | `trackfw barrier <roadmap> --wave <n>` | Deterministic wave-release gate — stack-agnostic, checks MLs, acceptance evidence, project-declared gates, and governance |
+| `trackfw branch new <type>/<slug>` | Create a governed feature branch — feat/fix/refactor require a matching REQ + roadmap already in `wip/` |
+| `trackfw commit -m "msg"` | Commit staged changes, gated on governance for feat/fix/refactor branches |
+| `trackfw push` | Governed `git push` for commits already created |
 | `trackfw ship -m "msg"` | Governed `git commit + push + open PR/MR` — enforces branch pattern and governance gate; resolves forge (GitHub/GitLab/Bitbucket/Azure) automatically or via `--forge`; falls back to a browser URL when the forge CLI is absent |
+| `trackfw release tag` | Create and publish an annotated release tag |
+| `trackfw changelog [--since v<n>]` | Show entries from `CHANGELOG.md` |
 | `trackfw context` | Print a structured summary of the project's governance state (REQs, Roadmaps, ADRs with counts and statuses) |
 | `trackfw serve` | Start a local governance dashboard (no cloud, no accounts) |
 | `trackfw status` | Show wip, blocked, REQs waiting on ADRs |
 | `trackfw log [--tail N]` | Show roadmap state transition history |
+| `trackfw metrics` | Delivery metrics derived from governance artifacts |
+| `trackfw discover` | Scan the project and report governance artifacts not yet tracked |
+| `trackfw sync` | Sync Open REQs to a project management tool |
+| `trackfw note new "title"` | Create a knowledge note in `vault/notes/` |
+| `trackfw doctor` | Detect artifacts on disk missing from the manifest |
+| `trackfw audit-surface <ref>` | Report the executable surface of a git ref without checking it out |
+| `trackfw guard credential` | Hook guard — blocks credential patterns in tool payloads |
+| `trackfw guard git-branch` | Hook guard — blocks raw `git branch/commit/push` operations |
+| `trackfw guard write-scope` | Hook guard — blocks writes to frozen paths |
+| `trackfw attention` | Signal or clear a board attention banner (`trackfw serve`) |
 | `trackfw agents list` | List available agents and deployment state across AI CLIs |
 | `trackfw agents install` | Install selected specialist agents |
 | `trackfw agents update` | Safely update managed agents |
@@ -374,6 +506,7 @@ trackfw ship -m "feat(auth): add login flow"
 | `trackfw skills list` | List available governance skills and deployment state |
 | `trackfw skills install/update/uninstall` | Manage selected governance skills |
 | `trackfw version` | Print version |
+| `trackfw completion <shell>` | Generate shell completion script (bash, zsh, fish, powershell) |
 
 The same lifecycle contract is available from the Go/Homebrew, npm, and PyPI
 distributions.
@@ -406,7 +539,7 @@ Moving a file between folders **is** the state transition. No database, no API.
 
 ## AI-native governance
 
-trackfw v2.6.0 introduces features designed for teams where AI agents are first-class contributors.
+trackfw includes features designed for teams where AI agents are first-class contributors.
 
 ### Multi-agent namespacing
 
@@ -720,7 +853,7 @@ the same destinations `install` actually wrote to.
 
 The **12 roles** installed for each tool: **architect · backend · frontend · qa · infra · security · code-quality · dba · ux · data · iac · tooling**
 
-The **17 skills** cover governance process (governance, implement, plan, release, review) and technical specialties (backend-skill, code-quality-skill, data-skill, dba-skill, frontend-skill, iac-skill, infra-skill, qa-skill, security-skill, tooling-skill, ux-skill, vault-skill).
+The **17 skills** cover governance process (governance, implement, plan, release, review) and technical specialties (architecture-skill, backend-skill, code-quality-skill, data-skill, dba-skill, frontend-skill, iac-skill, infra-skill, qa-skill, security-skill, tooling-skill, ux-skill).
 
 ---
 
@@ -758,6 +891,8 @@ Sample mapping (three of the ten presets):
 | ux | Atena | Norman | Galadriel |
 | code-quality | Hefesto | Knuth | Faramir |
 | data | Métis | Hopper | Bilbo |
+| iac | Dédalo | Hashimoto | Aulë |
+| tooling | Prometeu | McCarthy | Celebrimbor |
 
 The remaining presets are `norse` (Odin, Thor, Freya…), `potter` (Dumbledore,
 Snape, Luna…), `thrones` (Tyrion, Jon, Arya…), `chaves` (Girafales, Madruga,
@@ -766,7 +901,7 @@ Magali…), and `egyptian` (Thoth, Rá, Ísis…).
 
 ### Custom mode and your nickname
 
-The interactive wizard also offers **name them one by one**: you type all ten
+The interactive wizard also offers **name them one by one**: you type all twelve
 display names yourself. Each entry is validated as you go — an invalid name is
 rejected with an inline error, never silently corrected, and two names that
 resolve to the same identifier are rejected too.
@@ -778,7 +913,7 @@ agents will address you.
 
 `trackfw init` is not the only entry point: `trackfw agents install`, the
 natural path in a project that is already governed, offers the same wizard.
-The rule is identical across the three CLIs — it appears **only** when
+The rule is identical across all CLIs — it appears **only** when
 **all** of the following hold:
 
 - the command is `agents` (never `skills`: skills have no identity);
@@ -818,7 +953,7 @@ Architect — Architecture, ADRs and governed coordination
 ```
 
 Before anything is written to disk — for a themed preset **or** for custom
-names — a confirmation screen lists all ten `specialty → name` pairs plus
+names — a confirmation screen lists all twelve `specialty → name` pairs plus
 your nickname:
 
 ```
@@ -834,8 +969,7 @@ your nickname:
 Answering no returns to preset selection; nothing is written until you
 confirm.
 
-Everything is stored in a single global file, shared by the Go, npm, and PyPI
-distributions:
+Everything is stored in a single global file — the same binary in all channels reads it:
 
 ```json
 // ~/.trackfw/identity.json
@@ -892,8 +1026,7 @@ the body grows by tens of tokens that are loaded only after the agent has
 already been selected. No tool call, no file read, no permanent instruction.
 
 Without `~/.trackfw/identity.json`, the generated artifacts are **byte for byte
-identical** to the current ones in all three CLIs. The feature is opt-in and
-regresses nothing.
+identical** to the current ones. The feature is opt-in and regresses nothing.
 
 ---
 
@@ -931,12 +1064,27 @@ The Codex integration is repository-scoped: `AGENTS.md` carries persistent instr
 
 ## Credential guard: detection, not prevention
 
-trackfw can generate a **credential guard** hook that blocks agents from materializing real
-credentials. `trackfw validate` also reports when that guard looks compromised:
+trackfw can generate **guard hooks** that block agents from materializing real credentials,
+creating raw git branches, or writing to frozen paths. Since v9.3.0, guard hooks call the
+trackfw binary directly (`trackfw guard credential`, `trackfw guard git-branch`,
+`trackfw guard write-scope`) — no `.sh` script is required.
 
-- the hook is registered but the script is **missing** or not executable;
-- the script's **contents diverge** from the template this version of trackfw generates;
-- `credential_guard.mode` was **downgraded** from `block` on disk relative to your last commit.
+`trackfw validate` reports when a guard looks compromised (`credential_guard_hook_resolvable`,
+`git_branch_guard_hook_resolvable`):
+
+- the hook **command no longer contains the canonical `trackfw guard <name>` form** — it may
+  have been replaced, neutralized (e.g. `echo trackfw guard credential`), or mutated;
+- **legacy `.sh`-based hook** detected — `.sh` scripts do not run on Windows; run
+  `trackfw update` to migrate to the binary form;
+- `credential_guard.mode` was **downgraded** from `block` on disk relative to your last commit
+  (`credential_guard_mode_downgrade`).
+
+`credential_guard_script_integrity` fires **only when `scripts/trackfw-credential-guard.sh`
+exists** — it compares the file against the template this binary would generate. If the script
+is absent (the default after `trackfw update`), the rule is silent: absence is not a violation.
+
+A global variant (`trackfw guard credential --global`) is installed in your AI CLI's global
+hooks directory and covers projects that do not run `trackfw init`.
 
 **Read this before relying on it.**
 

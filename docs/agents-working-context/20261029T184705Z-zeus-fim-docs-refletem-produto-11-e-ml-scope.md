@@ -1,0 +1,21 @@
+# zeus — fim: documentação 11.x, install.ps1 e ml_scope (2026-10-29)
+
+- **Mudou:** duas REQs na branch `feat/documentacao-reflete-produto-11-windows-install-ps1` (PR #627).
+  - REQ-2026-10-28: `install.ps1` com o contrato do `install.sh`, medido no CI x64 sob PS 5.1 e 7 e na VM Windows 11 ARM64. A página do PyPI ganha o README. `cli-parity.md` virou contrato do binário único. README com matriz Windows em que cada célula medida cita a fonte. VISION e site pt/en atualizados para a 11.x.
+  - REQ-2026-10-29: o `barrier` `ml_scope` lê declaração em lista (191 de 836 eram lidas como vazias), une os roadmaps tocados pela branch e restringe `req:`/`adr:` ao próprio diretório. Antes, `req: "go.mod"` concedia `go.mod`.
+- **Medido:** barrier 6/6 em todas as waves das duas REQs, com o binário da branch. O `make quality` rodou com a máquina ociosa e saiu com RC=0. CI Windows: `windows-install-ps1` 52/52 sob PS 5.1 e 7 (run 40931646835); `TestGuardLineShellMatrix` com 40 subtestes PowerShell (run 40882950230).
+- **Achados que viraram ML no mesmo PR:**
+  - red team do `install.ps1`: `;` no destino quebrava a idempotência do PATH; também `;` Unicode, `Join-Path` e caixa sob tr-TR;
+  - VM: o aviso de outra cópia não cobria o `~/bin` do Git Bash;
+  - o logo do site nunca existiu;
+  - contagens erradas no README.
+- **Residuais com motivo escrito:**
+  - A-3: as formas cmd.exe do `cli-parity.md` ficam fora do gate;
+  - `generators/roadmap.go:672` é outro mecanismo;
+  - npm e pip em x64 real não verificados.
+- **Vault:** `powershell-funcao-simples-engole-parametro-desconhecido-em-args-2026-10-28`, `escape-unicode-escrito-por-ferramenta-de-edicao-vira-caractere-literal-2026-10-29`.
+- **Pendente:**
+  - merge pelo KG;
+  - depois do merge, os dois roadmaps vão para `done/`;
+  - na próxima release, conferir o asset `install.ps1`, a página do PyPI com o README e a nova lista de required checks (`windows-install-ps1` ainda não é obrigatório: decisão do KG);
+  - a página do site só muda no próximo deploy.

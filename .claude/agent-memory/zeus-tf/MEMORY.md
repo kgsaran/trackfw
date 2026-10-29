@@ -1,6 +1,7 @@
 # Memory Index — trackfw (Zeus)
 
 - [Verificação visual obrigatória em MLs de UI](feedback_verificacao_visual_obrigatoria.md) — gates verdes não provam UX; auditar em navegador real
+- [Visual sem extensão: Chrome headless](feedback_verificacao_visual_sem_extensao.md) — sem mcp__claude-in-chrome, `--headless --screenshot` + Read; pegou logo 404 no site
 - [Atribuição de papéis em MLs](feedback_atribuicao_de_papeis_ml.md) — Hefesto e Hades não modificam código, nem em cópia mecânica
 - [Dashboard do serve é light-only](project_dashboard_light_only.md) — sem prefers-color-scheme; static do Go é go:embed e fonte canônica
 - [trackfw ainda sem usuários downstream](project_trackfw_sem_usuarios_downstream.md) — compatibilidade retroativa não é restrição de peso; corrigir na origem
@@ -42,3 +43,4 @@
 - [PR incompleto abre como draft](feedback_pr_incompleto_abre_como_draft.md) — wave pendente → `gh pr create --draft`; aviso em prosa não segurou o merge do #598
 - [Mover escrita roda o pathguard](feedback_mover_escrita_roda_pathguard.md) — escrita movida de função/pacote → `go test ./internal/pathguard/`; só o make quality pegou (#602)
 - [PATH local mascara a sonda de binário](project_path_local_mascara_sonda_de_binario.md) — trackfw instalado no PATH deixa teste verde local e vermelho no CI; rode go test com PATH sem trackfw
+- [Direção: A+C, B congelado](project_direcao_consolidar_e_adocao.md) — 2026-10-28: consolidar + adoção; radar é do Lourival; open source sempre

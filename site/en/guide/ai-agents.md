@@ -6,7 +6,7 @@
 
 ## Why AI agents need structured governance
 
-AI agents like Claude Code, OpenAI Codex, Gemini CLI, Antigravity, Cursor, GitHub Copilot, Windsurf, Amazon Q, and Kiro operate in independent sessions. Without a persistent record of decisions and context, each session starts from scratch — the agent doesn't know:
+AI agents like Claude Code, OpenAI Codex, Gemini CLI, Google Antigravity, Cursor, GitHub Copilot, Windsurf, Amazon Q, OpenCode, and Kiro (10 targets) operate in independent sessions. Without a persistent record of decisions and context, each session starts from scratch — the agent doesn't know:
 
 - Which architectural decisions have already been made (and why)
 - Which requirements are in progress
@@ -295,7 +295,7 @@ The agent automatically reads `trackfw context --format=json` and includes the r
 
 ## Multi-CLI installation and lifecycle
 
-Agents and skills use the same contract in the Go/Homebrew, npm, and PyPI packages:
+Agents and skills are managed with the following commands:
 
 ```bash
 trackfw agents list
@@ -310,7 +310,7 @@ trackfw skills uninstall --targets gemini,antigravity
 ```
 
 The targets are Claude Code, Codex, Gemini CLI, Antigravity, Cursor, GitHub
-Copilot, Windsurf, Amazon Q, and Kiro. Shared flags are:
+Copilot, Windsurf, Amazon Q, OpenCode, and Kiro (10 targets). Shared flags are:
 
 | Flag | Usage |
 |---|---|
@@ -356,8 +356,7 @@ trackfw agents install --targets codex --scope project
 trackfw skills install --targets codex --scope project
 ```
 
-The adapter generates ten specialist TOML agents under `.codex/agents/` and five
-Agent Skills under `.agents/skills/`, with safe ownership and conservative updates.
+The adapter generates twelve specialist TOML agents under `.codex/agents/` (architect, backend, frontend, qa, infra, security, code-quality, dba, ux, data, iac, tooling) and governance skills under `.agents/skills/`, with safe ownership and conservative updates.
 
 ---
 

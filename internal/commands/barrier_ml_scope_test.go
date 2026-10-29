@@ -20,8 +20,30 @@ package commands
 // | TestMLScopeFilesAffectedParsing        | parseMLScopeFilesAffected extracts backtick paths from single and multi-line declarations |
 // | TestMLScopeMatchPath                   | mlScopeMatchPath handles exact, dir, glob and ** patterns         |
 // | TestMLScope_NoOriginMain_Blocked               | Absent origin/main → status "blocked" (Decision 1, ML-4C)        |
-// | TestMLScope_RoadmapMovedStatePasses_Flat       | Moved roadmap (done/→wip/) old path NOT in failures; different basename IS in failures (flat) |
-// | TestMLScope_RoadmapMovedStatePasses_ByAgent    | Moved roadmap (agentA/done/→agentA/wip/) old path NOT in failures; same basename under different agent IS in failures (by_agent) |
+// | TestMLScope_RoadmapMovedStatePasses_Flat       | Moved roadmap (done/→wip/) old path NOT in failures; different basename deleted on branch IS in failures (flat, ADR-2026-10-29 D2) |
+// | TestMLScope_RoadmapMovedStatePasses_ByAgent    | Moved roadmap (agentA/done/→agentA/wip/) old path NOT in failures; same basename under different agent deleted on branch IS in failures (by_agent, ADR-2026-10-29 D2) |
+// ── New tests (ML-1A, REQ-2026-10-29) ───────────────────────────────────────────────────────
+// | TestMLScopeFilesAffectedList_BreakAtListItemReproducesDefect | List items after the label produce tokens (sabotage: restore break → this test fails)        |
+// | TestMLScopeFilesAffectedList_AllTokensExtracted              | All backtick tokens from all list items are extracted (Regra B)                               |
+// | TestMLScopeFilesAffectedList_StopsAtBoldField                | Standalone ** stops; contra-braço: "- **" does not stop                                       |
+// | TestMLScopeFilesAffectedList_CheckmarkItemStops              | "- [ ]", "- [x]", "- [X]" stop the list before tokens leak                                   |
+// | TestMLScopeFilesAffectedList_AnyCriterionMarkerStops         | Any single-char marker "- [~]", "- [-]" stops; multi-char link "- [texto longo](url)" does not |
+// | TestMLScopeFilesAffectedHybridInlineAndList                  | Inline tokens on the label line AND list items below are all extracted (§1.4c)                |
+// | TestMLScopeGlobBroadPatternBlocked                           | Broad patterns (**, **\/*, *\/**)  → status blocked with rejection message (AC10)            |
+// | TestMLScopeGlobPrefixedPatternAccepted                       | Prefixed patterns (site/**, **\/*.go) are accepted and do not produce rejection                |
+// | TestMLScope_UnionTwoRoadmapsFilesFromOtherRoadmapInScope     | File declared by union member B is in scope for target A's barrier (AC4)                      |
+// | TestMLScope_UnionIgnoresWorkingTreeRoadmapEdit               | Disk edit of committed union member does not amplify scope (reads from HEAD)                  |
+// | TestMLScope_TargetRoadmapExcludedFromMemberLoop              | Target roadmap is excluded from member loop; Wave 2 files out of scope for --wave 1           |
+// | TestMLScope_UnionStartedWavesOnly_AllPendingContributesNothing | Union member with all-⬜ MLs contributes no patterns (K undefined)                           |
+// | TestMLScope_UnionStartedWavesOnly_DoneWaveContributesPatterns | Union member with ✅ Wave 0 contributes Wave 0 patterns (K=0)                                |
+// | TestMLScope_UnionAbandonedContributesOrchestrationOnly       | Member in abandoned/ contributes only orchestration, not its Files affected patterns          |
+// | TestMLScope_UnionDoesNotIncludeUncommittedRoadmap            | A roadmap not in diffFiles (only on disk) is not a union member (AC5)                        |
+// | TestMLScope_UnionDoneAtMergeBaseOrchestrationOnly            | Member in done/ that existed at merge-base contributes only orchestration                     |
+// | TestMLScope_UnionDoneMovedInBranchContributesPatterns        | Member moved to done/ on the branch (not at merge-base) contributes patterns                 |
+// | TestMLScope_ReqOutsideReqDirDiscarded                        | req: outside req_dir discarded; traversal/sibling rejected; "./" prefix accepted (AC11)       |
+// | TestMLScope_AdrOutsideADRDirsDiscarded                       | adr: outside adr_dirs discarded; valid adr: path accepted (AC11)                             |
+// | TestMLScope_UnionPreCutoffMemberOrchestrationOnly            | Union member with pre-2026-07-18 date contributes only orchestration                         |
+// | TestMLScope_UnionMissingDateTreatedAsPostCutoff              | Union member with no date: field treated as post-cutoff; contributes patterns                |
 
 import (
 	"encoding/json"
@@ -849,10 +871,12 @@ func TestMLScope_NoOriginMain_Blocked(t *testing.T) {
 // part of the roadmap's orchestration set (same basename, any state in
 // roadmap_dir, flat mode).
 //
-// Counter-arm (same fixture): a DIFFERENT roadmap with another basename in the
-// same deleted path (docs/roadmaps/done/ROADMAP-ml-scope-moved-other.md) IS
-// reported as out of scope, proving the diff was actually evaluated and the fix
-// is basename-exact.
+// Counter-arm: docs/roadmaps/done/ROADMAP-ml-scope-moved-other.md (different
+// basename) is committed in origin/main and then deleted (git rm) on the branch.
+// The deleted path appears in diffFiles but does NOT exist in HEAD, so it is
+// not a union member (ADR-2026-10-29 D2). It also has a different basename from
+// the target, so it is not in the target's orchestration set — and IS reported
+// as out of scope. This proves the diff was evaluated and the fix is basename-exact.
 //
 // Asserts: orchestration set includes same-basename paths across all roadmap
 // states (flat), so a moved roadmap does not produce a spurious "out of scope"
@@ -873,6 +897,9 @@ func TestMLScope_RoadmapMovedStatePasses_Flat(t *testing.T) {
 	const movedBase = "ROADMAP-ml-scope-moved.md"
 	const otherBase = "ROADMAP-ml-scope-moved-other.md"
 	content := buildMLScopeRoadmap("2026-10-01", "`internal/commands/ml-scope-moved.go`")
+	// Distinct content for the counter-arm so that --no-renames never pairs it
+	// with movedBase (distinct files, distinct declared patterns).
+	otherContent := buildMLScopeRoadmap("2026-10-01", "`internal/commands/ml-scope-moved-other.go`")
 
 	// ── Phase 1: build origin/main with roadmap at done/ ───────────────────
 	mlScopeGitRun(t, dir, env, "init", "-b", "main", dir)
@@ -894,27 +921,30 @@ func TestMLScope_RoadmapMovedStatePasses_Flat(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps/done", movedBase), []byte(content), 0644); err != nil {
 		t.Fatalf("write done roadmap: %v", err)
 	}
+	// Counter-arm: different basename at done/ in origin/main.
+	// Deleted on the branch; the deleted path is in diffFiles but not in HEAD →
+	// not a union member (ADR-2026-10-29 D2). Different basename → not in the
+	// target's orchestration set → must appear in failures.
+	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps/done", otherBase), []byte(otherContent), 0644); err != nil {
+		t.Fatalf("write other roadmap in done/: %v", err)
+	}
 	// REQ+ADR fixtures (using the post-move wip/ path as the roadmap ref is fine;
 	// ml_scope only reads req: from the roadmap frontmatter to locate the REQ file).
 	writeMLScopeREQFixture(t, dir, "docs/roadmaps/wip/"+movedBase)
 
 	mlScopeGitRun(t, dir, env, "add", ".")
-	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "base: roadmap in done/")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "base: roadmap in done/ + counter-arm other in done/")
 	mlScopeGitRun(t, dir, env, "update-ref", "refs/remotes/origin/main", "HEAD")
 
-	// ── Phase 2: move roadmap to wip/, add other roadmap at done/ ──────────
+	// ── Phase 2: move roadmap to wip/, delete counter-arm ──────────────────
 	mlScopeGitRun(t, dir, env, "rm", "-q", "docs/roadmaps/done/"+movedBase)
 	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps/wip", movedBase), []byte(content), 0644); err != nil {
 		t.Fatalf("write wip roadmap: %v", err)
 	}
-	// Counter-arm: different basename — must remain out of scope.
-	// Recreate docs/roadmaps/done/ in case git rm removed the now-empty directory.
-	if err := os.MkdirAll(filepath.Join(dir, "docs/roadmaps/done"), 0755); err != nil {
-		t.Fatalf("mkdir done/ for counter-arm: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps/done", otherBase), []byte(content), 0644); err != nil {
-		t.Fatalf("write other roadmap: %v", err)
-	}
+	// Delete the counter-arm. The deleted path appears in diffFiles but not in
+	// HEAD → not a union member. Different basename → not in orchestration →
+	// must appear in failures (ADR-2026-10-29 D2, contra-braço).
+	mlScopeGitRun(t, dir, env, "rm", "-q", "docs/roadmaps/done/"+otherBase)
 	mlScopeGitRun(t, dir, env, "add", ".")
 	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "chore: reopen — move roadmap to wip/")
 
@@ -958,9 +988,11 @@ func TestMLScope_RoadmapMovedStatePasses_Flat(t *testing.T) {
 // TestMLScope_RoadmapMovedStatePasses_ByAgent asserts the same contract as
 // TestMLScope_RoadmapMovedStatePasses_Flat in by_agent namespacing mode.
 //
-// Counter-arm (same fixture): the SAME basename under a DIFFERENT agent's done/
-// directory IS still out of scope — the fix pins sibling states within the same
-// agent only, not across all agents.
+// Counter-arm: docs/roadmaps/zeus-tf/done/ROADMAP-ml-scope-byagent-moved.md
+// (same basename, different agent) is committed in origin/main and then deleted
+// (git rm) on the branch. The deleted path appears in diffFiles but NOT in HEAD
+// → not a union member (ADR-2026-10-29 D2). It is outside the target's
+// orchestration (different agent path prefix) → IS reported as out of scope.
 //
 // Asserts: orchestration set includes same-basename paths across all roadmap
 // states for the owning agent (by_agent mode), but NOT for other agents.
@@ -982,6 +1014,9 @@ func TestMLScope_RoadmapMovedStatePasses_ByAgent(t *testing.T) {
 	const agentB = "zeus-tf"
 	const movedBase = "ROADMAP-ml-scope-byagent-moved.md"
 	content := buildMLScopeRoadmap("2026-10-01", "`internal/commands/ml-scope-byagent.go`")
+	// Distinct content for the counter-arm (different agent's done/) so that
+	// --no-renames never silently pairs it with the target via content match.
+	otherContent := buildMLScopeRoadmap("2026-10-01", "`internal/commands/ml-scope-byagent-other.go`")
 
 	// ── Phase 1: build origin/main with roadmap at agentA/done/ ────────────
 	mlScopeGitRun(t, dir, env, "init", "-b", "main", dir)
@@ -1008,21 +1043,28 @@ func TestMLScope_RoadmapMovedStatePasses_ByAgent(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps", agentA, "done", movedBase), []byte(content), 0644); err != nil {
 		t.Fatalf("write agentA done roadmap: %v", err)
 	}
+	// Counter-arm: same basename under agentB/done/ at origin/main.
+	// Deleted on the branch; the deleted path is in diffFiles but not in HEAD →
+	// not a union member (ADR-2026-10-29 D2). Outside agentA's orchestration
+	// siblings (different agent path) → must appear in failures.
+	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps", agentB, "done", movedBase), []byte(otherContent), 0644); err != nil {
+		t.Fatalf("write agentB done roadmap in origin/main: %v", err)
+	}
 	writeMLScopeREQFixture(t, dir, "docs/roadmaps/"+agentA+"/wip/"+movedBase)
 
 	mlScopeGitRun(t, dir, env, "add", ".")
-	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "base: by_agent roadmap in agentA/done/")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "base: by_agent roadmap in agentA/done/ + counter-arm in agentB/done/")
 	mlScopeGitRun(t, dir, env, "update-ref", "refs/remotes/origin/main", "HEAD")
 
-	// ── Phase 2: move roadmap to agentA/wip/, add same basename under agentB/done/ ─
+	// ── Phase 2: move roadmap to agentA/wip/, delete counter-arm ──────────
 	mlScopeGitRun(t, dir, env, "rm", "-q", "docs/roadmaps/"+agentA+"/done/"+movedBase)
 	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps", agentA, "wip", movedBase), []byte(content), 0644); err != nil {
 		t.Fatalf("write agentA wip roadmap: %v", err)
 	}
-	// Counter-arm: same basename under a different agent — must remain out of scope.
-	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps", agentB, "done", movedBase), []byte(content), 0644); err != nil {
-		t.Fatalf("write agentB done roadmap: %v", err)
-	}
+	// Delete the counter-arm. The deleted path appears in diffFiles but not in
+	// HEAD → not a union member. Outside agentA's orchestration → must appear in
+	// failures (ADR-2026-10-29 D2, contra-braço).
+	mlScopeGitRun(t, dir, env, "rm", "-q", "docs/roadmaps/"+agentB+"/done/"+movedBase)
 	mlScopeGitRun(t, dir, env, "add", ".")
 	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "chore: reopen — move roadmap to agentA/wip/")
 
@@ -1056,5 +1098,1470 @@ func TestMLScope_RoadmapMovedStatePasses_ByAgent(t *testing.T) {
 	if !foundOther {
 		t.Fatalf("counter-arm: %q must appear in failures (different agent → out of scope); failures: %v",
 			otherRel, check.Failures)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// New test helpers (ML-1A, REQ-2026-10-29)
+// ────────────────────────────────────────────────────────────────────────────
+
+// buildMLScopeRoadmapStatus builds a roadmap where ML-1A has the given status
+// and filesAffectedLine (empty = omit).
+func buildMLScopeRoadmapStatus(date, status, filesAffectedLine string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "---\nstatus: wip\ndate: %s\nreq: \"docs/req/REQ-ml-scope-fixture.md\"\n---\n\n", date)
+	b.WriteString("# Roadmap: ML Scope Test Fixture\n\n")
+	b.WriteString("## Acceptance Criteria\n- [x] fixture criterion\n\n")
+	b.WriteString("## Wave 0 — Threat model\n> Dependências: nenhuma.\n\n")
+	b.WriteString("### ML-0A — Threat model\n**Status:** ✅ Concluído\n")
+	b.WriteString("**Files affected:** `docs/seguranca/wave0.md`\n")
+	b.WriteString("**Critérios de aceite:**\n- [x] done\n\n")
+	b.WriteString("## Wave 1 — Implementation\n> Dependências: Wave 0 auditada.\n\n")
+	fmt.Fprintf(&b, "### ML-1A — The ML\n**Status:** %s\n", status)
+	if filesAffectedLine != "" {
+		fmt.Fprintf(&b, "**Files affected:** %s\n", filesAffectedLine)
+	}
+	b.WriteString("**Critérios de aceite:**\n- [x] done\n\n")
+	return b.String()
+}
+
+// buildMLScopeRoadmapListForm builds a roadmap where ML-1A ✅ declares files in
+// list format (one item per element).
+func buildMLScopeRoadmapListForm(date string, listItems []string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "---\nstatus: wip\ndate: %s\nreq: \"docs/req/REQ-ml-scope-fixture.md\"\n---\n\n", date)
+	b.WriteString("# Roadmap: ML Scope Test Fixture\n\n")
+	b.WriteString("## Acceptance Criteria\n- [x] fixture criterion\n\n")
+	b.WriteString("## Wave 0 — Threat model\n> Dependências: nenhuma.\n\n")
+	b.WriteString("### ML-0A — Threat model\n**Status:** ✅ Concluído\n")
+	b.WriteString("**Files affected:** `docs/seguranca/wave0.md`\n")
+	b.WriteString("**Critérios de aceite:**\n- [x] done\n\n")
+	b.WriteString("## Wave 1 — Implementation\n> Dependências: Wave 0 auditada.\n\n")
+	b.WriteString("### ML-1A — The ML\n**Status:** ✅ Concluído\n")
+	b.WriteString("**Files affected:**\n")
+	for _, item := range listItems {
+		fmt.Fprintf(&b, "- `%s`\n", item)
+	}
+	b.WriteString("**Critérios de aceite:**\n- [x] done\n\n")
+	return b.String()
+}
+
+// mlScopeSetupMinimalGitRepo initialises a bare git repository in dir with a
+// trackfw.yaml that sets adr_dirs: [docs/adr], all state directories and an
+// initial commit, with refs/remotes/origin/main pointing to it. Returns the
+// physical path (macOS /var → /private/var resolved).
+func mlScopeSetupMinimalGitRepo(t *testing.T, dir string) string {
+	t.Helper()
+	if phys, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = phys
+	}
+	env := mlScopeGitEnv(dir)
+	mlScopeGitRun(t, dir, env, "init", "-b", "main", dir)
+	for _, d := range []string{
+		"docs/roadmaps/wip", "docs/roadmaps/backlog", "docs/roadmaps/blocked",
+		"docs/roadmaps/done", "docs/roadmaps/abandoned", "docs/roadmaps/analyzing",
+		"docs/req", "docs/adr",
+	} {
+		if err := os.MkdirAll(filepath.Join(dir, d), 0755); err != nil {
+			t.Fatalf("mlScopeSetupMinimalGitRepo: mkdirs: %v", err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"),
+		[]byte("req_dir: docs/req\nroadmap_dir: docs/roadmaps\nadr_dirs: [docs/adr]\n"), 0644); err != nil {
+		t.Fatalf("mlScopeSetupMinimalGitRepo: write trackfw.yaml: %v", err)
+	}
+	return dir
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// T13 — List items after the label produce tokens (AC1, sabotage arm)
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestMLScopeFilesAffectedList_BreakAtListItemReproducesDefect asserts that a
+// **Files affected:** declaration followed by list items produces the tokens from
+// those items. Sabotage: restoring the original `break` in the `- ` branch of
+// parseMLScopeFilesAffected causes this test to fail — proving it detects the defect.
+func TestMLScopeFilesAffectedList_BreakAtListItemReproducesDefect(t *testing.T) {
+	lines := []string{
+		"**Files affected:**",
+		"- `npm/README.md` e `pypi/README.md`: removidos do git",
+		"- `scripts/install.sh`",
+	}
+	fenced := make([]bool, len(lines))
+	patterns, hasDecl := parseMLScopeFilesAffected(lines, fenced, 0, len(lines))
+	if !hasDecl {
+		t.Fatal("expected hasDecl=true")
+	}
+	wantAll := []string{"npm/README.md", "pypi/README.md", "scripts/install.sh"}
+	for _, w := range wantAll {
+		found := false
+		for _, p := range patterns {
+			if p == w {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("%q must be in patterns; got %v (list items broken — break in '- ' branch reintroduced?)", w, patterns)
+		}
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// T14 — All backtick tokens from all list items are extracted (Regra B)
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestMLScopeFilesAffectedList_AllTokensExtracted asserts that all backtick-quoted
+// tokens from every list item below the label are collected (Regra B: same primitive
+// as the inline parser, applied per-item).
+func TestMLScopeFilesAffectedList_AllTokensExtracted(t *testing.T) {
+	lines := []string{
+		"**Files affected:**",
+		"- `a.go` (novo)",
+		"- `b/c.go`: updated",
+		"- `d/e.go`, `f.go`",
+	}
+	fenced := make([]bool, len(lines))
+	patterns, hasDecl := parseMLScopeFilesAffected(lines, fenced, 0, len(lines))
+	if !hasDecl {
+		t.Fatal("expected hasDecl=true")
+	}
+	want := []string{"a.go", "b/c.go", "d/e.go", "f.go"}
+	for _, w := range want {
+		found := false
+		for _, p := range patterns {
+			if p == w {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("want %q in patterns; got %v", w, patterns)
+		}
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// T15 — Standalone bold field stops the list; "- **" does not (AC2)
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestMLScopeFilesAffectedList_StopsAtBoldField asserts that a standalone bold
+// field line ("**Actions:**") terminates the list.
+// Contra-braço: a list item that STARTS with "- **bold**" is still a list item
+// and must NOT stop the parser.
+func TestMLScopeFilesAffectedList_StopsAtBoldField(t *testing.T) {
+	// Primary: bold field stops the list.
+	lines := []string{
+		"**Files affected:**",
+		"- `a.go`",
+		"**Actions:**",
+		"- `b.go`",
+	}
+	fenced := make([]bool, len(lines))
+	patterns, hasDecl := parseMLScopeFilesAffected(lines, fenced, 0, len(lines))
+	if !hasDecl {
+		t.Fatal("expected hasDecl=true")
+	}
+	if len(patterns) != 1 || patterns[0] != "a.go" {
+		t.Errorf("expected only [a.go]; got %v (list must stop at bold field)", patterns)
+	}
+
+	// Contra-braço: "- **bold** `path`" is a list item, not a bold field — must NOT stop.
+	lines2 := []string{
+		"**Files affected:**",
+		"- **`pypi/pyproject.toml` fica.** Consumidores: `scripts/foo.sh`",
+		"- `bar.go`",
+	}
+	fenced2 := make([]bool, len(lines2))
+	patterns2, hasDecl2 := parseMLScopeFilesAffected(lines2, fenced2, 0, len(lines2))
+	if !hasDecl2 {
+		t.Fatal("contra-braço: expected hasDecl=true")
+	}
+	foundPypi := false
+	foundBar := false
+	for _, p := range patterns2 {
+		if p == "pypi/pyproject.toml" {
+			foundPypi = true
+		}
+		if p == "bar.go" {
+			foundBar = true
+		}
+	}
+	if !foundPypi || !foundBar {
+		t.Errorf("contra-braço: '- **bold** `path`' list item must not stop list; got %v", patterns2)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// T16 — Checkmark items stop the list (AC2)
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestMLScopeFilesAffectedList_CheckmarkItemStops asserts that checkmark items
+// ("- [ ]", "- [x]", "- [X]") stop the list so that acceptance-criteria items
+// after a **Files affected:** block do not leak into scope.
+func TestMLScopeFilesAffectedList_CheckmarkItemStops(t *testing.T) {
+	for _, stopLine := range []string{"- [ ] criterion", "- [x] done", "- [X] Done"} {
+		stopLine := stopLine
+		t.Run(stopLine, func(t *testing.T) {
+			lines := []string{
+				"**Files affected:**",
+				"- `a.go`",
+				stopLine,
+				"- `b.go`",
+			}
+			fenced := make([]bool, len(lines))
+			patterns, hasDecl := parseMLScopeFilesAffected(lines, fenced, 0, len(lines))
+			if !hasDecl {
+				t.Fatalf("expected hasDecl=true")
+			}
+			// b.go must NOT be present (past the checkmark stop).
+			for _, p := range patterns {
+				if p == "b.go" {
+					t.Errorf("b.go must not be in patterns (list must stop at %q); got %v", stopLine, patterns)
+				}
+			}
+			// a.go MUST be present (before the stop).
+			found := false
+			for _, p := range patterns {
+				if p == "a.go" {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("a.go must be in patterns; got %v", patterns)
+			}
+		})
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// T16b — Any single-char criterion marker stops the list (ML-2B, Achado 3)
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestMLScopeFilesAffectedList_AnyCriterionMarkerStops asserts that any line
+// matching CriterionLineRe (^- \[.\]) stops the list, including variant markers
+// such as "- [~]" and "- [-]" that were not covered by the previous three-form
+// check. It also asserts that a link whose text is longer than one character
+// ("- [texto longo](docs/x.md) `real.go`") does NOT stop the list, so that
+// real.go is collected. A link with exactly one character in its text stops the
+// list — this is the accepted cost of using CriterionLineRe (documented in
+// barrier.go and cli-parity.md).
+func TestMLScopeFilesAffectedList_AnyCriterionMarkerStops(t *testing.T) {
+	// Sub-case 1: "- [~]" stops the list — leaked-tilde.go and b.go must not appear.
+	t.Run("tilde_marker_stops", func(t *testing.T) {
+		lines := []string{
+			"**Files affected:**",
+			"- `a.go`",
+			"- [~] `leaked-tilde.go` variant criterion caducado",
+			"- `b.go`",
+		}
+		fenced := make([]bool, len(lines))
+		patterns, hasDecl := parseMLScopeFilesAffected(lines, fenced, 0, len(lines))
+		if !hasDecl {
+			t.Fatalf("expected hasDecl=true")
+		}
+		for _, p := range patterns {
+			if p == "leaked-tilde.go" || p == "b.go" {
+				t.Errorf("token %q must not be in patterns (list must stop at - [~]); got %v", p, patterns)
+			}
+		}
+		found := false
+		for _, p := range patterns {
+			if p == "a.go" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("a.go must be in patterns (before the stop); got %v", patterns)
+		}
+	})
+
+	// Sub-case 2: "- [-]" stops the list — leaked-dash.go and b.go must not appear.
+	t.Run("dash_marker_stops", func(t *testing.T) {
+		lines := []string{
+			"**Files affected:**",
+			"- `a.go`",
+			"- [-] `leaked-dash.go` variant criterion",
+			"- `b.go`",
+		}
+		fenced := make([]bool, len(lines))
+		patterns, hasDecl := parseMLScopeFilesAffected(lines, fenced, 0, len(lines))
+		if !hasDecl {
+			t.Fatalf("expected hasDecl=true")
+		}
+		for _, p := range patterns {
+			if p == "leaked-dash.go" || p == "b.go" {
+				t.Errorf("token %q must not be in patterns (list must stop at - [-]); got %v", p, patterns)
+			}
+		}
+		found := false
+		for _, p := range patterns {
+			if p == "a.go" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("a.go must be in patterns (before the stop); got %v", patterns)
+		}
+	})
+
+	// Sub-case 3: a link with multi-char text does NOT stop the list — real.go must appear.
+	t.Run("long_link_text_does_not_stop", func(t *testing.T) {
+		lines := []string{
+			"**Files affected:**",
+			"- `a.go`",
+			"- [texto longo](docs/x.md) `real.go`",
+			"- `b.go`",
+		}
+		fenced := make([]bool, len(lines))
+		patterns, hasDecl := parseMLScopeFilesAffected(lines, fenced, 0, len(lines))
+		if !hasDecl {
+			t.Fatalf("expected hasDecl=true")
+		}
+		wantPresent := []string{"a.go", "real.go", "b.go"}
+		for _, w := range wantPresent {
+			found := false
+			for _, p := range patterns {
+				if p == w {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("want %q in patterns (multi-char link text must not stop list); got %v", w, patterns)
+			}
+		}
+	})
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// T17 — Hybrid inline + list (§1.4c)
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestMLScopeFilesAffectedHybridInlineAndList asserts that tokens on the label
+// line AND tokens in list items below are all extracted (§1.4c hybrid form).
+func TestMLScopeFilesAffectedHybridInlineAndList(t *testing.T) {
+	lines := []string{
+		"**Files affected:** `inline.go`",
+		"- `list-a.go`",
+		"- `list-b.go`",
+	}
+	fenced := make([]bool, len(lines))
+	patterns, hasDecl := parseMLScopeFilesAffected(lines, fenced, 0, len(lines))
+	if !hasDecl {
+		t.Fatal("expected hasDecl=true")
+	}
+	want := []string{"inline.go", "list-a.go", "list-b.go"}
+	for _, w := range want {
+		found := false
+		for _, p := range patterns {
+			if p == w {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("want %q in patterns; got %v (hybrid inline+list must capture all tokens)", w, patterns)
+		}
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// T18 — Broad glob patterns are blocked (AC10)
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestMLScopeGlobBroadPatternBlocked asserts that tokens with no literal path
+// segment (**, **\/*, *\/**)  cause the ml_scope check to return "blocked" with
+// the rejection message from ADR D3.
+func TestMLScopeGlobBroadPatternBlocked(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ml_scope uses git commands; windows path handling tested separately")
+	}
+
+	vectors := []string{"**", "**/*", "*/**", "**/**", "*", "**/", "/"}
+
+	// Build a single roadmap with all broad patterns in one Files affected line.
+	var parts []string
+	for _, v := range vectors {
+		parts = append(parts, "`"+v+"`")
+	}
+	patternsLine := strings.Join(parts, ", ")
+
+	dir := t.TempDir()
+	const rdmRel = "docs/roadmaps/wip/ROADMAP-ml-scope-fixture.md"
+	content := buildMLScopeRoadmap("2026-08-01", patternsLine)
+	dir = mlScopeSetupGitRepo(t, dir, rdmRel, content)
+	writeMLScopeREQFixture(t, dir, rdmRel)
+
+	env := mlScopeGitEnv(dir)
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add req+adr")
+	mlScopeGitRun(t, dir, env, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+	// Commit a file so the diff is non-empty.
+	if err := os.MkdirAll(filepath.Join(dir, "internal"), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "internal/foo.go"), []byte("package internal\n"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	mlScopeGitRun(t, dir, env, "add", "internal/foo.go")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add file")
+
+	stdout, _ := mlScopeRunBarrier(t, dir, "ROADMAP-ml-scope-fixture", "1")
+	check := findMLScopeCheck(t, stdout)
+
+	if check.Status != "blocked" {
+		t.Fatalf("expected ml_scope blocked for broad patterns %v, got %q\nevidence: %v\nfailures: %v",
+			vectors, check.Status, check.Evidence, check.Failures)
+	}
+	// Each broad-pattern token must produce a failure that names the token (quoted)
+	// and the ML id (ML-1A), confirming the new message format includes context.
+	for _, v := range vectors {
+		found := false
+		for _, f := range check.Failures {
+			if strings.Contains(f, `"`+v+`"`) && strings.Contains(f, "ML-1A") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected failure containing token %q and ML-1A for broad pattern %q; got: %v",
+				v, v, check.Failures)
+		}
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// T19 — Prefixed glob patterns are accepted (AC10 negative arm)
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestMLScopeGlobPrefixedPatternAccepted asserts that patterns with a literal
+// prefix (site/**, **\/*.go) do NOT trigger the broad-pattern rejection.
+func TestMLScopeGlobPrefixedPatternAccepted(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ml_scope uses git commands; windows path handling tested separately")
+	}
+
+	dir := t.TempDir()
+	const rdmRel = "docs/roadmaps/wip/ROADMAP-ml-scope-fixture.md"
+	content := buildMLScopeRoadmap("2026-08-01", "`site/**`, `**/*.go`")
+	dir = mlScopeSetupGitRepo(t, dir, rdmRel, content)
+	writeMLScopeREQFixture(t, dir, rdmRel)
+
+	env := mlScopeGitEnv(dir)
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add req+adr")
+	mlScopeGitRun(t, dir, env, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+	if err := os.MkdirAll(filepath.Join(dir, "site/en"), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "site/en/index.html"), []byte("<html/>\n"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "internal/commands"), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "internal/commands/foo.go"), []byte("package commands\n"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add matched files")
+
+	stdout, _ := mlScopeRunBarrier(t, dir, "ROADMAP-ml-scope-fixture", "1")
+	check := findMLScopeCheck(t, stdout)
+
+	if check.Status == "skipped" {
+		t.Fatalf("expected ml_scope to run; evidence: %v", check.Evidence)
+	}
+	for _, f := range check.Failures {
+		// Use a suffix of the rejection message that survives the new format
+		// ("<rdmPath> <mlID>: rejected: pattern \"<tok>\" without literal path segments …").
+		if strings.Contains(f, "without literal path segments") {
+			t.Fatalf("prefixed patterns site/** and **/*.go must not trigger broad rejection; failure: %q", f)
+		}
+		if strings.Contains(f, "site/en/index.html") {
+			t.Fatalf("site/en/index.html must be allowed by site/**; failure: %q", f)
+		}
+		if strings.Contains(f, "internal/commands/foo.go") {
+			t.Fatalf("internal/commands/foo.go must be allowed by **/*.go; failure: %q", f)
+		}
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// T20 — Union: file from member roadmap B is in scope for target A (AC4)
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestMLScope_UnionTwoRoadmapsFilesFromOtherRoadmapInScope asserts that when two
+// roadmaps are in the diff, the barrier of roadmap A accepts files declared by
+// roadmap B (union scope, ADR D2).
+func TestMLScope_UnionTwoRoadmapsFilesFromOtherRoadmapInScope(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ml_scope uses git commands; windows path handling tested separately")
+	}
+
+	dir := t.TempDir()
+	dir = mlScopeSetupMinimalGitRepo(t, dir)
+	env := mlScopeGitEnv(dir)
+
+	const rdmA = "ROADMAP-ml-scope-union-a.md"
+	const rdmB = "ROADMAP-ml-scope-union-b.md"
+
+	// Commit rdmA and REQ/ADR at origin/main; rdmB is added on the branch so it
+	// appears in diffFiles and is detected as a union member.
+	contentA := buildMLScopeRoadmap("2026-08-01", "`a.go`")
+	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps/wip/"+rdmA), []byte(contentA), 0644); err != nil {
+		t.Fatalf("write rdmA: %v", err)
+	}
+	writeMLScopeREQFixture(t, dir, "docs/roadmaps/wip/"+rdmA)
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "base+rdmA")
+	mlScopeGitRun(t, dir, env, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+	// Add rdmB on the branch (after origin/main → in diffFiles → union member).
+	contentB := buildMLScopeRoadmap("2026-08-01", "`b.go`")
+	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps/wip/"+rdmB), []byte(contentB), 0644); err != nil {
+		t.Fatalf("write rdmB: %v", err)
+	}
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add rdmB")
+
+	// Commit a.go and b.go so both appear in the diff.
+	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write a.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write b.go: %v", err)
+	}
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add a.go b.go")
+
+	stdout, _ := mlScopeRunBarrier(t, dir, rdmA, "1")
+	check := findMLScopeCheck(t, stdout)
+
+	if check.Status == "skipped" {
+		t.Fatalf("expected ml_scope to run; evidence: %v", check.Evidence)
+	}
+	// b.go is declared by union member rdmB — must NOT be in failures.
+	for _, f := range check.Failures {
+		if strings.Contains(f, "b.go") {
+			t.Fatalf("b.go is declared by union member %s — must not be in failures; got: %q\nall: %v",
+				rdmB, f, check.Failures)
+		}
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// T21 — Union reads member from HEAD, not from disk
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestMLScope_UnionIgnoresWorkingTreeRoadmapEdit asserts that editing a union
+// member's **Files affected:** on disk (without committing) does NOT expand the
+// scope — the union logic reads the member from HEAD, not from disk.
+func TestMLScope_UnionIgnoresWorkingTreeRoadmapEdit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ml_scope uses git commands; windows path handling tested separately")
+	}
+
+	dir := t.TempDir()
+	dir = mlScopeSetupMinimalGitRepo(t, dir)
+	env := mlScopeGitEnv(dir)
+
+	const rdmA = "ROADMAP-ml-scope-union-a.md"
+	const rdmB = "ROADMAP-ml-scope-union-b.md"
+
+	contentA := buildMLScopeRoadmap("2026-08-01", "`a.go`")
+	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps/wip/"+rdmA), []byte(contentA), 0644); err != nil {
+		t.Fatalf("write rdmA: %v", err)
+	}
+	writeMLScopeREQFixture(t, dir, "docs/roadmaps/wip/"+rdmA)
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "base+rdmA")
+	mlScopeGitRun(t, dir, env, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+	// Add rdmB on the branch (after origin/main → in diffFiles → union member).
+	contentB := buildMLScopeRoadmap("2026-08-01", "`b.go`")
+	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps/wip/"+rdmB), []byte(contentB), 0644); err != nil {
+		t.Fatalf("write rdmB: %v", err)
+	}
+	// Commit a.go and rdmB together so both are on the branch.
+	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write a.go: %v", err)
+	}
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add rdmB + a.go")
+
+	// Expand rdmB on disk to grant extra.go — NOT committed.
+	expandedB := buildMLScopeRoadmap("2026-08-01", "`b.go`, `extra.go`")
+	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps/wip/"+rdmB), []byte(expandedB), 0644); err != nil {
+		t.Fatalf("write expanded rdmB: %v", err)
+	}
+	// Commit extra.go (which the HEAD rdmB does NOT declare).
+	if err := os.WriteFile(filepath.Join(dir, "extra.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write extra.go: %v", err)
+	}
+	mlScopeGitRun(t, dir, env, "add", "extra.go")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add extra.go")
+
+	stdout, _ := mlScopeRunBarrier(t, dir, rdmA, "1")
+	check := findMLScopeCheck(t, stdout)
+
+	if check.Status != "blocked" {
+		t.Fatalf("expected ml_scope blocked (HEAD rdmB does not declare extra.go), got %q\nfailures: %v",
+			check.Status, check.Failures)
+	}
+	found := false
+	for _, f := range check.Failures {
+		if strings.Contains(f, "extra.go") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("extra.go must be in failures (disk edit of union member must not amplify scope); got: %v",
+			check.Failures)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// T22 — Target roadmap excluded from union member loop
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestMLScope_TargetRoadmapExcludedFromMemberLoop asserts that the target roadmap
+// is never treated as a union member. Consequence: Wave 2 files declared in the
+// target are out of scope when the barrier runs at --wave 1.
+func TestMLScope_TargetRoadmapExcludedFromMemberLoop(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ml_scope uses git commands; windows path handling tested separately")
+	}
+
+	// Target roadmap: Wave 0 ✅, Wave 1 🔄, Wave 2 🔄 (wave2-file.go).
+	targetContent := "---\nstatus: wip\ndate: 2026-08-01\nreq: \"docs/req/REQ-ml-scope-fixture.md\"\n---\n\n" +
+		"# Roadmap: Target Excluded Test\n\n## Acceptance Criteria\n- [x] test\n\n" +
+		"## Wave 0 — Threat model\n> Dependências: nenhuma.\n\n" +
+		"### ML-0A — Threat model\n**Status:** ✅ Concluído\n" +
+		"**Files affected:** `docs/seguranca/wave0.md`\n" +
+		"**Critérios de aceite:**\n- [x] done\n\n" +
+		"## Wave 1 — Implementation\n> Dependências: Wave 0.\n\n" +
+		"### ML-1A — Impl\n**Status:** 🔄 Em andamento\n" +
+		"**Files affected:** `wave1-file.go`\n" +
+		"**Critérios de aceite:**\n- [ ] pending\n\n" +
+		"## Wave 2 — Red team\n> Dependências: Wave 1.\n\n" +
+		"### ML-2B — Red team\n**Status:** 🔄 Em andamento\n" +
+		"**Files affected:** `wave2-file.go`\n" +
+		"**Critérios de aceite:**\n- [ ] pending\n\n"
+
+	dir := t.TempDir()
+	const rdmRel = "docs/roadmaps/wip/ROADMAP-ml-scope-target-excl.md"
+	dir = mlScopeSetupGitRepo(t, dir, rdmRel, targetContent)
+	writeMLScopeREQFixture(t, dir, rdmRel)
+
+	env := mlScopeGitEnv(dir)
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add req+adr")
+	mlScopeGitRun(t, dir, env, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+	// Commit wave1-file.go and wave2-file.go.
+	if err := os.WriteFile(filepath.Join(dir, "wave1-file.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "wave2-file.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add wave files")
+
+	stdout, _ := mlScopeRunBarrier(t, dir, "ROADMAP-ml-scope-target-excl", "1")
+	check := findMLScopeCheck(t, stdout)
+
+	if check.Status == "skipped" {
+		t.Fatalf("expected ml_scope to run; evidence: %v", check.Evidence)
+	}
+	// wave2-file.go must be in failures: target is excluded from member loop,
+	// so Wave 2 patterns don't contribute through the member path.
+	found := false
+	for _, f := range check.Failures {
+		if strings.Contains(f, "wave2-file.go") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("wave2-file.go must be in failures (target excluded from member loop; Wave 2 is beyond --wave 1); got: %v",
+			check.Failures)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// T23 — Union member with all-⬜ MLs contributes no patterns (K undefined)
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestMLScope_UnionStartedWavesOnly_AllPendingContributesNothing asserts that a
+// union member whose every ML is ⬜ Pendente (K undefined) contributes only
+// orchestration paths and no pattern scope.
+func TestMLScope_UnionStartedWavesOnly_AllPendingContributesNothing(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ml_scope uses git commands; windows path handling tested separately")
+	}
+
+	dir := t.TempDir()
+	dir = mlScopeSetupMinimalGitRepo(t, dir)
+	env := mlScopeGitEnv(dir)
+
+	const rdmA = "ROADMAP-ml-scope-union-a.md"
+	const rdmB = "ROADMAP-ml-scope-union-pending.md"
+
+	contentA := buildMLScopeRoadmap("2026-08-01", "`a.go`")
+	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps/wip/"+rdmA), []byte(contentA), 0644); err != nil {
+		t.Fatalf("write rdmA: %v", err)
+	}
+	writeMLScopeREQFixture(t, dir, "docs/roadmaps/wip/"+rdmA)
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "base+rdmA")
+	mlScopeGitRun(t, dir, env, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+	// Add rdmB (all-⬜) on the branch so it is in diffFiles and detected as a member.
+	// K=-1 because no ML is started/done → no patterns contributed.
+	contentB := buildMLScopeRoadmapStatus("2026-08-01", "⬜ Pendente", "`b.go`")
+	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps/wip/"+rdmB), []byte(contentB), 0644); err != nil {
+		t.Fatalf("write rdmB: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write a.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write b.go: %v", err)
+	}
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add rdmB+a.go+b.go")
+
+	stdout, _ := mlScopeRunBarrier(t, dir, rdmA, "1")
+	check := findMLScopeCheck(t, stdout)
+
+	if check.Status == "skipped" {
+		t.Fatalf("expected ml_scope to run; evidence: %v", check.Evidence)
+	}
+	// b.go is declared by all-pending member — must be in failures (K=-1 → no patterns).
+	found := false
+	for _, f := range check.Failures {
+		if strings.Contains(f, "b.go") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("b.go must be in failures (member rdmB has all-⬜ MLs → K=-1 → no patterns); got: %v",
+			check.Failures)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// T24 — Union member with ✅ Wave 0 contributes Wave 0 patterns (K=0)
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestMLScope_UnionStartedWavesOnly_DoneWaveContributesPatterns asserts that a
+// member with Wave 0 ✅ and Wave 1 ⬜ sets K=0 and contributes only Wave 0 patterns.
+func TestMLScope_UnionStartedWavesOnly_DoneWaveContributesPatterns(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ml_scope uses git commands; windows path handling tested separately")
+	}
+
+	dir := t.TempDir()
+	dir = mlScopeSetupMinimalGitRepo(t, dir)
+	env := mlScopeGitEnv(dir)
+
+	const rdmA = "ROADMAP-ml-scope-union-a.md"
+	const rdmB = "ROADMAP-ml-scope-union-k0.md"
+
+	contentA := buildMLScopeRoadmap("2026-08-01", "`a.go`")
+	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps/wip/"+rdmA), []byte(contentA), 0644); err != nil {
+		t.Fatalf("write rdmA: %v", err)
+	}
+	writeMLScopeREQFixture(t, dir, "docs/roadmaps/wip/"+rdmA)
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "base+rdmA")
+	mlScopeGitRun(t, dir, env, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+	// Add rdmB (Wave 0 ✅, Wave 1 ⬜ → K=0) on the branch so it is in diffFiles.
+	var bb strings.Builder
+	bb.WriteString("---\nstatus: wip\ndate: 2026-08-01\nreq: \"docs/req/REQ-ml-scope-fixture.md\"\n---\n\n")
+	bb.WriteString("# Roadmap: K=0 Member\n\n## Acceptance Criteria\n- [x] ok\n\n")
+	bb.WriteString("## Wave 0 — Threat model\n> Dependências: nenhuma.\n\n")
+	bb.WriteString("### ML-0A — Threat model\n**Status:** ✅ Concluído\n")
+	bb.WriteString("**Files affected:** `docs/seguranca/wave0-b.md`\n")
+	bb.WriteString("**Critérios de aceite:**\n- [x] done\n\n")
+	bb.WriteString("## Wave 1 — Implementation\n> Dependências: Wave 0.\n\n")
+	bb.WriteString("### ML-1A — Impl\n**Status:** ⬜ Pendente\n")
+	bb.WriteString("**Files affected:** `b.go`\n")
+	bb.WriteString("**Critérios de aceite:**\n- [ ] pending\n\n")
+	contentB := bb.String()
+
+	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps/wip/"+rdmB), []byte(contentB), 0644); err != nil {
+		t.Fatalf("write rdmB: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write a.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write b.go: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "docs/seguranca"), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "docs/seguranca/wave0-b.md"), []byte("# wave0-b\n"), 0644); err != nil {
+		t.Fatalf("write wave0-b.md: %v", err)
+	}
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add rdmB+a.go+b.go+wave0-b.md")
+
+	stdout, _ := mlScopeRunBarrier(t, dir, rdmA, "1")
+	check := findMLScopeCheck(t, stdout)
+
+	if check.Status == "skipped" {
+		t.Fatalf("expected ml_scope to run; evidence: %v", check.Evidence)
+	}
+	// b.go is Wave 1 ⬜ in member B (K=0) — must be in failures.
+	bInFailures := false
+	for _, f := range check.Failures {
+		if strings.Contains(f, "b.go") {
+			bInFailures = true
+			break
+		}
+	}
+	if !bInFailures {
+		t.Fatalf("b.go must be in failures (member K=0 → Wave 1 patterns not contributed); got: %v",
+			check.Failures)
+	}
+	// wave0-b.md is Wave 0 ✅ in member B (K=0) — must NOT be in failures.
+	for _, f := range check.Failures {
+		if strings.Contains(f, "wave0-b.md") {
+			t.Fatalf("docs/seguranca/wave0-b.md must not be in failures (member Wave 0 ✅ → K=0 → Wave 0 patterns contributed); got: %q\nall: %v",
+				f, check.Failures)
+		}
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// T25 — Union member in abandoned/ contributes only orchestration
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestMLScope_UnionAbandonedContributesOrchestrationOnly asserts that a union
+// member in the abandoned/ state contributes only orchestration paths (its own
+// roadmap path, REQ, ADR), not the patterns from its Files affected.
+func TestMLScope_UnionAbandonedContributesOrchestrationOnly(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ml_scope uses git commands; windows path handling tested separately")
+	}
+
+	dir := t.TempDir()
+	dir = mlScopeSetupMinimalGitRepo(t, dir)
+	env := mlScopeGitEnv(dir)
+
+	const rdmA = "ROADMAP-ml-scope-union-a.md"
+	const rdmBAbandon = "ROADMAP-ml-scope-abandoned-b.md"
+
+	contentA := buildMLScopeRoadmap("2026-08-01", "`a.go`")
+	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps/wip/"+rdmA), []byte(contentA), 0644); err != nil {
+		t.Fatalf("write rdmA: %v", err)
+	}
+	writeMLScopeREQFixture(t, dir, "docs/roadmaps/wip/"+rdmA)
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "base+rdmA")
+	mlScopeGitRun(t, dir, env, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+	// Add rdmB (abandoned/) on the branch so it is in diffFiles and is detected as a
+	// union member — but abandoned/ → orchestration only, no patterns.
+	contentB := buildMLScopeRoadmap("2026-08-01", "`b.go`")
+	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps/abandoned/"+rdmBAbandon), []byte(contentB), 0644); err != nil {
+		t.Fatalf("write rdmB: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write a.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write b.go: %v", err)
+	}
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add rdmB-abandoned+a.go+b.go")
+
+	stdout, _ := mlScopeRunBarrier(t, dir, rdmA, "1")
+	check := findMLScopeCheck(t, stdout)
+
+	if check.Status == "skipped" {
+		t.Fatalf("expected ml_scope to run; evidence: %v", check.Evidence)
+	}
+	// b.go declared by abandoned member — must be in failures (abandoned → no patterns).
+	found := false
+	for _, f := range check.Failures {
+		if strings.Contains(f, "b.go") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("b.go must be in failures (member in abandoned/ → orchestration only, no patterns); got: %v",
+			check.Failures)
+	}
+	// The abandoned roadmap path itself must NOT be in failures (it's in orchestration).
+	for _, f := range check.Failures {
+		if strings.Contains(f, rdmBAbandon) {
+			t.Fatalf("abandoned roadmap %q must not be in failures (in orchestration set); got: %q\nall: %v",
+				rdmBAbandon, f, check.Failures)
+		}
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// T26 — Uncommitted roadmap does not contribute to union (AC5)
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestMLScope_UnionDoesNotIncludeUncommittedRoadmap asserts that a roadmap that
+// exists only on disk (not in diffFiles) is not a union member, and its declared
+// files remain out of scope.
+func TestMLScope_UnionDoesNotIncludeUncommittedRoadmap(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ml_scope uses git commands; windows path handling tested separately")
+	}
+
+	dir := t.TempDir()
+	dir = mlScopeSetupMinimalGitRepo(t, dir)
+	env := mlScopeGitEnv(dir)
+
+	const rdmA = "ROADMAP-ml-scope-union-a.md"
+	const rdmBUncommitted = "ROADMAP-ml-scope-uncommitted.md"
+
+	// Only rdmA is committed before origin/main.
+	contentA := buildMLScopeRoadmap("2026-08-01", "`a.go`")
+	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps/wip/"+rdmA), []byte(contentA), 0644); err != nil {
+		t.Fatalf("write rdmA: %v", err)
+	}
+	writeMLScopeREQFixture(t, dir, "docs/roadmaps/wip/"+rdmA)
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "base+rdmA")
+	mlScopeGitRun(t, dir, env, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+	// Write rdmB on disk only — never git add.
+	contentB := buildMLScopeRoadmap("2026-08-01", "`b.go`")
+	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps/wip/"+rdmBUncommitted), []byte(contentB), 0644); err != nil {
+		t.Fatalf("write rdmB (disk only): %v", err)
+	}
+	// Commit a.go; leave b.go untracked (statusFiles but not diffFiles).
+	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write a.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write b.go: %v", err)
+	}
+	mlScopeGitRun(t, dir, env, "add", "a.go")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add a.go")
+
+	stdout, _ := mlScopeRunBarrier(t, dir, rdmA, "1")
+	check := findMLScopeCheck(t, stdout)
+
+	if check.Status == "skipped" {
+		t.Fatalf("expected ml_scope to run; evidence: %v", check.Evidence)
+	}
+	// b.go is declared only by uncommitted rdmB — must be in failures.
+	found := false
+	for _, f := range check.Failures {
+		if strings.Contains(f, "b.go") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("b.go must be in failures (rdmB not in diff → not a member); got: %v",
+			check.Failures)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// T27 — Member in done/ at merge-base → orchestration only
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestMLScope_UnionDoneAtMergeBaseOrchestrationOnly asserts that a roadmap that
+// was already in done/ at merge-base (origin/main) contributes only orchestration
+// when it is modified on the branch, not its pattern scope.
+func TestMLScope_UnionDoneAtMergeBaseOrchestrationOnly(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ml_scope uses git commands; windows path handling tested separately")
+	}
+
+	dir := t.TempDir()
+	dir = mlScopeSetupMinimalGitRepo(t, dir)
+	env := mlScopeGitEnv(dir)
+
+	const rdmA = "ROADMAP-ml-scope-union-a.md"
+	const rdmBDone = "ROADMAP-ml-scope-done-at-mb.md"
+
+	// Commit rdmA (wip/) and rdmB (done/) at origin/main.
+	contentA := buildMLScopeRoadmap("2026-08-01", "`a.go`")
+	contentB := buildMLScopeRoadmap("2026-08-01", "`b.go`")
+	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps/wip/"+rdmA), []byte(contentA), 0644); err != nil {
+		t.Fatalf("write rdmA: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps/done/"+rdmBDone), []byte(contentB), 0644); err != nil {
+		t.Fatalf("write rdmB done: %v", err)
+	}
+	writeMLScopeREQFixture(t, dir, "docs/roadmaps/wip/"+rdmA)
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "base+rdmA+rdmBDone")
+	mlScopeGitRun(t, dir, env, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+	// On branch: touch rdmB (keep in done/) and commit b.go.
+	touchedB := contentB + "\n<!-- touched -->\n"
+	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps/done/"+rdmBDone), []byte(touchedB), 0644); err != nil {
+		t.Fatalf("write touched rdmB: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write b.go: %v", err)
+	}
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "touch rdmB + add b.go")
+
+	stdout, _ := mlScopeRunBarrier(t, dir, rdmA, "1")
+	check := findMLScopeCheck(t, stdout)
+
+	if check.Status == "skipped" {
+		t.Fatalf("expected ml_scope to run; evidence: %v", check.Evidence)
+	}
+	// b.go declared by rdmB which was in done/ at merge-base → orchestration only → b.go in failures.
+	found := false
+	for _, f := range check.Failures {
+		if strings.Contains(f, "b.go") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("b.go must be in failures (rdmB was in done/ at merge-base → orchestration only); got: %v",
+			check.Failures)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// T28 — Member moved to done/ on branch contributes patterns
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestMLScope_UnionDoneMovedInBranchContributesPatterns asserts that a roadmap
+// moved from wip/ to done/ on the branch (i.e., done/ file was NOT at merge-base)
+// contributes its patterns to the union scope.
+func TestMLScope_UnionDoneMovedInBranchContributesPatterns(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ml_scope uses git commands; windows path handling tested separately")
+	}
+
+	dir := t.TempDir()
+	dir = mlScopeSetupMinimalGitRepo(t, dir)
+	env := mlScopeGitEnv(dir)
+
+	const rdmA = "ROADMAP-ml-scope-union-a.md"
+	const rdmBBase = "ROADMAP-ml-scope-moved-to-done.md"
+
+	// At origin/main: rdmA in wip/, rdmB in wip/ (declares b.go).
+	contentA := buildMLScopeRoadmap("2026-08-01", "`a.go`")
+	contentB := buildMLScopeRoadmap("2026-08-01", "`b.go`")
+	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps/wip/"+rdmA), []byte(contentA), 0644); err != nil {
+		t.Fatalf("write rdmA: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps/wip/"+rdmBBase), []byte(contentB), 0644); err != nil {
+		t.Fatalf("write rdmB wip: %v", err)
+	}
+	writeMLScopeREQFixture(t, dir, "docs/roadmaps/wip/"+rdmA)
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "base+rdmA+rdmBwip")
+	mlScopeGitRun(t, dir, env, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+	// On branch: move rdmB from wip/ to done/.
+	mlScopeGitRun(t, dir, env, "rm", "-q", "docs/roadmaps/wip/"+rdmBBase)
+	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps/done/"+rdmBBase), []byte(contentB), 0644); err != nil {
+		t.Fatalf("write rdmB done: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write a.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write b.go: %v", err)
+	}
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "move rdmB to done + add a.go b.go")
+
+	stdout, _ := mlScopeRunBarrier(t, dir, rdmA, "1")
+	check := findMLScopeCheck(t, stdout)
+
+	if check.Status == "skipped" {
+		t.Fatalf("expected ml_scope to run; evidence: %v", check.Evidence)
+	}
+	// b.go declared by rdmB (moved to done/ on branch, NOT at merge-base) — must NOT be in failures.
+	for _, f := range check.Failures {
+		if strings.Contains(f, "b.go") {
+			t.Fatalf("b.go must not be in failures (rdmB moved to done/ on branch → contributes patterns); got: %q\nall: %v",
+				f, check.Failures)
+		}
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// T29 — req: outside req_dir discarded (AC11)
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestMLScope_ReqOutsideReqDirDiscarded asserts that:
+//   - req: "go.mod", req: "docs/req-x/f.md", req: "docs/req/../../go.mod" are
+//     silently discarded (path traversal / outside req_dir);
+//   - req: "./docs/req/REQ-x.md" IS accepted (normalises to "docs/req/REQ-x.md").
+func TestMLScope_ReqOutsideReqDirDiscarded(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ml_scope uses git commands; windows path handling tested separately")
+	}
+
+	// Case A: req: "go.mod" — must not grant go.mod as orchestration.
+	t.Run("req_outside_req_dir", func(t *testing.T) {
+		content := "---\nstatus: wip\ndate: 2026-08-01\nreq: \"go.mod\"\n---\n\n" +
+			"# Roadmap: Fixture\n\n## Acceptance Criteria\n- [x] ok\n\n" +
+			"## Wave 0 — Threat model\n> Dependências: nenhuma.\n\n" +
+			"### ML-0A\n**Status:** ✅ Concluído\n**Files affected:** `docs/seguranca/wave0.md`\n" +
+			"**Critérios de aceite:**\n- [x] done\n\n" +
+			"## Wave 1 — Implementation\n> Dependências: Wave 0.\n\n" +
+			"### ML-1A\n**Status:** ✅ Concluído\n**Files affected:** `a.go`\n" +
+			"**Critérios de aceite:**\n- [x] done\n\n"
+
+		dir := t.TempDir()
+		const rdmRel = "docs/roadmaps/wip/ROADMAP-ml-scope-fixture.md"
+		dir = mlScopeSetupGitRepo(t, dir, rdmRel, content)
+		env := mlScopeGitEnv(dir)
+		// Write a real go.mod so it would be reachable if wrongly granted.
+		if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/test\n\ngo 1.21\n"), 0644); err != nil {
+			t.Fatalf("write go.mod: %v", err)
+		}
+		mlScopeGitRun(t, dir, env, "add", ".")
+		mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "base+go.mod")
+		mlScopeGitRun(t, dir, env, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+		// Now commit go.mod change and a.go on the branch.
+		if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/test\n\ngo 1.22\n"), 0644); err != nil {
+			t.Fatalf("update go.mod: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("package main\n"), 0644); err != nil {
+			t.Fatalf("write a.go: %v", err)
+		}
+		mlScopeGitRun(t, dir, env, "add", ".")
+		mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "bump go.mod + add a.go")
+
+		stdout, _ := mlScopeRunBarrier(t, dir, "ROADMAP-ml-scope-fixture", "1")
+		check := findMLScopeCheck(t, stdout)
+
+		if check.Status == "skipped" {
+			t.Fatalf("expected ml_scope to run; evidence: %v", check.Evidence)
+		}
+		// go.mod must be in failures: req: "go.mod" is outside req_dir → discarded → not orchestration.
+		found := false
+		for _, f := range check.Failures {
+			if strings.Contains(f, "go.mod") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("go.mod must be in failures (req: outside req_dir → discarded); got: %v",
+				check.Failures)
+		}
+	})
+
+	// Case B: req: "./docs/req/REQ-x.md" — "./" prefix normalises, must be accepted.
+	t.Run("req_with_dotslash_accepted", func(t *testing.T) {
+		content := "---\nstatus: wip\ndate: 2026-08-01\nreq: \"./docs/req/REQ-ml-scope-fixture.md\"\n---\n\n" +
+			"# Roadmap: Fixture\n\n## Acceptance Criteria\n- [x] ok\n\n" +
+			"## Wave 0 — Threat model\n> Dependências: nenhuma.\n\n" +
+			"### ML-0A\n**Status:** ✅ Concluído\n**Files affected:** `docs/seguranca/wave0.md`\n" +
+			"**Critérios de aceite:**\n- [x] done\n\n" +
+			"## Wave 1 — Implementation\n> Dependências: Wave 0.\n\n" +
+			"### ML-1A\n**Status:** ✅ Concluído\n**Files affected:** `a.go`\n" +
+			"**Critérios de aceite:**\n- [x] done\n\n"
+
+		dir := t.TempDir()
+		const rdmRel = "docs/roadmaps/wip/ROADMAP-ml-scope-fixture.md"
+		dir = mlScopeSetupGitRepo(t, dir, rdmRel, content)
+		writeMLScopeREQFixture(t, dir, rdmRel)
+		env := mlScopeGitEnv(dir)
+		mlScopeGitRun(t, dir, env, "add", ".")
+		mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add req+adr")
+		mlScopeGitRun(t, dir, env, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+		if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("package main\n"), 0644); err != nil {
+			t.Fatalf("write a.go: %v", err)
+		}
+		// Also commit the REQ file (to put it in the diff so its scope is exercised).
+		reqContent := "---\nstatus: Open\ndate: 2026-07-20\nadr: \"\"\nroadmap: \"" + rdmRel + "\"\n---\n\n# REQ\n\n## Acceptance Criteria\n- [ ] ok\n"
+		if err := os.WriteFile(filepath.Join(dir, "docs/req/REQ-ml-scope-fixture.md"), []byte(reqContent), 0644); err != nil {
+			t.Fatalf("update req: %v", err)
+		}
+		mlScopeGitRun(t, dir, env, "add", ".")
+		mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add a.go + update req")
+
+		stdout, _ := mlScopeRunBarrier(t, dir, "ROADMAP-ml-scope-fixture", "1")
+		check := findMLScopeCheck(t, stdout)
+
+		if check.Status == "skipped" {
+			t.Fatalf("expected ml_scope to run; evidence: %v", check.Evidence)
+		}
+		// REQ file must NOT be in failures (./docs/req/REQ-x.md normalises to docs/req/REQ-x.md → accepted).
+		for _, f := range check.Failures {
+			if strings.Contains(f, "REQ-ml-scope-fixture.md") {
+				t.Fatalf("REQ file must not be in failures (req: './docs/req/...' normalises and is accepted); got: %q\nall: %v",
+					f, check.Failures)
+			}
+		}
+	})
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// T30 — adr: outside adr_dirs discarded (AC11)
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestMLScope_AdrOutsideADRDirsDiscarded asserts that an ADR path outside
+// adr_dirs (e.g., "go.mod") is discarded; a valid path under adr_dirs is accepted.
+func TestMLScope_AdrOutsideADRDirsDiscarded(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ml_scope uses git commands; windows path handling tested separately")
+	}
+
+	// The REQ will reference adr: "go.mod".
+	makeContent := func(adrPath string) string {
+		return "---\nstatus: wip\ndate: 2026-08-01\nreq: \"docs/req/REQ-ml-scope-fixture.md\"\n---\n\n" +
+			"# Roadmap: Fixture\n\n## Acceptance Criteria\n- [x] ok\n\n" +
+			"## Wave 0 — Threat model\n> Dependências: nenhuma.\n\n" +
+			"### ML-0A\n**Status:** ✅ Concluído\n**Files affected:** `docs/seguranca/wave0.md`\n" +
+			"**Critérios de aceite:**\n- [x] done\n\n" +
+			"## Wave 1 — Implementation\n> Dependências: Wave 0.\n\n" +
+			"### ML-1A\n**Status:** ✅ Concluído\n**Files affected:** `a.go`\n" +
+			"**Critérios de aceite:**\n- [x] done\n\n" +
+			"_adrPath placeholder: " + adrPath + "_\n"
+	}
+
+	// Case A: adr: "go.mod" — must not grant go.mod.
+	t.Run("adr_outside_discarded", func(t *testing.T) {
+		dir := t.TempDir()
+		const rdmRel = "docs/roadmaps/wip/ROADMAP-ml-scope-fixture.md"
+		dir = mlScopeSetupGitRepo(t, dir, rdmRel, makeContent("go.mod"))
+		env := mlScopeGitEnv(dir)
+
+		// Write REQ with adr: "go.mod".
+		adr := "---\nstatus: Accepted\ndate: 2026-07-20\n---\n\n# ADR: Fixture\n"
+		if err := os.WriteFile(filepath.Join(dir, "docs/adr/ADR-ml-scope-fixture.md"), []byte(adr), 0644); err != nil {
+			t.Fatalf("write adr: %v", err)
+		}
+		req := fmt.Sprintf("---\nstatus: Open\ndate: 2026-07-20\nadr: \"go.mod\"\nroadmap: \"%s\"\n---\n\n# REQ: Fixture\n\n## Acceptance Criteria\n- [ ] ok\n", rdmRel)
+		if err := os.WriteFile(filepath.Join(dir, "docs/req/REQ-ml-scope-fixture.md"), []byte(req), 0644); err != nil {
+			t.Fatalf("write req: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/test\n\ngo 1.21\n"), 0644); err != nil {
+			t.Fatalf("write go.mod: %v", err)
+		}
+		mlScopeGitRun(t, dir, env, "add", ".")
+		mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "base+go.mod")
+		mlScopeGitRun(t, dir, env, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+		// Commit a.go and go.mod change on branch.
+		if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/test\n\ngo 1.22\n"), 0644); err != nil {
+			t.Fatalf("update go.mod: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("package main\n"), 0644); err != nil {
+			t.Fatalf("write a.go: %v", err)
+		}
+		mlScopeGitRun(t, dir, env, "add", ".")
+		mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "bump go.mod + add a.go")
+
+		stdout, _ := mlScopeRunBarrier(t, dir, "ROADMAP-ml-scope-fixture", "1")
+		check := findMLScopeCheck(t, stdout)
+
+		if check.Status == "skipped" {
+			t.Fatalf("expected ml_scope to run; evidence: %v", check.Evidence)
+		}
+		// go.mod must be in failures: adr: "go.mod" outside adr_dirs → discarded.
+		found := false
+		for _, f := range check.Failures {
+			if strings.Contains(f, "go.mod") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("go.mod must be in failures (adr: outside adr_dirs → discarded); got: %v", check.Failures)
+		}
+	})
+
+	// Case B: adr: "docs/adr/ADR-ml-scope-fixture.md" with adr_dirs: [docs/adr] — must be accepted.
+	t.Run("adr_inside_accepted", func(t *testing.T) {
+		dir := t.TempDir()
+		const rdmRel = "docs/roadmaps/wip/ROADMAP-ml-scope-fixture.md"
+		// Use mlScopeSetupMinimalGitRepo which sets adr_dirs: [docs/adr].
+		dir = mlScopeSetupMinimalGitRepo(t, dir)
+		env := mlScopeGitEnv(dir)
+		if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps/wip/ROADMAP-ml-scope-fixture.md"),
+			[]byte(makeContent("docs/adr/ADR-ml-scope-fixture.md")), 0644); err != nil {
+			t.Fatalf("write roadmap: %v", err)
+		}
+		writeMLScopeREQFixture(t, dir, rdmRel)
+		mlScopeGitRun(t, dir, env, "add", ".")
+		mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "base+roadmap+req+adr")
+		mlScopeGitRun(t, dir, env, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+		if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("package main\n"), 0644); err != nil {
+			t.Fatalf("write a.go: %v", err)
+		}
+		// Modify the ADR to put it in the diff.
+		adrContent := "---\nstatus: Accepted\ndate: 2026-07-20\n---\n\n# ADR: ML Scope Fixture\n\n> Status: Accepted\n<!-- updated -->\n"
+		if err := os.WriteFile(filepath.Join(dir, "docs/adr/ADR-ml-scope-fixture.md"), []byte(adrContent), 0644); err != nil {
+			t.Fatalf("update adr: %v", err)
+		}
+		mlScopeGitRun(t, dir, env, "add", ".")
+		mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add a.go + update adr")
+
+		stdout, _ := mlScopeRunBarrier(t, dir, "ROADMAP-ml-scope-fixture", "1")
+		check := findMLScopeCheck(t, stdout)
+
+		if check.Status == "skipped" {
+			t.Fatalf("expected ml_scope to run; evidence: %v", check.Evidence)
+		}
+		// ADR file must NOT be in failures (docs/adr/ADR-ml-scope-fixture.md ∈ adr_dirs → accepted).
+		for _, f := range check.Failures {
+			if strings.Contains(f, "ADR-ml-scope-fixture.md") {
+				t.Fatalf("ADR file must not be in failures (adr: inside adr_dirs → accepted); got: %q\nall: %v",
+					f, check.Failures)
+			}
+		}
+	})
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// T31 — Union member with pre-cutoff date contributes only orchestration
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestMLScope_UnionPreCutoffMemberOrchestrationOnly asserts that a union member
+// whose roadmap date is before 2026-07-18 contributes only orchestration paths,
+// not its pattern scope.
+func TestMLScope_UnionPreCutoffMemberOrchestrationOnly(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ml_scope uses git commands; windows path handling tested separately")
+	}
+
+	dir := t.TempDir()
+	dir = mlScopeSetupMinimalGitRepo(t, dir)
+	env := mlScopeGitEnv(dir)
+
+	const rdmA = "ROADMAP-ml-scope-union-a.md"
+	const rdmBPre = "ROADMAP-ml-scope-precutouff.md"
+
+	contentA := buildMLScopeRoadmap("2026-08-01", "`a.go`")
+	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps/wip/"+rdmA), []byte(contentA), 0644); err != nil {
+		t.Fatalf("write rdmA: %v", err)
+	}
+	writeMLScopeREQFixture(t, dir, "docs/roadmaps/wip/"+rdmA)
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "base+rdmA")
+	mlScopeGitRun(t, dir, env, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+	// Add rdmB (pre-cutoff date) on the branch so it is in diffFiles and detected as a
+	// union member — but pre-cutoff → orchestration only, no patterns.
+	contentB := buildMLScopeRoadmap("2026-05-10", "`b.go`")
+	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps/wip/"+rdmBPre), []byte(contentB), 0644); err != nil {
+		t.Fatalf("write rdmB precutouff: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write a.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write b.go: %v", err)
+	}
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add rdmBPre+a.go+b.go")
+
+	stdout, _ := mlScopeRunBarrier(t, dir, rdmA, "1")
+	check := findMLScopeCheck(t, stdout)
+
+	if check.Status == "skipped" {
+		t.Fatalf("expected ml_scope to run; evidence: %v", check.Evidence)
+	}
+	// b.go declared by pre-cutoff member — must be in failures (orchestration only, no patterns).
+	found := false
+	for _, f := range check.Failures {
+		if strings.Contains(f, "b.go") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("b.go must be in failures (member rdmBPre has pre-cutoff date → orchestration only); got: %v",
+			check.Failures)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// T32 — Union member with no date: treated as post-cutoff (contributes patterns)
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestMLScope_UnionMissingDateTreatedAsPostCutoff asserts that a union member
+// whose roadmap frontmatter has no date: field is treated as post-cutoff and
+// contributes its pattern scope normally.
+func TestMLScope_UnionMissingDateTreatedAsPostCutoff(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ml_scope uses git commands; windows path handling tested separately")
+	}
+
+	dir := t.TempDir()
+	dir = mlScopeSetupMinimalGitRepo(t, dir)
+	env := mlScopeGitEnv(dir)
+
+	const rdmA = "ROADMAP-ml-scope-union-a.md"
+	const rdmBNoDate = "ROADMAP-ml-scope-nodate.md"
+
+	contentA := buildMLScopeRoadmap("2026-08-01", "`a.go`")
+	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps/wip/"+rdmA), []byte(contentA), 0644); err != nil {
+		t.Fatalf("write rdmA: %v", err)
+	}
+	writeMLScopeREQFixture(t, dir, "docs/roadmaps/wip/"+rdmA)
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "base+rdmA")
+	mlScopeGitRun(t, dir, env, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+	// Add rdmB (no date: field → treated as post-cutoff) on the branch so it is in
+	// diffFiles and detected as a union member — contributes patterns normally.
+	contentBNoDate := "---\nstatus: wip\nreq: \"docs/req/REQ-ml-scope-fixture.md\"\n---\n\n" +
+		"# Roadmap: No Date Fixture\n\n## Acceptance Criteria\n- [x] ok\n\n" +
+		"## Wave 0 — Threat model\n> Dependências: nenhuma.\n\n" +
+		"### ML-0A — Threat model\n**Status:** ✅ Concluído\n" +
+		"**Files affected:** `docs/seguranca/wave0.md`\n" +
+		"**Critérios de aceite:**\n- [x] done\n\n" +
+		"## Wave 1 — Implementation\n> Dependências: Wave 0.\n\n" +
+		"### ML-1A — The ML\n**Status:** ✅ Concluído\n" +
+		"**Files affected:** `b.go`\n" +
+		"**Critérios de aceite:**\n- [x] done\n\n"
+
+	if err := os.WriteFile(filepath.Join(dir, "docs/roadmaps/wip/"+rdmBNoDate), []byte(contentBNoDate), 0644); err != nil {
+		t.Fatalf("write rdmB nodate: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write a.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write b.go: %v", err)
+	}
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add rdmBNoDate+a.go+b.go")
+
+	stdout, _ := mlScopeRunBarrier(t, dir, rdmA, "1")
+	check := findMLScopeCheck(t, stdout)
+
+	if check.Status == "skipped" {
+		t.Fatalf("expected ml_scope to run; evidence: %v", check.Evidence)
+	}
+	// b.go declared by no-date member → treated as post-cutoff → contributes patterns → must NOT be in failures.
+	for _, f := range check.Failures {
+		if strings.Contains(f, "b.go") {
+			t.Fatalf("b.go must not be in failures (member with no date: → post-cutoff → contributes patterns); got: %q\nall: %v",
+				f, check.Failures)
+		}
 	}
 }

@@ -65,7 +65,6 @@ export default defineConfig({
   },
 
   themeConfig: {
-    logo: { src: '/trackfw/logo.svg', alt: 'trackfw' },
     socialLinks: [
       { icon: 'github', link: 'https://github.com/kgsaran/trackfw' },
       { icon: 'npm', link: 'https://www.npmjs.com/package/trackfw' },
