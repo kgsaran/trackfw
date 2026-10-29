@@ -77,7 +77,7 @@ test -s docs/seguranca/2026-10-28-wave0-docs-e-install-ps1.md
 > Dependencies: Wave 0 auditada.
 
 ### ML-1A — `install.ps1` + gate Windows (ares-tf) — AC4
-**Status:** 🔄 Em andamento — código auditado em 2026-10-28 (gate local rc=0: 14 PASS, 17 SKIP nomeados, pwsh 7.6.9 no macOS; build ok), depois de um corretivo para o cenário de travessia e os braços de sabotagem. Faltam os 17 cenários exclusivos do Windows no CI (exige PR). Residual aceito: o membro absoluto não tem contra-braço com `-P`, porque escrever na raiz do drive no CI é inseguro; a asserção de ausência continua valendo.
+**Status:** ✅ Concluído — auditado em 2026-10-29. CI `windows-latest` no PR #627, run https://github.com/kgsaran/trackfw/actions/runs/40846363727 (job `windows-install-ps1`): 30 PASS e 0 SKIP sob `powershell` (Edition Desktop) e 30 PASS e 0 SKIP sob `pwsh` (Edition Core). São os 31 cenários locais menos `traversal-counter-arm-macos`, que só se aplica fora do Windows. Gate local rc=0 (14 PASS, 17 SKIP nomeados, pwsh 7.6.9 no macOS); build ok. Residual aceito: o membro absoluto não tem contra-braço com `-P`, porque escrever na raiz do drive no CI é inseguro; a asserção de ausência continua valendo.
 **Files affected:**
 - `scripts/install.ps1` (novo)
 - `scripts/check-install-ps1.ps1` (novo)
@@ -123,10 +123,10 @@ test -s docs/seguranca/2026-10-28-wave0-docs-e-install-ps1.md
    dependem do SO. Os cenários de registro e de PATH do Windows rodam só no CI.
 
 **Acceptance criteria:**
-- [ ] Gate verde no CI `windows-latest` sob `powershell` 5.1 **e** sob `pwsh` 7 (link da run)
-- [ ] Cada cenário falha quando o comportamento é removido do `install.ps1` (sabotagem medida e revertida)
-- [ ] `go build ./...` verde
-- [ ] Relatório com uma frase por teste novo, dizendo que conclusão do ML ele afirma
+- [x] Gate verde no CI `windows-latest` sob `powershell` 5.1 **e** sob `pwsh` 7 (run 40846363727, PR #627)
+- [x] Cada cenário falha quando o comportamento é removido do `install.ps1` (sabotagem medida e revertida)
+- [x] `go build ./...` verde
+- [x] Relatório com uma frase por teste novo, dizendo que conclusão do ML ele afirma
 
 ### ML-1B — Página do PyPI e cópias mortas (ares-tf) — AC3
 **Status:** ✅ Concluído — auditado em 2026-10-28: wheel construída pelo arquiteto, METADATA com Content-Type e corpo byte-igual ao README; gate rc=0 com 5 braços. Desvio aceito: o default do `--readme` é o README da raiz (via `__file__`), não `pypi/README.md` — conteúdo idêntico, e dois gates chamam sem `--readme`. A página do PyPI só muda na próxima release.
