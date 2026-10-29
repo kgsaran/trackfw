@@ -3228,7 +3228,7 @@ Each backtick-quoted token on the `**Files affected:**` label line and on any su
 - **Standalone bold field** — a line whose trimmed form starts with `**` (e.g. `**Acceptance criteria:**`). A list item that begins with `- **` is still a list item and does not stop the parser.
 - **Heading** — a line starting with `#`.
 - **Code fence** — a line starting with `` ` `` `` ` `` ` `` ` `` (three or more backticks).
-- **Checkmark item** — a line starting with `- [ ]`, `- [x]`, or `- [X]` (stops before acceptance-criteria items leak into scope). Generic Markdown links (`- [text](url)`) are not stop conditions.
+- **Checkmark item** — any line matching `^- \[.\]` (a single character between the brackets) stops before acceptance-criteria items leak into scope. This covers `- [ ]`, `- [x]`, `- [X]`, `- [~]`, `- [-]`, and any other single-character marker. Generic Markdown links whose text is longer than one character (`- [text](url)`) are not stop conditions; a link with exactly one character in its text (`- [a](url)`) matches the pattern and does stop — this is the accepted cost of using the shared `CriterionLineRe` regex.
 
 List items (`- ` or `* ` prefix) contribute all their backtick tokens (Rule B — the same extraction primitive as the label line). This supports the **hybrid form**: tokens on the label line and tokens in list items below are all collected.
 
@@ -3371,7 +3371,7 @@ so that a diff of two runtimes' JSON output for the same fixture is empty:
 | `acceptance_evidence` | `<ML-id>: <n> criteria met` | `<ML-id>: <n> unmet acceptance criteria` or `<ML-id>: no acceptance block` |
 | `gates` | `<command>: exit 0` | `<command>: exit <code>` · `line <n>: incomplete command — each line of the gates block runs as a separate sh -c (rule 5): <cmd>` (fragment detected by `sh -n` or odd-`\` rule before any gate executes; see rule 5) |
 | `validate` | `<v> violations, <w> warnings` | `<v> violations, <w> warnings` |
-| `ml_scope` | `scope: <n> file(s) checked, <m> out of scope` (when run) · `skipped: <reason>` (when skipped) | `out of scope: <path>` (for each undeclared file) · `undeclared ML: <ML-id> has no Files affected declaration` (for each ML without a declaration in a post-cutoff wip roadmap) |
+| `ml_scope` | `all <n> touched file(s) are within scope` (passed, when files touched; barrier.go:1331) · `in scope: <path>` (each in-scope file on passed or blocked; barrier.go:1333,1347) · `no files touched since merge-base` (passed, when no files touched; barrier.go:1328) · `skipped: <reason>` (when skipped; barrier.go:1089–1131) | `out of scope: <path>` (for each undeclared file; barrier.go:1344) · `<ML-id>: no **Files affected:** declaration (post-cutoff roadmap requires declaration for all MLs in the wave)` (for each ML without a declaration in a post-cutoff wip roadmap; barrier.go:1193–1194) · `<roadmap-path> <ML-id>: rejected: pattern "<tok>" without literal path segments matches every or no file without restriction` (broad-pattern rejection; barrier.go:1177–1178) · `origin/main not available — cannot compute scope diff (configure a remote or run with a fetched origin/main)` (when origin/main is unavailable; barrier.go:1141) |
 
 Determinism contract:
 

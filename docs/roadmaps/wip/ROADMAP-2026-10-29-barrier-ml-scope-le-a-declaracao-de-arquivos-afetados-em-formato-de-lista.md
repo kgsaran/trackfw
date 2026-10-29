@@ -101,16 +101,16 @@ go test ./internal/commands/ -run 'MLScope' -count=1
 > Dependencies: Wave 1 auditada.
 
 ### ML-2A — Red team do ml_scope (hades-tf)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — aprovado com ressalvas. Os 22 vetores estão conformes; os 4 achados foram corrigidos no ML-2B, que foi reauditado.
 **Files affected:** `docs/seguranca/2026-10-29-redteam-barrier-ml-scope.md`
 **Actions:**
 1. Reimplementar a regra a partir da leitura do contrato, sem conferir o diff, e confrontar com o binário da branch.
 2. Tentar ampliar o escopo pelos vetores da Wave 0 seção 3, em repositório descartável.
 **Acceptance criteria:**
-- [ ] Parecer aprovado, ou corretivo despachado e reauditado
+- [x] Parecer aprovado, ou corretivo despachado e reauditado
 
 ### ML-2B — Corretivo do red team (apolo-tf)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-10-29. Medido pelo arquiteto: `go test ./internal/commands/` rc=0; `TestMLScopeFilesAffectedList_AnyCriterionMarkerStops` passou com 3 subcasos; `check-barrier.sh` e `check-parity-contract-coverage.sh` rc=0. Sabotagem: com as três formas fixas, `[~]` e `[-]` reprovam. **Fora do ML, com o motivo escrito:** `internal/generators/roadmap.go:672` usa as mesmas três formas para extrair critérios da REQ e gerar MLs. Não é a mesma causa: a correção do `ml_scope` não fecha nada lá, e lá a lista curta só deixa de gerar ML a partir de um marcador inusitado, sem conceder escopo.
 **Files affected:** `internal/commands/barrier.go`, `internal/commands/barrier_ml_scope_test.go`, `docs/cli-parity.md`
 **Actions:** corrigir os achados 1 a 4 de `docs/seguranca/2026-10-29-redteam-barrier-ml-scope.md`:
 1. A parada de critério usa `roadmapdoc.CriterionLineRe` (`^- \[.\]`) em vez das três formas fixas. `- [~]` também
@@ -119,9 +119,9 @@ go test ./internal/commands/ -run 'MLScope' -count=1
    evidência de sucesso, a falha de ML sem declaração e a falha `rejected:`. O binário é a referência.
 3. A gramática de `docs/cli-parity.md` (paradas de lista) acompanha o item 1.
 **Acceptance criteria:**
-- [ ] Teste novo: `- [~]` e `- [-]` encerram a lista; um link `- [texto](url)` com texto de mais de um caractere não encerra
-- [ ] Cada string da linha `ml_scope` da tabela conferida contra o `barrier.go`, citando a linha
-- [ ] `go test ./internal/commands/` rc=0, `bash scripts/check-barrier.sh` rc=0, `bash scripts/check-parity-contract-coverage.sh` rc=0
+- [x] Teste novo: `- [~]` e `- [-]` encerram a lista; um link `- [texto](url)` com texto de mais de um caractere não encerra
+- [x] Cada string da linha `ml_scope` da tabela conferida contra o `barrier.go`, citando a linha
+- [x] `go test ./internal/commands/` rc=0, `bash scripts/check-barrier.sh` rc=0, `bash scripts/check-parity-contract-coverage.sh` rc=0
 
 **Gates da wave:**
 ```bash

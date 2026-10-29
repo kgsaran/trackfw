@@ -202,7 +202,8 @@ go build ./...
    - remover os aliases `gemini`, `cursor`, `copilot`, `windsurf` e `amazonq` (l.84).
 4. Preservar a seção `### `ml_scope` check` como está. Ela foi reescrita pela REQ-2026-10-29 (ML-1A) e é o contrato
    novo. Se o exemplo de `failures` do `### JSON document` citar `ml_scope`, alinhe-o à mensagem nova:
-   `<roadmap> <ML-id>: rejected: pattern "<tok>" without literal path segments ...`.
+   `<roadmap> <ML-id>: rejected: pattern "<tok>" without literal path segments ...`. Tire as referências
+   `barrier.go:<linha>` da linha `ml_scope` da tabela: número de linha num contrato fica desatualizado no próximo commit.
 5. Corrigir o `brew install trackfw` (l.28) para `brew install kgsaran/trackfw/trackfw`. Atualizar
    "Platforms (v8.0.0-rc1)" (l.32-39) com o estado atual do CI.
 

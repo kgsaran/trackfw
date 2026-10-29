@@ -27,6 +27,7 @@ package commands
 // | TestMLScopeFilesAffectedList_AllTokensExtracted              | All backtick tokens from all list items are extracted (Regra B)                               |
 // | TestMLScopeFilesAffectedList_StopsAtBoldField                | Standalone ** stops; contra-braço: "- **" does not stop                                       |
 // | TestMLScopeFilesAffectedList_CheckmarkItemStops              | "- [ ]", "- [x]", "- [X]" stop the list before tokens leak                                   |
+// | TestMLScopeFilesAffectedList_AnyCriterionMarkerStops         | Any single-char marker "- [~]", "- [-]" stops; multi-char link "- [texto longo](url)" does not |
 // | TestMLScopeFilesAffectedHybridInlineAndList                  | Inline tokens on the label line AND list items below are all extracted (§1.4c)                |
 // | TestMLScopeGlobBroadPatternBlocked                           | Broad patterns (**, **\/*, *\/**)  → status blocked with rejection message (AC10)            |
 // | TestMLScopeGlobPrefixedPatternAccepted                       | Prefixed patterns (site/**, **\/*.go) are accepted and do not produce rejection                |
@@ -1331,6 +1332,106 @@ func TestMLScopeFilesAffectedList_CheckmarkItemStops(t *testing.T) {
 			}
 		})
 	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// T16b — Any single-char criterion marker stops the list (ML-2B, Achado 3)
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestMLScopeFilesAffectedList_AnyCriterionMarkerStops asserts that any line
+// matching CriterionLineRe (^- \[.\]) stops the list, including variant markers
+// such as "- [~]" and "- [-]" that were not covered by the previous three-form
+// check. It also asserts that a link whose text is longer than one character
+// ("- [texto longo](docs/x.md) `real.go`") does NOT stop the list, so that
+// real.go is collected. A link with exactly one character in its text stops the
+// list — this is the accepted cost of using CriterionLineRe (documented in
+// barrier.go and cli-parity.md).
+func TestMLScopeFilesAffectedList_AnyCriterionMarkerStops(t *testing.T) {
+	// Sub-case 1: "- [~]" stops the list — leaked-tilde.go and b.go must not appear.
+	t.Run("tilde_marker_stops", func(t *testing.T) {
+		lines := []string{
+			"**Files affected:**",
+			"- `a.go`",
+			"- [~] `leaked-tilde.go` variant criterion caducado",
+			"- `b.go`",
+		}
+		fenced := make([]bool, len(lines))
+		patterns, hasDecl := parseMLScopeFilesAffected(lines, fenced, 0, len(lines))
+		if !hasDecl {
+			t.Fatalf("expected hasDecl=true")
+		}
+		for _, p := range patterns {
+			if p == "leaked-tilde.go" || p == "b.go" {
+				t.Errorf("token %q must not be in patterns (list must stop at - [~]); got %v", p, patterns)
+			}
+		}
+		found := false
+		for _, p := range patterns {
+			if p == "a.go" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("a.go must be in patterns (before the stop); got %v", patterns)
+		}
+	})
+
+	// Sub-case 2: "- [-]" stops the list — leaked-dash.go and b.go must not appear.
+	t.Run("dash_marker_stops", func(t *testing.T) {
+		lines := []string{
+			"**Files affected:**",
+			"- `a.go`",
+			"- [-] `leaked-dash.go` variant criterion",
+			"- `b.go`",
+		}
+		fenced := make([]bool, len(lines))
+		patterns, hasDecl := parseMLScopeFilesAffected(lines, fenced, 0, len(lines))
+		if !hasDecl {
+			t.Fatalf("expected hasDecl=true")
+		}
+		for _, p := range patterns {
+			if p == "leaked-dash.go" || p == "b.go" {
+				t.Errorf("token %q must not be in patterns (list must stop at - [-]); got %v", p, patterns)
+			}
+		}
+		found := false
+		for _, p := range patterns {
+			if p == "a.go" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("a.go must be in patterns (before the stop); got %v", patterns)
+		}
+	})
+
+	// Sub-case 3: a link with multi-char text does NOT stop the list — real.go must appear.
+	t.Run("long_link_text_does_not_stop", func(t *testing.T) {
+		lines := []string{
+			"**Files affected:**",
+			"- `a.go`",
+			"- [texto longo](docs/x.md) `real.go`",
+			"- `b.go`",
+		}
+		fenced := make([]bool, len(lines))
+		patterns, hasDecl := parseMLScopeFilesAffected(lines, fenced, 0, len(lines))
+		if !hasDecl {
+			t.Fatalf("expected hasDecl=true")
+		}
+		wantPresent := []string{"a.go", "real.go", "b.go"}
+		for _, w := range wantPresent {
+			found := false
+			for _, p := range patterns {
+				if p == w {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("want %q in patterns (multi-char link text must not stop list); got %v", w, patterns)
+			}
+		}
+	})
 }
 
 // ────────────────────────────────────────────────────────────────────────────

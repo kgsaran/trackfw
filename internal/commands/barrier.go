@@ -865,8 +865,13 @@ func parseMLScopeFilesAffected(lines []string, fenced []bool, start, end int) ([
 
 		// Collect continuation lines and list items.
 		// Stops at: blank line, standalone bold field (**), heading (#), code fence.
-		// Checkmark items ("- [ ]", "- [x]", "- [X]") stop the list BEFORE the generic
-		// list-item check so that acceptance criteria don't leak into scope (p.1, AC2).
+		// Any criterion marker "- [X]" where X is a single character (matched by
+		// roadmapdoc.CriterionLineRe = ^- \[.\]) stops the list BEFORE the generic
+		// list-item check so that acceptance-criteria items don't leak into scope
+		// (p.1, AC2). This includes "- [ ]", "- [x]", "- [X]", "- [~]", "- [-]", etc.
+		// Note: "- [a](url)" where the link text is exactly one character also matches
+		// the regex and stops the list — accepted cost of using CriterionLineRe.
+		// Links with longer text ("- [text](url)") do not match and do not stop.
 		// A list item starting with "- **" is still a list item (trimmed starts with
 		// "- ", so the "**" stop does not fire for it — §2.1 case 2).
 		// List items (- / *) contribute tokens by Regra B (p.1, p.2, §1.4c hybrid).
@@ -885,9 +890,10 @@ func parseMLScopeFilesAffected(lines []string, fenced []bool, start, end int) ([
 			if strings.HasPrefix(trimmed, "#") {
 				break // heading
 			}
-			// Checkmark item stops BEFORE generic list check — exact prefixes to avoid
-			// matching Markdown links like "- [text](url)".
-			if strings.HasPrefix(trimmed, "- [ ]") || strings.HasPrefix(trimmed, "- [x]") || strings.HasPrefix(trimmed, "- [X]") {
+			// Criterion marker stops BEFORE generic list check. Uses CriterionLineRe
+			// (^- \[.\]) to match any single-character marker, including "- [~]" and
+			// "- [-]". Single-character link text ("- [a](url)") is the accepted cost.
+			if roadmapdoc.CriterionLineRe.MatchString(trimmed) {
 				break
 			}
 			// List item (- / *): extract tokens and continue (AC1, §1.4c).
