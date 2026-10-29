@@ -344,14 +344,14 @@ O handoff traz lista fechada de ações e contador N/M de chamadas.
 - [ ] Gate local verde e job `windows-install-ps1` verde no CI sob PS 5.1 e 7 (run citada)
 
 ### ML-4D — Corretivo do gate da linha de hook: cerca e `cli-parity.md` (artemis-tf)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-29. Cerca no estilo CommonMark (mesmo caractere, comprimento ≥ ao da abertura, nada depois); `TestREADMEFenceExtractor` com 4 vetores, entre eles o B8b. `TestCLIParityHookLines` confere as 3 formas PS/POSIX do `cli-parity.md` (l.6360, 6362 e 9225) e reprova uma forma legada fora de linha marcada como histórica. Sabotagem: o toggle antigo reprova os 4 vetores. Limitação declarada: formas cmd.exe são byte-iguais a menções do subcomando e ficam fora; o critério de "histórico" é por linha. `go test ./internal/guardforms/` rc=0 (arquiteto).
 **Files affected:** `internal/guardforms/readme_line_test.go`
 **Actions:**
 1. F-3: a cerca só fecha com o mesmo caractere e com comprimento ≥ ao da abertura. Hoje um `~~~` dentro de um bloco ```
    cega o extrator.
 2. F-4: as formas PS/POSIX citadas em `docs/cli-parity.md` também são conferidas contra as constantes.
 **Acceptance criteria:**
-- [ ] Vetor B8b do red team reprova; sabotagem de uma forma antiga em `cli-parity.md` reprova; os dois revertidos
+- [x] Vetor B8b do red team reprova; sabotagem de uma forma antiga em `cli-parity.md` reprova; os dois revertidos
 
 **Gates da wave:**
 ```bash
