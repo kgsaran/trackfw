@@ -73,7 +73,7 @@ grep -q 'Prescrições' docs/seguranca/2026-10-29-wave0-barrier-ml-scope.md
 > Dependencies: Wave 0 auditada.
 
 ### ML-1A — Parser em lista e escopo por união (apolo-tf) — AC1 a AC11
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-29, depois de um corretivo. O contra-braço de T11/T12 fixava o contrato antigo (roadmap novo em `done/` fora de escopo) e agora usa um caminho apagado na branch. A mensagem de padrão largo passou a nomear roadmap, ML e token. A seção `ml_scope` do `cli-parity.md` foi escrita. Medido pelo arquiteto: `go test ./internal/commands/` rc=0, e os 23 nomes de MLScope conferidos em `-v`. `check-barrier.sh` rc=0, `check-parity-contract-coverage.sh` rc=0, `go test ./internal/pathguard/` rc=0. `bin/trackfw barrier` da Wave 1 da documentação 11.x: 6/6 passed.
 **Files affected:** `internal/commands/barrier.go`, `internal/commands/barrier_ml_scope_test.go`, `docs/cli-parity.md`
 **Actions:**
 1. `parseMLScopeFilesAffected`: aceitar os itens de lista depois do rótulo, com a regra de crases prescrita pela Wave 0.
@@ -84,12 +84,12 @@ grep -q 'Prescrições' docs/seguranca/2026-10-29-wave0-barrier-ml-scope.md
    novos. Nenhuma outra seção.
 5. Seguir as 12 prescrições de `docs/seguranca/2026-10-29-wave0-barrier-ml-scope.md` §4.1. A p.10 diz que `scripts/check-barrier.sh` não muda.
 **Acceptance criteria:**
-- [ ] AC1 a AC6 da REQ, cada um com o nome do teste conferido por `go test -run <nome> -v`
-- [ ] Sabotagem medida e revertida: voltar o `break` em `- ` reprova o teste de AC1; remover a união reprova o de AC4
-- [ ] AC8: `go build -o bin/trackfw ./cmd/trackfw` e `bin/trackfw barrier <roadmap de documentação> --wave 1
+- [x] AC1 a AC6 da REQ, cada um com o nome do teste conferido por `go test -run <nome> -v`
+- [x] Sabotagem medida e revertida: voltar o `break` em `- ` reprova o teste de AC1; remover a união reprova o de AC4
+- [x] AC8: `go build -o bin/trackfw ./cmd/trackfw` e `bin/trackfw barrier <roadmap de documentação> --wave 1
   --trust-local-gates` com `ml_scope: passed`
-- [ ] `go test ./internal/commands/` e `sh scripts/check-barrier.sh` verdes
-- [ ] Relatório com uma frase por teste novo, dizendo que conclusão do ML ele afirma
+- [x] `go test ./internal/commands/` e `sh scripts/check-barrier.sh` verdes
+- [x] Relatório com uma frase por teste novo, dizendo que conclusão do ML ele afirma
 
 **Gates da wave:**
 ```bash

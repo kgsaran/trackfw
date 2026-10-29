@@ -3214,15 +3214,31 @@ The `ml_scope` check verifies that every file touched by the current branch is c
 <!-- trackfw-contract: gate=internal/commands/barrier_ml_scope_test.go,scripts/check-barrier.sh -->
 
 - **Roadmap from HEAD, not disk.** `git show HEAD:<roadmap>` is used to read the `**Files affected:**` lines. An uncommitted disk edit cannot expand scope. A roadmap not yet committed results in `skipped`.
-- **Touched files.** `git diff --name-only -z $(git merge-base origin/main HEAD) HEAD` (committed changes) plus `git status --porcelain=v1 -z --untracked-files=all` (modified, staged, untracked), excluding gitignored files.
-- **Wave N scope.** The union of `**Files affected:**` from every ML in waves 0..N.
+- **Touched files.** `git diff --name-only -z $(git merge-base origin/main HEAD) HEAD --no-renames` (committed changes, both sides of renames listed separately) plus `git status --porcelain=v1 -z --untracked-files=all --no-renames` (modified, staged, untracked), excluding gitignored files.
+- **Wave N scope.** The union of `**Files affected:**` from every ML in waves 0..N of the target roadmap, plus the union contribution from every roadmap member (see Union below).
 - **Orchestration set (always permitted).** The roadmap file itself; the REQ from frontmatter `req:`; the ADR from the REQ's frontmatter `adr:`; `docs/agents-working-context/`; `vault/notes/`; `.claude/agent-memory/`; `<roadmap_dir>/.trackfw-log`; `<roadmap_dir>/.trackfw-log-entries/`; `<req_dir>/.trackfw-log`; `<req_dir>/.trackfw-log-entries/`. The roadmap counts as orchestration in every state directory of `roadmap_dir` with the same basename (`backlog/`, `analyzing/`, `wip/`, `blocked/`, `done/`, `abandoned/`), so a roadmap moved between states in the branch (e.g. `done/` → `wip/` on reopen) does not produce a spurious out-of-scope failure for the deleted old-state path.
 
 #### `**Files affected:**` grammar
 
 <!-- trackfw-contract: gate=internal/commands/barrier_ml_scope_test.go,scripts/check-barrier.sh -->
 
-Each backtick-quoted token on the `**Files affected:**` line (including continuation lines) is a path pattern. A continuation line is any non-blank line after the label line that does not start with `**`, `#`, or a list marker (`- `, `* `).
+Each backtick-quoted token on the `**Files affected:**` label line and on any subsequent list item or continuation line is a path pattern. The declaration collects tokens until one of the following stop conditions is met:
+
+- **Blank line** — ends the declaration.
+- **Standalone bold field** — a line whose trimmed form starts with `**` (e.g. `**Acceptance criteria:**`). A list item that begins with `- **` is still a list item and does not stop the parser.
+- **Heading** — a line starting with `#`.
+- **Code fence** — a line starting with `` ` `` `` ` `` ` `` ` `` (three or more backticks).
+- **Checkmark item** — a line starting with `- [ ]`, `- [x]`, or `- [X]` (stops before acceptance-criteria items leak into scope). Generic Markdown links (`- [text](url)`) are not stop conditions.
+
+List items (`- ` or `* ` prefix) contribute all their backtick tokens (Rule B — the same extraction primitive as the label line). This supports the **hybrid form**: tokens on the label line and tokens in list items below are all collected.
+
+```markdown
+**Files affected:** `inline.go`       ← tokens on the label line
+- `list-a.go` and `list-b.go`         ← all backtick tokens per item
+- `list-c.go`: updated                ← annotation text outside backticks is ignored
+```
+
+Non-list continuation lines (wrap lines with no `- `/`* ` prefix) also contribute their backtick tokens.
 
 | Form | Example | Matches |
 |---|---|---|
@@ -3232,6 +3248,45 @@ Each backtick-quoted token on the `**Files affected:**` line (including continua
 | Double-star glob | `` `internal/**/*.go` `` | Any `.go` under `internal/` at any depth |
 
 Text outside backticks (including `"a definir"`) is ignored. A label line with no backticks declares zero files (valid declaration; no files are permitted beyond the orchestration set).
+
+#### Broad-pattern rejection
+
+<!-- trackfw-contract: gate=internal/commands/barrier_ml_scope_test.go -->
+
+A pattern whose stripped form (after removing `*`, `?`, `[`, `]`, `/`) is empty is rejected because it matches every file or no file without meaningful restriction. Examples: `**`, `**/*`, `*/**`, `**/**`, `*`, `**/`, `/`. Prefixed patterns such as `site/**` or `**/*.go` are accepted.
+
+When a broad pattern is found, the check is `blocked` with a failure entry:
+
+```
+<roadmap-path> <ML-id>: rejected: pattern "<tok>" without literal path segments matches every or no file without restriction
+```
+
+This applies to patterns from the target roadmap and from union members.
+
+#### Union of roadmap members
+
+<!-- trackfw-contract: gate=internal/commands/barrier_ml_scope_test.go -->
+
+Every `.md` file under `roadmap_dir` that (a) appears in the branch diff, (b) exists in HEAD, (c) is in a known state directory, and (d) is **not** the target roadmap is a **union member**. Each member contributes its orchestration set (roadmap path, REQ, ADR, well-known dirs) to the allowed set unconditionally.
+
+**Contribution by member state:**
+
+| Member state | Condition | Scope contribution |
+|---|---|---|
+| `abandoned/` or `backlog/` | — | Orchestration only |
+| `done/` | Existed at merge-base | Orchestration only |
+| `date:` before 2026-07-18 | — | Orchestration only |
+| All other cases | — | Orchestration + patterns from waves 0..K |
+
+**K** is the highest wave number in the member that has at least one ML satisfying the K match-positive predicate: `StatusIsComplete` (✅), `StatusTerminated` (❌ Cancelado, 🚫 Abandonado), or `StatusPending` with first emoji `🔄` or `❌` (🔄 Em andamento, ❌ Bloqueado). All-`⬜` members contribute only orchestration (K undefined). A missing `date:` field is treated as post-cutoff.
+
+Union members never produce "undeclared ML" failures — a missing declaration in member B does not block the barrier of target A. Broad-pattern rejections do fire for members (a `**` in member B would grant all files to target A).
+
+#### Orchestration: `req:` and `adr:` validation
+
+<!-- trackfw-contract: gate=internal/commands/barrier_ml_scope_test.go -->
+
+The `req:` frontmatter value is cleaned with `path.Clean` (handles `./` prefix and `..` traversal) then accepted only if: (1) not an absolute path, (2) does not start with `..`, and (3) starts with `path.Clean(req_dir) + "/"`. The ADR path from the REQ's frontmatter `adr:` is validated the same way against each directory in `adr_dirs`. Paths that fail validation are silently discarded; no error is reported.
 
 #### Date cutoff
 
@@ -3246,7 +3301,7 @@ Roadmaps with a `date:` frontmatter value strictly before `2026-07-18` exit `ski
 | Status | Condition |
 |---|---|
 | `passed` | Every touched file is in scope |
-| `blocked` | At least one file is out of scope, or an ML has no declaration; also when `origin/main` is unavailable — fail-closed (never pass in silence) |
+| `blocked` | At least one file is out of scope; an ML has no `**Files affected:**` declaration; a broad pattern (e.g. `**`) is found; or `origin/main` is unavailable — fail-closed (never pass in silence) |
 | `skipped` | Not a git repo; roadmap not in HEAD; date before 2026-07-18 |
 
 `skipped` is **non-blocking** — the overall barrier status is not `blocked` by a `skipped` `ml_scope`.

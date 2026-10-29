@@ -29,24 +29,24 @@ reduzir (Discussion #525). Decisão do KG em 2026-10-29: corrigir no mesmo PR, c
 
 ## Acceptance Criteria
 
-- [ ] AC1. Uma declaração `**Files affected:**` seguida de lista produz os padrões dos itens, segundo a regra de crases
+- [x] AC1. Uma declaração `**Files affected:**` seguida de lista produz os padrões dos itens, segundo a regra de crases
   definida na Wave 0. Teste com nome conferido por `go test -run <nome> -v`.
-- [ ] AC2. A declaração termina em linha em branco, campo `**`, cabeçalho `#` ou cerca. Teste em que a lista de
+- [x] AC2. A declaração termina em linha em branco, campo `**`, cabeçalho `#` ou cerca. Teste em que a lista de
   `**Acceptance criteria:**` depois do rótulo **não** entra no escopo.
-- [ ] AC3. A forma em linha continua igual: os casos de `TestMLScopeFilesAffectedParsing` passam sem alteração de
+- [x] AC3. A forma em linha continua igual: os casos de `TestMLScopeFilesAffectedParsing` passam sem alteração de
   expectativa.
-- [ ] AC4. Com dois roadmaps tocados pela branch, o barrier de cada um aceita os arquivos declarados pelo outro e a
+- [x] AC4. Com dois roadmaps tocados pela branch, o barrier de cada um aceita os arquivos declarados pelo outro e a
   orquestração do outro (roadmap, REQ, ADR). Teste com repositório git em `t.TempDir()`.
-- [ ] AC5. Um roadmap que **não** aparece no diff da branch não contribui com escopo (contra-braço do AC4).
-- [ ] AC6. Arquivo fora de todas as declarações continua `blocked` (contra-braço geral).
-- [ ] AC7. Seção `ml_scope` de `docs/cli-parity.md` descreve as duas regras; os `trackfw-contract` da seção apontam para os
+- [x] AC5. Um roadmap que **não** aparece no diff da branch não contribui com escopo (contra-braço do AC4).
+- [x] AC6. Arquivo fora de todas as declarações continua `blocked` (contra-braço geral).
+- [x] AC7. Seção `ml_scope` de `docs/cli-parity.md` descreve as duas regras; os `trackfw-contract` da seção apontam para os
   testes que as afirmam.
-- [ ] AC8. Com o binário da branch, `trackfw barrier` passa no `ml_scope` da Wave 1 do roadmap de documentação 11.x e da
+- [x] AC8. Com o binário da branch, `trackfw barrier` passa no `ml_scope` da Wave 1 do roadmap de documentação 11.x e da
   Wave 1 deste roadmap, sem reescrever nenhuma declaração existente.
-- [ ] AC9. `go test ./internal/commands/` verde e `scripts/check-barrier.sh` verde.
-- [ ] AC10. Padrão sem segmento literal (`**`, `**/*`, `*/**`, `**/**`, `*`, `**/`, `/`) bloqueia; `site/**` e `**/*.go`
+- [x] AC9. `go test ./internal/commands/` verde e `scripts/check-barrier.sh` verde.
+- [x] AC10. Padrão sem segmento literal (`**`, `**/*`, `*/**`, `**/**`, `*`, `**/`, `/`) bloqueia; `site/**` e `**/*.go`
   passam. Achado da Wave 0.
-- [ ] AC11. `req:` e `adr:` fora de `req_dir`/`adr_dirs` (`go.mod`, `docs/req-x/f.md`, `docs/req/../../go.mod`) não
+- [x] AC11. `req:` e `adr:` fora de `req_dir`/`adr_dirs` (`go.mod`, `docs/req-x/f.md`, `docs/req/../../go.mod`) não
   concedem escopo; `./docs/req/REQ-x.md` concede. Achado da Wave 0, reproduzido ao vivo.
 
 ## Negative scope
