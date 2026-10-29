@@ -109,7 +109,22 @@ go test ./internal/commands/ -run 'MLScope' -count=1
 **Acceptance criteria:**
 - [ ] Parecer aprovado, ou corretivo despachado e reauditado
 
+### ML-2B — Corretivo do red team (apolo-tf)
+**Status:** ⬜ Pendente
+**Files affected:** `internal/commands/barrier.go`, `internal/commands/barrier_ml_scope_test.go`, `docs/cli-parity.md`
+**Actions:** corrigir os achados 1 a 4 de `docs/seguranca/2026-10-29-redteam-barrier-ml-scope.md`:
+1. A parada de critério usa `roadmapdoc.CriterionLineRe` (`^- \[.\]`) em vez das três formas fixas. `- [~]` também
+   encerra a lista.
+2. A tabela `### JSON document` de `docs/cli-parity.md` (linha `ml_scope`) passa a descrever o que o binário emite: a
+   evidência de sucesso, a falha de ML sem declaração e a falha `rejected:`. O binário é a referência.
+3. A gramática de `docs/cli-parity.md` (paradas de lista) acompanha o item 1.
+**Acceptance criteria:**
+- [ ] Teste novo: `- [~]` e `- [-]` encerram a lista; um link `- [texto](url)` com texto de mais de um caractere não encerra
+- [ ] Cada string da linha `ml_scope` da tabela conferida contra o `barrier.go`, citando a linha
+- [ ] `go test ./internal/commands/` rc=0, `bash scripts/check-barrier.sh` rc=0, `bash scripts/check-parity-contract-coverage.sh` rc=0
+
 **Gates da wave:**
 ```bash
 test -f docs/seguranca/2026-10-29-redteam-barrier-ml-scope.md
+go test ./internal/commands/ -run 'MLScope' -count=1
 ```

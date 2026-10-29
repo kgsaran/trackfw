@@ -168,7 +168,7 @@ go build ./...
 > Dependencies: Wave 1 auditada. O motivo é o teto de CPU; não há dependência de arquivo.
 
 ### ML-2A — Linha de hook sob `pwsh` 7 e `powershell` 5.1 (artemis-tf) — AC5
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-29. No CI `windows-latest` (run 40882950230, job `windows-full-suites`), os 40 subtestes `TestGuardLineShellMatrix/<forma>/{pwsh,powershell}/{RC0-allow,RC2-deny,RC1-deny-normalizado,absent}` passaram nas 4 formas, sob PowerShell 5.1 e 7. As 5 falhas do job estão em `.github/windows-known-failures.json`. No macOS, `pwsh` passou e `powershell` pulou com motivo. Sabotagem: sem o envelope, deny, erro e ausente saem com exit 1. Observação: sob PowerShell, o stderr do deny traz dois blocos `CommandNotFound` junto com o motivo. O motivo é preservado. Fica registrado para a matriz do README (ML-3A).
 **Files affected:** `internal/generators/guard_line_shell_test.go`
 
 **Actions:**
@@ -180,9 +180,9 @@ go build ./...
 3. Rodar com um PATH sem `trackfw` instalado, para não mascarar a sonda.
 
 **Acceptance criteria:**
-- [ ] Os braços rodam (não pulam) no job Windows do CI: nome do teste e linha do log citados
-- [ ] Localmente, o braço `pwsh` roda no macOS
-- [ ] Relatório com uma frase por teste novo; nome passado ao `go test -run` conferido com `-v`
+- [x] Os braços rodam (não pulam) no job Windows do CI: nome do teste e linha do log citados
+- [x] Localmente, o braço `pwsh` roda no macOS
+- [x] Relatório com uma frase por teste novo; nome passado ao `go test -run` conferido com `-v`
 
 ### ML-2B — Reescrita do `docs/cli-parity.md` (apolo-tf) — AC7
 **Status:** ⬜ Pendente
