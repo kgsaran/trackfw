@@ -1719,10 +1719,13 @@ try {
             GATE_INSTALL_SCRIPT    = $sabPTSScript
             TRACKFW_NO_MODIFY_PATH = '0'
         }
-        Restore-RegPath
         $sabPTSPathAfter = [string]$regKey.GetValue('PATH', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+        Restore-RegPath
         # After sabotage: 'C:\Windows\System32;' + ';' + installDir -> ';;' present
-        if ($sabPTSPathAfter -match ';;') {
+        if ($rSabPTS.ExitCode -ne 0) {
+            Fail-Scenario 'sab-trailing-semicolon' `
+                "child exited $($rSabPTS.ExitCode); stderr=$($rSabPTS.Stderr.Trim())"
+        } elseif ($sabPTSPathAfter -match ';;') {
             Pass-Scenario 'sab-trailing-semicolon'
         } else {
             Fail-Scenario 'sab-trailing-semicolon' `
