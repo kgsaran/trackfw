@@ -327,7 +327,7 @@ O handoff traz lista fechada de ações e contador N/M de chamadas.
 - [ ] Parecer aprovado, ou corretivo despachado e reauditado
 
 ### ML-4C — Corretivo do install.ps1: `;` no destino, `;;` no PATH e aviso do `~/bin` (ares-tf)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-29, depois de um corretivo no gate. O `sab-trailing-semicolon` restaurava o registro antes de ler o PATH; a ordem foi corrigida, e os outros cenários de registro foram varridos e estavam certos. CI `windows-latest`, run 40918775429, job `windows-install-ps1`: 39 PASS, 0 FAIL e 0 SKIP sob Desktop (5.1) e sob Core (7), incluindo os 9 cenários novos (`install-dir-semicolon`, `install-dir-semicolon-no-dir`, `sab-install-dir-semicolon`, `path-trailing-semicolon`, `path-trailing-semicolon-idempotent`, `sab-trailing-semicolon`, `gitbash-bin-warning`, `gitbash-bin-no-warning`, `sab-gitbash-bin-warning`).
 **Files affected:** `scripts/install.ps1`, `scripts/check-install-ps1.ps1`, `README.md`
 **Actions:** achados do red team (`docs/seguranca/2026-10-28-redteam-docs-e-install-ps1.md`) e da VM
 (`docs/portabilidade/2026-10-28-install-ps1-vm-arm64.md`):
@@ -340,8 +340,8 @@ O handoff traz lista fechada de ações e contador N/M de chamadas.
    `OSArchitecture` disponível no PS 5.1) passam a citar a medição.
 5. README: a limitação do `~/bin` descreve o aviso novo.
 **Acceptance criteria:**
-- [ ] Cenários novos no gate (`;` no destino, PATH com `;` final, aviso do `~/bin`), cada um com sabotagem medida e revertida
-- [ ] Gate local verde e job `windows-install-ps1` verde no CI sob PS 5.1 e 7 (run citada)
+- [x] Cenários novos no gate (`;` no destino, PATH com `;` final, aviso do `~/bin`), cada um com sabotagem medida e revertida
+- [x] Gate local verde e job `windows-install-ps1` verde no CI sob PS 5.1 e 7 (run citada)
 
 ### ML-4D — Corretivo do gate da linha de hook: cerca e `cli-parity.md` (artemis-tf)
 **Status:** ✅ Concluído — auditado em 2026-10-29. Cerca no estilo CommonMark (mesmo caractere, comprimento ≥ ao da abertura, nada depois); `TestREADMEFenceExtractor` com 4 vetores, entre eles o B8b. `TestCLIParityHookLines` confere as 3 formas PS/POSIX do `cli-parity.md` (l.6360, 6362 e 9225) e reprova uma forma legada fora de linha marcada como histórica. Sabotagem: o toggle antigo reprova os 4 vetores. Limitação declarada: formas cmd.exe são byte-iguais a menções do subcomando e ficam fora; o critério de "histórico" é por linha. `go test ./internal/guardforms/` rc=0 (arquiteto).
