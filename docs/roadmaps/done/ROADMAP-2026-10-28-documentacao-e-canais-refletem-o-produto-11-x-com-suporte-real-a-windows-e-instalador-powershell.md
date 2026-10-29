@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-10-28
 req: "docs/req/REQ-2026-10-28-documentacao-e-canais-refletem-o-produto-11-x-com-suporte-real-a-windows-e-instalador-powershell.md"
 squad: "hades-tf, ares-tf, artemis-tf, apolo-tf, atena-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, ares-tf, artemis-tf, apolo-tf, atena-tf"
 
 # Roadmap: Documentação e canais refletem o produto 11.x, com suporte real a Windows e instalador PowerShell
 
-> Created: 2026-10-28 | Status: wip
+> Created: 2026-10-28 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-10-28-documentacao-e-canais-refletem-o-produto-11-x-com-suporte-real-a-windows-e-instalador-powershell.md

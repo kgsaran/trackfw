@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-10-29
 req: "docs/req/REQ-2026-10-29-barrier-ml-scope-le-a-declaracao-de-arquivos-afetados-em-formato-de-lista.md"
 squad: "hades-tf, apolo-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf"
 
 # Roadmap: barrier ml_scope lê a declaração de arquivos afetados em formato de lista
 
-> Created: 2026-10-29 | Status: wip
+> Created: 2026-10-29 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-10-29-barrier-ml-scope-le-a-declaracao-de-arquivos-afetados-em-formato-de-lista.md
