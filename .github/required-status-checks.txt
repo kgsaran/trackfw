@@ -31,3 +31,4 @@ governance-go-install
 windows-full-suites
 shim-byte-identity-gate
 pr-closing-keyword
+windows-install-ps1

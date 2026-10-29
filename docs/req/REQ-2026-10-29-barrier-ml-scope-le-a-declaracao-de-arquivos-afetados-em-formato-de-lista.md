@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-10-29
 author: "zeus (trackfw_architect), decisão do KG"
 adr: "docs/adr/ADR-2026-10-29-barrier-ml-scope-le-a-declaracao-em-lista-e-une-os-roadmaps-tocados-pela-branch.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-10-29-barrier-ml-scope-le-a-declaracao-de-arquivos-afetados-em-formato-de-lista.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-10-29-barrier-ml-scope-le-a-declaracao-de-arquivos-afetados-em-formato-de-lista.md"
 ---
 
 # REQ: barrier ml_scope lê a declaração de arquivos afetados em formato de lista
 
-> Date: 2026-10-29 | Status: Open
+> Date: 2026-10-29 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -65,4 +65,4 @@ ADR: docs/adr/ADR-2026-10-29-barrier-ml-scope-le-a-declaracao-em-lista-e-une-os-
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-10-29-barrier-ml-scope-le-a-declaracao-de-arquivos-afetados-em-formato-de-lista.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-10-29-barrier-ml-scope-le-a-declaracao-de-arquivos-afetados-em-formato-de-lista.md

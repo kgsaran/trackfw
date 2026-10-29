@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-10-28
 author: "zeus (trackfw_architect)"
 adr: "docs/adr/ADR-2026-10-28-instalador-powershell-publicado-na-release-com-o-mesmo-contrato-do-install-sh.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-10-28-documentacao-e-canais-refletem-o-produto-11-x-com-suporte-real-a-windows-e-instalador-powershell.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-10-28-documentacao-e-canais-refletem-o-produto-11-x-com-suporte-real-a-windows-e-instalador-powershell.md"
 ---
 
 # REQ: Documentação e canais refletem o produto 11.x, com suporte real a Windows e instalador PowerShell
 
-> Date: 2026-10-28 | Status: Open
+> Date: 2026-10-28 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -44,35 +44,35 @@ Direção que motiva a REQ: consolidação + adoção (Discussion #525, decisão
 
 ## Acceptance Criteria
 
-- [ ] AC1 — Nenhuma documentação de usuário (README, CONTRIBUTING, VISION, cli-parity,
+- [x] AC1 — Nenhuma documentação de usuário (README, CONTRIBUTING, VISION, cli-parity,
   gate-design-principles, site, cópias de npm/pypi) aponta para namespace que não é nosso:
   `git grep -nE 'github\.com/trackfw/|trackfw/tap|kgsaran/tap'` restrito a essas superfícies
   devolve vazio. Todo comando de instalação documentado foi executado ou conferido contra o
-  registro.
-- [ ] AC2 — A linha de hook documentada no README é byte a byte a linha atual de
-  `internal/guardforms/guard_generations.go`, e um teste falha se as duas divergirem.
-- [ ] AC3 — A página do PyPI de uma wheel construída por `build_wheel.py` traz o README:
+  registro. *(Atendido: grep rc=1 na `main` pós-merge; comandos conferidos no ML-3A.)*
+- [x] AC2 — A linha de hook documentada no README é byte a byte a linha atual de
+  `internal/guardforms/guard_generations.go`, e um teste falha se as duas divergirem. *(Atendido: `TestREADMEHookLinesMatchCurrentConstants`, ML-3A/ML-4D.)*
+- [x] AC3 — A página do PyPI de uma wheel construída por `build_wheel.py` traz o README:
   `Description-Content-Type: text/markdown` e corpo não vazio no METADATA, afirmado por gate.
   `pypi/pyproject.toml` morto e as cópias commitadas `npm/README.md` / `pypi/README.md` removidas
-  ou geradas, sem cópia divergente versionada.
-- [ ] AC4 — `scripts/install.ps1` existe, é publicado como asset da release e cumpre o contrato da
+  ou geradas, sem cópia divergente versionada. *(Atendido, com desvio medido: o `pypi/pyproject.toml` **fica**, porque a Wave 0 achou consumidores vivos (`release.go`, três scripts). As cópias de README saíram do git. Gate `check-wheel-metadata-readme.sh`. A página do PyPI só muda na próxima release.)*
+- [x] AC4 — `scripts/install.ps1` existe, é publicado como asset da release e cumpre o contrato da
   ADR-2026-10-28. Um gate no CI `windows-latest` roda sob `powershell` (5.1) e `pwsh` (7) os
   cenários íntegro, adulterado, ausente, duplicado, versão injetada, arquitetura inválida, PATH
-  idempotente e `TRACKFW_NO_MODIFY_PATH`. Cada cenário tem contra-braço.
-- [ ] AC5 — A linha de hook PS/POSIX é medida sob `pwsh` 7 e `powershell` 5.1 no CI Windows x64,
-  nos casos allow, deny, erro e ausente. O resultado entra na matriz de suporte.
-- [ ] AC6 — O README tem uma seção de suporte a Windows com a matriz real: rota × arquitetura ×
+  idempotente e `TRACKFW_NO_MODIFY_PATH`. Cada cenário tem contra-braço. *(Atendido: `extra_files` no `.goreleaser.yaml:45`, publicado a partir da próxima release; `windows-install-ps1` 52/52 sob PS 5.1 e 7, run 40931646835.)*
+- [x] AC5 — A linha de hook PS/POSIX é medida sob `pwsh` 7 e `powershell` 5.1 no CI Windows x64,
+  nos casos allow, deny, erro e ausente. O resultado entra na matriz de suporte. *(Atendido: 40 subtestes `TestGuardLineShellMatrix` no `windows-full-suites`, run 40882950230.)*
+- [x] AC6 — O README tem uma seção de suporte a Windows com a matriz real: rota × arquitetura ×
   shell, cada célula **medido (fonte)** ou **não verificado**, mais as limitações vigentes. Nenhuma
-  afirmação de suporte sem fonte.
-- [ ] AC7 — `docs/cli-parity.md` sem afirmação de paridade entre runtimes no presente; nenhum
+  afirmação de suporte sem fonte. *(Atendido: ML-3A e células ARM64 do ML-4A.)*
+- [x] AC7 — `docs/cli-parity.md` sem afirmação de paridade entre runtimes no presente; nenhum
   contrato de comportamento perdido; todos os leitores mecânicos do arquivo continuam verdes; a
-  tabela de comandos bate com `internal/commands/root.go`; os aliases inexistentes saem.
-- [ ] AC8 — `VISION.md` e site (pt e en) descrevem a 11.x: um binário em três canais, instalação
+  tabela de comandos bate com `internal/commands/root.go`; os aliases inexistentes saem. *(Atendido: ML-2B, com dois corretivos.)*
+- [x] AC8 — `VISION.md` e site (pt e en) descrevem a 11.x: um binário em três canais, instalação
   por Homebrew, npm, pip, `install.sh`, `install.ps1` e Go, com Go ≥ 1.25, e a direção
-  consolidação + adoção. A tabela de comandos do README e a do site batem com o código.
-- [ ] AC9 — Instalação do `install.ps1` medida em VM Windows 11 ARM64 sob PowerShell 5.1 antes do
-  merge.
-- [ ] AC10 — `make quality` verde com a máquina ociosa; `trackfw validate` verde.
+  consolidação + adoção. A tabela de comandos do README e a do site batem com o código. *(Atendido: ML-3B, com verificação visual.)*
+- [x] AC9 — Instalação do `install.ps1` medida em VM Windows 11 ARM64 sob PowerShell 5.1 antes do
+  merge. *(Atendido: `docs/portabilidade/2026-10-28-install-ps1-vm-arm64.md`.)*
+- [x] AC10 — `make quality` verde com a máquina ociosa; `trackfw validate` verde. *(Atendido: `make quality` RC=0 em 2026-10-29; `trackfw validate` rc=0.)*
 
 ## Negative scope
 
@@ -101,4 +101,4 @@ ADR: docs/adr/ADR-2026-10-28-instalador-powershell-publicado-na-release-com-o-me
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-10-28-documentacao-e-canais-refletem-o-produto-11-x-com-suporte-real-a-windows-e-instalador-powershell.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-10-28-documentacao-e-canais-refletem-o-produto-11-x-com-suporte-real-a-windows-e-instalador-powershell.md
