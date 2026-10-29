@@ -355,7 +355,7 @@ O handoff traz lista fechada de ações e contador N/M de chamadas.
 
 ### ML-4E — Residuais da reauditoria do install.ps1: `;` Unicode, `Join-Path` e caixa invariante (ares-tf)
 **Status:** 🔄 Em andamento
-**Files affected:** `scripts/install.ps1`, `scripts/check-install-ps1.ps1`
+**Files affected:** `scripts/install.ps1`, `scripts/check-install-ps1.ps1`, `vault/notes/index.md`
 **Actions:** achados A-1, A-2 e A-4 da seção "Reauditoria (2026-10-29)" de `docs/seguranca/2026-10-28-redteam-docs-e-install-ps1.md`.
 O A-3 (formas cmd.exe do `cli-parity.md` fora do gate) fica como residual, com o motivo escrito: a forma cmd.exe é
 byte-igual a uma menção do subcomando, então o gate não consegue distinguir as duas.

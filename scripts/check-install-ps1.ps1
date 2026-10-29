@@ -562,12 +562,12 @@ $tmpSabIDS = Join-Path ([IO.Path]::GetTempPath()) ("install_sab_ids_$([IO.Path]:
 try {
     $sabIDSOrig = Get-Content $InstallScript -Raw
     $sabIDSNew  = $sabIDSOrig.Replace(
-        "(`$INSTALL_DIR -match ';')",
+        "(`$INSTALL_DIR -match '[;\u037E\uFE54\uFF1B]')",
         '($false)'
     )
     if ($sabIDSOrig -eq $sabIDSNew) {
         Fail-Scenario 'sab-install-dir-semicolon-nonvacuous' `
-            'anchor not found in install.ps1 -- verify INSTALL_DIR semicolon check'
+            'anchor not found in install.ps1 -- verify INSTALL_DIR semicolon/Unicode check'
     } else {
         [IO.File]::WriteAllText($tmpSabIDS, $sabIDSNew, [Text.Encoding]::ASCII)
         $sabIDSCode = @'
@@ -607,6 +607,92 @@ if ($ok) { Write-Output "EXPECTED_FAILURE: $msg"; exit 0 } else { Write-Output '
         Remove-Item -Recurse -Force $semiInstDir -ErrorAction SilentlyContinue
     }
 }
+
+# ===========================================================================
+# A-1 (ML-4E): Unicode variants of ';' in INSTALL_DIR are rejected.
+# U+037E GREEK QUESTION MARK, U+FE54 SMALL SEMICOLON, U+FF1B FULLWIDTH SEMICOLON.
+# These are best-fit mapped to 0x3B (ASCII ';') in CP1252, so ANSI-legacy apps
+# reading PATH via GetEnvironmentVariableA would treat them as path separators.
+# The Unicode check fires before the absolute-path check -> cross-platform.
+# ===========================================================================
+Write-Host ''
+Write-Host '--- install-dir-semicolon-unicode (cross-platform) ---'
+# Temp parent without Unicode chars; the leaf carries the variant.
+# On macOS: /tmp/... (no drive letter); on Windows: C:\...\Temp\...
+$ucBase = Join-Path ([IO.Path]::GetTempPath()) ("gate-ids-uc-$([IO.Path]::GetRandomFileName())")
+# U+037E GREEK QUESTION MARK -- NFC => U+003B; best-fit CP1252 0x3B.
+Assert-ValidationFail 'install-dir-semicolon-unicode-037E' `
+    @{ TRACKFW_INSTALL_DIR = [IO.Path]::Combine($ucBase, "tf$([char]0x037E)evil"); TRACKFW_VERSION = 'v99.0.0' } `
+    'ponto-e-virgula'
+# U+FE54 SMALL SEMICOLON -- NFKC => U+003B; no confirmed CP1252 best-fit.
+Assert-ValidationFail 'install-dir-semicolon-unicode-FE54' `
+    @{ TRACKFW_INSTALL_DIR = [IO.Path]::Combine($ucBase, "tf$([char]0xFE54)evil"); TRACKFW_VERSION = 'v99.0.0' } `
+    'ponto-e-virgula'
+# U+FF1B FULLWIDTH SEMICOLON -- NFKC => U+003B; best-fit CP1252 0x3B.
+Assert-ValidationFail 'install-dir-semicolon-unicode-FF1B' `
+    @{ TRACKFW_INSTALL_DIR = [IO.Path]::Combine($ucBase, "tf$([char]0xFF1B)evil"); TRACKFW_VERSION = 'v99.0.0' } `
+    'ponto-e-virgula'
+
+Write-Host ''
+Write-Host '--- sab-install-dir-semicolon-unicode (cross-platform) ---'
+# Sabotage: revert the Unicode regex to ASCII ';' only.
+# Anchor built at runtime ([char]0x5C = '\') to keep this gate source ASCII-clean.
+$tmpSabUC = Join-Path ([IO.Path]::GetTempPath()) ("install_sab_uc_$([IO.Path]::GetRandomFileName()).ps1")
+try {
+    $sabUCOrig = Get-Content $InstallScript -Raw
+    # Anchor: ($INSTALL_DIR -match '[;\u037E\uFE54\uFF1B]')  -- built without literal \uXXXX.
+    $bs = [string][char]0x5C
+    $sabUCAnchor = "(`$INSTALL_DIR -match '[;" + $bs + "u037E" + $bs + "uFE54" + $bs + "uFF1B]')"
+    $sabUCNew    = $sabUCOrig.Replace($sabUCAnchor, "(`$INSTALL_DIR -match ';')")
+    if ($sabUCOrig -eq $sabUCNew) {
+        Fail-Scenario 'sab-install-dir-semicolon-unicode-nonvacuous' `
+            'anchor not found in install.ps1 -- verify Unicode semicolon regex'
+    } else {
+        Pass-Scenario 'sab-install-dir-semicolon-unicode-nonvacuous'
+        [IO.File]::WriteAllText($tmpSabUC, $sabUCNew, [Text.Encoding]::ASCII)
+        $sabUCCode = @'
+$ErrorActionPreference = 'Stop'
+function Invoke-WebRequest {
+    [CmdletBinding()]
+    param([string]$Uri, [string]$OutFile, [switch]$UseBasicParsing)
+    if ($env:GATE_CALL_LOG) { Add-Content $env:GATE_CALL_LOG $Uri }
+    throw "Shadow: Invoke-WebRequest called unexpectedly: $Uri"
+}
+$ok = $false; $msg = ''
+try { . $env:GATE_INSTALL_SCRIPT } catch { $ok = $true; $msg = $_.Exception.Message }
+if ($ok) { Write-Output "EXPECTED_FAILURE: $msg"; exit 0 } else { Write-Output 'UNEXPECTED_SUCCESS'; exit 1 }
+'@
+        # Test with U+FF1B (fullwidth semicolon, CP1252 best-fit confirmed).
+        # Same parent dir as positive scenarios.
+        $sabUCPath = [IO.Path]::Combine($ucBase, "tf$([char]0xFF1B)evil")
+        $sabUCr    = Invoke-PSChild -Code $sabUCCode -Env @{
+            TRACKFW_VERSION     = 'v99.0.0'
+            TRACKFW_INSTALL_DIR = $sabUCPath
+            GATE_INSTALL_SCRIPT = $tmpSabUC
+        }
+        $sabUCOut  = $sabUCr.Stdout + $sabUCr.Stderr
+        # macOS: /tmp/.../tfFF1Bevil has no drive letter -> absolute-path guard fires -> 'caminho absoluto'
+        # Windows: C:\...\Temp\...\tfFF1Bevil passes absolute-path check ->
+        #          New-Item -Force creates dir -> download shadow fires -> 'Shadow'
+        $sabUCMarker = if ($onWindows) { 'Shadow' } else { 'caminho absoluto' }
+        if ($sabUCOut -notmatch 'ponto-e-virgula' -and $sabUCOut -match $sabUCMarker) {
+            Pass-Scenario 'sab-install-dir-semicolon-unicode'
+        } elseif ($sabUCOut -match 'ponto-e-virgula') {
+            Fail-Scenario 'sab-install-dir-semicolon-unicode' `
+                "keyword 'ponto-e-virgula' still present after sabotage -- regex not reverted: $($sabUCOut.Trim())"
+        } else {
+            Fail-Scenario 'sab-install-dir-semicolon-unicode' `
+                "positive marker '$sabUCMarker' absent -- unexpected output: $($sabUCOut.Trim())"
+        }
+    }
+} finally {
+    Remove-Item $tmpSabUC -ErrorAction SilentlyContinue
+    # Backstop: on Windows, sabotaged install creates the dir via New-Item -Force.
+    if (Test-Path -LiteralPath $ucBase) {
+        Remove-Item -Recurse -Force $ucBase -ErrorAction SilentlyContinue
+    }
+}
+
 
 # ===========================================================================
 # SCENARIOS 7-8: iex survival -- throw vs exit
@@ -755,6 +841,39 @@ try {
 }
 
 # ===========================================================================
+# trtr-culture-probe (cross-platform, A-4/ML-4E)
+# Confirms [Threading.Thread] culture override works in the child process and
+# that .ToLower() under tr-TR returns dotless i (code 305). Also measures -ieq
+# sensitivity so the report can state whether site-2b is a defect fix or a
+# consistency change. The probe does NOT run install.ps1 -- it is
+# runtime-only and has no Windows-specific dependency.
+# ===========================================================================
+Write-Host ''
+Write-Host '--- trtr-culture-probe ---'
+# Confirm the premise: tr-TR culture makes 'I'.ToLower() return dotless i (decimal 305).
+# Also measure whether -ieq is culture-sensitive under tr-TR:
+#   ieq-Ivan-ivan: 'Ivan' -ieq 'ivan' (both ASCII; should be true regardless of culture)
+#   ieq-Ivan-dotless: 'Ivan' -ieq (dotless-i + 'van') (should be false under Ordinal but
+#                     may be true if -ieq uses CurrentCulture in this PS build)
+$trTRProbeCode = @'
+[Threading.Thread]::CurrentThread.CurrentCulture = [Globalization.CultureInfo]::GetCultureInfo('tr-TR')
+$v = [int][char]('I'.ToLower()[0])
+$ieqAscii   = ('Ivan' -ieq 'ivan')
+$ieqDotless = ('Ivan' -ieq ([char]0x131 + 'van'))
+Write-Output "dotless-i=$v"
+Write-Output "ieq-Ivan-ivan=$ieqAscii"
+Write-Output "ieq-Ivan-dotless=$ieqDotless"
+'@
+$rProbe = Invoke-PSChild -Code $trTRProbeCode -Env @{}
+$probeOut = $rProbe.Stdout + $rProbe.Stderr
+Write-Host "    probe output: $($probeOut.Trim())"
+if ($probeOut -match 'dotless-i=305') {
+    Pass-Scenario 'trtr-culture-probe'
+} else {
+    Fail-Scenario 'trtr-culture-probe' "Expected dotless-i=305; got: $($probeOut.Trim())"
+}
+
+# ===========================================================================
 # Windows-only scenarios
 # C2-C5 require a valid Windows INSTALL_DIR and tar.exe.
 # PATH and registry tests require the Windows registry.
@@ -788,6 +907,13 @@ if (-not $onWindows) {
     Write-Host "  SKIP  gitbash-bin-no-warning (Windows)"
     Write-Host "  SKIP  sab-gitbash-bin-warning-nonvacuous (Windows)"
     Write-Host "  SKIP  sab-gitbash-bin-warning (Windows)"
+    Write-Host "  SKIP  unc-userprofile-nonvacuous (Windows -- A-2: Join-Path probe)"
+    Write-Host "  SKIP  unc-userprofile (Windows -- A-2: [IO.Path]::Combine vs Join-Path)"
+    Write-Host "  SKIP  sab-unc-userprofile-nonvacuous (Windows -- A-2)"
+    Write-Host "  SKIP  sab-unc-userprofile (Windows -- A-2)"
+    Write-Host "  SKIP  trtr-ordinal-gitbash (Windows -- A-4: OrdinalIgnoreCase vs ToLower)"
+    Write-Host "  SKIP  sab-trtr-tolower-nonvacuous (Windows -- A-4)"
+    Write-Host "  SKIP  sab-trtr-tolower (Windows -- A-4)"
     Write-Host ''
     Write-Host "Results: $script:PASS passed, $script:FAIL failed (non-Windows scenarios only)"
     if ($script:FAIL -gt 0) { exit 1 } else { exit 0 }
@@ -1841,6 +1967,189 @@ try {
 } finally {
     Remove-Item $sabGBBScript -ErrorAction SilentlyContinue
 }
+# ===========================================================================
+# A-2 (ML-4E): [IO.Path]::Combine does not throw for USERPROFILE paths without
+# a recognized PSDrive qualifier (e.g. unmapped drive letter).
+# Join-Path (Join-Path ...) threw "value of argument 'drive' is null" on macOS
+# with UNC-style paths; behavior on Windows with unmapped letters is probed here.
+# macOS SKIP: full installation cannot reach the ~/bin block on macOS (INSTALL_DIR
+# format check, New-Item on C:\, missing tar.exe all fail first).
+# ===========================================================================
+Write-Host ''
+Write-Host '--- unc-userprofile ---'
+$unmappedLetter = $null
+foreach ($L in @('D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z')) {
+    if ($null -eq $unmappedLetter -and -not (Test-Path "${L}:\")) { $unmappedLetter = $L }
+}
+if ($null -eq $unmappedLetter) {
+    Write-Host "  SKIP  unc-userprofile-nonvacuous (no unmapped drive found on this host)"
+    Write-Host "  SKIP  unc-userprofile (no unmapped drive found on this host)"
+    Write-Host "  SKIP  sab-unc-userprofile-nonvacuous (no unmapped drive found)"
+    Write-Host "  SKIP  sab-unc-userprofile (no unmapped drive found)"
+} else {
+    $uncFakeUP = "${unmappedLetter}:\Users\testuser"
+    # Probe: does Join-Path throw for this path on this host?
+    $jpThrows = $false
+    $jpErrMsg = ''
+    try { $null = Join-Path $uncFakeUP 'bin' } catch { $jpThrows = $true; $jpErrMsg = $_.Exception.Message }
+    if (-not $jpThrows) {
+        Write-Host "  SKIP  unc-userprofile-nonvacuous (Join-Path does not throw for '${unmappedLetter}:\' -- A-2 does not reproduce on this host)"
+        Write-Host "  SKIP  unc-userprofile (see above)"
+        Write-Host "  SKIP  sab-unc-userprofile-nonvacuous (see above)"
+        Write-Host "  SKIP  sab-unc-userprofile (see above)"
+    } else {
+        Pass-Scenario 'unc-userprofile-nonvacuous'
+        # Full install: USERPROFILE -> unmapped drive; [IO.Path]::Combine must not throw.
+        $uncInstDir = Join-Path $gateWorkDir 'unc-install-target'
+        New-Item -ItemType Directory -Path $uncInstDir | Out-Null
+        $f_unc = New-FixtureDir -BaseDir $gateWorkDir -CsMode 'ok'
+        $rUnc = Invoke-PSChild -Code $c1Code -Env @{
+            TRACKFW_VERSION        = $f_unc.Tag
+            TRACKFW_ARCH           = $f_unc.Arch
+            TRACKFW_INSTALL_DIR    = $uncInstDir
+            TRACKFW_NO_MODIFY_PATH = '1'
+            GATE_SERVE_DIR         = $f_unc.Dir
+            GATE_INSTALL_SCRIPT    = $InstallScript
+            USERPROFILE            = $uncFakeUP
+        }
+        $uncOut = $rUnc.Stdout + $rUnc.Stderr
+        if ($rUnc.ExitCode -ne 0) {
+            Fail-Scenario 'unc-userprofile' "child exited $($rUnc.ExitCode) -- [IO.Path]::Combine may still throw; stderr=$($rUnc.Stderr.Trim())"
+        } else {
+            Pass-Scenario 'unc-userprofile'
+        }
+        # Sabotage: revert [IO.Path]::Combine to Join-Path (Join-Path ...); must fail.
+        Write-Host '--- sab-unc-userprofile ---'
+        $sabUncScript = Join-Path $gateWorkDir ("install_sab_unc_$([IO.Path]::GetRandomFileName()).ps1")
+        try {
+            $sabUncOrig = Get-Content $InstallScript -Raw
+            $sabUncNew  = $sabUncOrig.Replace(
+                '            $gitBashBin = [IO.Path]::Combine($env:USERPROFILE, ''bin'', ''trackfw.exe'')',
+                '            $gitBashBin = Join-Path (Join-Path $env:USERPROFILE ''bin'') ''trackfw.exe'''
+            )
+            if ($sabUncOrig -eq $sabUncNew) {
+                Fail-Scenario 'sab-unc-userprofile-nonvacuous' `
+                    'anchor not found -- verify [IO.Path]::Combine line for gitBashBin'
+            } else {
+                Pass-Scenario 'sab-unc-userprofile-nonvacuous'
+                $sabUncInstDir2 = Join-Path $gateWorkDir 'unc-sab-target'
+                New-Item -ItemType Directory -Path $sabUncInstDir2 | Out-Null
+                $f_sabUnc = New-FixtureDir -BaseDir $gateWorkDir -CsMode 'ok'
+                [IO.File]::WriteAllText($sabUncScript, $sabUncNew, [Text.Encoding]::ASCII)
+                $rSabUnc = Invoke-PSChild -Code $c1Code -Env @{
+                    TRACKFW_VERSION        = $f_sabUnc.Tag
+                    TRACKFW_ARCH           = $f_sabUnc.Arch
+                    TRACKFW_INSTALL_DIR    = $sabUncInstDir2
+                    TRACKFW_NO_MODIFY_PATH = '1'
+                    GATE_SERVE_DIR         = $f_sabUnc.Dir
+                    GATE_INSTALL_SCRIPT    = $sabUncScript
+                    USERPROFILE            = $uncFakeUP
+                }
+                $sabUncOut = $rSabUnc.Stdout + $rSabUnc.Stderr
+                # Derive a keyword from the probe error message (first word, lowercase) to avoid
+                # a false-positive from a parse error: a parse error would not match the same
+                # keyword that the Join-Path throw produces.
+                $jpErrKw = if ($jpErrMsg -match '\b(\w{4,})\b') { $Matches[1].ToLower() } else { '' }
+                $markerOk = ($jpErrKw -eq '') -or ($sabUncOut -match [regex]::Escape($jpErrKw))
+                if ($rSabUnc.ExitCode -ne 0 -and $markerOk) {
+                    Pass-Scenario 'sab-unc-userprofile'
+                } elseif ($rSabUnc.ExitCode -eq 0) {
+                    Fail-Scenario 'sab-unc-userprofile' `
+                        "child exited 0 after sabotage -- Join-Path did not throw for '$uncFakeUP'"
+                } else {
+                    Fail-Scenario 'sab-unc-userprofile' `
+                        "child exited $($rSabUnc.ExitCode) but output did not contain expected marker '$jpErrKw'; output=$($sabUncOut.Trim())"
+                }
+            }
+        } finally {
+            Remove-Item $sabUncScript -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+# ===========================================================================
+# A-4 (ML-4E): OrdinalIgnoreCase prevents false-positive 'Git Bash' warning
+# when USERPROFILE and INSTALL_DIR paths differ only in case (Ivan vs ivan)
+# under locale tr-TR where 'I'.ToLower() returns dotless i (U+0131 = 305).
+# ===========================================================================
+
+Write-Host ''
+Write-Host '--- trtr-ordinal-gitbash ---'
+# Setup: USERPROFILE with 'Ivan' (capital I), INSTALL_DIR with 'ivan' (lowercase).
+# NTFS resolves both to the same physical dir; the STRING values differ in case.
+# With [string]::Equals(OrdinalIgnoreCase): Ivan == ivan -> $same = $true -> no warning.
+$trIvanProfile = Join-Path $gateWorkDir 'fake-profile-Ivan'
+$trIvanBinDir  = Join-Path $trIvanProfile 'bin'
+New-Item -ItemType Directory -Path $trIvanBinDir -Force | Out-Null
+[IO.File]::WriteAllBytes((Join-Path $trIvanBinDir 'trackfw.exe'), [IO.File]::ReadAllBytes($fakeExePath))
+# INSTALL_DIR uses lowercase 'ivan' (same physical dir on NTFS, different string).
+$trIvanInstDir = Join-Path $gateWorkDir 'fake-profile-ivan\bin'
+New-Item -ItemType Directory -Path $trIvanInstDir -Force | Out-Null
+$f_trTR = New-FixtureDir -BaseDir $gateWorkDir -CsMode 'ok'
+# Prepend tr-TR culture set to the standard child code.
+$trTRCode = "[Threading.Thread]::CurrentThread.CurrentCulture = [Globalization.CultureInfo]::GetCultureInfo('tr-TR')`n" + $c1Code
+$rTrTR = Invoke-PSChild -Code $trTRCode -Env @{
+    TRACKFW_VERSION        = $f_trTR.Tag
+    TRACKFW_ARCH           = $f_trTR.Arch
+    TRACKFW_INSTALL_DIR    = $trIvanInstDir
+    TRACKFW_NO_MODIFY_PATH = '1'
+    GATE_SERVE_DIR         = $f_trTR.Dir
+    GATE_INSTALL_SCRIPT    = $InstallScript
+    USERPROFILE            = $trIvanProfile
+}
+$trTROut = $rTrTR.Stdout + $rTrTR.Stderr
+if ($rTrTR.ExitCode -ne 0) {
+    Fail-Scenario 'trtr-ordinal-gitbash' "child exited $($rTrTR.ExitCode); output=$($trTROut.Trim())"
+} elseif ($trTROut -match 'Git Bash') {
+    Fail-Scenario 'trtr-ordinal-gitbash' "spurious 'Git Bash' warning under tr-TR when paths differ only in case: $($trTROut.Trim())"
+} else {
+    Pass-Scenario 'trtr-ordinal-gitbash'
+}
+
+Write-Host ''
+Write-Host '--- sab-trtr-tolower ---'
+# Sabotage: revert OrdinalIgnoreCase to .ToLower(); under tr-TR 'Ivan'.ToLower()='ivan' must trigger warning.
+$sabTrTRScript = Join-Path $gateWorkDir ("install_sab_trtr_$([IO.Path]::GetRandomFileName()).ps1")
+try {
+    $sabTrTROrig = Get-Content $InstallScript -Raw
+    $sabTrTRNew  = $sabTrTROrig.Replace(
+        "[string]::Equals(`$gitBashBin.TrimEnd('\', '/'), `$destBin.TrimEnd('\', '/'), [System.StringComparison]::OrdinalIgnoreCase)",
+        "(`$gitBashBin.TrimEnd('\', '/').ToLower() -eq `$destBin.TrimEnd('\', '/').ToLower())"
+    )
+    if ($sabTrTROrig -eq $sabTrTRNew) {
+        Fail-Scenario 'sab-trtr-tolower-nonvacuous' `
+            'anchor not found -- verify [string]::Equals line for $same in install.ps1'
+    } else {
+        Pass-Scenario 'sab-trtr-tolower-nonvacuous'
+        # SAME INSTALL_DIR as the positive arm ($trIvanInstDir, lowercase 'ivan').
+        # With .ToLower() under tr-TR: 'Ivan'.ToLower()='ivan' (dotless-i) != 'ivan'.ToLower()='ivan' -> warning.
+        # A different INSTALL_DIR would fire the warning regardless of culture -> vacuous.
+        $f_sabTrTR = New-FixtureDir -BaseDir $gateWorkDir -CsMode 'ok'
+        [IO.File]::WriteAllText($sabTrTRScript, $sabTrTRNew, [Text.Encoding]::ASCII)
+        $rSabTrTR = Invoke-PSChild -Code $trTRCode -Env @{
+            TRACKFW_VERSION        = $f_sabTrTR.Tag
+            TRACKFW_ARCH           = $f_sabTrTR.Arch
+            TRACKFW_INSTALL_DIR    = $trIvanInstDir
+            TRACKFW_NO_MODIFY_PATH = '1'
+            GATE_SERVE_DIR         = $f_sabTrTR.Dir
+            GATE_INSTALL_SCRIPT    = $sabTrTRScript
+            USERPROFILE            = $trIvanProfile
+        }
+        $sabTrTROut = $rSabTrTR.Stdout + $rSabTrTR.Stderr
+        if ($rSabTrTR.ExitCode -eq 0 -and $sabTrTROut -match 'Git Bash') {
+            Pass-Scenario 'sab-trtr-tolower'
+        } elseif ($sabTrTROut -notmatch 'Git Bash') {
+            Fail-Scenario 'sab-trtr-tolower' `
+                "'Git Bash' warning absent after sabotage -- ToLower did not trigger under tr-TR: $($sabTrTROut.Trim())"
+        } else {
+            Fail-Scenario 'sab-trtr-tolower' `
+                "child exited $($rSabTrTR.ExitCode) after sabotage: $($sabTrTROut.Trim())"
+        }
+    }
+} finally {
+    Remove-Item $sabTrTRScript -ErrorAction SilentlyContinue
+}
+
 Restore-RegPath
 
 } finally {

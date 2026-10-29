@@ -126,10 +126,15 @@
     if (-not $INSTALL_DIR) {
         throw "Erro: nao foi possivel determinar o diretorio de instalacao. Defina TRACKFW_INSTALL_DIR."
     }
-    # Rejeitar INSTALL_DIR com ponto-e-virgula: quebraria a idempotencia do PATH ao dividir por ';'.
+    # Rejeitar INSTALL_DIR com ponto-e-virgula (ASCII U+003B) ou variante Unicode:
+    #   U+037E GREEK QUESTION MARK  -- NFC => U+003B; best-fit CP1252: 0x3B (unicode.org/MICSFT/bestfit1252.txt)
+    #   U+FE54 SMALL SEMICOLON      -- NFKC => U+003B; sem mapeamento CP1252 confirmado
+    #   U+FF1B FULLWIDTH SEMICOLON  -- NFKC => U+003B; best-fit CP1252: 0x3B (confirmado)
+    # U+037E e U+FF1B convertem para 0x3B via best-fit CP1252 (apps ANSI legados); U+FE54 rejeitado
+    # por equivalencia NFKC (=> U+003B) mesmo sem mapeamento CP1252 confirmado.
     # Verificado antes do caminho absoluto e antes de qualquer escrita (diretorio, arquivo, registro).
-    if ($INSTALL_DIR -match ';') {
-        throw "Erro: TRACKFW_INSTALL_DIR nao pode conter ponto-e-virgula: '$INSTALL_DIR'"
+    if ($INSTALL_DIR -match '[;\u037E\uFE54\uFF1B]') {
+        throw "Erro: TRACKFW_INSTALL_DIR nao pode conter ponto-e-virgula ou variante Unicode: '$INSTALL_DIR'"
     }
     # Validar caminho absoluto: deve comecar com letra:\ ou \\ (UNC).
     # [System.IO.Path]::IsPathRooted aceita '\foo' (raiz relativa) e 'C:foo' (relativo ao drive).
@@ -248,14 +253,15 @@
                     $existingPath = [string]$existingRaw
                 }
 
-                # Verificar se INSTALL_DIR ja esta no PATH (case-insensitive, sem barra final)
-                $installNorm   = $INSTALL_DIR.TrimEnd('\', '/').ToLower()
+                # Verificar se INSTALL_DIR ja esta no PATH (OrdinalIgnoreCase, sem barra final).
+                # OrdinalIgnoreCase evita falso-positivo no locale tr-TR ('I'.ToLower() => dotless i U+0131).
+                $installTrim = $INSTALL_DIR.TrimEnd('\', '/')
                 $alreadyPresent = $false
                 foreach ($entry in ($existingPath -split ';')) {
                     if ($entry -eq '') { continue }
-                    $entryNorm  = $entry.TrimEnd('\', '/').ToLower()
-                    $entryExpan = [System.Environment]::ExpandEnvironmentVariables($entry).TrimEnd('\', '/').ToLower()
-                    if ($entryNorm -eq $installNorm -or $entryExpan -eq $installNorm) {
+                    $entryTrim  = $entry.TrimEnd('\', '/')
+                    $entryExpan = [System.Environment]::ExpandEnvironmentVariables($entry).TrimEnd('\', '/')
+                    if ([string]::Equals($entryTrim, $installTrim, [System.StringComparison]::OrdinalIgnoreCase) -or [string]::Equals($entryExpan, $installTrim, [System.StringComparison]::OrdinalIgnoreCase)) {
                         $alreadyPresent = $true
                         break
                     }
@@ -285,8 +291,8 @@
             if ($dir -eq '') { continue }
             $dirTrimmed     = $dir.TrimEnd('\', '/')
             $installTrimmed = $INSTALL_DIR.TrimEnd('\', '/')
-            if ($dirTrimmed -ieq $installTrimmed) { continue }
-            $candidate = Join-Path $dir "trackfw.exe"
+            if ([string]::Equals($dirTrimmed, $installTrimmed, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+            $candidate = [IO.Path]::Combine($dir, 'trackfw.exe')
             if (Test-Path $candidate -PathType Leaf) { $otherCopies += $candidate }
         }
         if ($otherCopies.Count -gt 0) {
@@ -302,10 +308,12 @@
         # Um binario ali pode ocultar a versao instalada nesta sessao PS.
         # Nao executa, nao le e nao remove o arquivo -- apenas verifica existencia.
         if ($env:USERPROFILE) {
-            $gitBashBin     = Join-Path (Join-Path $env:USERPROFILE 'bin') 'trackfw.exe'
-            $gitBashBinNorm = $gitBashBin.TrimEnd('\', '/').ToLower()
-            $destBinNorm    = $destBin.TrimEnd('\', '/').ToLower()
-            if ($gitBashBinNorm -ne $destBinNorm -and (Test-Path -LiteralPath $gitBashBin -PathType Leaf)) {
+            # [IO.Path]::Combine nao lanca em caminhos sem qualificador de drive (ex: UNC sem provider PS).
+            # Join-Path (Join-Path ...) lancava "value of argument 'drive' is null" nesses casos (A-2, ML-4E).
+            $gitBashBin = [IO.Path]::Combine($env:USERPROFILE, 'bin', 'trackfw.exe')
+            # OrdinalIgnoreCase: evita falso-positivo no locale tr-TR onde 'I'.ToLower() => dotless i (A-4).
+            $same = [string]::Equals($gitBashBin.TrimEnd('\', '/'), $destBin.TrimEnd('\', '/'), [System.StringComparison]::OrdinalIgnoreCase)
+            if (-not $same -and (Test-Path -LiteralPath $gitBashBin -PathType Leaf)) {
                 Write-Warning "Atencao: $gitBashBin existe."
                 Write-Warning "No Git Bash, ~/bin esta no PATH antes das outras entradas e pode ocultar esta versao."
                 Write-Warning "Verifique com: type -a trackfw   (no Git Bash)"
