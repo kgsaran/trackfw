@@ -399,6 +399,11 @@ if ($ok) {
     }
 }
 
+# INSTALL_DIR path with ';': the leaf component contains ';' so the check fires first.
+# The parent has no ';' so no NTFS write risk if the check regresses on Windows.
+$semiInstDir = Join-Path ([IO.Path]::GetTempPath()) ("gate-ids-$([IO.Path]::GetRandomFileName())")
+$semiPath    = [IO.Path]::Combine($semiInstDir, 'tf;evil')
+
 # Trailing newline in version (passes ^...$, rejected by \A...\z)
 Assert-ValidationFail 'version-invalid-newline'    @{ TRACKFW_VERSION = "11.0.0`n" }      'invalida'
 # Semicolon (command injection attempt)
@@ -409,6 +414,19 @@ Assert-ValidationFail 'version-invalid-dotdot'     @{ TRACKFW_VERSION = '../11.0
 Assert-ValidationFail 'version-invalid-uppercase-v' @{ TRACKFW_VERSION = 'V11.0.0' }      'invalida'
 # Invalid arch
 Assert-ValidationFail 'arch-invalid'               @{ TRACKFW_ARCH = 'x86' }              'invalido'
+# Semicolon in INSTALL_DIR: rejected before any write (F-1, ML-4C).
+# VERSION pinned so the API call is skipped and calls=0 is enforceable.
+# Counter-arm: c1-intact (legitimate path without ';' installs -- see Windows section).
+Assert-ValidationFail 'install-dir-semicolon' `
+    @{ TRACKFW_INSTALL_DIR = $semiPath; TRACKFW_VERSION = 'v99.0.0' } `
+    'ponto-e-virgula'
+# Dir-absence: no write (directory, file, registry) must have occurred before the rejection.
+if (Test-Path -LiteralPath $semiInstDir) {
+    Fail-Scenario 'install-dir-semicolon-no-dir' "INSTALL_DIR parent was created before rejection: '$semiInstDir'"
+    Remove-Item -Recurse -Force $semiInstDir -ErrorAction SilentlyContinue
+} else {
+    Pass-Scenario 'install-dir-semicolon-no-dir'
+}
 
 # ===========================================================================
 # SABOTAGE ARMS (cross-platform): version regex and arch validation
@@ -536,6 +554,58 @@ if ($ok) { Write-Output "EXPECTED_FAILURE: $msg"; exit 0 } else { Write-Output '
     }
 } finally {
     Remove-Item $tmpSabArch -ErrorAction SilentlyContinue
+}
+
+Write-Host ''
+Write-Host '--- sab-install-dir-semicolon (cross-platform) ---'
+$tmpSabIDS = Join-Path ([IO.Path]::GetTempPath()) ("install_sab_ids_$([IO.Path]::GetRandomFileName()).ps1")
+try {
+    $sabIDSOrig = Get-Content $InstallScript -Raw
+    $sabIDSNew  = $sabIDSOrig.Replace(
+        "(`$INSTALL_DIR -match ';')",
+        '($false)'
+    )
+    if ($sabIDSOrig -eq $sabIDSNew) {
+        Fail-Scenario 'sab-install-dir-semicolon-nonvacuous' `
+            'anchor not found in install.ps1 -- verify INSTALL_DIR semicolon check'
+    } else {
+        [IO.File]::WriteAllText($tmpSabIDS, $sabIDSNew, [Text.Encoding]::ASCII)
+        $sabIDSCode = @'
+$ErrorActionPreference = 'Stop'
+function Invoke-WebRequest {
+    param([string]$Uri, [string]$OutFile, [switch]$UseBasicParsing)
+    if ($env:GATE_CALL_LOG) { Add-Content $env:GATE_CALL_LOG $Uri }
+    throw "Shadow: Invoke-WebRequest must not be called in validation-failure scenario: $Uri"
+}
+$ok = $false; $msg = ''
+try { . $env:GATE_INSTALL_SCRIPT } catch { $ok = $true; $msg = $_.Exception.Message }
+if ($ok) { Write-Output "EXPECTED_FAILURE: $msg"; exit 0 } else { Write-Output 'UNEXPECTED_SUCCESS'; exit 1 }
+'@
+        $sabIDSr = Invoke-PSChild -Code $sabIDSCode -Env @{
+            TRACKFW_VERSION     = 'v99.0.0'
+            TRACKFW_INSTALL_DIR = $semiPath
+            GATE_INSTALL_SCRIPT = $tmpSabIDS
+        }
+        $sabIDSOut = $sabIDSr.Stdout + $sabIDSr.Stderr
+        # macOS: absolute-path check fires on '/tmp/.../tf;evil' (no drive letter) -> 'caminho absoluto'
+        # Windows: absolute-path check passes ('C:\...\tf;evil' has drive letter) -> Shadow fires -> 'Shadow'
+        $sabIDSMarker = if ($onWindows) { 'Shadow' } else { 'caminho absoluto' }
+        if ($sabIDSOut -notmatch 'ponto-e-virgula' -and $sabIDSOut -match $sabIDSMarker) {
+            Pass-Scenario 'sab-install-dir-semicolon'
+        } elseif ($sabIDSOut -match 'ponto-e-virgula') {
+            Fail-Scenario 'sab-install-dir-semicolon' `
+                "keyword 'ponto-e-virgula' present after sabotage -- anchor not applied: $($sabIDSOut.Trim())"
+        } else {
+            Fail-Scenario 'sab-install-dir-semicolon' `
+                "positive marker '$sabIDSMarker' absent -- unexpected path: $($sabIDSOut.Trim())"
+        }
+    }
+} finally {
+    Remove-Item $tmpSabIDS -ErrorAction SilentlyContinue
+    # Backstop: on Windows, New-Item -Force may create the dir if check is missing
+    if (Test-Path -LiteralPath $semiInstDir) {
+        Remove-Item -Recurse -Force $semiInstDir -ErrorAction SilentlyContinue
+    }
 }
 
 # ===========================================================================
@@ -710,6 +780,14 @@ if (-not $onWindows) {
     Write-Host "  SKIP  sab-path-idempotence (Windows)"
     Write-Host "  SKIP  sab-no-modify-path (Windows)"
     Write-Host "  SKIP  sab-reg-expand-sz (Windows + CI)"
+    Write-Host "  SKIP  path-trailing-semicolon (Windows)"
+    Write-Host "  SKIP  path-trailing-semicolon-idempotent (Windows)"
+    Write-Host "  SKIP  sab-trailing-semicolon-nonvacuous (Windows)"
+    Write-Host "  SKIP  sab-trailing-semicolon (Windows)"
+    Write-Host "  SKIP  gitbash-bin-warning (Windows)"
+    Write-Host "  SKIP  gitbash-bin-no-warning (Windows)"
+    Write-Host "  SKIP  sab-gitbash-bin-warning-nonvacuous (Windows)"
+    Write-Host "  SKIP  sab-gitbash-bin-warning (Windows)"
     Write-Host ''
     Write-Host "Results: $script:PASS passed, $script:FAIL failed (non-Windows scenarios only)"
     if ($script:FAIL -gt 0) { exit 1 } else { exit 0 }
@@ -1563,6 +1641,204 @@ if ($env:CI -eq 'true') {
 } else {
     Write-Host "  SKIP  sab-reg-expand-sz (CI=true not set)"
 }
+
+# ---------------------------------------------------------------------------
+# path-trailing-semicolon (F-2, ML-4C)
+# Seed PATH with a known value ending in ';'; verify the installer does not
+# produce ';;' and produces exact expected value; run twice for idempotence.
+# ---------------------------------------------------------------------------
+Write-Host ''
+Write-Host '--- path-trailing-semicolon ---'
+$ptsSeedRaw = 'C:\Windows\System32;'   # trailing semicolon
+$ptsDir     = Join-Path $gateWorkDir 'pts-target'
+New-Item -ItemType Directory -Path $ptsDir | Out-Null
+$f_pts  = New-FixtureDir -BaseDir $gateWorkDir -CsMode 'ok'
+$regKey.SetValue('PATH', $ptsSeedRaw, [Microsoft.Win32.RegistryValueKind]::String)
+
+$r_pts = Invoke-PSChild -Code $c1Code -Env @{
+    TRACKFW_VERSION     = $f_pts.Tag
+    TRACKFW_ARCH        = $f_pts.Arch
+    TRACKFW_INSTALL_DIR = $ptsDir
+    GATE_SERVE_DIR      = $f_pts.Dir
+    GATE_INSTALL_SCRIPT = $InstallScript
+    TRACKFW_NO_MODIFY_PATH = '0'
+}
+$ptsPathAfter    = [string]$regKey.GetValue('PATH', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+$ptsExpected     = $ptsSeedRaw.TrimEnd(';') + ';' + $ptsDir
+if ($r_pts.ExitCode -ne 0) {
+    Fail-Scenario 'path-trailing-semicolon' "child exited $($r_pts.ExitCode); stderr=$($r_pts.Stderr.Trim())"
+} elseif ($ptsPathAfter -ne $ptsExpected) {
+    Fail-Scenario 'path-trailing-semicolon' "PATH after = '$ptsPathAfter'; expected '$ptsExpected'"
+} else {
+    Pass-Scenario 'path-trailing-semicolon'
+}
+
+# Idempotence: second run must not add another entry or re-introduce ';;'
+$r_pts2       = Invoke-PSChild -Code $c1Code -Env @{
+    TRACKFW_VERSION     = $f_pts.Tag
+    TRACKFW_ARCH        = $f_pts.Arch
+    TRACKFW_INSTALL_DIR = $ptsDir
+    GATE_SERVE_DIR      = $f_pts.Dir
+    GATE_INSTALL_SCRIPT = $InstallScript
+    TRACKFW_NO_MODIFY_PATH = '0'
+}
+$ptsPathAfter2 = [string]$regKey.GetValue('PATH', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+if ($r_pts2.ExitCode -ne 0) {
+    Fail-Scenario 'path-trailing-semicolon-idempotent' "second run exited $($r_pts2.ExitCode)"
+} elseif ($ptsPathAfter2 -ne $ptsExpected) {
+    Fail-Scenario 'path-trailing-semicolon-idempotent' "PATH after 2nd run = '$ptsPathAfter2'; expected '$ptsExpected'"
+} else {
+    Pass-Scenario 'path-trailing-semicolon-idempotent'
+}
+Restore-RegPath
+
+# Sabotage: remove TrimEnd(';') and verify PATH gets ';;'
+Write-Host '--- sab-trailing-semicolon ---'
+$sabPTSScript = Join-Path $gateWorkDir ("install_sab_pts_$([IO.Path]::GetRandomFileName()).ps1")
+try {
+    $sabPTSOrig = Get-Content $InstallScript -Raw
+    # Mutate only the TrimEnd line; $cleanPath stays but equals $existingPath (no trimming)
+    $sabPTSNew  = $sabPTSOrig.Replace(
+        "                    `$cleanPath = `$existingPath.TrimEnd(';')",
+        "                    `$cleanPath = `$existingPath  # sab: TrimEnd removed"
+    )
+    if ($sabPTSOrig -eq $sabPTSNew) {
+        Fail-Scenario 'sab-trailing-semicolon-nonvacuous' `
+            'anchor not found -- verify TrimEnd line in install.ps1'
+    } else {
+        $sabPTSInstDir = Join-Path $gateWorkDir 'sab-pts-target'
+        New-Item -ItemType Directory -Path $sabPTSInstDir | Out-Null
+        $f_sabPTS = New-FixtureDir -BaseDir $gateWorkDir -CsMode 'ok'
+        [IO.File]::WriteAllText($sabPTSScript, $sabPTSNew, [Text.Encoding]::ASCII)
+        $regKey.SetValue('PATH', 'C:\Windows\System32;', [Microsoft.Win32.RegistryValueKind]::String)
+        $rSabPTS = Invoke-PSChild -Code $c1Code -Env @{
+            TRACKFW_VERSION        = $f_sabPTS.Tag
+            TRACKFW_ARCH           = $f_sabPTS.Arch
+            TRACKFW_INSTALL_DIR    = $sabPTSInstDir
+            GATE_SERVE_DIR         = $f_sabPTS.Dir
+            GATE_INSTALL_SCRIPT    = $sabPTSScript
+            TRACKFW_NO_MODIFY_PATH = '0'
+        }
+        Restore-RegPath
+        $sabPTSPathAfter = [string]$regKey.GetValue('PATH', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+        # After sabotage: 'C:\Windows\System32;' + ';' + installDir -> ';;' present
+        if ($sabPTSPathAfter -match ';;') {
+            Pass-Scenario 'sab-trailing-semicolon'
+        } else {
+            Fail-Scenario 'sab-trailing-semicolon' `
+                "double semicolon absent after sabotage (PATH='$sabPTSPathAfter') -- TrimEnd sabotage not applied"
+        }
+    }
+} finally {
+    Remove-Item $sabPTSScript -ErrorAction SilentlyContinue
+}
+Restore-RegPath
+
+# ---------------------------------------------------------------------------
+# gitbash-bin-warning (ML-4C): installer warns when USERPROFILE\bin\trackfw.exe
+# exists and is not the install destination.
+# Windows-only: full install path (registry, tar.exe, absolute INSTALL_DIR) required.
+# macOS: named SKIP above -- install.ps1 fails at INSTALL_DIR validation before
+#        reaching the USERPROFILE\bin check.
+# ---------------------------------------------------------------------------
+Write-Host ''
+Write-Host '--- gitbash-bin-warning ---'
+$gbbFakeProfile = Join-Path $gateWorkDir 'fake-profile'
+$gbbFakeBinDir  = Join-Path $gbbFakeProfile 'bin'
+New-Item -ItemType Directory -Path $gbbFakeBinDir | Out-Null
+# Plant a fake trackfw.exe in the fake ~/bin (simulates an old copy installed by install.sh)
+[IO.File]::WriteAllBytes((Join-Path $gbbFakeBinDir 'trackfw.exe'),
+    [IO.File]::ReadAllBytes($fakeExePath))
+
+$gbbInstDir  = Join-Path $gateWorkDir 'gbb-target'
+New-Item -ItemType Directory -Path $gbbInstDir | Out-Null
+$f_gbb  = New-FixtureDir -BaseDir $gateWorkDir -CsMode 'ok'
+
+$rGbb = Invoke-PSChild -Code $c1Code -Env @{
+    TRACKFW_VERSION        = $f_gbb.Tag
+    TRACKFW_ARCH           = $f_gbb.Arch
+    TRACKFW_INSTALL_DIR    = $gbbInstDir
+    TRACKFW_NO_MODIFY_PATH = '1'
+    GATE_SERVE_DIR         = $f_gbb.Dir
+    GATE_INSTALL_SCRIPT    = $InstallScript
+    USERPROFILE            = $gbbFakeProfile
+}
+$gbbOut = $rGbb.Stdout + $rGbb.Stderr
+if ($rGbb.ExitCode -ne 0) {
+    Fail-Scenario 'gitbash-bin-warning' "child exited $($rGbb.ExitCode); stderr=$($rGbb.Stderr.Trim())"
+} elseif ($gbbOut -notmatch 'Git Bash') {
+    Fail-Scenario 'gitbash-bin-warning' "keyword 'Git Bash' absent; no warning emitted. output=$($gbbOut.Trim())"
+} else {
+    Pass-Scenario 'gitbash-bin-warning'
+}
+
+# Counter-arm: no bin\trackfw.exe -> no warning
+Write-Host '--- gitbash-bin-no-warning ---'
+$gbbNoProfile = Join-Path $gateWorkDir 'fake-profile-empty'
+New-Item -ItemType Directory -Path $gbbNoProfile | Out-Null
+# bin\ dir exists but no trackfw.exe inside
+New-Item -ItemType Directory -Path (Join-Path $gbbNoProfile 'bin') | Out-Null
+
+$gbbNoInstDir  = Join-Path $gateWorkDir 'gbb-no-target'
+New-Item -ItemType Directory -Path $gbbNoInstDir | Out-Null
+$f_gbbNo = New-FixtureDir -BaseDir $gateWorkDir -CsMode 'ok'
+
+$rGbbNo = Invoke-PSChild -Code $c1Code -Env @{
+    TRACKFW_VERSION        = $f_gbbNo.Tag
+    TRACKFW_ARCH           = $f_gbbNo.Arch
+    TRACKFW_INSTALL_DIR    = $gbbNoInstDir
+    TRACKFW_NO_MODIFY_PATH = '1'
+    GATE_SERVE_DIR         = $f_gbbNo.Dir
+    GATE_INSTALL_SCRIPT    = $InstallScript
+    USERPROFILE            = $gbbNoProfile
+}
+$gbbNoOut = $rGbbNo.Stdout + $rGbbNo.Stderr
+if ($rGbbNo.ExitCode -ne 0) {
+    Fail-Scenario 'gitbash-bin-no-warning' "child exited $($rGbbNo.ExitCode)"
+} elseif ($gbbNoOut -match 'Git Bash') {
+    Fail-Scenario 'gitbash-bin-no-warning' "keyword 'Git Bash' present when no bin\trackfw.exe: $($gbbNoOut.Trim())"
+} else {
+    Pass-Scenario 'gitbash-bin-no-warning'
+}
+
+# Sabotage: remove the Test-Path check; warning must be absent
+Write-Host '--- sab-gitbash-bin-warning ---'
+$sabGBBScript = Join-Path $gateWorkDir ("install_sab_gbb_$([IO.Path]::GetRandomFileName()).ps1")
+try {
+    $sabGBBOrig = Get-Content $InstallScript -Raw
+    $sabGBBNew  = $sabGBBOrig.Replace(
+        '(Test-Path -LiteralPath $gitBashBin -PathType Leaf)',
+        '($false)'
+    )
+    if ($sabGBBOrig -eq $sabGBBNew) {
+        Fail-Scenario 'sab-gitbash-bin-warning-nonvacuous' `
+            'anchor not found -- verify Test-Path -LiteralPath $gitBashBin check in install.ps1'
+    } else {
+        $sabGBBInstDir = Join-Path $gateWorkDir 'sab-gbb-target'
+        New-Item -ItemType Directory -Path $sabGBBInstDir | Out-Null
+        $f_sabGBB = New-FixtureDir -BaseDir $gateWorkDir -CsMode 'ok'
+        [IO.File]::WriteAllText($sabGBBScript, $sabGBBNew, [Text.Encoding]::ASCII)
+        $rSabGBB = Invoke-PSChild -Code $c1Code -Env @{
+            TRACKFW_VERSION        = $f_sabGBB.Tag
+            TRACKFW_ARCH           = $f_sabGBB.Arch
+            TRACKFW_INSTALL_DIR    = $sabGBBInstDir
+            TRACKFW_NO_MODIFY_PATH = '1'
+            GATE_SERVE_DIR         = $f_sabGBB.Dir
+            GATE_INSTALL_SCRIPT    = $sabGBBScript
+            USERPROFILE            = $gbbFakeProfile
+        }
+        $sabGBBOut = $rSabGBB.Stdout + $rSabGBB.Stderr
+        if ($sabGBBOut -notmatch 'Git Bash') {
+            Pass-Scenario 'sab-gitbash-bin-warning'
+        } else {
+            Fail-Scenario 'sab-gitbash-bin-warning' `
+                "keyword 'Git Bash' present after sabotage -- check was not removed: $($sabGBBOut.Trim())"
+        }
+    }
+} finally {
+    Remove-Item $sabGBBScript -ErrorAction SilentlyContinue
+}
+Restore-RegPath
 
 } finally {
     # Always restore the registry PATH to its original state

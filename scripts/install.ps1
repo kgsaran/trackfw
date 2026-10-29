@@ -55,12 +55,14 @@
     # -------------------------------------------------------------------------
     # TRACKFW_ARCH: lista fechada, comparacao case-sensitive.
     # Deteccao automatica:
-    #   PS 7 (.NET 5+): RuntimeInformation.OSArchitecture. NAO MEDIDO em PS 7 emulado em ARM64.
-    #   PS 5.1 (Desktop, x64 emulado em ARM64):
+    #   PS 7 (.NET 5+): RuntimeInformation.OSArchitecture. Medido em PS 5.1 ARM64 nativo
+    #   (docs/portabilidade/2026-10-28-install-ps1-vm-arm64.md, Acao 1): retornou Arm64.
+    #   NAO MEDIDO: PS 7 emulado em ARM64 (processo x64 emulado no host).
+    #   PS 5.1 (Desktop, ARM64 nativo ou x64 emulado em ARM64):
     #     PROCESSOR_ARCHITECTURE pode reportar AMD64 mesmo num host ARM64 (descreve o processo emulado).
     #     PROCESSOR_ARCHITEW6432 pode indicar a arquitetura real do host (variavel WoW64/bridge).
-    #     NAO MEDIDO: comportamento de PROCESSOR_ARCHITEW6432 em PS 5.1 de 64 bits rodando emulado.
-    #     Use TRACKFW_ARCH=arm64 para corrigir a deteccao automatica se necessario.
+    #     MEDIDO: vazia em PS 5.1 ARM64 nativo (Acao 1 -- ARM64 nativo nao e WoW64, variavel nao preenchida).
+    #     NAO MEDIDO: comportamento em PS 5.1 de processo x64 emulado em host ARM64.
     #     Use TRACKFW_ARCH=arm64 para sobrepor se a deteccao automatica retornar amd64 num host ARM64.
     $ARCH = ''
     if ($env:TRACKFW_ARCH) {
@@ -123,6 +125,11 @@
 
     if (-not $INSTALL_DIR) {
         throw "Erro: nao foi possivel determinar o diretorio de instalacao. Defina TRACKFW_INSTALL_DIR."
+    }
+    # Rejeitar INSTALL_DIR com ponto-e-virgula: quebraria a idempotencia do PATH ao dividir por ';'.
+    # Verificado antes do caminho absoluto e antes de qualquer escrita (diretorio, arquivo, registro).
+    if ($INSTALL_DIR -match ';') {
+        throw "Erro: TRACKFW_INSTALL_DIR nao pode conter ponto-e-virgula: '$INSTALL_DIR'"
     }
     # Validar caminho absoluto: deve comecar com letra:\ ou \\ (UNC).
     # [System.IO.Path]::IsPathRooted aceita '\foo' (raiz relativa) e 'C:foo' (relativo ao drive).
@@ -257,7 +264,9 @@
                 if ($alreadyPresent) {
                     Write-Host "$INSTALL_DIR ja esta no PATH do usuario."
                 } else {
-                    $newPath = if ($existingPath -ne '') { "$existingPath;$INSTALL_DIR" } else { $INSTALL_DIR }
+                    # TrimEnd(';'): PATH existente com ';' final geraria ';;' na concatenacao (F-2).
+                    $cleanPath = $existingPath.TrimEnd(';')
+                    $newPath = if ($cleanPath -ne '') { "$cleanPath;$INSTALL_DIR" } else { $INSTALL_DIR }
                     $regKey.SetValue('PATH', $newPath, $valueKind)
                     Write-Host "Adicionado ao PATH do usuario: $INSTALL_DIR"
                     Write-Host "Abra um novo terminal para que o trackfw esteja disponivel no PATH."
@@ -284,6 +293,23 @@
             Write-Warning "Outra copia do trackfw.exe esta no PATH e pode responder no lugar desta:"
             foreach ($c in $otherCopies) { Write-Warning "  $c" }
             Write-Warning "Verifique com: where.exe trackfw.exe"
+        }
+
+        # -------------------------------------------------------------------------
+        # Avisar sobre USERPROFILE\bin\trackfw.exe (~/bin no Git Bash)
+        # -------------------------------------------------------------------------
+        # O Git Bash coloca ~/bin (USERPROFILE\bin) no inicio do PATH por padrao.
+        # Um binario ali pode ocultar a versao instalada nesta sessao PS.
+        # Nao executa, nao le e nao remove o arquivo -- apenas verifica existencia.
+        if ($env:USERPROFILE) {
+            $gitBashBin     = Join-Path (Join-Path $env:USERPROFILE 'bin') 'trackfw.exe'
+            $gitBashBinNorm = $gitBashBin.TrimEnd('\', '/').ToLower()
+            $destBinNorm    = $destBin.TrimEnd('\', '/').ToLower()
+            if ($gitBashBinNorm -ne $destBinNorm -and (Test-Path -LiteralPath $gitBashBin -PathType Leaf)) {
+                Write-Warning "Atencao: $gitBashBin existe."
+                Write-Warning "No Git Bash, ~/bin esta no PATH antes das outras entradas e pode ocultar esta versao."
+                Write-Warning "Verifique com: type -a trackfw   (no Git Bash)"
+            }
         }
 
         # --- Sucesso ---

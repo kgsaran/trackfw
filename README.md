@@ -262,7 +262,8 @@ entry, even if you installed via npm or pip. See
 - The PS/POSIX hook line run from `cmd.exe` exits 1 instead of 2 (passes through on 6 of 8
   CLIs) — documented as limitation; see [guard hooks](#guard-hooks-on-windows--measured-state-since-v930).
 - `~/bin` in Git Bash's PATH precedes other PATH entries — an older binary there intercepts
-  hooks before the one you installed. See [Pitfall: more than one `trackfw` on `PATH`](#pitfall-more-than-one-trackfw-on-path).
+  hooks before the one you installed. `install.ps1` warns when `%USERPROFILE%\bin\trackfw.exe`
+  exists (without executing it); `install.sh` has warned since v11.1.0. See [Pitfall: more than one `trackfw` on `PATH`](#pitfall-more-than-one-trackfw-on-path).
 
 **Support matrix — measured state (2026-10-29)**
 
