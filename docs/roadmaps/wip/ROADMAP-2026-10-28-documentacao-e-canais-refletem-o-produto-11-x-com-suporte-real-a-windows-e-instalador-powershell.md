@@ -222,7 +222,7 @@ go build ./...
 > Dependencies: Waves 1 e 2 auditadas. Elas produzem o `install.ps1`, a matriz medida e o contrato.
 
 ### ML-3A — README, CONTRIBUTING e gate-design-principles (apolo-tf) — AC1, AC2, AC6
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-29, depois de dois corretivos e um ajuste do arquiteto. (1) A matriz Windows afirmava ✅ em npm/pip x64 sem medição e ⚠️ em `install.ps1` x64 e `pwsh` 7, que o CI deste PR mediu. Agora toda célula ✅ cita um arquivo de `docs/portabilidade/` ou uma run de CI, e a inversão antiga do cmd.exe (medido em ARM64, não em x64) foi desfeita. (2) "ten" virou "twelve" nos presets, mas são 10 presets (`presetOrder`, `preset.go:176`) com 12 especialidades (`KnownAgentIDs`). O modo personalizado pede 12 nomes, e o arquiteto corrigiu a linha que ainda dizia "ten". (3) Comentário de `guard_generations.go:40` alinhado ao que foi medido, sem mudar constante. Gates: `TestREADMEHookLinesMatchCurrentConstants` PASS, com as sabotagens forma antiga, constante alterada e vácuo reprovando; `go test ./internal/guardforms/` rc=0. As células ⚠️ do `install.sh`/npm/pip ARM64 ganham fonte no ML-4A.
 **Files affected:** `README.md`, `CONTRIBUTING.md`, `docs/gate-design-principles.md`,
 `internal/guardforms/readme_line_test.go` (novo)
 
@@ -252,9 +252,9 @@ go build ./...
    42, 165-167, 178) ou marcá-los como históricos.
 
 **Acceptance criteria:**
-- [ ] `readme_line_test.go` falha com o README antigo e com a constante alterada (sabotagem medida e revertida)
-- [ ] Nenhum comando de instalação no README sem execução ou conferência contra o registro (lista anexada)
-- [ ] Relatório com uma frase por teste novo
+- [x] `readme_line_test.go` falha com o README antigo e com a constante alterada (sabotagem medida e revertida)
+- [x] Nenhum comando de instalação no README sem execução ou conferência contra o registro (lista anexada)
+- [x] Relatório com uma frase por teste novo
 
 ### ML-3B — VISION e site (atena-tf) — AC1, AC8
 **Status:** ✅ Concluído — auditado em 2026-10-29. Build do site com `cd site && npm ci && npm run build` (o comando do `deploy-docs.yml`) rc=0. Verificação visual feita pelo arquiteto no Chrome headless (`--screenshot`) sobre o `vitepress preview`, nas páginas de getting-started em pt e en. Conferidos contra o binário: os 10 alvos do `--ai-tools` (`init.go:50`) e `release tag`. Corretivo: o logo nunca existiu (`/trackfw/logo.svg` dava 404, imagem quebrada no cabeçalho do site publicado desde a criação). A chave `logo` foi removida; criar uma marca fica com o KG. O plugin de gerador não existe no código, e o VISION agora o marca como intenção.
@@ -304,6 +304,11 @@ release real (`TRACKFW_VERSION=v11.1.0`). Registrar:
 - a reexecução idempotente;
 - o efeito de `TRACKFW_NO_MODIFY_PATH=1`;
 - o aviso de outra cópia no `~/bin` do Git Bash.
+
+Acrescentado na auditoria do ML-3A (2026-10-29): para que as células da matriz Windows do README tenham fonte citável em
+`docs/portabilidade/`, o mesmo documento registra na VM ARM64 o `install.sh` sob Git Bash e o `npm install -g trackfw`
+e o `pip install trackfw` a partir do registro, todos na 11.1.0. Hoje a única evidência do `install.sh` ARM64 é o
+working context congelado. Depois do ML-4A, o arquiteto atualiza as células do README em linha.
 
 O handoff traz lista fechada de ações e contador N/M de chamadas.
 

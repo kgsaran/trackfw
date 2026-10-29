@@ -155,6 +155,16 @@ make test       # go test ./...
 make quality    # a barreira completa — build, testes, gates e suíte de falsificação
 ```
 
+**Windows:** `make build` (e `go build -o bin/trackfw ./cmd/trackfw`) produz `bin/trackfw`
+**sem** o sufixo `.exe`. O `exec.LookPath` não encontra esse binário em testes — use:
+
+```bash
+go build -o "bin/trackfw$(go env GOEXE)" ./cmd/trackfw
+```
+
+`go env GOEXE` retorna `.exe` no Windows e vazio nos demais sistemas.
+Fonte: `vault/notes/go-build-no-exe-suffix-exec-lookpath-falha-no-windows-2026-10-16.md`.
+
 ⚠️ **`make quality` leva ~13 min e satura 8 núcleos.** Use `TRACKFW_FALSIFY_JOBS=4` se precisar da
 máquina.
 
