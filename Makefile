@@ -272,7 +272,9 @@ lint:
 # check-prereqs — qualifica o ambiente antes de rodar qualquer suíte (AC4).
 # Cada ferramenta é verificada via execução (não apenas presença no PATH).
 # Para git: git --version (Prescrição 5 — executar, não apenas localizar).
-# Para módulo Python: python3 -c 'import <mod>' (Prescrição 6 — sem bypass).
+# Para bash: exige versão 4+ via BASH_VERSINFO[0]; /bin/bash do macOS é 3.2 e não
+# suporta declare -A nem mapfile, usados pelos scripts de paridade.
+# Para módulo Python: python3 -c 'import <mod>' (verifica o módulo, não apenas o intérprete).
 # Sem ferramenta: imprime ERRO nomeado e sai rc=1 após checar todas.
 # Com tudo presente: rc=0, sem saída além do eco normal do make.
 check-prereqs:
@@ -285,8 +287,8 @@ check-prereqs:
 	  || { printf 'ERRO: ambiente incompleto — yaml (módulo Python) não encontrado\n'; _fail=1; }; \
 	git --version >/dev/null 2>&1 \
 	  || { printf 'ERRO: ambiente incompleto — git não encontrado\n'; _fail=1; }; \
-	bash --version >/dev/null 2>&1 \
-	  || { printf 'ERRO: ambiente incompleto — bash não encontrado\n'; _fail=1; }; \
+	bash -c '[ "$${BASH_VERSINFO[0]}" -ge 4 ]' >/dev/null 2>&1 \
+	  || { printf 'ERRO: ambiente incompleto — bash 4+ não encontrado (os scripts usam declare -A e mapfile)\n'; _fail=1; }; \
 	exit $$_fail
 
 quality: check-prereqs test lint parity

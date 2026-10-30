@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/kgsaran/trackfw/internal/agentconfig"
 )
 
 // isolatedTestHome is the synthetic home TestMain binds this test binary to.
@@ -120,18 +122,37 @@ func TestMain(m *testing.M) {
 // with exactly the diagnostic line "ambiente incompleto: git não encontrado no PATH"
 // and runs no test — which is why exec.Command("git","--version").Run() is used
 // instead of exec.LookPath (a fake git that exits 127 passes LookPath but fails Run).
+//
+// Conclusion (D1 / path_vazio): with the child's TMPDIR/TMP/TEMP redirected to a
+// dedicated t.TempDir(), finding that directory empty after exit proves the git guard
+// ran before MkdirTemp — no temporary HOME leaked in an incomplete environment.
 func TestGitGuardFailsFastWhenGitAbsent(t *testing.T) {
 	t.Run("path_vazio", func(t *testing.T) {
 		emptyDir := t.TempDir()
+		childTmp := t.TempDir()
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^$")
-		cmd.Env = gitGuardChildEnv(emptyDir, nil)
+		env := gitGuardChildEnv(emptyDir, nil)
+		env = append(env, "TMPDIR="+childTmp, "TMP="+childTmp, "TEMP="+childTmp)
+		cmd.Env = env
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
 		_ = cmd.Run()
 		assertGitGuardExit(t, cmd, stdout.String(), stderr.String())
+		// D1: prove the git guard ran before MkdirTemp — no temporary HOME leaked.
+		entries, err := os.ReadDir(childTmp)
+		if err != nil {
+			t.Fatalf("ReadDir childTmp: %v", err)
+		}
+		if len(entries) > 0 {
+			names := make([]string, len(entries))
+			for i, e := range entries {
+				names[i] = e.Name()
+			}
+			t.Errorf("guard after MkdirTemp leak: %v dirs in childTmp", names)
+		}
 	})
 
 	if runtime.GOOS != "windows" {
@@ -197,11 +218,17 @@ func assertGitGuardExit(t *testing.T, cmd *exec.Cmd, stdout, stderr string) {
 }
 
 // TestIsolatedHomeCoversBothChannels is the loop-breaker for the isolation
-// above: it fails if either channel stops pointing at the synthetic home.
-// Removing either os.Setenv call in TestMain makes it fail — verified in both
-// directions on macOS (POSIX), where the USERPROFILE half is asserted on the
-// environment variable rather than on os.UserHomeDir(), since only Windows
-// resolves the home through it.
+// above: it fails if any of the three resolution channels stops pointing at
+// the synthetic home.  Removing either os.Setenv call in TestMain makes it
+// fail — verified in both directions on macOS (POSIX).
+//
+// Conclusion (D3): HOME, USERPROFILE, and agentconfig.ClaudeConfigDir all
+// resolve inside the synthetic home — ensuring no test in this package reads
+// or writes the developer's real ~/.claude/settings.json, including via the
+// production config-dir channel (validator_git_branch_guard.go:210, :434,
+// :494, :561, :637).  Removing os.Setenv("HOME", ...) from TestMain makes
+// this test fail on all three checks; removing only os.Unsetenv("CLAUDE_CONFIG_DIR")
+// while CLAUDE_CONFIG_DIR is set makes only the third check fail.
 func TestIsolatedHomeCoversBothChannels(t *testing.T) {
 	if isolatedTestHome == "" {
 		t.Fatal("TestMain did not record the synthetic home")
@@ -225,5 +252,21 @@ func TestIsolatedHomeCoversBothChannels(t *testing.T) {
 	if os.Getenv("HOME") != os.Getenv("USERPROFILE") {
 		t.Errorf("channel divergence: HOME = %q, USERPROFILE = %q",
 			os.Getenv("HOME"), os.Getenv("USERPROFILE"))
+	}
+
+	// agentconfig.ClaudeConfigDir: the production channel used by validator
+	// production code (validator_git_branch_guard.go:210, :434, :494, :561, :637).
+	// Must resolve inside the synthetic home — not the developer's ~/.claude.
+	// A migration from homedir.Dir() to ClaudeConfigDir in production code
+	// would not be caught by the two checks above; this check closes that gap
+	// (D3, Wave 0 Prescrição 3 applied to the validator package).
+	dir, err := agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver)
+	if err != nil {
+		t.Fatalf("agentconfig.ClaudeConfigDir returned error: %v", err)
+	}
+	sep := string(filepath.Separator)
+	if !strings.HasPrefix(dir, isolatedTestHome+sep) {
+		t.Errorf("agentconfig.ClaudeConfigDir = %q, want path rooted under synthetic home %q",
+			dir, isolatedTestHome)
 	}
 }

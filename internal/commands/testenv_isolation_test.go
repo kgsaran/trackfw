@@ -82,18 +82,37 @@ func TestIsolatedHomeCoversBothChannels(t *testing.T) {
 // with exactly the diagnostic line "ambiente incompleto: git não encontrado no PATH"
 // and runs no test — which is why exec.Command("git","--version").Run() is used
 // instead of exec.LookPath (a fake git that exits 127 passes LookPath but fails Run).
+//
+// Conclusion (D1 / path_vazio): with the child's TMPDIR/TMP/TEMP redirected to a
+// dedicated t.TempDir(), finding that directory empty after exit proves the git guard
+// ran before MkdirTemp — no temporary HOME leaked in an incomplete environment.
 func TestGitGuardFailsFastWhenGitAbsent(t *testing.T) {
 	t.Run("path_vazio", func(t *testing.T) {
 		emptyDir := t.TempDir()
+		childTmp := t.TempDir()
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^$")
-		cmd.Env = gitGuardChildEnv(emptyDir, []string{"TRACKFW_TEST_"})
+		env := gitGuardChildEnv(emptyDir, []string{"TRACKFW_TEST_"})
+		env = append(env, "TMPDIR="+childTmp, "TMP="+childTmp, "TEMP="+childTmp)
+		cmd.Env = env
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
 		_ = cmd.Run()
 		assertGitGuardExit(t, cmd, stdout.String(), stderr.String())
+		// D1: prove the git guard ran before MkdirTemp — no temporary HOME leaked.
+		entries, err := os.ReadDir(childTmp)
+		if err != nil {
+			t.Fatalf("ReadDir childTmp: %v", err)
+		}
+		if len(entries) > 0 {
+			names := make([]string, len(entries))
+			for i, e := range entries {
+				names[i] = e.Name()
+			}
+			t.Errorf("guard after MkdirTemp leak: %v dirs in childTmp", names)
+		}
 	})
 
 	if runtime.GOOS != "windows" {

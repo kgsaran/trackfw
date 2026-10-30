@@ -178,24 +178,24 @@ test -f docs/seguranca/2026-10-29-redteam-isolamento-ambiente-dos-testes.md
 > Dependencies: Wave 3 auditada. ML-4A e ML-4B tocam arquivos disjuntos.
 
 ### ML-4A — Sentinelas de ordem da guarda e do ClaudeConfigDir no validator (artemis-tf) — D1, D3
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-10-29. `path_vazio` de `commands` e `validator` agora afirma TMPDIR do filho vazio; contra-braço do executor (guarda depois do `MkdirTemp`) reprova nomeando o diretório nos dois pacotes. `TestIsolatedHomeCoversBothChannels` do validator confere `ClaudeConfigDir`; contra-braço por `CLAUDE_CONFIG_DIR` falso reprova só a verificação nova. Nomes conferidos pelo arquiteto em `-v`.
 **Files affected:** `internal/commands/testenv_isolation_test.go`, `internal/validator/main_test.go`
 **Actions:**
 1. D1: no braço `path_vazio` do `TestGitGuardFailsFastWhenGitAbsent` do `commands` e do `validator` (os dois que criam HOME temporário), apontar `TMPDIR`, `TMP` e `TEMP` do filho para um `t.TempDir()` próprio e afirmar que ele está vazio depois que o filho sai.
 2. D3: acrescentar ao `TestIsolatedHomeCoversBothChannels` do `validator` a verificação de `agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver)` dentro de `isolatedTestHome`, como no `commands`.
 **Acceptance criteria:**
-- [ ] contra-braço D1: com a guarda movida para depois do `MkdirTemp`, o braço reprova nomeando o diretório; na ordem certa, passa
-- [ ] contra-braço D3: sem o `Setenv HOME` do validator, a verificação nova reprova
-- [ ] `go test ./internal/validator/ ./internal/commands/` verdes
+- [x] contra-braço D1: com a guarda movida para depois do `MkdirTemp`, o braço reprova nomeando o diretório; na ordem certa, passa
+- [x] contra-braço D3: sem o `Setenv HOME` do validator, a verificação nova reprova
+- [x] `go test ./internal/validator/ ./internal/commands/` verdes
 
 ### ML-4B — `check-prereqs` exige bash 4+ (ares-tf) — D5
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-10-29. Medido pelo arquiteto: PATH com `/bin/bash` 3.2 → rc=2 nomeando só bash 4+; ambiente atual (bash 5.3) → rc=0 sem saída.
 **Files affected:** `Makefile`
 **Actions:**
 1. Trocar a checagem de `bash` por uma que exija `BASH_VERSINFO[0] >= 4` (escapando `$` para o make), com a mensagem `ERRO: ambiente incompleto — bash 4+ não encontrado (os scripts usam declare -A e mapfile)`.
 **Acceptance criteria:**
-- [ ] com PATH cujo primeiro `bash` é `/bin/bash` 3.2, `make check-prereqs` reprova nomeando bash 4+
-- [ ] no ambiente atual (bash 5.3), rc=0 sem saída
+- [x] com PATH cujo primeiro `bash` é `/bin/bash` 3.2, `make check-prereqs` reprova nomeando bash 4+
+- [x] no ambiente atual (bash 5.3), rc=0 sem saída
 
 **Gates da wave:**
 ```bash
