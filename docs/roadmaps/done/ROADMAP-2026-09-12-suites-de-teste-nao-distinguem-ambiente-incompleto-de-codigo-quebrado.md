@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-12
 req: "docs/req/REQ-2026-09-12-suites-de-teste-nao-distinguem-ambiente-incompleto-de-codigo-quebrado.md"
 squad: "hades-tf, artemis-tf, ares-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, artemis-tf, ares-tf"
 
 # Roadmap: suites de teste nao distinguem ambiente incompleto de codigo quebrado
 
-> Created: 2026-09-12 | Revisado: 2026-10-29 | Status: wip
+> Created: 2026-09-12 | Revisado: 2026-10-29 | Status: done
 
 ## Contexto
 

@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-12
 author: "Hefesto (Code Quality)"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-12-suites-de-teste-nao-distinguem-ambiente-incompleto-de-codigo-quebrado.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-12-suites-de-teste-nao-distinguem-ambiente-incompleto-de-codigo-quebrado.md"
 ---
 
 # REQ: suites de teste nao distinguem ambiente incompleto de codigo quebrado
 
-> Date: 2026-09-12 | Status: Open
+> Date: 2026-09-12 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -226,4 +226,4 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-12-suites-de-teste-nao-distinguem-ambiente-incompleto-de-codigo-quebrado.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-12-suites-de-teste-nao-distinguem-ambiente-incompleto-de-codigo-quebrado.md
