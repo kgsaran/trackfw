@@ -49,7 +49,7 @@ Decisão de direção: ADR-2026-10-30 (`go install` não é canal; module path n
 - [ ] **AC3** — o script de instalação baixado pelos templates de consumidor (`trackfw-gate.yml`,
       `.gitlab-ci-trackfw.yml`, `trackfw-validate.yml`) vem da tag pinada, não de `releases/latest`.
       Viável: o `install.sh` é asset de cada release (`.goreleaser.yaml:44`; conferido na v11.2.0).
-- [ ] **AC4** — `README.md` e as quatro páginas do site deixam de oferecer `go install`; oferecem os
+- [ ] **AC4** — `README.md`, `docs/visao-projeto/VISION.md` (achado da Wave 0) e as quatro páginas do site deixam de oferecer `go install`; oferecem os
       canais da ADR. `docs/cli-parity.md` descreve o mecanismo novo.
 - [ ] **AC5** — `trackfw doctor` num consumidor com o `trackfw-validate.yml` antigo aponta a
       divergência, e `trackfw update` a corrige (contra-braço: arquivo atual não gera achado).
@@ -60,8 +60,8 @@ Decisão de direção: ADR-2026-10-30 (`go install` não é canal; module path n
 
 - Não muda o module path nem imports.
 - Não renomeia job ids.
-- Não muda os scripts de hook que usam `releases/latest/download/install.sh` como fallback local
-  (`scaffold.go:378–431`): não são templates de CI e não pinam versão por desenho.
+- Não muda as mensagens dos slash-commands que sugerem `releases/latest/download/install.sh` a quem
+  não tem o trackfw instalado (`scaffold.go:378–431`): não são templates de CI e não pinam versão por desenho.
 - Não toca `.github/workflows/` deste repositório.
 
 ## Linked ADR

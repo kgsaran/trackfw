@@ -31,7 +31,7 @@ ML-1A (gerador, Go) e ML-1B (documentação de usuário) tocam arquivos disjunto
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model da troca de mecanismo de instalação nos templates de consumidor (hades-tf)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-10-30. Prescrições P1–P8 aceitas e incorporadas ao ML-1A/ML-1B. Achados: o gate `scripts/check-ci-workflow-pin-parity.sh` e `internal/discover/discover_test.go` fixam o template antigo (fora da lista original); `VISION.md:206` também oferece `go install` (fora da REQ); release assets são mutáveis (`.immutable=false`), e a tag pinada limita o raio, não o elimina (residual 1). Hashes pré-fix no Apêndice A do parecer.
 **Files affected:** `docs/seguranca/2026-10-30-wave0-instalacao-de-consumidor-pela-tag.md`
 **Actions:**
 1. Cadeia de suprimento: comparar `releases/latest/download/install.sh` com
@@ -46,9 +46,9 @@ ML-1A (gerador, Go) e ML-1B (documentação de usuário) tocam arquivos disjunto
 5. Alvos de falsificação nas duas direções para AC1, AC2, AC3, AC5 e AC6.
 6. Prescrições numeradas para ML-1A e ML-1B, e residual.
 **Acceptance criteria:**
-- [ ] As seis seções respondidas com evidência (comando e resultado)
-- [ ] Prescrições escritas em seção intitulada `Prescrições`
-- [ ] Nenhuma linha de implementação escrita
+- [x] As seis seções respondidas com evidência (comando e resultado)
+- [x] Prescrições escritas em seção intitulada `Prescrições`
+- [x] Nenhuma linha de implementação escrita
 
 **Gates da wave:**
 ```bash
@@ -63,7 +63,7 @@ grep -q 'Prescrições' docs/seguranca/2026-10-30-wave0-instalacao-de-consumidor
 
 ### ML-1A — Templates de consumidor instalam pelo install.sh da tag (apolo-tf) — AC1, AC2, AC3, AC5, AC6
 **Status:** ⬜ Pendente
-**Files affected:** `internal/generators/scaffold_doctor.go`, `internal/generators/scaffold.go`, `internal/generators/consumer_install_test.go`, `docs/cli-parity.md`
+**Files affected:** `internal/generators/scaffold_doctor.go`, `internal/generators/scaffold.go`, `internal/generators/consumer_install_test.go`, `internal/generators/testdata/ci-trigger/discover-consumer.golden`, `internal/generators/testdata/ci-trigger/gate-consumer.golden`, `internal/generators/testdata/ci-trigger/gitlab.golden`, `internal/discover/discover_test.go`, `scripts/check-ci-workflow-pin-parity.sh`, `docs/cli-parity.md` (P1)
 **Actions:**
 1. `scaffold_doctor.go`: o template de consumidor do `trackfw-validate.yml` passa a instalar como o
    `trackfw-gate.yml` (`env: TRACKFW_VERSION`, `curl ... install.sh | sh`); job id
@@ -75,37 +75,42 @@ grep -q 'Prescrições' docs/seguranca/2026-10-30-wave0-instalacao-de-consumidor
    consumidor; afirma `TRACKFW_VERSION` = `version.Version`.
 4. `docs/cli-parity.md`: seção dos templates (≈7540–7560 e a tabela ≈7620) descreve o mecanismo novo.
 5. Atualizar testes existentes que fixem o template antigo (grep por `go install` e `releases/latest`
-   nos `_test.go` de `internal/generators`).
+   nos `_test.go` de `internal/generators` e `internal/discover`, e os goldens de `testdata/ci-trigger`).
+6. Prescrições da Wave 0 (`docs/seguranca/2026-10-30-wave0-instalacao-de-consumidor-pela-tag.md`, seção `Prescrições`):
+   P1 (três correções no `check-ci-workflow-pin-parity.sh`, guarda de no-op com `if cmp -s`, e o número
+   de cenários não cai: medir antes e depois), P2 (URL com `${TRACKFW_VERSION}` entre aspas duplas nos três
+   templates), P3 (`timeout-minutes: 10` no job `governance-go-install`), P4/P5 (teste AC2), P6 (AC5 com
+   fixture stale de hash `aadf2cb1…cca996`), P7 (hashes de produtor do Apêndice A inalterados).
 **Acceptance criteria:**
 - [ ] nenhum template de consumidor emite `go install` nem `releases/latest`
 - [ ] teste novo reprova com o template antigo restaurado (contra-braço)
 - [ ] template de produtor byte-idêntico ao anterior
 - [ ] doctor acusa o `trackfw-validate.yml` antigo e `update` o corrige (medido em fixture)
+- [ ] `check-ci-workflow-pin-parity.sh` verde, com cenários ≥ o número medido antes da edição
 
 **Gates da wave:**
 ```bash
 go build ./...
-go vet ./internal/generators/
+go vet ./internal/generators/ ./internal/discover/
 go test ./internal/generators/ -count=1
+go test ./internal/discover/ -count=1
+bash scripts/check-ci-workflow-pin-parity.sh
+! grep -rn "cmd/trackfw@" README.md site docs/visao-projeto --include=*.md
 ```
 
 ### ML-1B — Documentação de usuário sem go install (afrodite-tf) — AC4
 **Status:** ⬜ Pendente
-**Files affected:** `README.md`, `site/index.md`, `site/guide/getting-started.md`, `site/en/index.md`, `site/en/guide/getting-started.md`
+**Files affected:** `README.md`, `docs/visao-projeto/VISION.md` (P8), `site/index.md`, `site/guide/getting-started.md`, `site/en/index.md`, `site/en/guide/getting-started.md`
 **Actions:**
-1. Remover o bloco `go install github.com/kgsaran/trackfw/cmd/trackfw@latest` dos cinco arquivos.
+1. Remover o bloco `go install github.com/kgsaran/trackfw/cmd/trackfw@latest` dos seis arquivos (na `VISION.md:206`, a linha da tabela de canais).
    Onde ele era uma das opções de instalação, manter as demais (Homebrew, `install.sh`,
    `install.ps1`, `npm`, `pip`) como já estão; não inventar canal.
 2. Se a página tiver frase que cite Go como canal, ajustar para "compilar do código-fonte" só se já
    houver contexto de contribuidor; caso contrário, apenas remover.
 **Acceptance criteria:**
-- [ ] `grep -rn "cmd/trackfw@" README.md site --include=*.md` sem resultado
+- [ ] `grep -rn "cmd/trackfw@" README.md site docs/visao-projeto --include=*.md` sem resultado
 - [ ] build do site sem erro (`npm run docs:build` ou o comando do `site/package.json`)
 
-**Gates da wave:**
-```bash
-python3 scripts/check-workflow-yaml.py
-```
 
 ---
 
