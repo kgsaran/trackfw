@@ -84,9 +84,71 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 
+	// ML-2A: fail fast when git is absent from PATH.  exec.Command("git","--version").Run()
+	// executes git; exec.LookPath would accept a git that exits 127 (Wave 0, Prescrição 7).
+	// Runs BEFORE MkdirTemp so no temporary HOME leaks on incomplete environments.
+	if err := exec.Command("git", "--version").Run(); err != nil {
+		fmt.Fprintln(os.Stderr, "ambiente incompleto: git não encontrado no PATH")
+		os.Exit(2)
+	}
+
+	// ML-1A (a): Capture Go cache env vars BEFORE changing HOME.  Five tests in
+	// this package call exec.Command("go", "build", …) without setting cmd.Env.
+	// On macOS, GOCACHE defaults to $HOME/Library/Caches/go-build.  After HOME
+	// isolation those subprocesses would compute a cold cache inside the synthetic
+	// home, fail with GOPROXY=off, and leave read-only module files that defeat
+	// os.RemoveAll.  Capturing and re-injecting the real values prevents both.
+	// TrimSpace: exec.Command output ends with '\n'; a stray newline makes the
+	// path different from what go would compute itself.
+	goenvCapture := func(varName string) string {
+		out, err := exec.Command("go", "env", varName).Output()
+		if err != nil {
+			return ""
+		}
+		return strings.TrimSpace(string(out))
+	}
+	goCache := goenvCapture("GOCACHE")
+	goModCache := goenvCapture("GOMODCACHE")
+	goPath := goenvCapture("GOPATH")
+	goEnv := goenvCapture("GOENV")
+
+	// ML-1A (b): Isolate HOME and USERPROFILE to a synthetic, empty, per-run
+	// temp directory.  Both must point at the SAME directory to collapse the two
+	// resolution channels: internal/homedir reads HOME first on every platform;
+	// os.UserHomeDir on Windows reads USERPROFILE.  Without this isolation,
+	// 15 tests fail when the developer's ~/.claude/settings.json carries a global
+	// guard hook and trackfw is absent from PATH.
+	home, homeErr := os.MkdirTemp("", "trackfw-commands-test-home-*")
+	if homeErr != nil {
+		panic(homeErr)
+	}
+	isolatedTestHome = home
+	if err := os.Setenv("HOME", home); err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("USERPROFILE", home); err != nil {
+		panic(err)
+	}
+
 	// ML-1A: ClaudeConfigDir respects CLAUDE_CONFIG_DIR. Unset before any test
 	// runs so a developer's real Claude config is never read or written.
 	os.Unsetenv("CLAUDE_CONFIG_DIR")
+
+	// ML-1A (c): Re-inject Go cache vars so go-build subprocesses still use the
+	// real cache after HOME has been replaced.  Only set non-empty values; if
+	// "go env" failed the subprocess will fall back to its own defaults.
+	if goCache != "" {
+		os.Setenv("GOCACHE", goCache)
+	}
+	if goModCache != "" {
+		os.Setenv("GOMODCACHE", goModCache)
+	}
+	if goPath != "" {
+		os.Setenv("GOPATH", goPath)
+	}
+	if goEnv != "" {
+		os.Setenv("GOENV", goEnv)
+	}
 
 	// ML-7D: disable git maintenance auto-scheduling for every git child process
 	// in this test binary. GIT_CONFIG_PARAMETERS stacks with GIT_CONFIG_COUNT
@@ -98,7 +160,25 @@ func TestMain(m *testing.M) {
 	if err := os.Setenv("GIT_CONFIG_PARAMETERS", "'gc.auto=0' 'maintenance.auto=false'"); err != nil {
 		panic(err)
 	}
-	os.Exit(m.Run())
+
+	code := m.Run()
+
+	// ML-1A (d): Release write permission on all entries before RemoveAll.  The
+	// Go runtime may write read-only telemetry files into $HOME/Library/
+	// Application Support/go/telemetry (macOS).  Skip symlinks: os.Chmod follows
+	// them and would chmod targets outside the temp tree.
+	_ = filepath.Walk(home, func(p string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return nil
+		}
+		_ = os.Chmod(p, info.Mode()|0o200)
+		return nil
+	})
+	os.RemoveAll(home)
+	os.Exit(code)
 }
 
 // ---- ClassifyGitArgs tests ----

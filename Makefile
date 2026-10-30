@@ -2,7 +2,7 @@ BINARY=trackfw
 BUILD_DIR=bin
 HASH_CMD := $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || echo "shasum -a 256")
 
-.PHONY: build test parity parity-rest parity-falsify falsify-recalibrate self-governance lint quality install clean check-integration-assets package-smoke check-required-full check-gates-remutation gen-manifests
+.PHONY: build test parity parity-rest parity-falsify falsify-recalibrate self-governance lint check-prereqs quality install clean check-integration-assets package-smoke check-required-full check-gates-remutation gen-manifests
 
 build:
 	go build -o $(BUILD_DIR)/$(BINARY) ./cmd/trackfw
@@ -269,7 +269,29 @@ package-smoke: build check-integration-assets
 lint:
 	go vet ./...
 
-quality: test lint parity
+# check-prereqs — qualifica o ambiente antes de rodar qualquer suíte (AC4).
+# Cada ferramenta é verificada via execução (não apenas presença no PATH).
+# Para git: git --version (Prescrição 5 — executar, não apenas localizar).
+# Para bash: exige versão 4+ via BASH_VERSINFO[0]; /bin/bash do macOS é 3.2 e não
+# suporta declare -A nem mapfile, usados pelos scripts de paridade.
+# Para módulo Python: python3 -c 'import <mod>' (verifica o módulo, não apenas o intérprete).
+# Sem ferramenta: imprime ERRO nomeado e sai rc=1 após checar todas.
+# Com tudo presente: rc=0, sem saída além do eco normal do make.
+check-prereqs:
+	@_fail=0; \
+	go version >/dev/null 2>&1 \
+	  || { printf 'ERRO: ambiente incompleto — go não encontrado\n'; _fail=1; }; \
+	python3 --version >/dev/null 2>&1 \
+	  || { printf 'ERRO: ambiente incompleto — python3 não encontrado\n'; _fail=1; }; \
+	python3 -c 'import yaml' >/dev/null 2>&1 \
+	  || { printf 'ERRO: ambiente incompleto — yaml (módulo Python) não encontrado\n'; _fail=1; }; \
+	git --version >/dev/null 2>&1 \
+	  || { printf 'ERRO: ambiente incompleto — git não encontrado\n'; _fail=1; }; \
+	bash -c '[ "$${BASH_VERSINFO[0]}" -ge 4 ]' >/dev/null 2>&1 \
+	  || { printf 'ERRO: ambiente incompleto — bash 4+ não encontrado (os scripts usam declare -A e mapfile)\n'; _fail=1; }; \
+	exit $$_fail
+
+quality: check-prereqs test lint parity
 
 install: build
 	mv $(BUILD_DIR)/$(BINARY) /usr/local/bin/$(BINARY)
