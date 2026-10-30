@@ -68,7 +68,7 @@ grep -q 'Prescrições' docs/seguranca/2026-10-30-wave0-json-stderr-saida-silenc
 > Dependencies: Wave 0 auditada. ML-1A e ML-1B tocam arquivos disjuntos.
 
 ### ML-1A — Stream `--json` limpo depois do documento (apolo-tf) — AC1, AC1-bis, AC7, AC8
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-10-30. Medido pelo arquiteto no binário em fixture strict: `validate --json` rc=1, stdout 597 B, stderr 21 → 0 B; modo texto inalterado (`Error: 1 violation(s) found`, rc=1). Os 7 `TestJSONExit_*` PASS em `-v`; contra-braço do executor (sem o ramo do `root.go`) reprova os 3 testes de stream com 21/42/50 B. `ExitCodeError` reconhecido por type assertion direta, fora dos comandos de `guard`. Contrato em `docs/cli-parity.md`, seção `--json` stream contract (post-document). Um laço `until` órfão do executor, que esperava um marcador do `make`, foi encerrado pelo arquiteto.
 **Files affected:** `internal/commands/root.go`, `internal/commands/validate.go`, `internal/commands/update.go`, `internal/commands/update_harness.go`, `internal/commands/json_exit_test.go`, `docs/cli-parity.md`
 **Actions:**
 1. Criar o erro tipado de saída silenciosa e reconhecê-lo no `root.go` (sair com o código, sem
@@ -77,10 +77,10 @@ grep -q 'Prescrições' docs/seguranca/2026-10-30-wave0-json-stderr-saida-silenc
 3. Testes em `internal/commands/json_exit_test.go` cobrindo AC1, AC1-bis e AC7.
 4. `docs/cli-parity.md`: regra de contrato do AC8, perto da seção do `validate --json`.
 **Acceptance criteria:**
-- [ ] `validate --json` com violação: rc=1, stdout JSON válido, stderr 0 B (medido no binário em fixture)
-- [ ] `update --json` e `update harness --json` com alvo falho: rc≠0, stdout JSON, nenhuma linha do `root.go` no stderr (diagnósticos do cálculo podem existir, D-1)
-- [ ] modo texto e lenient inalterados; `guard` continua saindo 2
-- [ ] contra-braço: revertido o reconhecimento no `root.go`, os testes novos reprovam
+- [x] `validate --json` com violação: rc=1, stdout JSON válido, stderr 0 B (medido no binário em fixture)
+- [x] `update --json` e `update harness --json` com alvo falho: rc≠0, stdout JSON, nenhuma linha do `root.go` no stderr (diagnósticos do cálculo podem existir, D-1)
+- [x] modo texto e lenient inalterados; `guard` continua saindo 2
+- [x] contra-braço: revertido o reconhecimento no `root.go`, os testes novos reprovam
 
 **Gates da wave:**
 ```bash
@@ -91,7 +91,7 @@ env PATH="$(dirname "$(command -v go)"):/usr/bin:/bin" go test ./internal/comman
 ```
 
 ### ML-1B — `windows-probe.yml` compara comandos que existem (ares-tf) — achado colateral da Wave 0
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-10-30. Lista com `version`, `validate --json`, `status`, `context --format=json` (todos rc=0 e stdout não vazio no binário); o passo reprova quando um lado sai rc≠0 com stdout vazio. YAML: `check-workflow-yaml` 10 passed. Não executado em Windows.
 **Files affected:** `.github/workflows/windows-probe.yml`
 **Actions:**
 1. Na lista `$cmds` do passo de comparação byte a byte (~linhas 919–925): trocar `context --json` por
@@ -99,8 +99,8 @@ env PATH="$(dirname "$(command -v go)"):/usr/bin:/bin" go test ./internal/comman
 2. Fazer o laço reprovar quando qualquer dos dois lados sair com rc≠0 e stdout vazio, para que
    dois vazios não virem BYTE_IDENTICAL.
 **Acceptance criteria:**
-- [ ] nenhum comando da lista falha com flag desconhecida no binário atual (medido localmente)
-- [ ] YAML válido (`python3 scripts/check-workflow-yaml.py` rc=0)
+- [x] nenhum comando da lista falha com flag desconhecida no binário atual (medido localmente)
+- [x] YAML válido (`python3 scripts/check-workflow-yaml.py` rc=0)
 
 ---
 

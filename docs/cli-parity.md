@@ -791,6 +791,27 @@ Date ruler: `date:` frontmatter first, `REQ-YYYY-MM-DD-` filename prefix as fall
 precedence as `req_has_roadmap`. Unreadable date → fail-closed (treated as post-cutoff, charged).
 `rules: {req_done_open_criteria: off}` silences all arms including the aggregated notice.
 
+### `--json` stream contract (post-document)
+
+<!-- trackfw-contract: gate=internal/commands/json_exit_test.go partial=cobre validate --json, update --json e update harness --json na classe de falha de I/O em targets não-catálogo (AC1/AC1-bis/AC7); diagnósticos em-run (pathguard refusals, harnessWarnMsg) permanecem no stderr por design (D-1 opção a, Wave 0 §3.10–3.11); erros antes do documento (marshal failure, config error) não são cobertos -->
+
+After the result document has been written to stdout, the process exits with
+the numeric code that reflects the result (e.g. 1 for violations or failed
+targets). The `root.go` error printer writes nothing to stderr — the outcome
+is communicated through the exit code only, not through a message from `root.go`.
+
+In-run diagnostics emitted **while computing the result** (pathguard refusals,
+`agent_models` warnings from `update harness`) may still appear on stderr.
+They are described in the individual command sections and documented in
+`docs/seguranca/2026-10-30-wave0-json-stderr-saida-silenciosa.md` (§1.2).
+
+This contract applies to: `validate --json`, `update --json`,
+`update harness --json`.
+
+Errors that occur **before** the document is written (marshal failure, config
+parse error) are not covered — they may still print to stderr, because there
+is no document to deliver silently.
+
 ### `req list` / `req move` — discovery layouts and conditional physical move
 
 <!-- trackfw-contract: gap reason=nenhum gate exercita req list/req move — nem a descoberta por layout (flat/by_agent) nem a discriminação in-place-vs-physical-move são cobertas por gate -->

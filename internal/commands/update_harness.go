@@ -96,11 +96,17 @@ nothing installed reports every target "missing" and exits 0.`,
 					cmd.SilenceUsage = true
 					return marshalErr
 				}
-				fmt.Fprintln(cmd.OutOrStdout(), string(out))
-			} else {
-				printUpdateReportText(cmd, report)
+				if _, writeErr := fmt.Fprintln(cmd.OutOrStdout(), string(out)); writeErr != nil {
+					return fmt.Errorf("trackfw update harness: failed to write JSON document: %w", writeErr)
+				}
+				cmd.SilenceUsage = true
+				if report.Summary().Failed > 0 {
+					return newExitCodeError(1, fmt.Sprintf("trackfw update harness: %d target(s) failed", report.Summary().Failed))
+				}
+				return nil
 			}
 
+			printUpdateReportText(cmd, report)
 			cmd.SilenceUsage = true
 			if report.Summary().Failed > 0 {
 				return fmt.Errorf("trackfw update harness: %d target(s) failed", report.Summary().Failed)

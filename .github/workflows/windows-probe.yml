@@ -918,11 +918,10 @@ jobs:
           # da VM ARM64. Captura stdout via Start-Process (sem pipeline
           # PowerShell para nao modificar bytes). fc.exe /b compara binario.
           $cmds = @(
-            @{ label = "version";        args = @("version") },
-            @{ label = "validate-json";  args = @("validate","--json") },
-            @{ label = "status";         args = @("status") },
-            @{ label = "context-json";   args = @("context","--json") },
-            @{ label = "validate-strict";args = @("validate","--strict") }
+            @{ label = "version";             args = @("version") },
+            @{ label = "validate-json";       args = @("validate","--json") },
+            @{ label = "status";              args = @("status") },
+            @{ label = "context-format-json"; args = @("context","--format=json") }
           )
 
           foreach ($c in $cmds) {
@@ -943,6 +942,13 @@ jobs:
 
             $nBytes = (Get-Item $nOut).Length
             $sBytes = (Get-Item $sOut).Length
+
+            # Guard: rc!=0 com stdout vazio significa flag desconhecida ou falha
+            # de inicializacao — dois vazios nao podem valer como BYTE_IDENTICAL.
+            if (($nExit -ne 0 -and $nBytes -eq 0) -or ($sExit -ne 0 -and $sBytes -eq 0)) {
+              Write-Host "P15_ERROR [$lbl] rc!=0 com stdout vazio (native_exit=$nExit native_bytes=$nBytes shim_exit=$sExit shim_bytes=$sBytes) — dois vazios nao podem ser BYTE_IDENTICAL"
+              exit 1
+            }
 
             fc.exe /b $nOut $sOut | Out-Null
             $verdict = if ($LASTEXITCODE -eq 0) { "BYTE_IDENTICAL" } else { "DIVERGE" }

@@ -32,10 +32,12 @@ func newValidateCmd() *cobra.Command {
 				if marshalErr != nil {
 					return marshalErr
 				}
-				fmt.Fprintln(cmd.OutOrStdout(), string(data))
+				if _, writeErr := fmt.Fprintln(cmd.OutOrStdout(), string(data)); writeErr != nil {
+					return fmt.Errorf("validate: failed to write JSON document: %w", writeErr)
+				}
 
 				if len(taggedV) > 0 {
-					return fmt.Errorf("%s", i18n.T("validate.violations", "count", strconv.Itoa(len(taggedV))))
+					return newExitCodeError(1, i18n.T("validate.violations", "count", strconv.Itoa(len(taggedV))))
 				}
 				return nil
 			}

@@ -117,6 +117,19 @@ func Execute() {
 		if msg, ok := formatUnknownCommandError(root, err); ok {
 			fmt.Fprintln(os.Stderr, msg)
 		} else {
+			// ExitCodeError: the command already wrote its result document.
+			// Exit with the carried code without printing anything to stderr.
+			// Checked after formatUnknownCommandError (unknown-command errors never
+			// come from RunE and therefore can never be *ExitCodeError) and before
+			// the regular print block. Direct type assertion — not errors.As — so
+			// that a wrapped *ExitCodeError (fmt.Errorf("%w", ...)) is NOT silenced
+			// (T3 mitigation, Wave 0 threat model). The !isCommandUnderGuard guard
+			// preserves D7 (ADR-2026-10-04): guard commands always exit 2.
+			if !isCommandUnderGuard(cmd) {
+				if exitErr, ok := err.(*ExitCodeError); ok {
+					os.Exit(exitErr.Code)
+				}
+			}
 			// Mirrors cobra's own two independent flags exactly (Command.ExecuteC):
 			// a command that opted out of the "Error: " prefix (cmd.SilenceErrors,
 			// e.g. branch.go's "new") still needs its bare message on stderr exactly
