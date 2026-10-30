@@ -14,7 +14,7 @@ jobs:
 
       - name: Install trackfw
         run: |
-          curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh
+          curl -sSfL "https://github.com/kgsaran/trackfw/releases/download/v${TRACKFW_VERSION}/install.sh" | sh
 
       - name: Governance gate
         run: trackfw validate

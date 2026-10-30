@@ -100,12 +100,6 @@ curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.s
 brew install kgsaran/trackfw/trackfw
 ```
 
-### Go
-
-```bash
-go install github.com/kgsaran/trackfw/cmd/trackfw@latest
-```
-
 ### npm
 
 ```bash

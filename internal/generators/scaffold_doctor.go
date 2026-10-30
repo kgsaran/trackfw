@@ -46,17 +46,19 @@ const DiscoverGitHubActionsWorkflowPath = ".github/workflows/trackfw-validate.ym
 //     pass because the verifier never sees the change. Job-id governance-go-install is a
 //     required_status_checks contract — renaming it leaves every PR pending forever.
 //
-//   - isProducer=false (consumer project): installs the pinned release via go install.
-//     Actions are pinned to @v7; go-version "1.25" matches the module floor (go.mod:
-//     go 1.25.2); GOTOOLCHAIN handles any sub-patch downloads (AC3/AC4).
+//   - isProducer=false (consumer project): installs the pinned release via install.sh
+//     from the exact release tag (ADR-2026-10-30: go install is not an installation
+//     channel). TRACKFW_VERSION is set to internal/version.Version; the URL uses
+//     ${TRACKFW_VERSION} so the shell expands it at CI runtime (P2 of Wave 0).
+//     timeout-minutes: 10 matches the other consumer workflows (P3 of Wave 0).
 //
 // NOT version-independent (ADR-2026-08-28, REQ-2026-08-28 AC6/AC7): the consumer
-// `go install .../cmd/trackfw@vX.Y.Z` step pins to internal/version.Version. Scaffold
-// doctor calls this to compare disk content against the current template (AC10/AC11).
+// TRACKFW_VERSION block pins to internal/version.Version. Scaffold doctor calls this
+// to compare disk content against the current template (AC10/AC11).
 //
-// Job id `governance-go-install` (ML-1A, ROADMAP-2026-09-01): named after the install
-// mechanism in the consumer template; kept identical in the producer template because
-// the id is a required_status_checks contract, not a description of the step.
+// Job id `governance-go-install` (ML-1A, ROADMAP-2026-09-01): the name no longer
+// describes the install mechanism after ADR-2026-10-30 — it is kept because the id
+// is a required_status_checks contract (D3 of ADR-2026-10-30). Do not rename.
 // BuildDiscoverGitHubActionsWorkflowContent is the backward-compatible wrapper.
 // It always returns the pull_request variant (ciTrigger = "pull_request").
 // Production callers that have a Config with CITrigger must call
@@ -143,13 +145,18 @@ on:
   pull_request:
 jobs:
   governance-go-install:
+    # Job id governance-go-install is a required_status_checks contract (ADR-2026-10-30 D3);
+    # the id no longer describes the install mechanism. Do not rename.
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TRACKFW_VERSION: "` + version.Version + `"
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version: "1.25"
-      - run: go install github.com/kgsaran/trackfw/cmd/trackfw@v` + version.Version + `
+
+      - name: Install trackfw
+        run: curl -sSfL "https://github.com/kgsaran/trackfw/releases/download/v${TRACKFW_VERSION}/install.sh" | sh
+
       - run: trackfw validate
 `
 }

@@ -7547,11 +7547,13 @@ fonte de versão do próprio runtime:
   **antes** de compor qualquer URL, `curl`/`wget`. `timeout-minutes: 10` (GitHub Actions) e
   `timeout: 10 minutes` (GitLab CI) são pinados junto — perder qualquer um dos dois foi o defeito
   real que motivou esta REQ (incidente de 2026-08-27 no cmdb, ver Motivation da REQ).
-- `trackfw-validate.yml`: o passo `go install github.com/kgsaran/trackfw/cmd/trackfw@v<versão>`
-  usa a versão pinada, nunca `@latest` — este é o **segundo mecanismo de instalação** do gate de
-  CI, distinto do `install.sh` acima; a Wave 0 original não o enumerou porque o padrão de busca
-  dado a ela (`releases/latest`) nunca casa com `@latest` (registrado na seção 1 do resultado do
-  ML-0A do roadmap).
+- `trackfw-validate.yml` (consumer): desde ML-1A de
+  ROADMAP-2026-10-30-go-install-entrega-versao-errada, o passo usa o **mesmo mecanismo do
+  `trackfw-gate.yml`**: `TRACKFW_VERSION: "<versão>"` no bloco `env:` e
+  `curl -sSfL "https://github.com/kgsaran/trackfw/releases/download/v${TRACKFW_VERSION}/install.sh" | sh`
+  — o script vem da **tag pinada**, não de `releases/latest` (ADR-2026-10-30: `go install` não é canal;
+  `module path must match major version` rc=1 para v11+). O job id `governance-go-install` é mantido
+  como contrato de `required_status_checks` (ADR-2026-10-30 D3); o nome não descreve mais o mecanismo.
 
 **`trackfw update` gerencia os três arquivos, no binário, com uma assimetria deliberada
 (AC17):** o alvo `ci-workflow` sempre reescreve `trackfw-gate.yml`/`.gitlab-ci-trackfw.yml` quando
@@ -7563,12 +7565,14 @@ um projeto com `ci: none` que rodou `discover` teria o arquivo fora de qualquer 
 `ci: none`, fechando exatamente esse buraco). Idempotência: `update` duas vezes seguidas com o
 mesmo binário não reporta `updated` na segunda chamada.
 
-**Gate falsificável:** `scripts/check-ci-workflow-pin-parity.sh` dumpa os 9 builders (3 templates
-) em sandbox e compara byte a byte, nomeando a divergência quando falha; falsifica
-nas duas direções — template sem `TRACKFW_VERSION`, com versão diferente da que o binário
-reporta, sem `timeout-minutes`/`timeout: 10 minutes`, e `trackfw-validate.yml` com `@latest` em
-vez de `@v<versão>` — todos reprovam com a razão que o **próprio gate** emite. Guarda de vacuidade
-e idempotência (duas execuções sobre o mesmo commit produzem os mesmos 9 arquivos) inclusas.
+**Gate falsificável:** `scripts/check-ci-workflow-pin-parity.sh` dumpa 5 outputs pull_request-mode
+(3 famílias de template — GitHub Actions gate, GitLab CI, Discover validate — em variantes
+consumer/producer) em sandbox e valida invariantes, nomeando a divergência quando falha; falsifica
+nas duas direções — template sem `TRACKFW_VERSION`, com versão diferente da que o binário reporta,
+sem `timeout-minutes`/`timeout: 10 minutes`, e qualquer template de consumidor com `releases/latest`
+em vez de `releases/download/v${TRACKFW_VERSION}/install.sh` — todos reprovam com a razão que o
+**próprio gate** emite. Guarda de vacuidade, guarda de no-op para os vetores de falsificação, e
+idempotência (segundo dump; byte-idêntico ao primeiro como verificação de estabilidade) inclusas.
 
 #### Assimetria residual — `init` do Python sem `--ci`/`--hooks` (fora de escopo)
 
@@ -7617,7 +7621,7 @@ saber sem abrir o YAML:
 | workflow | job id (antigo → novo) | mecanismo de instalação |
 |---|---|---|
 | `trackfw-gate.yml` (`buildGitHubActionsWorkflowContent`) | `governance` → `governance-install-script` | `curl \| sh` (`install.sh`) |
-| `trackfw-validate.yml` (`BuildDiscoverGitHubActionsWorkflowContent`) | `governance` → `governance-go-install` | `go install .../trackfw@v<versão>` |
+| `trackfw-validate.yml` (`BuildDiscoverGitHubActionsWorkflowContent`) | `governance` → `governance-go-install` | `install.sh` from pinned tag (ADR-2026-10-30; job id kept for `required_status_checks` — name no longer describes mechanism) |
 
 Decisão registrada (sem usuários downstream conhecidos hoje, e este próprio repositório não tinha
 `required_status_checks` configurado — é a lacuna que motivou a REQ): mudar o job id muda o nome do

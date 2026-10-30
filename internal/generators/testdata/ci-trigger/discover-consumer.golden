@@ -8,11 +8,16 @@ on:
   pull_request:
 jobs:
   governance-go-install:
+    # Job id governance-go-install is a required_status_checks contract (ADR-2026-10-30 D3);
+    # the id no longer describes the install mechanism. Do not rename.
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TRACKFW_VERSION: "TRACKFW_VERSION_PLACEHOLDER"
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version: "1.25"
-      - run: go install github.com/kgsaran/trackfw/cmd/trackfw@vTRACKFW_VERSION_PLACEHOLDER
+
+      - name: Install trackfw
+        run: curl -sSfL "https://github.com/kgsaran/trackfw/releases/download/v${TRACKFW_VERSION}/install.sh" | sh
+
       - run: trackfw validate

@@ -49,10 +49,6 @@ pip install trackfw
 curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh
 ```
 
-```bash [Go]
-go install github.com/kgsaran/trackfw/cmd/trackfw@latest
-```
-
 :::
 
 ## In 30 seconds

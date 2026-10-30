@@ -37,12 +37,6 @@ irm https://github.com/kgsaran/trackfw/releases/latest/download/install.ps1 | ie
 
 > Note: `install.ps1` ships as a release asset starting from the release after 11.1.0. For Windows installations today, use npm (`npm install -g trackfw`), pip (`pip install trackfw`), or the shell script in Git Bash.
 
-### Go (requires Go >= 1.25)
-
-```bash
-go install github.com/kgsaran/trackfw/cmd/trackfw@latest
-```
-
 ### Verify installation
 
 ```bash

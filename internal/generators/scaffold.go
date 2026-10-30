@@ -1721,11 +1721,12 @@ const GitLabCIWorkflowPath = ".gitlab-ci-trackfw.yml"
 // Job id is `governance-install-script` (ML-1A, ROADMAP-2026-09-01): trackfw-gate.yml
 // and the sibling workflow written by discover --init (trackfw-validate.yml, see
 // BuildDiscoverGitHubActionsWorkflowContent in scaffold_doctor.go) both validate the
-// exact same property (`trackfw validate` passes) but through two different install
-// mechanisms — both ids are named after the install mechanism each exercises so a
-// maintainer reading required_status_checks can tell what each covers without opening
-// the YAML. Both branches of this function emit the same job id because the contract
-// with required_status_checks is per-job-name, not per-install-mechanism.
+// exact same property (`trackfw validate` passes) through the same install mechanism
+// (install.sh from the pinned release tag, ADR-2026-10-30). trackfw-validate.yml keeps
+// its legacy job id governance-go-install for required_status_checks compatibility
+// (ADR-2026-10-30 D3) — the name no longer describes the mechanism. Both branches of
+// this function emit governance-install-script because the contract with
+// required_status_checks is per-job-name.
 func buildGitHubActionsWorkflowContent(isProducer bool) string {
 	if isProducer {
 		return `name: trackfw-gate
@@ -1798,7 +1799,7 @@ jobs:
 
       - name: Install trackfw
         run: |
-          curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh
+          curl -sSfL "https://github.com/kgsaran/trackfw/releases/download/v${TRACKFW_VERSION}/install.sh" | sh
 
       - name: Governance gate
         run: trackfw validate
@@ -1847,7 +1848,7 @@ trackfw-gate:
     TRACKFW_VERSION: "` + version.Version + `"
   before_script:
     - apk add --no-cache curl
-    - curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh
+    - curl -sSfL "https://github.com/kgsaran/trackfw/releases/download/v${TRACKFW_VERSION}/install.sh" | sh
   script:
     - trackfw validate
   only:
