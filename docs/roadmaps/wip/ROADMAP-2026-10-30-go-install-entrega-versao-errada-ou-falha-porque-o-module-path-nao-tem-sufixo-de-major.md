@@ -118,17 +118,45 @@ bash scripts/check-ci-workflow-pin-parity.sh
 > Dependencies: Wave 1 auditada.
 
 ### ML-2A — Red team da instalação pela tag (hades-tf)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-10-30. Aprova com ressalvas; P1, P2, P3, P7 e P8 aprovadas. Quatro lacunas de teste viram a Wave 3 (defeito conhecido se corrige no mesmo PR): F1 `version.Version` trocado por literal nos builders de `scaffold.go` passa tudo; F2 as asserções positivas leem o conteúdo bruto, e um template com o env e o passo de instalação comentados passa os checks positivos; F3 `go install -v ...` escapa do `strings.Contains`; F4 o AC5 em processo cobre só o trigger `pull_request`.
 **Files affected:** `docs/seguranca/2026-10-30-redteam-instalacao-de-consumidor-pela-tag.md`
 **Actions:**
 1. Tentar fazer um template de consumidor voltar a `go install` ou a `releases/latest` sem o teste reprovar.
 2. Veredito por prescrição da Wave 0, com evidência.
 **Acceptance criteria:**
-- [ ] cada prescrição com veredito e evidência
-- [ ] residual declarado
+- [x] cada prescrição com veredito e evidência
+- [x] residual declarado
 
 **Gates da wave:**
 ```bash
 test -f docs/seguranca/2026-10-30-redteam-instalacao-de-consumidor-pela-tag.md
+```
+
+---
+
+## Wave 3 — Corretivos do red team (1 ML)
+> Dependencies: Wave 2 auditada.
+
+### ML-3A — Testes de instalação de consumidor sem as lacunas F1–F4 (apolo-tf)
+**Status:** ⬜ Pendente
+**Files affected:** `internal/generators/consumer_install_test.go`, `scripts/check-ci-workflow-pin-parity.sh`
+**Actions:**
+1. F1: teste que faz stub de `version.Version = "9.9.9-stub"` (restaurado em `t.Cleanup`) e afirma `TRACKFW_VERSION: "9.9.9-stub"` na saída dos três builders de consumidor, nos dois triggers.
+2. F2: as asserções positivas (`TRACKFW_VERSION`, URL com `${TRACKFW_VERSION}`) leem só linhas não comentadas, no teste e no `check_consumer_no_latest` do script. Acrescentar ao script um vetor de falsificação com o env e o passo de instalação comentados, com guarda de no-op `if cmp -s`.
+3. F3: a detecção de `go install|run|get` do módulo aceita flags entre o verbo e o caminho (regexp `\bgo\s+(install|run|get)\s+(?:-\S+\s+)*github\.com/kgsaran/trackfw`).
+4. F4: o teste AC5 também cobre o trigger manual (fixture antiga do trigger manual com sha256 `bf7942d24b84045c2aa9b81f4fc302ecfc0521728a65d0c2c1ff4ac261c1e357`).
+**Acceptance criteria:**
+- [ ] mutação M1 do red team (literal `"11.2.0"` em `scaffold.go`) reprova
+- [ ] mutação M2 (env e instalação comentados) reprova no teste e num check positivo do script
+- [ ] mutação M3 (`go install -v`) reprova no teste de `go install`
+- [ ] AC5 verde para os dois triggers
+- [ ] cenários do script ≥ 25
+
+**Gates da wave:**
+```bash
+go build ./...
+go vet ./internal/generators/
+go test ./internal/generators/ ./internal/discover/ -count=1
+bash scripts/check-ci-workflow-pin-parity.sh
 make quality
 ```
