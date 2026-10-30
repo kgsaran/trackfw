@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-08
 squad: "hades-tf, apolo-tf"
 req: "docs/req/REQ-2026-09-07-validate-imprime-usage-em-erro-de-runtime-e-suja-o-stream-json-so-no-go-e-o-gate-que-provaria-isso-e-um-gap-declarado.md"
@@ -7,7 +7,7 @@ req: "docs/req/REQ-2026-09-07-validate-imprime-usage-em-erro-de-runtime-e-suja-o
 
 # Roadmap: `validate` suprime usage em erro de runtime, e o gate que provaria isso
 
-> Criado em: 2026-09-08 | Revisado: 2026-10-30 | Status: wip
+> Criado em: 2026-09-08 | Revisado: 2026-10-30 | Status: done
 
 ## Context
 
