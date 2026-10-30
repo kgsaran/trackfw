@@ -79,7 +79,7 @@ grep -q 'Prescrições' docs/seguranca/2026-10-29-wave0-isolamento-ambiente-dos-
 > Dependencies: Wave 0 auditada. ML-1A e ML-1B tocam arquivos disjuntos.
 
 ### ML-1A — `internal/commands` não lê o ambiente pessoal do desenvolvedor (artemis-tf) — AC5, fecha #624
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-10-29. Medido pelo arquiteto: `env PATH="/usr/local/go/bin:/usr/bin:/bin" go test ./internal/commands/ -count=1` → ok com o HOME real (era 15 FAIL); `TestIsolatedHomeCoversBothChannels` PASS em `-v`; contra-braço do executor reprova com HOME real; nenhum HOME temporário sobra em `$TMPDIR`.
 **Files affected:** `internal/commands/netexec_test.go`, `internal/commands/testenv_isolation_test.go`
 **Actions:**
 1. Estender o `TestMain` existente em `internal/commands/netexec_test.go` (não criar outro: o Go aceita
@@ -92,10 +92,10 @@ grep -q 'Prescrições' docs/seguranca/2026-10-29-wave0-isolamento-ambiente-dos-
    `USERPROFILE` iguais ao HOME temporário, e `agentconfig.ClaudeConfigDir(...)` dentro dele.
 3. Nenhum outro pacote: a Wave 0 mediu que só `commands` vaza.
 **Acceptance criteria:**
-- [ ] `env PATH=<sem trackfw> go test ./internal/commands/ -count=1` rc=0 com o HOME real do desenvolvedor (que tem o guard global)
-- [ ] o mesmo com `CLAUDE_CONFIG_DIR` apontando para um diretório com o settings do guard
-- [ ] contra-braço: revertido o passo 1, o sentinela reprova
-- [ ] testes que fazem `t.Setenv("HOME", ...)` continuam verdes
+- [x] `env PATH=<sem trackfw> go test ./internal/commands/ -count=1` rc=0 com o HOME real do desenvolvedor (que tem o guard global)
+- [x] o mesmo com `CLAUDE_CONFIG_DIR` apontando para um diretório com o settings do guard
+- [x] contra-braço: revertido o passo 1, o sentinela reprova
+- [x] testes que fazem `t.Setenv("HOME", ...)` continuam verdes
 
 **Gates da wave:**
 ```bash
@@ -105,7 +105,7 @@ env PATH="$(dirname "$(command -v go)"):/usr/bin:/bin" go test ./internal/comman
 ```
 
 ### ML-1B — `make quality` qualifica pré-requisito ausente antes de rodar (ares-tf) — AC4
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-10-29. Pré-requisitos medidos: `go`, `python3`, módulo `yaml` (`check-workflow-yaml.py` sai 1 sem ele), `git`, `bash`. `make check-prereqs` rc=0 completo; PATH sem `go` → rc=2 (o make devolve 2; a receita sai 1) nomeando `go`. Nenhum workflow de CI roda `make quality`.
 **Files affected:** `Makefile`
 **Actions:**
 1. Medir o que `test`, `lint`, `parity-rest` e `parity-falsify` invocam de fato (binários e módulos
@@ -113,9 +113,9 @@ env PATH="$(dirname "$(command -v go)"):/usr/bin:/bin" go test ./internal/comman
 2. Criar o target `check-prereqs` com uma linha `ERRO: ambiente incompleto — <ferramenta> não encontrado`
    por ausência e rc=1; torná-lo primeira dependência de `quality`.
 **Acceptance criteria:**
-- [ ] com ferramenta ausente (PATH reduzido), `make check-prereqs` rc=1 e nomeia a ferramenta
-- [ ] com ambiente completo, `make check-prereqs` rc=0 sem saída extra
-- [ ] não rodar `make quality` neste ML (frente paralela); o arquiteto roda no fechamento
+- [x] com ferramenta ausente (PATH reduzido), `make check-prereqs` rc=1 e nomeia a ferramenta
+- [x] com ambiente completo, `make check-prereqs` rc=0 sem saída extra
+- [x] não rodar `make quality` neste ML (frente paralela); o arquiteto roda no fechamento
 
 **Gates da wave:**
 ```bash
