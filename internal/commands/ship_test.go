@@ -410,9 +410,22 @@ func TestDefaultBaseBranch_SymbolicRefSucceeds(t *testing.T) {
 	}
 }
 
-func TestDefaultBaseBranch_SymbolicRefFails_FallsBackToMain(t *testing.T) {
+// TestDefaultBaseBranch_SymrefAndLsRemoteFail_FallsBackToMain asserts: when symbolic-ref returns
+// an error AND ls-remote also returns an error, defaultBaseBranch falls back to "main".
+// Reconciliation (ADR-2026-10-30 P-4): this test affirms that when both symref and ls-remote
+// fail, defaultBaseBranch falls back to "main". The ls-remote case is declared explicitly so
+// the fake documents that the new source is reached (path a) and also fails.
+func TestDefaultBaseBranch_SymrefAndLsRemoteFail_FallsBackToMain(t *testing.T) {
 	exec := func(args ...string) (string, error) {
-		return "", errors.New("no remote-tracking HEAD")
+		joined := strings.Join(args, " ")
+		switch {
+		case strings.HasPrefix(joined, "symbolic-ref refs/remotes/origin/HEAD"):
+			return "", errors.New("no remote-tracking HEAD")
+		case joined == "ls-remote --symref origin HEAD":
+			// P-4: explicitly declare that ls-remote also fails in this test.
+			return "", errors.New("ls-remote: offline")
+		}
+		return "", errors.New("unexpected git call in symref+ls-remote-fail test: " + joined)
 	}
 	if got := defaultBaseBranch(exec); got != "main" {
 		t.Fatalf("expected fallback %q, got %q", "main", got)
