@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-10-30
 req: "docs/req/REQ-2026-10-30-go-install-entrega-versao-errada-ou-falha-porque-o-module-path-nao-tem-sufixo-de-major.md"
 squad: "hades-tf, apolo-tf, afrodite-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, afrodite-tf"
 
 # Roadmap: go install entrega versao errada ou falha porque o module path nao tem sufixo de major
 
-> Created: 2026-10-30 | Status: wip
+> Created: 2026-10-30 | Status: done
 
 ## Context
 
