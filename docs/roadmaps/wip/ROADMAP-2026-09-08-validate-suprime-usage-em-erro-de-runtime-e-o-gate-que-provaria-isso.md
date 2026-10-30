@@ -108,18 +108,47 @@ env PATH="$(dirname "$(command -v go)"):/usr/bin:/bin" go test ./internal/comman
 > Dependencies: Wave 1 auditada.
 
 ### ML-2A — Red team do erro tipado (hades-tf)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-10-30. Comportamento de produção correto nos três comandos. Três lacunas de teste viram a Wave 3 (Regra Dura): F1 `newExitCodeError(256, …)` sai rc=0 no Unix (o construtor só barra 0); F2 remover `!isCommandUnderGuard` passa a suíte; F3 `TestJSONExit_WrappedExitCodeError_NotSilenced` testa a semântica do Go, não o `root.go` — trocar `err.(*ExitCodeError)` por `errors.As` também passa a suíte (conferido pelo arquiteto na leitura do teste; o arquiteto aprovou esse teste no ML-1A sem notar). F5 docstring descreve `errors.As`. Erratum da Wave 0: o §3.9 e o residual 6 supõem que `1>&-` provoca falha de escrita; no Go do macOS o fd fechado é reaberto como `/dev/null` (F4, limite documentado, sem correção). F6 aceito como residual.
 **Files affected:** `docs/seguranca/2026-10-30-redteam-json-stderr-saida-silenciosa.md`
 **Actions:**
 1. A partir da leitura do diff, tentar fazer uma falha real sair silenciosa, ou o stderr sujar de novo.
 2. Veredito por prescrição da Wave 0, com evidência.
 **Acceptance criteria:**
-- [ ] cada prescrição com veredito e evidência
-- [ ] residual declarado
+- [x] cada prescrição com veredito e evidência
+- [x] residual declarado
 
 **Gates da wave:**
 ```bash
 test -f docs/seguranca/2026-10-30-redteam-json-stderr-saida-silenciosa.md
+```
+
+---
+
+## Wave 3 — Corretivos do red team (1 ML)
+> Dependencies: Wave 2 auditada.
+
+### ML-3A — Decisão de saída testável no `root.go` (apolo-tf) — F1, F2, F3, F5
+**Status:** ⬜ Pendente
+**Files affected:** `internal/commands/root.go`, `internal/commands/exit_code_error.go`, `internal/commands/json_exit_test.go`
+**Actions:**
+1. Extrair do `Execute()` uma função pura que recebe o comando e o erro e decide código de saída e
+   se imprime (inclusive o ramo do `ExitCodeError`, a regra D7 e o caso padrão). `Execute()` só a chama.
+2. F1: código fora de 1..255 não é silenciado (cai no caminho normal, rc 1); o construtor recusa o mesmo intervalo.
+3. Testes de tabela em processo contra a função: `ExitCodeError{Code:1}` silencia; valor zero
+   `&ExitCodeError{}`, `Code:256` e `fmt.Errorf("%w", …)` não silenciam; comando sob `guard` sai 2.
+   Substituir `TestJSONExit_WrappedExitCodeError_NotSilenced` por esses casos.
+4. F5: docstring do `ExitCodeError` descreve a type assertion direta.
+**Acceptance criteria:**
+- [ ] mutação B (`errors.As` no lugar da type assertion) reprova os testes novos
+- [ ] mutação C (sem `!isCommandUnderGuard`) reprova os testes novos
+- [ ] `Code:256` não sai silencioso (teste)
+- [ ] `TestJSONExit_*` de stream continuam verdes
+
+**Gates da wave:**
+```bash
+go build ./...
+go vet ./internal/commands/
+env PATH="$(dirname "$(command -v go)"):/usr/bin:/bin" go test ./internal/commands/ -count=1
 make quality
 ```
 
