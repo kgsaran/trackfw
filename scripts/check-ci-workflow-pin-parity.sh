@@ -111,10 +111,13 @@ GOEOF
 # ---------------------------------------------------------------------------
 
 # check_version_pin FILE EXPECTED
+# Reads only non-comment lines (F2 fix: a commented-out TRACKFW_VERSION block must not
+# satisfy this positive check — mirrors the nonCommentLines() guard in the Go test).
 check_version_pin() {
   local file=$1 expected=$2
-  local line found
-  line=$(grep -m1 'TRACKFW_VERSION: "' "$file" || true)
+  local line found stripped
+  stripped=$({ grep -v '^[[:space:]]*#' "$file" || true; })
+  line=$(echo "$stripped" | grep -m1 'TRACKFW_VERSION: "' || true)
   if [ -z "$line" ]; then
     echo "TRACKFW_VERSION ausente do bloco env/variables"
     return 1
@@ -161,7 +164,9 @@ check_consumer_no_latest() {
     return 1
   fi
   # Single-quotes keep ${TRACKFW_VERSION} as a literal for grep (not shell-expanded).
-  if ! grep -qF 'releases/download/v${TRACKFW_VERSION}/install.sh' "$file"; then
+  # Use $stripped (not $file) so that a commented-out install step does not satisfy
+  # this positive check (F2 fix — mirrors nonCommentLines() in the Go test).
+  if ! echo "$stripped" | grep -qF 'releases/download/v${TRACKFW_VERSION}/install.sh'; then
     echo "URL pinada releases/download/v\${TRACKFW_VERSION}/install.sh ausente (AC3)"
     return 1
   fi
@@ -372,6 +377,24 @@ sed -i.bak "s|actions/checkout@v7|actions/checkout@v4|" "$FALS/dv-consumer-actio
 rm -f "$FALS/dv-consumer-action-regression.yml.bak"
 assert_check_fails "falsify/discover-workflow/consumer-action-regression" "actions/checkout@v4 é inferior" \
   check_checkout_pin "$FALS/dv-consumer-action-regression.yml" 7
+
+# (8) consumer discover com env e passo de instalação comentados → reprova nos checks
+# positivos (F2 fix, ML-3A): uma template com TRACKFW_VERSION e curl comentados deve
+# reprovar tanto check_consumer_no_latest quanto check_version_pin.
+cp "$RUN1/dv_go_consumer.yml" "$FALS/dv-consumer-commented.yml"
+sed -i.bak \
+  -e 's/^\([[:space:]]*\)TRACKFW_VERSION:/\1# TRACKFW_VERSION:/' \
+  -e 's/^\([[:space:]]*\)run: curl -sSfL/\1# run: curl -sSfL/' \
+  "$FALS/dv-consumer-commented.yml"
+rm -f "$FALS/dv-consumer-commented.yml.bak"
+# Guarda de no-op: se o sed não alterou nada, o vetor de falsificação é nulo.
+if cmp -s "$FALS/dv-consumer-commented.yml" "$RUN1/dv_go_consumer.yml"; then
+  fail "falsify/discover-workflow/consumer-commented-noop" "sed foi no-op — arquivo falsificado igual ao original; vetor de falsificação ineficaz"
+fi
+assert_check_fails "falsify/discover-workflow/consumer-install-commented" "URL pinada" \
+  check_consumer_no_latest "$FALS/dv-consumer-commented.yml"
+assert_check_fails "falsify/discover-workflow/consumer-version-commented" "TRACKFW_VERSION ausente" \
+  check_version_pin "$FALS/dv-consumer-commented.yml" "$GO_VERSION"
 
 # ---------------------------------------------------------------------------
 # Guarda de vacuidade.

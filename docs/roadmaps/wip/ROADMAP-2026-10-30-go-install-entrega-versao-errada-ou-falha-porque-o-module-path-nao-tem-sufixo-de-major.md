@@ -138,7 +138,7 @@ test -f docs/seguranca/2026-10-30-redteam-instalacao-de-consumidor-pela-tag.md
 > Dependencies: Wave 2 auditada.
 
 ### ML-3A — Testes de instalação de consumidor sem as lacunas F1–F4 (apolo-tf)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-10-30. M1 reprova `TestConsumerInstall_VersionStubNotHardcoded` (medido pelo arquiteto: gate e GitLab, nos dois triggers); M2 reprova o teste e o check positivo do script; M3 reprova `TestConsumerInstall_NoGoInstall_NoBuildersConsumers`; AC5 com os dois triggers; script com 27 cenários (eram 25).
 **Files affected:** `internal/generators/consumer_install_test.go`, `scripts/check-ci-workflow-pin-parity.sh`
 **Actions:**
 1. F1: teste que faz stub de `version.Version = "9.9.9-stub"` (restaurado em `t.Cleanup`) e afirma `TRACKFW_VERSION: "9.9.9-stub"` na saída dos três builders de consumidor, nos dois triggers.
@@ -146,11 +146,11 @@ test -f docs/seguranca/2026-10-30-redteam-instalacao-de-consumidor-pela-tag.md
 3. F3: a detecção de `go install|run|get` do módulo aceita flags entre o verbo e o caminho (regexp `\bgo\s+(install|run|get)\s+(?:-\S+\s+)*github\.com/kgsaran/trackfw`).
 4. F4: o teste AC5 também cobre o trigger manual (fixture antiga do trigger manual com sha256 `bf7942d24b84045c2aa9b81f4fc302ecfc0521728a65d0c2c1ff4ac261c1e357`).
 **Acceptance criteria:**
-- [ ] mutação M1 do red team (literal `"11.2.0"` em `scaffold.go`) reprova
-- [ ] mutação M2 (env e instalação comentados) reprova no teste e num check positivo do script
-- [ ] mutação M3 (`go install -v`) reprova no teste de `go install`
-- [ ] AC5 verde para os dois triggers
-- [ ] cenários do script ≥ 25
+- [x] mutação M1 do red team (literal `"11.2.0"` em `scaffold.go`) reprova
+- [x] mutação M2 (env e instalação comentados) reprova no teste e num check positivo do script
+- [x] mutação M3 (`go install -v`) reprova no teste de `go install`
+- [x] AC5 verde para os dois triggers
+- [x] cenários do script ≥ 25
 
 **Gates da wave:**
 ```bash

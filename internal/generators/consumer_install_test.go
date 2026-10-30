@@ -1,33 +1,40 @@
 package generators
 
-// consumer_install_test.go — ML-1A of ROADMAP-2026-10-30-go-install-entrega-versao-errada
+// consumer_install_test.go — ML-1A+ML-3A of ROADMAP-2026-10-30-go-install-entrega-versao-errada
 // Tests for AC1, AC2, AC3, AC5, AC6 of REQ-2026-10-30.
 //
 // Reconciliation (Regra Dura):
-//   TestConsumerInstall_NoGoInstall_NoBuildersConsumers
+//   TestConsumerInstall_NoGoInstall_NoBuildersConsumers (F3: regexp, not Contains)
 //     — affirms AC2: no consumer builder emits go install / go run / go get for
-//       github.com/kgsaran/trackfw on a non-comment line.
+//       github.com/kgsaran/trackfw (with optional flags between verb and path) on a
+//       non-comment line.
 //   TestConsumerInstall_NoReleasesLatest
 //     — affirms AC3: no consumer builder references releases/latest on a non-comment line.
-//   TestConsumerInstall_VersionPinEqualsVersionDotVersion
-//     — affirms AC1+AC3: TRACKFW_VERSION in every consumer output equals version.Version
-//       and the URL uses the shell variable ${TRACKFW_VERSION} (not a literal).
+//   TestConsumerInstall_VersionPinEqualsVersionDotVersion (F2: nonCommentLines for positive checks)
+//     — affirms AC1+AC3: TRACKFW_VERSION in every consumer output (non-comment lines only)
+//       equals version.Version and the URL uses the shell variable ${TRACKFW_VERSION}
+//       (not a literal) — a commented-out env block no longer satisfies this check.
+//   TestConsumerInstall_VersionStubNotHardcoded (F1: new)
+//     — affirms that version.Version is evaluated at call time, not hardcoded: with the
+//       stub "9.9.9-stub", every consumer builder (3 builders × 2 triggers) emits
+//       TRACKFW_VERSION: "9.9.9-stub" on a non-comment line.
 //   TestConsumerInstall_ManualTriggerHasWorkflowDispatch
 //     — affirms AC2 extension: the manual-trigger variants contain workflow_dispatch (GH)
 //       or the web pipeline rule (GitLab), not pull_request / merge_requests.
 //   TestConsumerInstall_ProducerHashesUnchanged
 //     — affirms AC6: sha256 of every producer template matches the pre-fix golden (Apêndice A).
-//   TestConsumerInstall_StaleFixture_DoctorDetects_UpdateFixes
-//     — affirms AC5: the pre-fix consumer trackfw-validate.yml (SHA-256
-//       aadf2cb1b4eac30dd2fe3a94f55538b4864ff826a5eaba59230975ee96cca996) triggers a
-//       scaffold-divergent finding; trackfw update corrects it; the current template
-//       produces no scaffold-divergent finding (contra-braço).
+//   TestConsumerInstall_StaleFixture_DoctorDetects_UpdateFixes (F4: arm 2 for manual trigger)
+//     — affirms AC5 for both PR and manual triggers: the pre-fix consumer
+//       trackfw-validate.yml in either variant triggers a scaffold-divergent finding;
+//       trackfw update corrects it to the correct variant (PR or manual); the post-fix
+//       template produces no scaffold-divergent finding (contra-braço).
 
 import (
 	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -78,10 +85,18 @@ func nonCommentLines(s string) string {
 	return b.String()
 }
 
+// goModuleRe matches any non-flagged or flagged invocation of go install/run/get for
+// the trackfw module on a non-comment line (F3 fix: flags like -v between verb and path
+// would previously bypass strings.Contains).
+// Pattern: word boundary, go, whitespace, verb, optional flags (-flag arg …), module path.
+var goModuleRe = regexp.MustCompile(`\bgo\s+(install|run|get)\s+(?:-\S+\s+)*github\.com/kgsaran/trackfw`)
+
 // TestConsumerInstall_NoGoInstall_NoBuildersConsumers asserts that no consumer builder
 // emits `go install`, `go run`, or `go get` of github.com/kgsaran/trackfw on a
-// non-comment line (AC2, ADR-2026-10-30). Producer builders are not covered — they
-// intentionally compile from source and are tested separately.
+// non-comment line — including forms with flags between the verb and the module path,
+// e.g. `go install -v github.com/kgsaran/trackfw/…` (AC2, ADR-2026-10-30).
+// Producer builders are not covered — they intentionally compile from source and are
+// tested separately.
 func TestConsumerInstall_NoGoInstall_NoBuildersConsumers(t *testing.T) {
 	for _, b := range allConsumerBuilderOutputs() {
 		for _, trigger := range []struct{ name, content string }{
@@ -89,14 +104,8 @@ func TestConsumerInstall_NoGoInstall_NoBuildersConsumers(t *testing.T) {
 			{"manual", b.man},
 		} {
 			nc := nonCommentLines(trigger.content)
-			if strings.Contains(nc, "go install github.com/kgsaran/trackfw") {
-				t.Errorf("%s [%s]: non-comment line contains 'go install github.com/kgsaran/trackfw' (ADR-2026-10-30: not a channel)\ncontent:\n%s", b.name, trigger.name, trigger.content)
-			}
-			if strings.Contains(nc, "go run github.com/kgsaran/trackfw") {
-				t.Errorf("%s [%s]: non-comment line contains 'go run github.com/kgsaran/trackfw'\ncontent:\n%s", b.name, trigger.name, trigger.content)
-			}
-			if strings.Contains(nc, "go get github.com/kgsaran/trackfw") {
-				t.Errorf("%s [%s]: non-comment line contains 'go get github.com/kgsaran/trackfw'\ncontent:\n%s", b.name, trigger.name, trigger.content)
+			if goModuleRe.MatchString(nc) {
+				t.Errorf("%s [%s]: non-comment line contains 'go install/run/get github.com/kgsaran/trackfw' (ADR-2026-10-30: not a channel)\ncontent:\n%s", b.name, trigger.name, trigger.content)
 			}
 		}
 	}
@@ -122,6 +131,8 @@ func TestConsumerInstall_NoReleasesLatest(t *testing.T) {
 // builder sets TRACKFW_VERSION to version.Version (not a hardcoded literal) and that
 // the install URL uses the shell variable ${TRACKFW_VERSION} rather than a literal
 // version string — prevents Threat B from Wave 0 (version and URL decoupled).
+// Both checks operate on non-comment lines only (F2 fix: a commented-out env block
+// must not satisfy the positive check).
 func TestConsumerInstall_VersionPinEqualsVersionDotVersion(t *testing.T) {
 	wantEnv := fmt.Sprintf(`TRACKFW_VERSION: "%s"`, version.Version)
 	for _, b := range allConsumerBuilderOutputs() {
@@ -129,17 +140,51 @@ func TestConsumerInstall_VersionPinEqualsVersionDotVersion(t *testing.T) {
 			{"pull_request", b.pr},
 			{"manual", b.man},
 		} {
-			if !strings.Contains(trigger.content, wantEnv) {
-				t.Errorf("%s [%s]: TRACKFW_VERSION not set to version.Version (%q)\ncontent:\n%s",
+			nc := nonCommentLines(trigger.content)
+			if !strings.Contains(nc, wantEnv) {
+				t.Errorf("%s [%s]: non-comment lines do not contain TRACKFW_VERSION set to version.Version (%q)\ncontent:\n%s",
 					b.name, trigger.name, version.Version, trigger.content)
 			}
 			// The URL must be double-quoted and use the shell variable, not the literal version
 			// (P2 of Wave 0: double quotes prevent word-splitting; shell variable prevents
-			// TRACKFW_VERSION and the URL from decoupling).
+			// TRACKFW_VERSION and the URL from decoupling). Checked on non-comment lines only
+			// so that a commented-out install step does not satisfy this assertion.
 			const wantURL = `"https://github.com/kgsaran/trackfw/releases/download/v${TRACKFW_VERSION}/install.sh"`
-			if !strings.Contains(trigger.content, wantURL) {
-				t.Errorf("%s [%s]: URL is not the exact double-quoted form %q — removing quotes or using a literal version would violate P2 of Wave 0\ncontent:\n%s",
+			if !strings.Contains(nc, wantURL) {
+				t.Errorf("%s [%s]: non-comment lines do not contain the exact double-quoted URL %q — removing quotes or using a literal version would violate P2 of Wave 0\ncontent:\n%s",
 					b.name, trigger.name, wantURL, trigger.content)
+			}
+		}
+	}
+}
+
+// TestConsumerInstall_VersionStubNotHardcoded asserts that version.Version is read at
+// call time — not hardcoded as a literal in any consumer builder. With the stub value
+// "9.9.9-stub" set before calling the builders, every consumer output (3 builders ×
+// 2 triggers) must contain TRACKFW_VERSION: "9.9.9-stub" on a non-comment line.
+// Catches a regression where the template uses a literal (e.g. "11.2.0") instead of
+// version.Version — such a regression survives silently until the next version bump
+// and is undetectable by TestConsumerInstall_VersionPinEqualsVersionDotVersion (F1 fix,
+// ML-3A of ROADMAP-2026-10-30).
+func TestConsumerInstall_VersionStubNotHardcoded(t *testing.T) {
+	orig := version.Version
+	version.Version = "9.9.9-stub"
+	t.Cleanup(func() { version.Version = orig })
+
+	// Call builders AFTER the stub is set — outputs are computed eagerly.
+	outputs := allConsumerBuilderOutputs()
+
+	const wantVersion = "9.9.9-stub"
+	wantEnv := fmt.Sprintf(`TRACKFW_VERSION: "%s"`, wantVersion)
+	for _, b := range outputs {
+		for _, trigger := range []struct{ name, content string }{
+			{"pull_request", b.pr},
+			{"manual", b.man},
+		} {
+			nc := nonCommentLines(trigger.content)
+			if !strings.Contains(nc, wantEnv) {
+				t.Errorf("%s [%s]: non-comment lines do not contain %q — version.Version appears hardcoded (not read at call time)\ncontent:\n%s",
+					b.name, trigger.name, wantEnv, trigger.content)
 			}
 		}
 	}
@@ -242,23 +287,57 @@ jobs:
       - run: trackfw validate
 `
 
-// TestConsumerInstall_StaleFixture_DoctorDetects_UpdateFixes asserts AC5:
-//  1. A consumer with the pre-fix trackfw-validate.yml (stale, SHA aadf2cb1…cca996) is
-//     reported as scaffold-divergent by RunScaffoldDoctor (pós-fix binary).
-//  2. UpdateProject corrects the file.
-//  3. After update, RunScaffoldDoctor reports zero scaffold-divergent findings for that path.
-//  4. Contra-braço: writing the CURRENT template directly → zero scaffold-divergent findings.
+// staleValidateManualYML is the byte-exact content of the consumer trackfw-validate.yml
+// manual-trigger variant generated by the binary BEFORE this fix (pré-fix, version 11.2.0
+// with go install and workflow_dispatch).
+// SHA-256: bf7942d24b84045c2aa9b81f4fc302ecfc0521728a65d0c2c1ff4ac261c1e357
+// Source: git show 9167f8ad:internal/generators/scaffold_doctor.go — the pre-fix
+// BuildDiscoverGitHubActionsWorkflowContentWithTrigger(false, "manual") with
+// version.Version = "11.2.0" (replaces push/pull_request block with workflow_dispatch).
+// After ML-1A, this content is "stale" — the post-fix binary detects it as scaffold-divergent
+// and corrects it to the install.sh-based manual-trigger template.
+const staleValidateManualYML = `name: trackfw validate
+on:
+  workflow_dispatch:
+jobs:
+  governance-go-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.25"
+      - run: go install github.com/kgsaran/trackfw/cmd/trackfw@v11.2.0
+      - run: trackfw validate
+`
+
+// TestConsumerInstall_StaleFixture_DoctorDetects_UpdateFixes asserts AC5 for both the
+// pull_request and manual trigger variants (F4 fix, ML-3A):
+//  1. A consumer with the pre-fix trackfw-validate.yml (stale) is reported as
+//     scaffold-divergent by RunScaffoldDoctor (pós-fix binary).
+//  2. UpdateProject corrects the file to the correct trigger variant.
+//  3. After update, RunScaffoldDoctor reports zero scaffold-divergent findings.
+//  4. Contra-braço: the CURRENT template → zero scaffold-divergent findings.
 //
+// Arm 1 (pull_request, SHA aadf2cb1…cca996) and Arm 2 (manual, SHA bf7942d2…e357)
+// each run in their own fixture root with the appropriate ci_trigger setting.
 // Uses Go internal functions in-process (no git commit, no trackfw init binary).
 func TestConsumerInstall_StaleFixture_DoctorDetects_UpdateFixes(t *testing.T) {
-	// Verify the stale fixture matches the expected SHA-256 (P6 of Wave 0).
+	// Verify the stale PR fixture matches the expected SHA-256 (P6 of Wave 0).
 	staleHash := fmt.Sprintf("%x", sha256.Sum256([]byte(staleValidateYML)))
 	wantHash := "aadf2cb1b4eac30dd2fe3a94f55538b4864ff826a5eaba59230975ee96cca996"
 	if staleHash != wantHash {
 		t.Fatalf("staleValidateYML SHA-256 = %s, want %s — fixture does not match pre-fix golden", staleHash, wantHash)
 	}
 
-	// --- Arm 1: stale fixture → scaffold-divergent ---
+	// Verify the stale manual fixture SHA-256 (F4, Apêndice A of Wave 0).
+	staleManualHash := fmt.Sprintf("%x", sha256.Sum256([]byte(staleValidateManualYML)))
+	wantManualHash := "bf7942d24b84045c2aa9b81f4fc302ecfc0521728a65d0c2c1ff4ac261c1e357"
+	if staleManualHash != wantManualHash {
+		t.Fatalf("staleValidateManualYML SHA-256 = %s, want %s — fixture does not match pre-fix manual golden", staleManualHash, wantManualHash)
+	}
+
+	// --- Arm 1: stale PR-trigger fixture → scaffold-divergent ---
 	config.Reset()
 	t.Cleanup(config.Reset)
 
@@ -326,7 +405,7 @@ func TestConsumerInstall_StaleFixture_DoctorDetects_UpdateFixes(t *testing.T) {
 		}
 	}
 
-	// --- Contra-braço: current template → zero scaffold-divergent findings ---
+	// --- Contra-braço arm 1: current PR template → zero scaffold-divergent findings ---
 	config.Reset()
 
 	root2 := t.TempDir()
@@ -357,6 +436,90 @@ func TestConsumerInstall_StaleFixture_DoctorDetects_UpdateFixes(t *testing.T) {
 	for _, f := range contraFindings {
 		if f.Destination == DiscoverGitHubActionsWorkflowPath && f.FindingKind == integrations.DoctorScaffoldDivergent {
 			t.Errorf("contra-braço: doctor reports scaffold-divergent for current template — template mismatch in doctor (AC5 contra-braço failed)")
+		}
+	}
+
+	// --- Arm 2: stale manual-trigger fixture → scaffold-divergent (F4, ML-3A) ---
+	// The fixture has ci_trigger: manual so the doctor generates the manual-trigger
+	// template for comparison. After UpdateProject, the written file must contain
+	// workflow_dispatch: and not pull_request: (verifies the correct variant was written,
+	// not a vacuous PR-template pass).
+	config.Reset()
+
+	root3 := t.TempDir()
+	home3 := t.TempDir()
+	t.Setenv("HOME", home3)
+
+	if err := os.WriteFile(filepath.Join(root3, "trackfw.yaml"), []byte("hooks: none\nci: none\nci_trigger: manual\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Scaffold all other managed files.
+	if err := Update(root3); err != nil {
+		t.Fatalf("Update arm 2 (initial scaffold): %v", err)
+	}
+
+	workflowPath3 := filepath.Join(root3, DiscoverGitHubActionsWorkflowPath)
+	if err := os.MkdirAll(filepath.Dir(workflowPath3), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Overwrite with the stale manual fixture.
+	if err := os.WriteFile(workflowPath3, []byte(staleValidateManualYML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	beforeFindings3, err := RunScaffoldDoctor(root3)
+	if err != nil {
+		t.Fatalf("RunScaffoldDoctor arm 2 (before update): %v", err)
+	}
+	foundDivergent3 := false
+	for _, f := range beforeFindings3 {
+		if f.Destination == DiscoverGitHubActionsWorkflowPath && f.FindingKind == integrations.DoctorScaffoldDivergent {
+			foundDivergent3 = true
+		}
+	}
+	if !foundDivergent3 {
+		t.Fatalf("arm 2: doctor did not flag the stale manual %s as scaffold-divergent\nfindings: %+v", DiscoverGitHubActionsWorkflowPath, beforeFindings3)
+	}
+
+	// Run update.
+	report3, err := UpdateProject(root3, UpdateOptions{})
+	if err != nil {
+		t.Fatalf("UpdateProject arm 2: %v", err)
+	}
+	var ciResult3 *TargetResult
+	for i := range report3.Targets {
+		if report3.Targets[i].ID == "ci-workflow" {
+			ciResult3 = &report3.Targets[i]
+		}
+	}
+	if ciResult3 == nil || ciResult3.State != TargetUpdated {
+		state3 := "<nil>"
+		if ciResult3 != nil {
+			state3 = string(ciResult3.State)
+		}
+		t.Fatalf("arm 2: ci-workflow target not updated (want %q, got %q)", TargetUpdated, state3)
+	}
+
+	// Assert the updated file is the manual variant (workflow_dispatch present, pull_request absent).
+	updated3, err := os.ReadFile(workflowPath3)
+	if err != nil {
+		t.Fatalf("arm 2: reading updated workflow file: %v", err)
+	}
+	if !strings.Contains(string(updated3), "workflow_dispatch:") {
+		t.Errorf("arm 2: updated %s does not contain workflow_dispatch: — got PR variant instead of manual\ncontent:\n%s", DiscoverGitHubActionsWorkflowPath, updated3)
+	}
+	if strings.Contains(string(updated3), "pull_request:") {
+		t.Errorf("arm 2: updated %s still contains pull_request: — PR variant written instead of manual\ncontent:\n%s", DiscoverGitHubActionsWorkflowPath, updated3)
+	}
+
+	afterFindings3, err := RunScaffoldDoctor(root3)
+	if err != nil {
+		t.Fatalf("RunScaffoldDoctor arm 2 (after update): %v", err)
+	}
+	for _, f := range afterFindings3 {
+		if f.Destination == DiscoverGitHubActionsWorkflowPath && f.FindingKind == integrations.DoctorScaffoldDivergent {
+			t.Errorf("arm 2: doctor still reports scaffold-divergent for %s after update (AC5 arm 2 failed)", DiscoverGitHubActionsWorkflowPath)
 		}
 	}
 }
