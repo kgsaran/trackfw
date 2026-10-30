@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-07
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-08-validate-suprime-usage-em-erro-de-runtime-e-o-gate-que-provaria-isso.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-08-validate-suprime-usage-em-erro-de-runtime-e-o-gate-que-provaria-isso.md"
 ---
 
 # REQ: validate imprime usage em erro de runtime e suja o stream json so no Go, e o gate que provaria isso e um gap declarado
@@ -109,6 +109,71 @@ escopo real é menor que 12 e **só sai por medição comportamental, um comando
 - **Não** varre os 33 comandos por `grep` para "corrigir preventivamente" — só entra o que a medição
   comportamental do AC5 apontar.
 
+## Revisão de escopo — 2026-10-30 (zeus-tf) — este é o escopo vigente
+
+Retomada a pedido do KG. Desde a v8 existe só o binário Go; "3 runtimes" e "diff de três vias" não
+se aplicam mais. A triagem de 2026-10-17 (`docs/governanca/2026-10-17-triagem-backlog-pre-v8.md`,
+linha 23) já registrava: usage e gate corrigidos no #413; vivo só o AC1.
+
+### Medido em `main` `7b352543` (binário compilado da árvore), fixture strict com 1 violação
+
+| comando | rc | stdout | stderr |
+|---|---|---|---|
+| `validate` | 1 | 370 B | `Error: 1 violation(s) found` (sem usage) |
+| `validate --json` | 1 | 597 B (JSON) | 🔴 `1 violation(s) found` — linha fora do JSON |
+| `barrier <roadmap> --wave 1 --json` (blocked) | 1 | 1140 B (JSON) | 0 B |
+| `doctor --json`, `update --dry-run --json`, `roadmap show --json` | 0 | JSON | 0 B |
+
+**Mecanismo:** o ramo JSON do `validate` liga `cmd.SilenceErrors` esperando silêncio e devolve um
+`error` depois de escrever o documento. No `root.go`, `SilenceErrors` não silencia — só troca
+`Error: msg` pela mensagem sem prefixo (comportamento do `branch new`). O `barrier` não tem o
+defeito porque sai com `os.Exit(1)` direto.
+
+**Mesma causa, lida no código** (`return fmt.Errorf` depois de escrever o documento `--json`):
+- `internal/commands/update.go:85` — `trackfw update: %d target(s) failed`
+- `internal/commands/update_harness.go:106` — `trackfw update harness: %d target(s) failed`
+Entram nesta REQ (Regra Dura de Causa Raiz).
+
+**Outra categoria, fora do escopo:** erro **antes** de existir documento (`audit-surface` com ref
+inválida, `barrier`/`roadmap show` com roadmap inexistente) escreve texto no stderr e nada no
+stdout. Não há documento a proteger, e o `cli-parity.md` não tem contrato geral de `--json` que
+exija JSON nesse caso. Se for desejado, é decisão de contrato nova, não este defeito.
+
+**Consumidores:** nenhum gate em `scripts/` ou `.github/` lê o stderr do `validate --json` (os que
+redirecionam para arquivo não o consultam); nenhum `_test.go` fixa `violation(s) found` nem
+`target(s) failed`.
+
+### Decisão de mecanismo (zeus-tf)
+
+Um erro tipado que carrega só o código de saída, reconhecido pelo `root.go`, que sai com esse
+código **sem imprimir nada**. Não `os.Exit` no `RunE`: `TestValidateJSONFlag` e afins executam o
+comando em processo via `cmd.Execute()`, e um `os.Exit` derrubaria o teste. Isso **revoga** o item
+"não mexe no wrapper de `root.go`" do escopo negativo original, limitado ao reconhecimento desse tipo.
+
+### ACs vigentes
+
+- **AC1 — vivo.** `validate --json` com violação: rc=1, stdout só o documento JSON, stderr 0 B.
+- **AC1-bis — novo, mesma causa.** `update --json` e `update harness --json` com alvo falho: rc≠0
+  como hoje, stdout só o documento, stderr 0 B.
+- **AC2 — atendido (#413).** Modo texto sem bloco de usage; medido acima. Continua igual:
+  `Error: 1 violation(s) found`, rc=1.
+- **AC3/AC4 — atendidos (#413)** para o usage. O gate desta revisão é teste Go do binário em
+  processo, falsificado nas duas direções.
+- **AC5 — remedido** pela tabela acima: o defeito de stream sujo no caminho de resultado está em
+  `validate`, `update` e `update harness`.
+- **AC6 — atendido** (consumidores acima).
+- **AC7 — contra-braço.** Modo texto do `validate`, do `update` e do `update harness`, e o modo
+  lenient (rc=0, stderr vazio), não mudam. Comandos sob `guard` continuam saindo 2 (D7,
+  ADR-2026-10-04).
+- **AC8 — contrato escrito.** `docs/cli-parity.md` ganha a regra: com `--json`, depois de escrito
+  o documento, o stdout carrega só ele, o stderr fica vazio e o resultado vai no código de saída.
+
+### Escopo negativo vigente
+
+- Não altera códigos de saída.
+- Não muda erro antes do documento (categoria acima), nem usage de erro de argumento.
+- Não muda o modo texto de nenhum comando.
+- `root.go` só ganha o reconhecimento do erro tipado; o resto do wrapper fica igual.
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-08-validate-suprime-usage-em-erro-de-runtime-e-o-gate-que-provaria-isso.md`
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-08-validate-suprime-usage-em-erro-de-runtime-e-o-gate-que-provaria-isso.md`
