@@ -30,7 +30,7 @@ Corre em paralelo com o roadmap do #634 (`internal/generators/`), que não compa
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model da fonte ls-remote na resolução da branch padrão (hades-tf)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-10-30. #633 reproduzido no git 2.54 com `followRemoteHEAD never`. P-1 a P-4 aceitas: a fonte nova só entra quando o `symbolic-ref` falha; o nome passa por lista de permissão (`isValidBranchLocalName`); o `defaultBaseBranch` (`ship`, `release`) também resolvia `main` num repositório `master` e entra pelo mesmo helper; fakes de teste que precisam declarar o caso novo listados. Decisão do arquiteto: o residual R-5 (`git log <base>..HEAD` com nome nu falha quando a branch local não existe) entra no ML-1A — defeito conhecido se corrige no mesmo PR. O V-2 (`GIT_TERMINAL_PROMPT`) fica fora: afeta `fetch` e `push` igualmente e é decisão de UX, levada ao KG.
 **Files affected:** `docs/seguranca/2026-10-30-wave0-branch-padrao-ls-remote.md`
 **Actions:**
 1. Confiança: o que um remoto hostil (ou um `origin` trocado) controla na saída do
@@ -46,9 +46,9 @@ Corre em paralelo com o roadmap do #634 (`internal/generators/`), que não compa
 5. Alvos de falsificação nas duas direções para AC1–AC6 da REQ.
 6. Prescrições numeradas para o ML-1A, e residual.
 **Acceptance criteria:**
-- [ ] As seis seções respondidas com evidência (comando e resultado)
-- [ ] Prescrições escritas em seção intitulada `Prescrições`
-- [ ] Nenhuma linha de implementação escrita
+- [x] As seis seções respondidas com evidência (comando e resultado)
+- [x] Prescrições escritas em seção intitulada `Prescrições`
+- [x] Nenhuma linha de implementação escrita
 
 **Gates da wave:**
 ```bash
@@ -63,15 +63,17 @@ grep -q 'Prescrições' docs/seguranca/2026-10-30-wave0-branch-padrao-ls-remote.
 
 ### ML-1A — Fonte ls-remote na cadeia de resolução (apolo-tf) — AC1–AC6
 **Status:** ⬜ Pendente
-**Files affected:** `internal/commands/branch_prune_forge.go`, `internal/commands/branch_new_base_e2e_test.go`, `internal/commands/branch_default_ls_remote_test.go`, `internal/commands/ship.go`, `docs/cli-parity.md`
+**Files affected:** `internal/commands/branch_prune_forge.go`, `internal/commands/branch_new_base_e2e_test.go`, `internal/commands/branch_default_ls_remote_test.go`, `internal/commands/ship.go`, `internal/commands/ship_test.go`, `internal/commands/release.go`, `internal/commands/release_test.go`, `internal/commands/branch_prune_default_branch_test.go`, `docs/cli-parity.md`
 **Actions:**
 1. `resolveDefaultBranchWithSource`: entre o symref local e o literal, `gitExec("ls-remote", "--symref", "origin", "HEAD")`;
    aceitar só a linha `ref: refs/heads/<nome>\tHEAD`; `fromForge=false`; qualquer outra saída cai no literal.
 2. `TestBranchNew_DryRunFetchesMasterDefault`: `git config remote.origin.followRemoteHEAD never` no fixture
    antes do `set-head --delete`; corrigir o comentário da premissa.
 3. `branch_default_ls_remote_test.go` (novo): testes unitários do parse e E2E do `branch prune` num repositório `master` sem symref.
-4. `ship.go` (`defaultBaseBranch`): só se a medição da Wave 0 mostrar resultado errado no `ship`; converge para a mesma fonte.
+4. `ship.go` (`defaultBaseBranch`): a Wave 0 mediu resultado errado; converge para o mesmo helper (P-3), sem chamar a forge. Comentários de `ship.go` e `release.go` atualizados (P-3).
 5. `docs/cli-parity.md` (~2016 e o bloco da cadeia): a cadeia passa a ser forge → symref → `ls-remote --symref` → `"main"`.
+6. R-5: `gitCommitsSince` usa `origin/<base>` quando `refs/heads/<base>` não existe.
+7. Prescrições P-1 a P-4 do parecer `docs/seguranca/2026-10-30-wave0-branch-padrao-ls-remote.md`.
 **Acceptance criteria:**
 - [ ] AC1 e AC2 (contra-braço medido sem a fonte nova)
 - [ ] AC3, AC4 e AC5 da REQ

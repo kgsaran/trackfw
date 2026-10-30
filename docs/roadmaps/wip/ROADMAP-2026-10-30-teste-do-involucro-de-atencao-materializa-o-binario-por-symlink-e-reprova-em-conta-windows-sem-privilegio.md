@@ -29,7 +29,7 @@ Corre em paralelo com o roadmap do #633 (`internal/commands/`), que não compart
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model do PATH do filho no teste de atenção (hades-tf)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-10-30. P-1: o PATH do filho passa a ser só o diretório de `compiledGuardBinary` (contém só o `trackfw`, com `.exe` no Windows); P-2: sonda `command -v trackfw` no setup, com contra-braço. Reprodução do arquiteto na VM (conta `tfnopriv`, sem `SeCreateSymbolicLinkPrivilege`, Modo de Desenvolvedor desligado): `origin/main` `45ed483` reprova em `scaffold_test.go:432`, como no issue.
 **Files affected:** `docs/seguranca/2026-10-30-wave0-teste-atencao-sem-symlink.md`
 **Actions:**
 1. O diretório de `compiledGuardBinary` (`internal/generators/guard_parity_helper_test.go`) contém só
@@ -40,9 +40,9 @@ Corre em paralelo com o roadmap do #633 (`internal/commands/`), que não compart
 4. Alvos de falsificação para AC1–AC3 da REQ, e o que medir na VM para o AC4.
 5. Prescrições numeradas para o ML-1A, e residual.
 **Acceptance criteria:**
-- [ ] As cinco seções respondidas com evidência (comando e resultado)
-- [ ] Prescrições escritas em seção intitulada `Prescrições`
-- [ ] Nenhuma linha de implementação escrita
+- [x] As cinco seções respondidas com evidência (comando e resultado)
+- [x] Prescrições escritas em seção intitulada `Prescrições`
+- [x] Nenhuma linha de implementação escrita
 
 **Gates da wave:**
 ```bash
@@ -59,7 +59,7 @@ grep -q 'Prescrições' docs/seguranca/2026-10-30-wave0-teste-atencao-sem-symlin
 **Status:** ⬜ Pendente
 **Files affected:** `internal/generators/scaffold_test.go`
 **Actions:**
-1. Trocar o laço de `os.Symlink` pela correção prescrita na Wave 0.
+1. Trocar o laço de `os.Symlink` pela correção prescrita na Wave 0 (P-1 a P-4 de `docs/seguranca/2026-10-30-wave0-teste-atencao-sem-symlink.md`).
 2. Falta do binário no PATH do filho reprova no setup, com mensagem que nomeia a causa.
 3. Contra-braço: com o binário fora do PATH do filho, o teste reprova no setup.
 **Acceptance criteria:**
@@ -77,8 +77,8 @@ env PATH="$(dirname "$(command -v go)"):/usr/bin:/bin" go test ./internal/genera
 **Status:** ⬜ Pendente
 **Files affected:** `docs/portabilidade/2026-10-30-teste-atencao-sem-symlink-medido-na-vm.md`
 **Actions:**
-1. Na VM `Windows-Lab`: `whoami /priv` para o `SeCreateSymbolicLinkPrivilege`.
-2. Rodar o teste em `origin/main` e na branch (worktree `--detach`); registrar os dois resultados.
+1. Na VM `Windows-Lab`, conta padrão `tfnopriv` (sem `SeCreateSymbolicLinkPrivilege`; a conta `Lab` tem o privilégio), via tarefa agendada.
+2. Rodar o teste em `origin/main` e na branch; registrar os dois resultados.
 **Acceptance criteria:**
 - [ ] AC4 da REQ
 
