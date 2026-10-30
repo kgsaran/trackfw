@@ -84,6 +84,14 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 
+	// ML-2A: fail fast when git is absent from PATH.  exec.Command("git","--version").Run()
+	// executes git; exec.LookPath would accept a git that exits 127 (Wave 0, Prescrição 7).
+	// Runs BEFORE MkdirTemp so no temporary HOME leaks on incomplete environments.
+	if err := exec.Command("git", "--version").Run(); err != nil {
+		fmt.Fprintln(os.Stderr, "ambiente incompleto: git não encontrado no PATH")
+		os.Exit(2)
+	}
+
 	// ML-1A (a): Capture Go cache env vars BEFORE changing HOME.  Five tests in
 	// this package call exec.Command("go", "build", …) without setting cmd.Env.
 	// On macOS, GOCACHE defaults to $HOME/Library/Caches/go-build.  After HOME

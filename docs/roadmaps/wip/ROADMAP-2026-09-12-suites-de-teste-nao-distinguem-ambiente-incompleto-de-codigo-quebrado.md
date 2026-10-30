@@ -128,7 +128,7 @@ make check-prereqs
 > Dependencies: Wave 1 auditada (ML-2A edita o mesmo `TestMain` do ML-1A).
 
 ### ML-2A — `git` ausente produz uma linha de diagnóstico, não 181 falhas (artemis-tf) — AC3
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-10-29. Medido pelo arquiteto com PATH sem `git`: os 4 pacotes rc=1, 1 linha de diagnóstico, 0 `--- FAIL`, 0 `PASS`/`ok` (eram 233 `--- FAIL`). `TestGitGuardFailsFastWhenGitAbsent` com `path_vazio` e `git_falso_127` PASS nos 4 pacotes em `-v`. Com `git`, os 4 verdes. Contra-braço do executor: com `LookPath`, o braço do git falso reprova. Observação: os helpers do sentinela estão duplicados nos 4 pacotes (~80 linhas cada); aceito por ser código de teste sem pacote compartilhado.
 **Files affected:** `internal/commands/netexec_test.go`, `internal/commands/testenv_isolation_test.go`, `internal/auditsurface/main_test.go`, `internal/pathguard/main_test.go`, `internal/validator/main_test.go`
 **Actions:**
 1. No `TestMain` de cada um dos 4 pacotes, como primeira instrução (no `commands`, logo depois dos
@@ -140,9 +140,9 @@ make check-prereqs
    vazio e afirma exit code 2, a linha no stderr e ausência de `PASS`. Segundo braço só fora do
    Windows: `PATH` com um `git` falso que sai 127 (Prescrições 9 e 10).
 **Acceptance criteria:**
-- [ ] com PATH contendo todo `/usr/bin` menos `git`, cada um dos 4 pacotes: rc≠0, a linha de diagnóstico no stderr, `FAIL` + nome do pacote na saída, nenhum `PASS`/`ok` e **zero** `--- FAIL`
-- [ ] com `git` presente, nenhuma linha de diagnóstico; os 4 pacotes verdes
-- [ ] `go test ./internal/pathguard/` verde
+- [x] com PATH contendo todo `/usr/bin` menos `git`, cada um dos 4 pacotes: rc≠0, a linha de diagnóstico no stderr, `FAIL` + nome do pacote na saída, nenhum `PASS`/`ok` e **zero** `--- FAIL`
+- [x] com `git` presente, nenhuma linha de diagnóstico; os 4 pacotes verdes
+- [x] `go test ./internal/pathguard/` verde
 
 **Gates da wave:**
 ```bash
