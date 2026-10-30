@@ -35,7 +35,7 @@ que carrega o código de saída, reconhecido pelo `root.go`, que sai sem imprimi
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model do erro tipado de saída silenciosa (hades-tf)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-10-30. 6 ameaças, 11 cenários medidos, 8 prescrições. Decisões do arquiteto: **D-1 = opção (a)**: o contrato garante que o `root.go` não escreve nada depois do documento; diagnósticos emitidos durante o cálculo (recusa do pathguard, que já está no campo `message`; aviso de `agent_models` do `update harness`) continuam no stderr. **P7 (teste que conta chamadas por grep no código-fonte) não entra**: é detector de mudança, e o red team da Wave 2 cobre o uso indevido. Achado colateral corrigido no ML-1B: `windows-probe.yml` compara `context --json` e `validate --strict`, que não existem; os dois saem rc=1 com stdout vazio e o `fc.exe` rotula BYTE_IDENTICAL (conferido no binário).
 **Files affected:** `docs/seguranca/2026-10-30-wave0-json-stderr-saida-silenciosa.md`
 **Actions:**
 1. Fail-open: um comando que devolva o erro tipado numa falha real engole a mensagem. Prescreva como
@@ -52,9 +52,9 @@ que carrega o código de saída, reconhecido pelo `root.go`, que sai sem imprimi
 5. Alvos de falsificação nas duas direções para AC1, AC1-bis e AC7.
 6. Prescrições numeradas para ML-1A e residual declarado.
 **Acceptance criteria:**
-- [ ] As seis seções respondidas com evidência (comando e resultado)
-- [ ] Prescrições escritas em seção intitulada `Prescrições`
-- [ ] Nenhuma linha de implementação escrita
+- [x] As seis seções respondidas com evidência (comando e resultado)
+- [x] Prescrições escritas em seção intitulada `Prescrições`
+- [x] Nenhuma linha de implementação escrita
 
 **Gates da wave:**
 ```bash
@@ -64,30 +64,43 @@ grep -q 'Prescrições' docs/seguranca/2026-10-30-wave0-json-stderr-saida-silenc
 
 ---
 
-## Wave 1 — Implementação
-> Dependencies: Wave 0 auditada.
+## Wave 1 — Implementação (2 MLs em paralelo)
+> Dependencies: Wave 0 auditada. ML-1A e ML-1B tocam arquivos disjuntos.
 
 ### ML-1A — Stream `--json` limpo depois do documento (apolo-tf) — AC1, AC1-bis, AC7, AC8
 **Status:** ⬜ Pendente
 **Files affected:** `internal/commands/root.go`, `internal/commands/validate.go`, `internal/commands/update.go`, `internal/commands/update_harness.go`, `internal/commands/json_exit_test.go`, `docs/cli-parity.md`
 **Actions:**
 1. Criar o erro tipado de saída silenciosa e reconhecê-lo no `root.go` (sair com o código, sem
-   imprimir), conforme as prescrições da Wave 0.
+   imprimir), conforme as Prescrições P1–P6 e P8 da Wave 0 (P7 não entra; D-1 = opção (a)).
 2. Nos três sítios, no ramo `--json`, devolver o erro tipado em vez da mensagem. Modo texto inalterado.
 3. Testes em `internal/commands/json_exit_test.go` cobrindo AC1, AC1-bis e AC7.
 4. `docs/cli-parity.md`: regra de contrato do AC8, perto da seção do `validate --json`.
 **Acceptance criteria:**
 - [ ] `validate --json` com violação: rc=1, stdout JSON válido, stderr 0 B (medido no binário em fixture)
-- [ ] `update --json` e `update harness --json` com alvo falho: rc≠0, stdout JSON, stderr 0 B
+- [ ] `update --json` e `update harness --json` com alvo falho: rc≠0, stdout JSON, nenhuma linha do `root.go` no stderr (diagnósticos do cálculo podem existir, D-1)
 - [ ] modo texto e lenient inalterados; `guard` continua saindo 2
 - [ ] contra-braço: revertido o reconhecimento no `root.go`, os testes novos reprovam
 
 **Gates da wave:**
 ```bash
+python3 scripts/check-workflow-yaml.py
 go build ./...
 go vet ./internal/commands/
 env PATH="$(dirname "$(command -v go)"):/usr/bin:/bin" go test ./internal/commands/ -count=1
 ```
+
+### ML-1B — `windows-probe.yml` compara comandos que existem (ares-tf) — achado colateral da Wave 0
+**Status:** ⬜ Pendente
+**Files affected:** `.github/workflows/windows-probe.yml`
+**Actions:**
+1. Na lista `$cmds` do passo de comparação byte a byte (~linhas 919–925): trocar `context --json` por
+   `context --format=json` e remover `validate --strict` (a flag não existe).
+2. Fazer o laço reprovar quando qualquer dos dois lados sair com rc≠0 e stdout vazio, para que
+   dois vazios não virem BYTE_IDENTICAL.
+**Acceptance criteria:**
+- [ ] nenhum comando da lista falha com flag desconhecida no binário atual (medido localmente)
+- [ ] YAML válido (`python3 scripts/check-workflow-yaml.py` rc=0)
 
 ---
 
