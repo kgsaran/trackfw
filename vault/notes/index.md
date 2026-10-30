@@ -4,6 +4,7 @@
 
 ## Índice
 
+- [testes-go-isolamento-de-ambiente-home-gocache-e-guarda-de-git-2026-10-29](testes-go-isolamento-de-ambiente-home-gocache-e-guarda-de-git-2026-10-29.md) — 🔴 **isolar HOME no TestMain move o GOCACHE dos `go build` filhos (capture `go env` antes); `LookPath` aceita git que sai 127 (use `git --version`); `go test` colapsa `os.Exit(2)` para rc=1; "zero `--- FAIL`" passa com `os.Exit(0)`; glob em `$TMPDIR` dá falso positivo — redirecione o TMPDIR do filho** (#624)
 - [validator-guard-marcador-em-campo-nao-comando-fail-open-2026-10-25](validator-guard-marcador-em-campo-nao-comando-fail-open-2026-10-25.md) — 🔴 **`collectCommandsWithMarker` casa o marcador em QUALQUER string: `"note":"<linha do guard>"` + `"command":"echo x"` → validate rc=0 (fail-open, medido no Windsurf); prosa em `autoMode`/`permissions` → aviso/violation falsos. Subárvore `hooks` não basta (o note está no evento); chave `command` só cega o Copilot global (`bash`) — coletor por esquema de CLI**
 - [yaml-stringval-sequence-mapping-silent-drop-ci-trigger-2026-10-24](yaml-stringval-sequence-mapping-silent-drop-ci-trigger-2026-10-24.md) — 🔴 **`ci: [X]`/`ci: {a:b}` → normalizeNode retorna []interface{}/map → stringVal ok=false → campo silenciosamente ausente (AC4 violation); escalares (bool/int/null) retornam n.Value textual, capturado pelo enum; `config.Load()` sync.Once: testar via `parse()` direto; canal AC4 = validator/update, não parser** (config.go:596-623)
 
