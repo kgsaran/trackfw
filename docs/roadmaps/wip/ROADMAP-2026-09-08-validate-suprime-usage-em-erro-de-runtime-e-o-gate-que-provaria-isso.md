@@ -69,7 +69,7 @@ grep -q 'Prescrições' docs/seguranca/2026-10-30-wave0-json-stderr-saida-silenc
 
 ### ML-1A — Stream `--json` limpo depois do documento (apolo-tf) — AC1, AC1-bis, AC7, AC8
 **Status:** ✅ Concluído — auditado em 2026-10-30. Medido pelo arquiteto no binário em fixture strict: `validate --json` rc=1, stdout 597 B, stderr 21 → 0 B; modo texto inalterado (`Error: 1 violation(s) found`, rc=1). Os 7 `TestJSONExit_*` PASS em `-v`; contra-braço do executor (sem o ramo do `root.go`) reprova os 3 testes de stream com 21/42/50 B. `ExitCodeError` reconhecido por type assertion direta, fora dos comandos de `guard`. Contrato em `docs/cli-parity.md`, seção `--json` stream contract (post-document). Um laço `until` órfão do executor, que esperava um marcador do `make`, foi encerrado pelo arquiteto.
-**Files affected:** `internal/commands/root.go`, `internal/commands/validate.go`, `internal/commands/update.go`, `internal/commands/update_harness.go`, `internal/commands/json_exit_test.go`, `docs/cli-parity.md`
+**Files affected:** `internal/commands/root.go`, `internal/commands/validate.go`, `internal/commands/update.go`, `internal/commands/update_harness.go`, `internal/commands/json_exit_test.go`, `internal/commands/exit_code_error.go` (P1 da Wave 0; declarado no handoff e omitido aqui, corrigido na auditoria), `docs/cli-parity.md`
 **Actions:**
 1. Criar o erro tipado de saída silenciosa e reconhecê-lo no `root.go` (sair com o código, sem
    imprimir), conforme as Prescrições P1–P6 e P8 da Wave 0 (P7 não entra; D-1 = opção (a)).
