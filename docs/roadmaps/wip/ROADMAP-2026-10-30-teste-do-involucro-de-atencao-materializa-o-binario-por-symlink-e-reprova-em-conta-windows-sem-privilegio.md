@@ -56,15 +56,15 @@ grep -q 'Prescrições' docs/seguranca/2026-10-30-wave0-teste-atencao-sem-symlin
 > Dependencies: Wave 0 auditada.
 
 ### ML-1A — Teste de atenção sem symlink (artemis-tf) — AC1–AC3
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-10-30. O PATH do filho é só o diretório do binário compilado; a sonda `command -v trackfw` reprova no setup com o diretório vazio (contra-braço).
 **Files affected:** `internal/generators/scaffold_test.go`
 **Actions:**
 1. Trocar o laço de `os.Symlink` pela correção prescrita na Wave 0 (P-1 a P-4 de `docs/seguranca/2026-10-30-wave0-teste-atencao-sem-symlink.md`).
 2. Falta do binário no PATH do filho reprova no setup, com mensagem que nomeia a causa.
 3. Contra-braço: com o binário fora do PATH do filho, o teste reprova no setup.
 **Acceptance criteria:**
-- [ ] AC1, AC2 e AC3 da REQ
-- [ ] contra-braço medido
+- [x] AC1, AC2 e AC3 da REQ
+- [x] contra-braço medido
 
 **Gates da wave:**
 ```bash
@@ -74,13 +74,13 @@ env PATH="$(dirname "$(command -v go)"):/usr/bin:/bin" go test ./internal/genera
 ```
 
 ### ML-1B — Medição na conta Windows sem privilégio (zeus-tf) — AC4
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — medido em 2026-10-30 como `tfnopriv`: `main` FAIL em `scaffold_test.go:432`, com o teste do ML-1A PASS.
 **Files affected:** `docs/portabilidade/2026-10-30-teste-atencao-sem-symlink-medido-na-vm.md`
 **Actions:**
 1. Na VM `Windows-Lab`, conta padrão `tfnopriv` (sem `SeCreateSymbolicLinkPrivilege`; a conta `Lab` tem o privilégio), via tarefa agendada.
 2. Rodar o teste em `origin/main` e na branch; registrar os dois resultados.
 **Acceptance criteria:**
-- [ ] AC4 da REQ
+- [x] AC4 da REQ
 
 ---
 

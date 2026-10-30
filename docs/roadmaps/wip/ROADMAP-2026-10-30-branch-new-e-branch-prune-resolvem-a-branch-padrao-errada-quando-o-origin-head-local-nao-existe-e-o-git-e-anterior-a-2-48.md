@@ -62,8 +62,8 @@ grep -q 'Prescrições' docs/seguranca/2026-10-30-wave0-branch-padrao-ls-remote.
 > Dependencies: Wave 0 auditada.
 
 ### ML-1A — Fonte ls-remote na cadeia de resolução (apolo-tf) — AC1–AC6
-**Status:** ⬜ Pendente
-**Files affected:** `internal/commands/branch_prune_forge.go`, `internal/commands/branch_new_base_e2e_test.go`, `internal/commands/branch_default_ls_remote_test.go`, `internal/commands/ship.go`, `internal/commands/ship_test.go`, `internal/commands/release.go`, `internal/commands/release_test.go`, `internal/commands/branch_prune_default_branch_test.go`, `docs/cli-parity.md`
+**Status:** ✅ Concluído — auditado em 2026-10-30. Pacote `internal/commands` verde; 16 testes novos ou alterados conferidos pelo nome em `-v`. Contra-braços medidos: sem a fonte nova, o AC1 (`branch new`), o AC3 (`branch prune`) e o AC5 (`defaultBaseBranch`) reprovam; sem o R-5, `TestGitCommitsSince_FallsBackToOriginWhenLocalRefAbsent` reprova. O comentário da cadeia em `branch_prune.go:416-420` (só comentário) foi atualizado pelo arquiteto.
+**Files affected:** `internal/commands/branch_prune_forge.go`, `internal/commands/branch_new_base_e2e_test.go`, `internal/commands/branch_default_ls_remote_test.go`, `internal/commands/ship.go`, `internal/commands/ship_test.go`, `internal/commands/release.go`, `internal/commands/release_test.go`, `internal/commands/branch_prune_default_branch_test.go`, `internal/commands/branch_prune.go`, `docs/cli-parity.md`
 **Actions:**
 1. `resolveDefaultBranchWithSource`: entre o symref local e o literal, `gitExec("ls-remote", "--symref", "origin", "HEAD")`;
    aceitar só a linha `ref: refs/heads/<nome>\tHEAD`; `fromForge=false`; qualquer outra saída cai no literal.
@@ -75,9 +75,9 @@ grep -q 'Prescrições' docs/seguranca/2026-10-30-wave0-branch-padrao-ls-remote.
 6. R-5: `gitCommitsSince` usa `origin/<base>` quando `refs/heads/<base>` não existe.
 7. Prescrições P-1 a P-4 do parecer `docs/seguranca/2026-10-30-wave0-branch-padrao-ls-remote.md`.
 **Acceptance criteria:**
-- [ ] AC1 e AC2 (contra-braço medido sem a fonte nova)
-- [ ] AC3, AC4 e AC5 da REQ
-- [ ] AC6: pacote `internal/commands` inteiro verde
+- [x] AC1 e AC2 (contra-braço medido sem a fonte nova)
+- [x] AC3, AC4 e AC5 da REQ
+- [x] AC6: pacote `internal/commands` inteiro verde
 
 **Gates da wave:**
 ```bash
