@@ -158,18 +158,50 @@ env PATH="$(dirname "$(command -v go)"):/usr/bin:/bin" go test ./internal/comman
 > Dependencies: Wave 2 auditada.
 
 ### ML-3A — Red team do isolamento e da falha rápida (hades-tf)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-10-29. 7 mutações; 5 capturadas pelos sentinelas. Três defeitos de mesma causa viram a Wave 4 (Regra Dura): D1 nada prova que a guarda roda antes do `MkdirTemp`; D3 o sentinela do `validator` não confere `ClaudeConfigDir`; D5 `check-prereqs` aceita bash 3.2 (o `/bin/bash` do macOS), mas 15 scripts usam `declare -A`/`mapfile` (conferido: `check-gates-falsify.sh:2350`). D2 e D4 ficam como residual declarado no parecer.
 **Files affected:** `docs/seguranca/2026-10-29-redteam-isolamento-ambiente-dos-testes.md`
 **Actions:**
 1. Tentar fazer um teste ler o HOME real ou passar verde sem `git`, a partir da leitura do código entregue.
 2. Conferir cada prescrição da Wave 0 contra o diff.
 **Acceptance criteria:**
-- [ ] cada prescrição com veredito e evidência
-- [ ] residual declarado
+- [x] cada prescrição com veredito e evidência
+- [x] residual declarado
 
 **Gates da wave:**
 ```bash
 test -f docs/seguranca/2026-10-29-redteam-isolamento-ambiente-dos-testes.md
+```
+
+---
+
+## Wave 4 — Corretivos do red team (2 MLs em paralelo)
+> Dependencies: Wave 3 auditada. ML-4A e ML-4B tocam arquivos disjuntos.
+
+### ML-4A — Sentinelas de ordem da guarda e do ClaudeConfigDir no validator (artemis-tf) — D1, D3
+**Status:** ⬜ Pendente
+**Files affected:** `internal/commands/testenv_isolation_test.go`, `internal/validator/main_test.go`
+**Actions:**
+1. D1: no braço `path_vazio` do `TestGitGuardFailsFastWhenGitAbsent` do `commands` e do `validator` (os dois que criam HOME temporário), apontar `TMPDIR`, `TMP` e `TEMP` do filho para um `t.TempDir()` próprio e afirmar que ele está vazio depois que o filho sai.
+2. D3: acrescentar ao `TestIsolatedHomeCoversBothChannels` do `validator` a verificação de `agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver)` dentro de `isolatedTestHome`, como no `commands`.
+**Acceptance criteria:**
+- [ ] contra-braço D1: com a guarda movida para depois do `MkdirTemp`, o braço reprova nomeando o diretório; na ordem certa, passa
+- [ ] contra-braço D3: sem o `Setenv HOME` do validator, a verificação nova reprova
+- [ ] `go test ./internal/validator/ ./internal/commands/` verdes
+
+### ML-4B — `check-prereqs` exige bash 4+ (ares-tf) — D5
+**Status:** ⬜ Pendente
+**Files affected:** `Makefile`
+**Actions:**
+1. Trocar a checagem de `bash` por uma que exija `BASH_VERSINFO[0] >= 4` (escapando `$` para o make), com a mensagem `ERRO: ambiente incompleto — bash 4+ não encontrado (os scripts usam declare -A e mapfile)`.
+**Acceptance criteria:**
+- [ ] com PATH cujo primeiro `bash` é `/bin/bash` 3.2, `make check-prereqs` reprova nomeando bash 4+
+- [ ] no ambiente atual (bash 5.3), rc=0 sem saída
+
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/validator/ ./internal/auditsurface/ ./internal/pathguard/ -count=1
+env PATH="$(dirname "$(command -v go)"):/usr/bin:/bin" go test ./internal/commands/ -count=1
 make quality
 ```
 
