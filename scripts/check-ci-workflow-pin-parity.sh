@@ -18,7 +18,7 @@
 # arquivo de teste esquecido quebrando o build de todo mundo.
 #
 # O discriminante de cada cenário de falsificação é a MENSAGEM QUE O PRÓPRIO GATE EMITE
-# (check_version_pin/check_timeout_minutes/check_gitlab_timeout/check_discover_pin
+# (check_version_pin/check_timeout_minutes/check_gitlab_timeout/check_consumer_no_latest
 # abaixo) — nunca uma mensagem de CLI.
 set -euo pipefail
 
@@ -111,10 +111,13 @@ GOEOF
 # ---------------------------------------------------------------------------
 
 # check_version_pin FILE EXPECTED
+# Reads only non-comment lines (F2 fix: a commented-out TRACKFW_VERSION block must not
+# satisfy this positive check — mirrors the nonCommentLines() guard in the Go test).
 check_version_pin() {
   local file=$1 expected=$2
-  local line found
-  line=$(grep -m1 'TRACKFW_VERSION: "' "$file" || true)
+  local line found stripped
+  stripped=$({ grep -v '^[[:space:]]*#' "$file" || true; })
+  line=$(echo "$stripped" | grep -m1 'TRACKFW_VERSION: "' || true)
   if [ -z "$line" ]; then
     echo "TRACKFW_VERSION ausente do bloco env/variables"
     return 1
@@ -147,16 +150,24 @@ check_gitlab_timeout() {
   return 0
 }
 
-# check_discover_pin FILE EXPECTED
-# Verifies the consumer discover template pins go install to @v<expected>.
-check_discover_pin() {
-  local file=$1 expected=$2
-  if grep -qF '@latest' "$file"; then
-    echo "go install usa @latest em vez de @v${expected} pinada"
+# check_consumer_no_latest FILE
+# Verifies that no non-comment line in FILE contains "releases/latest" and that the
+# pinned URL with ${TRACKFW_VERSION} is present (AC3, ADR-2026-10-30).
+# Replaces check_discover_pin (removed: go install is no longer the consumer mechanism).
+check_consumer_no_latest() {
+  local file=$1
+  local stripped
+  # Strip YAML comment lines before checking to avoid false positives.
+  stripped=$({ grep -v '^[[:space:]]*#' "$file" || true; })
+  if echo "$stripped" | grep -qF 'releases/latest'; then
+    echo "releases/latest presente em template de consumidor — usar releases/download/v\${TRACKFW_VERSION}/ (AC3)"
     return 1
   fi
-  if ! grep -qF "@v${expected}" "$file"; then
-    echo "go install não contém @v${expected} pinada"
+  # Single-quotes keep ${TRACKFW_VERSION} as a literal for grep (not shell-expanded).
+  # Use $stripped (not $file) so that a commented-out install step does not satisfy
+  # this positive check (F2 fix — mirrors nonCommentLines() in the Go test).
+  if ! echo "$stripped" | grep -qF 'releases/download/v${TRACKFW_VERSION}/install.sh'; then
+    echo "URL pinada releases/download/v\${TRACKFW_VERSION}/install.sh ausente (AC3)"
     return 1
   fi
   return 0
@@ -263,14 +274,18 @@ dump_go "$RUN1"
 run_check "pin-parity/github-actions/consumer-version-pin"     check_version_pin "$RUN1/gh_go_consumer.yml" "$GO_VERSION"
 run_check "pin-parity/github-actions/consumer-timeout-minutes" check_timeout_minutes "$RUN1/gh_go_consumer.yml"
 run_check "pin-parity/github-actions/consumer-checkout-pin"    check_checkout_pin "$RUN1/gh_go_consumer.yml" 7
+run_check "pin-parity/github-actions/consumer-install-pin"     check_consumer_no_latest "$RUN1/gh_go_consumer.yml"
 run_check "pin-parity/github-actions/producer-no-install"      check_gate_producer_no_install "$RUN1/gh_go_producer.yml"
 run_check "pin-parity/github-actions/producer-action-pins"     check_action_pins "$RUN1/gh_go_producer.yml" 7
 run_check "pin-parity/github-actions/producer-timeout-minutes" check_timeout_minutes "$RUN1/gh_go_producer.yml"
 run_check "pin-parity/gitlab-ci/version-pin"                   check_version_pin "$RUN1/gl_go.yml" "$GO_VERSION"
 run_check "pin-parity/gitlab-ci/timeout"                       check_gitlab_timeout "$RUN1/gl_go.yml"
-run_check "pin-parity/discover-workflow/consumer-version-pin"  check_discover_pin "$RUN1/dv_go_consumer.yml" "$GO_VERSION"
+run_check "pin-parity/gitlab-ci/consumer-install-pin"          check_consumer_no_latest "$RUN1/gl_go.yml"
+run_check "pin-parity/discover-workflow/consumer-version-pin"  check_version_pin "$RUN1/dv_go_consumer.yml" "$GO_VERSION"
+run_check "pin-parity/discover-workflow/consumer-timeout-minutes" check_timeout_minutes "$RUN1/dv_go_consumer.yml"
+run_check "pin-parity/discover-workflow/consumer-install-pin"  check_consumer_no_latest "$RUN1/dv_go_consumer.yml"
 run_check "pin-parity/discover-workflow/producer-no-go-install" check_producer_no_go_install "$RUN1/dv_go_producer.yml"
-run_check "pin-parity/discover-workflow/consumer-action-pins"  check_action_pins "$RUN1/dv_go_consumer.yml" 7
+run_check "pin-parity/discover-workflow/consumer-checkout-pin" check_checkout_pin "$RUN1/dv_go_consumer.yml" 7
 run_check "pin-parity/discover-workflow/producer-action-pins"  check_action_pins "$RUN1/dv_go_producer.yml" 7
 
 # ---------------------------------------------------------------------------
@@ -334,12 +349,19 @@ rm -f "$FALS/gl-no-timeout.yml.bak"
 assert_check_fails "falsify/gitlab-ci/missing-timeout" "timeout: 10 minutes ausente" \
   check_gitlab_timeout "$FALS/gl-no-timeout.yml"
 
-# (5) @latest no lugar de @v<versão> no template de consumidor → reprova.
+# (5) releases/latest no template de consumidor discover → reprova (AC3).
+# The sed uses single-quotes so ${TRACKFW_VERSION} is treated as a literal (not shell-expanded).
 cp "$RUN1/dv_go_consumer.yml" "$FALS/dv-consumer-latest.yml"
-sed -i.bak "s/@v${GO_VERSION}/@latest/" "$FALS/dv-consumer-latest.yml"
+sed -i.bak 's|releases/download/v${TRACKFW_VERSION}/|releases/latest/download/|g' "$FALS/dv-consumer-latest.yml"
 rm -f "$FALS/dv-consumer-latest.yml.bak"
-assert_check_fails "falsify/discover-workflow/consumer-latest-not-pinned" "go install usa @latest" \
-  check_discover_pin "$FALS/dv-consumer-latest.yml" "$GO_VERSION"
+# Guarda de no-op: se o sed não alterou nada, o vetor de falsificação é nulo — falha explícita.
+# NEVER replace with `! cmp -s && fail ...`: under set -e, `!`-prefixed commands are exempt from
+# early exit — `! cmp -s` never aborts and cannot serve as a guard. Use `if cmp -s` instead.
+if cmp -s "$FALS/dv-consumer-latest.yml" "$RUN1/dv_go_consumer.yml"; then
+  fail "falsify/discover-workflow/consumer-latest-noop" "sed foi no-op — arquivo falsificado igual ao original; vetor de falsificação ineficaz"
+fi
+assert_check_fails "falsify/discover-workflow/consumer-latest-not-pinned" "releases/latest presente" \
+  check_consumer_no_latest "$FALS/dv-consumer-latest.yml"
 
 # (6) 'go install' injetado no template de produtor → reprova (AC5/AC8).
 cp "$RUN1/dv_go_producer.yml" "$FALS/dv-producer-go-install.yml"
@@ -348,12 +370,31 @@ rm -f "$FALS/dv-producer-go-install.yml.bak"
 assert_check_fails "falsify/discover-workflow/producer-has-go-install" "template de produtor contém 'run: go install'" \
   check_producer_no_go_install "$FALS/dv-producer-go-install.yml"
 
-# (7) regressão de versão de action no template de consumidor → reprova (AC4).
+# (7) regressão de versão de action no template de consumidor discover → reprova (AC4).
+# Uses check_checkout_pin because the consumer template no longer has setup-go (ADR-2026-10-30).
 cp "$RUN1/dv_go_consumer.yml" "$FALS/dv-consumer-action-regression.yml"
 sed -i.bak "s|actions/checkout@v7|actions/checkout@v4|" "$FALS/dv-consumer-action-regression.yml"
 rm -f "$FALS/dv-consumer-action-regression.yml.bak"
 assert_check_fails "falsify/discover-workflow/consumer-action-regression" "actions/checkout@v4 é inferior" \
-  check_action_pins "$FALS/dv-consumer-action-regression.yml" 7
+  check_checkout_pin "$FALS/dv-consumer-action-regression.yml" 7
+
+# (8) consumer discover com env e passo de instalação comentados → reprova nos checks
+# positivos (F2 fix, ML-3A): uma template com TRACKFW_VERSION e curl comentados deve
+# reprovar tanto check_consumer_no_latest quanto check_version_pin.
+cp "$RUN1/dv_go_consumer.yml" "$FALS/dv-consumer-commented.yml"
+sed -i.bak \
+  -e 's/^\([[:space:]]*\)TRACKFW_VERSION:/\1# TRACKFW_VERSION:/' \
+  -e 's/^\([[:space:]]*\)run: curl -sSfL/\1# run: curl -sSfL/' \
+  "$FALS/dv-consumer-commented.yml"
+rm -f "$FALS/dv-consumer-commented.yml.bak"
+# Guarda de no-op: se o sed não alterou nada, o vetor de falsificação é nulo.
+if cmp -s "$FALS/dv-consumer-commented.yml" "$RUN1/dv_go_consumer.yml"; then
+  fail "falsify/discover-workflow/consumer-commented-noop" "sed foi no-op — arquivo falsificado igual ao original; vetor de falsificação ineficaz"
+fi
+assert_check_fails "falsify/discover-workflow/consumer-install-commented" "URL pinada" \
+  check_consumer_no_latest "$FALS/dv-consumer-commented.yml"
+assert_check_fails "falsify/discover-workflow/consumer-version-commented" "TRACKFW_VERSION ausente" \
+  check_version_pin "$FALS/dv-consumer-commented.yml" "$GO_VERSION"
 
 # ---------------------------------------------------------------------------
 # Guarda de vacuidade.

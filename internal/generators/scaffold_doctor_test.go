@@ -347,13 +347,12 @@ func TestIsProducerGoMod(t *testing.T) {
 }
 
 // TestBuildDiscoverGitHubActionsWorkflowContent_Templates verifies that the producer
-// template compiles from source and the consumer template installs from release,
-// including the counter-arm required by AC6: before the fix both contexts returned the
-// same consumer template (go install unconditionally), so the two templates must differ
-// and each must contain exactly the expected install mechanism.
+// template compiles from source and the consumer template installs via install.sh from
+// the pinned release tag (ADR-2026-10-30: go install is not a channel).
+// Counter-arm: the two templates must differ — the go.mod discriminant must have effect.
 //
-// Affirms ML-1A AC1 (producer compiles from source), AC3/AC4 (consumer uses updated
-// actions and go-version), and AC6 counter-arm (templates differ — fix has effect).
+// Affirms ML-1A AC1 (producer compiles from source, consumer uses install.sh),
+// AC4 (consumer has checkout@v7), and AC6 counter-arm (templates differ).
 func TestBuildDiscoverGitHubActionsWorkflowContent_Templates(t *testing.T) {
 	producer := BuildDiscoverGitHubActionsWorkflowContent(true)
 	consumer := BuildDiscoverGitHubActionsWorkflowContent(false)
@@ -371,43 +370,45 @@ func TestBuildDiscoverGitHubActionsWorkflowContent_Templates(t *testing.T) {
 		t.Error("producer template must use go-version-file: go.mod (AC3)")
 	}
 
-	// AC1: consumer must install from release.
+	// AC1 (ADR-2026-10-30): consumer must install from pinned release via install.sh.
 	if strings.Contains(consumer, "- run: go build") {
 		t.Error("consumer template must not have a 'run: go build' step")
 	}
-	if !strings.Contains(consumer, "- run: go install") {
-		t.Error("consumer template must contain a 'run: go install' step")
+	if strings.Contains(consumer, "go install github.com/kgsaran/trackfw") {
+		t.Error("consumer template must not use go install (ADR-2026-10-30: not a channel)")
 	}
-	if !strings.Contains(consumer, "@v") {
-		t.Error("consumer template must pin the version with @v<version> (AC8)")
+	if !strings.Contains(consumer, "releases/download/v${TRACKFW_VERSION}/install.sh") {
+		t.Error("consumer template must install via pinned tag URL (AC3, ADR-2026-10-30)")
 	}
-
-	// AC3/AC4: both templates must use @v7 for actions.
-	for _, tmpl := range []struct {
-		name    string
-		content string
-	}{{"producer", producer}, {"consumer", consumer}} {
-		if !strings.Contains(tmpl.content, "actions/checkout@v7") {
-			t.Errorf("%s template: expected actions/checkout@v7 (AC4 regression guard)", tmpl.name)
-		}
-		if !strings.Contains(tmpl.content, "actions/setup-go@v7") {
-			t.Errorf("%s template: expected actions/setup-go@v7 (AC4 regression guard)", tmpl.name)
-		}
+	if strings.Contains(consumer, "releases/latest") {
+		t.Error("consumer template must not reference releases/latest (AC3)")
+	}
+	if !strings.Contains(consumer, "TRACKFW_VERSION") {
+		t.Error("consumer template must set TRACKFW_VERSION env pin (P2 of Wave 0)")
 	}
 
-	// AC6 counter-arm: the two templates must differ — if they were the same (as before
-	// the fix, when both returned the consumer template with go install), the go.mod
-	// signal has no effect. Both had "- run: go install" before the fix.
+	// AC4: producer must use @v7 for actions; consumer must use checkout@v7.
+	if !strings.Contains(producer, "actions/checkout@v7") {
+		t.Error("producer template: expected actions/checkout@v7 (AC4 regression guard)")
+	}
+	if !strings.Contains(producer, "actions/setup-go@v7") {
+		t.Error("producer template: expected actions/setup-go@v7 (AC4 regression guard)")
+	}
+	if !strings.Contains(consumer, "actions/checkout@v7") {
+		t.Error("consumer template: expected actions/checkout@v7 (AC4 regression guard)")
+	}
+
+	// AC6 counter-arm: the two templates must differ — if they were the same, the go.mod
+	// discriminant has no effect.
 	if producer == consumer {
-		t.Error("counter-arm failed: producer and consumer templates are identical — the go.mod discriminant has no effect (simulates pre-fix state where both returned go install)")
+		t.Error("counter-arm failed: producer and consumer templates are identical — the go.mod discriminant has no effect")
 	}
-	// The pre-fix (counter-arm): both templates previously had "- run: go install".
-	// After the fix: only the consumer has it.
-	if !strings.Contains(consumer, "- run: go install") {
-		t.Error("counter-arm: consumer template must have '- run: go install' (as both did before the fix)")
+	// Counter-arm: producer has go build, consumer does not.
+	if !strings.Contains(producer, "- run: go build") {
+		t.Error("counter-arm: producer template must have '- run: go build'")
 	}
-	if strings.Contains(producer, "- run: go install") {
-		t.Error("counter-arm: producer template must not have '- run: go install' (this is the fix)")
+	if strings.Contains(consumer, "- run: go build") {
+		t.Error("counter-arm: consumer template must not have '- run: go build' (install.sh is the mechanism)")
 	}
 }
 

@@ -203,12 +203,10 @@ separate Node.js or Python implementation: every channel wraps the same binary.
 | Homebrew (macOS / Linux) | `kgsaran/trackfw/trackfw` | `brew tap kgsaran/trackfw && brew install trackfw` |
 | npm | `trackfw` | `npm install -g trackfw` |
 | PyPI | `trackfw` | `pip install trackfw` |
-| Go module | `github.com/kgsaran/trackfw` | `go install github.com/kgsaran/trackfw/cmd/trackfw@latest` |
 | Windows PowerShell | — | `irm https://github.com/kgsaran/trackfw/releases/latest/download/install.ps1 \| iex` (asset ships from the release after 11.1.0) |
 
 The npm and PyPI packages ship the pre-compiled Go binary for the target
-platform. The Go module builds from source. Behavioral contract and channel
-contract are documented in `docs/cli-parity.md`.
+platform. Behavioral contract and channel contract are documented in `docs/cli-parity.md`.
 
 ---
 

@@ -786,15 +786,12 @@ func TestScan_SuggestedTestFramework_Nenhum(t *testing.T) {
 	}
 }
 
-// TestWriteCIWorkflow_PinsGoInstallToBinaryVersion proves that the second install
-// mechanism (`go install .../cmd/trackfw@latest`, written by InstallGates into
-// trackfw-validate.yml) is pinned to the version of the binary that generated it — the
-// same defect class the Wave 0 correction (ROADMAP-2026-08-28) named against the
-// install.sh mechanism, applied to this second surface. Asserts against
-// version.Version directly (not a hardcoded literal): if version.Version changes, this
-// assertion must still pass without editing the test, proving the pin is not hardcoded
-// in the generator either.
-func TestWriteCIWorkflow_PinsGoInstallToBinaryVersion(t *testing.T) {
+// TestWriteCIWorkflow_PinsInstallToBinaryVersion proves that the consumer
+// trackfw-validate.yml written by InstallGates installs via install.sh from the
+// release tag pinned to version.Version — ADR-2026-10-30: go install is not a channel.
+// Asserts TRACKFW_VERSION = version.Version (not hardcoded) and that the URL uses the
+// shell variable ${TRACKFW_VERSION} (P2 of Wave 0) so the pin is not duplicated.
+func TestWriteCIWorkflow_PinsInstallToBinaryVersion(t *testing.T) {
 	dir := t.TempDir()
 	r := DiscoveryResult{CISystem: "github-actions"}
 	if err := InstallGates(r, dir, io.Discard); err != nil {
@@ -806,22 +803,27 @@ func TestWriteCIWorkflow_PinsGoInstallToBinaryVersion(t *testing.T) {
 		t.Fatalf("trackfw-validate.yml not found: %v", err)
 	}
 
-	wantPin := "go install github.com/kgsaran/trackfw/cmd/trackfw@v" + version.Version
-	if !containsSubstr(string(content), wantPin) {
-		t.Errorf("trackfw-validate.yml does not contain pinned install line %q, got:\n%s", wantPin, content)
+	wantVersionEnv := `TRACKFW_VERSION: "` + version.Version + `"`
+	if !containsSubstr(string(content), wantVersionEnv) {
+		t.Errorf("trackfw-validate.yml does not contain %q, got:\n%s", wantVersionEnv, content)
 	}
-	if containsSubstr(string(content), "trackfw/cmd/trackfw@latest") {
-		t.Errorf("trackfw-validate.yml still contains unpinned '@latest', got:\n%s", content)
+	if !containsSubstr(string(content), "releases/download/v${TRACKFW_VERSION}/install.sh") {
+		t.Errorf("trackfw-validate.yml does not contain pinned install URL, got:\n%s", content)
+	}
+	if containsSubstr(string(content), "releases/latest") {
+		t.Errorf("trackfw-validate.yml still references releases/latest — must use pinned tag URL, got:\n%s", content)
+	}
+	if containsSubstr(string(content), "go install github.com/kgsaran/trackfw") {
+		t.Errorf("trackfw-validate.yml still contains go install — not a valid channel (ADR-2026-10-30), got:\n%s", content)
 	}
 }
 
-// TestWriteCIWorkflow_VersionNotHardcoded falsifies the specific regression the ADR
-// warns against (roadmap Wave 0 section 3, "install.sh"/scaffold.go falsification
-// table applied to this surface): a template with `@v7.3.0` typed literally into the
-// generator source would pass every other test in this file today, because
-// version.Version happens to equal "7.3.0" right now. Stubbing version.Version to a
-// value that never appears in the source is the only way to prove the pin tracks the
-// variable, not a literal.
+// TestWriteCIWorkflow_VersionNotHardcoded falsifies the regression where a version
+// literal typed into the generator source would pass every other test because
+// version.Version happens to equal that literal right now. Stubbing version.Version to
+// a value that never appears in the source is the only way to prove the pin tracks the
+// variable, not a literal. After ADR-2026-10-30, the pin is TRACKFW_VERSION in the
+// env: block, not a go install path — the stub must appear in TRACKFW_VERSION.
 func TestWriteCIWorkflow_VersionNotHardcoded(t *testing.T) {
 	orig := version.Version
 	version.Version = "9.9.9-stub"
@@ -838,11 +840,11 @@ func TestWriteCIWorkflow_VersionNotHardcoded(t *testing.T) {
 		t.Fatalf("trackfw-validate.yml not found: %v", err)
 	}
 
-	if !containsSubstr(string(content), "trackfw@v9.9.9-stub") {
-		t.Errorf("stubbed version.Version did not propagate to the template, got:\n%s", content)
+	if !containsSubstr(string(content), `TRACKFW_VERSION: "9.9.9-stub"`) {
+		t.Errorf("stubbed version.Version did not propagate to TRACKFW_VERSION env, got:\n%s", content)
 	}
-	if containsSubstr(string(content), "7.3.0") {
-		t.Errorf("template still contains the real version 7.3.0 after stubbing — pin looks hardcoded, got:\n%s", content)
+	if containsSubstr(string(content), orig) {
+		t.Errorf("template still contains the real version %q after stubbing — pin looks hardcoded, got:\n%s", orig, content)
 	}
 }
 
@@ -1009,7 +1011,8 @@ func TestRunScaffoldDoctor_DiscoverWorkflow_DivergentWhenPinManuallyChanged(t *t
 	if err != nil {
 		t.Fatalf("reading generated workflow: %v", err)
 	}
-	tampered := strings.Replace(string(original), "trackfw@v"+version.Version, "trackfw@v0.0.1-stale", 1)
+	// Tamper by changing the TRACKFW_VERSION pin (ADR-2026-10-30: install via install.sh, not go install).
+	tampered := strings.Replace(string(original), `TRACKFW_VERSION: "`+version.Version+`"`, `TRACKFW_VERSION: "0.0.1-stale"`, 1)
 	if tampered == string(original) {
 		t.Fatalf("tamper substitution did not change content — test setup broken")
 	}
