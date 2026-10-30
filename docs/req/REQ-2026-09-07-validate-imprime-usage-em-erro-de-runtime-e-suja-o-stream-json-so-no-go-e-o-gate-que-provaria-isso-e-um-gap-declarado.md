@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-07
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-08-validate-suprime-usage-em-erro-de-runtime-e-o-gate-que-provaria-isso.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-08-validate-suprime-usage-em-erro-de-runtime-e-o-gate-que-provaria-isso.md"
 ---
 
 # REQ: validate imprime usage em erro de runtime e suja o stream json so no Go, e o gate que provaria isso e um gap declarado
 
-> Date: 2026-09-07 | Status: Open
+> Date: 2026-09-07 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -176,4 +176,4 @@ comando em processo via `cmd.Execute()`, e um `os.Exit` derrubaria o teste. Isso
 - `root.go` só ganha o reconhecimento do erro tipado; o resto do wrapper fica igual.
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-08-validate-suprime-usage-em-erro-de-runtime-e-o-gate-que-provaria-isso.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-08-validate-suprime-usage-em-erro-de-runtime-e-o-gate-que-provaria-isso.md`
