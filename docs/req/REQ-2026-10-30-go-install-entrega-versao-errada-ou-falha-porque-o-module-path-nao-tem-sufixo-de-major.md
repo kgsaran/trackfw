@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-10-30
 author: "zeus-tf"
 adr: "docs/adr/ADR-2026-10-30-go-install-nao-e-canal-de-instalacao-do-trackfw.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-10-30-go-install-entrega-versao-errada-ou-falha-porque-o-module-path-nao-tem-sufixo-de-major.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-10-30-go-install-entrega-versao-errada-ou-falha-porque-o-module-path-nao-tem-sufixo-de-major.md"
 ---
 
 # REQ: go install entrega versao errada ou falha porque o module path nao tem sufixo de major
 
-> Date: 2026-10-30 | Status: Open
+> Date: 2026-10-30 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -40,20 +40,20 @@ Decisão de direção: ADR-2026-10-30 (`go install` não é canal; module path n
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — o `trackfw-validate.yml` de consumidor instala por `install.sh` com
+- [x] **AC1** — o `trackfw-validate.yml` de consumidor instala por `install.sh` com
       `TRACKFW_VERSION` = `internal/version.Version`, como o `trackfw-gate.yml`; job id
       `governance-go-install` mantido; nenhum `go install` em template de consumidor.
-- [ ] **AC2** — teste do gerador que falha se qualquer template de consumidor emitir `go install`
+- [x] **AC2** — teste do gerador que falha se qualquer template de consumidor emitir `go install`
       de `github.com/kgsaran/trackfw` sem sufixo de major (o critério que o issue pede: algo exercita
       o comando emitido).
-- [ ] **AC3** — o script de instalação baixado pelos templates de consumidor (`trackfw-gate.yml`,
+- [x] **AC3** — o script de instalação baixado pelos templates de consumidor (`trackfw-gate.yml`,
       `.gitlab-ci-trackfw.yml`, `trackfw-validate.yml`) vem da tag pinada, não de `releases/latest`.
       Viável: o `install.sh` é asset de cada release (`.goreleaser.yaml:44`; conferido na v11.2.0).
-- [ ] **AC4** — `README.md`, `docs/visao-projeto/VISION.md` (achado da Wave 0) e as quatro páginas do site deixam de oferecer `go install`; oferecem os
+- [x] **AC4** — `README.md`, `docs/visao-projeto/VISION.md` (achado da Wave 0) e as quatro páginas do site deixam de oferecer `go install`; oferecem os
       canais da ADR. `docs/cli-parity.md` descreve o mecanismo novo.
-- [ ] **AC5** — `trackfw doctor` num consumidor com o `trackfw-validate.yml` antigo aponta a
+- [x] **AC5** — `trackfw doctor` num consumidor com o `trackfw-validate.yml` antigo aponta a
       divergência, e `trackfw update` a corrige (contra-braço: arquivo atual não gera achado).
-- [ ] **AC6** — o template do produtor (este repositório, `isProducer=true`) não muda: continua
+- [x] **AC6** — o template do produtor (este repositório, `isProducer=true`) não muda: continua
       compilando do código-fonte.
 
 ## Negative Scope
@@ -71,4 +71,4 @@ ADR: docs/adr/ADR-2026-10-30-go-install-nao-e-canal-de-instalacao-do-trackfw.md
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-10-30-go-install-entrega-versao-errada-ou-falha-porque-o-module-path-nao-tem-sufixo-de-major.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-10-30-go-install-entrega-versao-errada-ou-falha-porque-o-module-path-nao-tem-sufixo-de-major.md

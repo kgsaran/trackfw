@@ -7,6 +7,33 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [11.2.1] - 2026-10-30
+
+### Breaking Changes
+
+Nenhum.
+
+### Fixed
+
+- **O `trackfw-validate.yml` gerado para consumidores voltou a instalar o trackfw** (#637, #638). Ele usava
+  `go install github.com/kgsaran/trackfw/cmd/trackfw@v<versão>`, que o Go recusa desde a v2 porque o module path
+  não tem sufixo de major; o job `governance-go-install` falhava antes do `trackfw validate`. Agora instala pelo
+  `install.sh` da própria tag, com `TRACKFW_VERSION` pinado, como o `trackfw-gate.yml`. O job id foi mantido.
+  Rode `trackfw update` para receber o arquivo novo; `trackfw doctor` acusa o antigo como `scaffold-divergent`.
+- **`trackfw-gate.yml` e `.gitlab-ci-trackfw.yml` baixam o `install.sh` da tag pinada**, não de
+  `releases/latest` (#638).
+- **README e site deixam de oferecer `go install ...@latest`**, que instalava a v1.1.0 sem erro (#638).
+  `go install` não é canal de instalação (ADR-2026-10-30); use `install.sh`, `install.ps1`, Homebrew, npm ou PyPI.
+- **`--json` não escreve nada depois do documento** em `validate`, `update` e `update harness` (#635). Com
+  violação ou alvo falho, o stdout leva só o JSON e o resultado vai no código de saída; antes, uma linha de texto
+  ia para o stderr depois do documento.
+
+### Internal
+
+- Suítes de teste isolam `HOME` e falham rápido, com mensagem clara, quando falta `git` no PATH;
+  `make check-prereqs` confere as ferramentas do `make quality` (#631).
+- Site: o exemplo de `release tag` não cita `--dry-run`, que não existe (#630).
+
 ## [11.2.0] - 2026-10-29
 
 ### Breaking Changes
