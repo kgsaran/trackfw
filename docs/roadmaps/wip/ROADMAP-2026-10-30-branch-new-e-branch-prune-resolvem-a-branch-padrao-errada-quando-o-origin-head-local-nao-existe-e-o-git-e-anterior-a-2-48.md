@@ -112,7 +112,7 @@ test -f docs/seguranca/2026-10-30-redteam-branch-padrao-ls-remote.md
 > Dependencies: Wave 2 auditada.
 
 ### ML-3A — Achados A-1 a A-5 do red team (apolo-tf)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-10-30. M-2, M-4b, M-5b, M-6 e "aceitar `HEAD`" reprovam testes nomeados (conferidos em `-v`); pacote `internal/commands` verde.
 **Files affected:** `internal/commands/branch_prune_forge.go`, `internal/commands/ship.go`, `internal/commands/branch_default_ls_remote_test.go`, `internal/commands/ship_test.go`, `internal/commands/release_test.go`
 **Actions:**
 1. A-5: `isValidBranchLocalName` recusa também `HEAD`, componente que começa com `.`, sufixo `.lock`, `/` no início ou no fim e `//`. Vetores na tabela do teste (o caso `HEAD` documentado como aceito passa a recusar).
@@ -121,9 +121,9 @@ test -f docs/seguranca/2026-10-30-redteam-branch-padrao-ls-remote.md
 4. A-3: `gitCommitsSince` usa `refs/remotes/origin/<base>` quando existe e `refs/heads/<base>` como fallback, por refname completo. Testes: branch local atrás do remoto lista só os commits da feature; sem `origin/<base>`, usa a local; tag chamada `origin/<base>` não interfere.
 5. A-4: corrigir o comentário de `release_test.go` ("absent in the mock → skipped").
 **Acceptance criteria:**
-- [ ] mutações M-2, M-4b, M-5b e M-6 do red team reprovam
-- [ ] `HEAD` servido pelo remoto cai no literal
-- [ ] pacote `internal/commands` verde
+- [x] mutações M-2, M-4b, M-5b e M-6 do red team reprovam
+- [x] `HEAD` servido pelo remoto cai no literal
+- [x] pacote `internal/commands` verde
 
 **Gates da wave:**
 ```bash

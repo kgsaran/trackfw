@@ -59,17 +59,28 @@ func resolveDefaultBranchWithSource(gitExec func(...string) (string, error), ghE
 // hostile remote could serve to construct a relative-revision argument. A deny list would
 // be exhaustible; a permit list guarantees only characters with no special git meaning pass.
 //
-// Accepted: [a-zA-Z0-9._/-]
-// Rejected: empty, starts with -, contains ..
+// Accepted: [a-zA-Z0-9._/-], no component empty, no component starting with '.', no
+// component ending with '.lock', no leading or trailing '/', not exactly "HEAD".
+//
+// Rejected: empty; starts with '-'; contains '..'; 'HEAD' exactly; leading or trailing '/'
+// (empty component); any component starting with '.'; any component ending with '.lock';
+// any character outside the permit set.
 //
 // R-2: names with valid git characters outside this set (e.g. unicode, %) fall to the literal
 // "main". This is the conservative, safe choice; the literal is no worse than today's behaviour
 // for those repositories.
+//
+// A-5 (ML-3A): added "HEAD" exact, empty-component, leading-dot-component, and ".lock"-suffix
+// rules to align with the subset of `git check-ref-format` rules that matter for downstream
+// rev-parse safety.
 func isValidBranchLocalName(name string) bool {
 	if name == "" {
 		return false
 	}
 	if name[0] == '-' {
+		return false
+	}
+	if name == "HEAD" {
 		return false
 	}
 	if strings.Contains(name, "..") {
@@ -78,6 +89,21 @@ func isValidBranchLocalName(name string) bool {
 	for _, c := range name {
 		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
 			c == '.' || c == '_' || c == '/' || c == '-') {
+			return false
+		}
+	}
+	// Component-based checks (A-5): split by '/' and inspect each piece.
+	for _, comp := range strings.Split(name, "/") {
+		if comp == "" {
+			// Empty component: leading '/', trailing '/', or consecutive '//'.
+			return false
+		}
+		if comp[0] == '.' {
+			// Component starts with '.'.
+			return false
+		}
+		if strings.HasSuffix(comp, ".lock") {
+			// Component ends with '.lock'.
 			return false
 		}
 	}

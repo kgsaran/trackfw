@@ -552,15 +552,19 @@ const commitMessageSep = "\x1e"
 // base..HEAD, most-recent-first (git log's natural order). Returns nil on any git error or
 // when the range is empty.
 //
-// R-5: In a fresh/shallow clone, refs/heads/<base> may not exist even though origin/<base>
-// does (the local branch was never checked out). When refs/heads/<base> is absent, the range
-// falls back to origin/<base>..HEAD so that `ship` and `release tag` still produce a commit
-// list for the PR body. If both are absent, git log returns exit ≠ 0 and this function returns
-// nil (same as today — no regression). ADR-2026-10-30.
+// R-5 / A-3 (ML-3A): the range start is resolved in two steps using full refnames (to avoid
+// DWIM ambiguity with tags named "origin/<base>"):
+//  1. If refs/remotes/origin/<base> exists, use it — the remote tracking ref is the precise
+//     boundary of what the PR base already contains. A local branch that is behind the remote
+//     would over-report commits; the tracking ref gives the correct range.
+//  2. Otherwise, use refs/heads/<base>. This covers a fresh/shallow clone (no remote) and
+//     the case where the remote tracking ref was not created by the fetch.
+//
+// If neither ref exists git log returns exit ≠ 0 and this function returns nil. ADR-2026-10-30.
 func gitCommitsSince(base string, execGit func(args ...string) (string, error)) []string {
-	effectiveBase := base
-	if _, err := execGit("rev-parse", "-q", "--verify", "refs/heads/"+base); err != nil {
-		effectiveBase = "origin/" + base
+	effectiveBase := "refs/heads/" + base
+	if _, err := execGit("rev-parse", "-q", "--verify", "refs/remotes/origin/"+base); err == nil {
+		effectiveBase = "refs/remotes/origin/" + base
 	}
 	out, err := execGit("log", effectiveBase+"..HEAD", "--no-merges", "--format=%B"+commitMessageSep)
 	if err != nil {

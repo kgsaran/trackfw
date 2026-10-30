@@ -2,17 +2,21 @@ package commands
 
 // branch_default_ls_remote_test.go — unit and integration tests for the ls-remote fallback
 // introduced in ADR-2026-10-30 (ML-1A, REQ-2026-10-30). Covers AC3, AC4, AC5 (REQ) and R-5.
+// ML-3A adds A-1/A-5 cases and A-3 tests.
 //
 // Reconciliation sentences (one per test, per the Regra Dura de Reconciliação):
 //
 //   TestIsValidBranchLocalName:
-//     Affirms P-2 — isValidBranchLocalName accepts only [a-zA-Z0-9._/-], rejects empty,
-//     leading dash, ".." anywhere, and characters outside the permit list (including unicode).
+//     Affirms P-2/A-5 — isValidBranchLocalName accepts only [a-zA-Z0-9._/-], rejects empty,
+//     leading dash, ".." anywhere, "HEAD" exactly, empty components (/x, x/, a//b), components
+//     starting with '.' (., a/.b), components ending with '.lock' (x.lock), and characters
+//     outside the permit list (including unicode).
 //
 //   TestParseLsRemoteSymref:
-//     Affirms P-1/P-2 — parseLsRemoteSymref accepts only "ref: refs/heads/<name>\tHEAD" with a
-//     name that passes isValidBranchLocalName; rejects refs/tags, wrong second field, missing tab,
-//     and strips \r from CRLF lines.
+//     Affirms P-1/P-2/A-1 — parseLsRemoteSymref accepts only "ref: refs/heads/<name>\tHEAD"
+//     with a name that passes isValidBranchLocalName; rejects refs/tags, wrong second field,
+//     a second field that ends with "HEAD" but is not exactly "HEAD" (refs/heads/HEAD), missing
+//     tab, and strips \r from CRLF lines.
 //
 //   TestResolveDefaultBranch_LsRemoteReturnsMaster:
 //     Affirms P-1 — when symbolic-ref fails and ls-remote returns a valid master symref,
@@ -41,9 +45,21 @@ package commands
 //     Affirms AC5/P-3 — on a real git master repo with followRemoteHEAD=never, defaultBaseBranch
 //     returns "master" (ls-remote path), not "main" (literal fallback).
 //
-//   TestGitCommitsSince_FallsBackToOriginWhenLocalRefAbsent:
-//     Affirms R-5 — when refs/heads/<base> is absent but origin/<base> exists, gitCommitsSince
-//     returns commits from origin/<base>..HEAD instead of returning nil.
+//   TestGitCommitsSince_LocalRefAbsent_UsesOriginRef:
+//     Affirms A-3 — when refs/remotes/origin/<base> exists and refs/heads/<base> is absent,
+//     gitCommitsSince uses refs/remotes/origin/<base> as the range start (not nil).
+//
+//   TestGitCommitsSince_LocalBehindOrigin_ReportsOnlyFeatureCommit:
+//     Affirms A-3 — when local <base> is behind origin/<base>, gitCommitsSince reports only
+//     the commits on the feature branch, not the extra origin commits.
+//
+//   TestGitCommitsSince_NoOriginRef_FallsBackToLocalRef:
+//     Affirms A-3 — when refs/remotes/origin/<base> does not exist, gitCommitsSince falls back
+//     to refs/heads/<base> and returns the feature commits correctly.
+//
+//   TestGitCommitsSince_TagConflict_FullRefnameAvoidsDwim:
+//     Affirms A-3 — when a tag named "origin/<base>" exists and refs/remotes/origin/<base> also
+//     exists, gitCommitsSince uses the full refname and is not affected by DWIM tag resolution.
 
 import (
 	"fmt"
@@ -76,6 +92,14 @@ func TestIsValidBranchLocalName(t *testing.T) {
 		// R-2: unicode falls to literal — permit list rejects it.
 		{"unicode char", "branchä", false},
 		{"percent", "branch%2F", false},
+		// A-5: HEAD and component-based rejections.
+		{"HEAD exact", "HEAD", false},
+		{"dot component (single dot)", ".", false},
+		{"lock suffix on component", "x.lock", false},
+		{"leading slash (empty first component)", "/x", false},
+		{"trailing slash (empty last component)", "x/", false},
+		{"double slash (empty middle component)", "a//b", false},
+		{"component starts with dot", "a/.b", false},
 		// All accept vectors from P-2.
 		{"simple main", "main", true},
 		{"simple master", "master", true},
@@ -173,16 +197,21 @@ func TestParseLsRemoteSymref(t *testing.T) {
 			wantOK: false,
 		},
 		{
-			name:   "second field is refs/heads/HEAD not HEAD",
+			// A-5 (ML-3A): "HEAD" as a branch name is now rejected by isValidBranchLocalName.
+			// Previously this case was accepted (wantOK: true, wantName: "HEAD"). The second
+			// field IS exactly "HEAD" so the parse reaches isValidBranchLocalName("HEAD") which
+			// now returns false — the whole line is rejected and parseLsRemoteSymref returns false.
+			name:   "branch name HEAD rejected by isValidBranchLocalName",
 			input:  "ref: refs/heads/HEAD\tHEAD",
-			// "HEAD" as a branch name passes isValidBranchLocalName — but the HEAD ref
-			// itself is not a regular branch. The second field IS "HEAD" so this parses.
-			// Documenting: if the remote reports "ref: refs/heads/HEAD\tHEAD", parseLsRemoteSymref
-			// would return ("HEAD", true). This is an edge case — git servers do not normally
-			// name a branch "HEAD". R-2 note: this path is technically accepted by the parser;
-			// it would be used as the base branch name.
-			wantName: "HEAD",
-			wantOK:   true,
+			wantOK: false,
+		},
+		{
+			// A-1 (ML-3A): second field is "refs/heads/HEAD" (ends with "HEAD" but is not "HEAD").
+			// M-2 mutant changes second != "HEAD" to !strings.HasSuffix(second, "HEAD"), which
+			// would accept this line and return "main". The correct implementation rejects it.
+			name:   "second field ends with HEAD but is not HEAD (refs/heads/HEAD)",
+			input:  "ref: refs/heads/main\trefs/heads/HEAD",
+			wantOK: false,
 		},
 	}
 
@@ -565,12 +594,13 @@ func TestDefaultBaseBranch_MasterRepoNoSymref_RealGit(t *testing.T) {
 	}
 }
 
-// ─── R-5: gitCommitsSince fallback to origin/<base> ──────────────────────────────────────────
+// ─── R-5 / A-3: gitCommitsSince prefers origin ref ───────────────────────────────────────────
 
-// TestGitCommitsSince_FallsBackToOriginWhenLocalRefAbsent asserts: when refs/heads/<base> does
-// not exist locally but origin/<base> does, gitCommitsSince returns the commits from
-// origin/<base>..HEAD instead of returning nil (exit 128).
-func TestGitCommitsSince_FallsBackToOriginWhenLocalRefAbsent(t *testing.T) {
+// TestGitCommitsSince_LocalRefAbsent_UsesOriginRef asserts: when refs/remotes/origin/<base>
+// exists and refs/heads/<base> is absent, gitCommitsSince uses the origin tracking ref as the
+// range start and returns the feature commits (not nil). With the new A-3 logic (prefer origin),
+// the function reaches this via "origin exists → use origin", not as a fallback.
+func TestGitCommitsSince_LocalRefAbsent_UsesOriginRef(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not found in PATH")
 	}
@@ -670,10 +700,364 @@ func TestGitCommitsSince_FallsBackToOriginWhenLocalRefAbsent(t *testing.T) {
 
 	commits := gitCommitsSince("master", execGit)
 	if len(commits) == 0 {
-		t.Fatalf("R-5: gitCommitsSince(\"master\") returned nil/empty; expected 1 commit from feat/x. "+
-			"Without the R-5 fix, git log master..HEAD fails (exit 128) because refs/heads/master is absent.")
+		t.Fatalf("A-3: gitCommitsSince(\"master\") returned nil/empty; expected 1 commit from feat/x. "+
+			"refs/remotes/origin/master exists and should be used as the range start.")
 	}
 	if !strings.Contains(commits[0], "feat: add feature") {
-		t.Errorf("R-5: expected commit message to contain %q, got %q", "feat: add feature", commits[0])
+		t.Errorf("A-3: expected commit message to contain %q, got %q", "feat: add feature", commits[0])
+	}
+}
+
+// TestGitCommitsSince_LocalBehindOrigin_ReportsOnlyFeatureCommit asserts: when the local
+// <base> branch is behind refs/remotes/origin/<base> (local never updated after remote advanced),
+// gitCommitsSince uses refs/remotes/origin/<base> and reports only the commits on the feature
+// branch — not the extra commits that are in origin but ahead of local.
+//
+// M-6 killer: a mutant that reverts to local-first (uses refs/heads/<base> when present) would
+// include the extra origin commit in the range, returning 2 commits instead of 1.
+func TestGitCommitsSince_LocalBehindOrigin_ReportsOnlyFeatureCommit(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not found in PATH")
+	}
+
+	work := t.TempDir()
+	bareDir := filepath.Join(work, "origin.git")
+	cloneDir := filepath.Join(work, "clone")
+
+	cfgPath := filepath.Join(work, "empty-gitconfig")
+	if err := os.WriteFile(cfgPath, []byte("[gc]\n\tauto = 0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	baseEnv := append(os.Environ(),
+		"GIT_CONFIG_GLOBAL="+cfgPath,
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_AUTHOR_NAME=t",
+		"GIT_AUTHOR_EMAIL=t@t",
+		"GIT_COMMITTER_NAME=t",
+		"GIT_COMMITTER_EMAIL=t@t",
+		"HOME="+work,
+	)
+
+	run := func(dir string, args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = baseEnv
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v in %s: %v\n%s", args, dir, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+
+	if err := os.MkdirAll(bareDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run(bareDir, "init", "-q", "--bare", "-b", "master")
+
+	if err := os.MkdirAll(cloneDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run(work, "clone", "-q", bareDir, cloneDir)
+	run(cloneDir, "config", "commit.gpgsign", "false")
+
+	// Commit A (base) on master, push — local master = A, origin/master = A.
+	if err := os.WriteFile(filepath.Join(cloneDir, "base.txt"), []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(cloneDir, "add", "base.txt")
+	run(cloneDir, "commit", "-q", "-m", "base commit")
+	run(cloneDir, "push", "-q", "origin", "master")
+
+	// Create feat branch (at A), commit B "extra commit on origin".
+	// Push feat:master → origin/master advances to B; local master stays at A.
+	run(cloneDir, "checkout", "-q", "-b", "feat")
+	if err := os.WriteFile(filepath.Join(cloneDir, "extra.txt"), []byte("extra\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(cloneDir, "add", "extra.txt")
+	run(cloneDir, "commit", "-q", "-m", "extra commit on origin")
+	run(cloneDir, "push", "-q", "origin", "feat:master")
+	// After this push: origin/master (refs/remotes/origin/master) = B; local master = A.
+
+	// Commit C "feat: feature work" on feat (based on B).
+	// Ancestry: A → B → C (feat HEAD). Local master = A.
+	if err := os.WriteFile(filepath.Join(cloneDir, "feature.txt"), []byte("feature\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(cloneDir, "add", "feature.txt")
+	run(cloneDir, "commit", "-q", "-m", "feat: feature work")
+
+	// Guard: local master must be at A (behind), origin/master at B.
+	localMasterSHA := run(cloneDir, "rev-parse", "refs/heads/master")
+	originMasterSHA := run(cloneDir, "rev-parse", "refs/remotes/origin/master")
+	if localMasterSHA == originMasterSHA {
+		t.Fatal("setup: local master and origin/master must diverge (local behind)")
+	}
+
+	execGit := func(args ...string) (string, error) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = cloneDir
+		cmd.Env = baseEnv
+		var se strings.Builder
+		cmd.Stderr = &se
+		out, err := cmd.Output()
+		if err != nil {
+			msg := se.String()
+			if msg == "" {
+				msg = err.Error()
+			}
+			return "", fmt.Errorf("%s", strings.TrimSpace(msg))
+		}
+		return strings.TrimSpace(string(out)), nil
+	}
+
+	commits := gitCommitsSince("master", execGit)
+	if len(commits) != 1 {
+		t.Fatalf("A-3: gitCommitsSince returned %d commits, want exactly 1 (only the feature commit). "+
+			"Using local master (behind origin) would return 2 commits (extra+feature). "+
+			"Got: %v", len(commits), commits)
+	}
+	if !strings.Contains(commits[0], "feat: feature work") {
+		t.Errorf("A-3: expected feature commit, got %q", commits[0])
+	}
+}
+
+// TestGitCommitsSince_NoOriginRef_FallsBackToLocalRef asserts: when refs/remotes/origin/<base>
+// does not exist but refs/heads/<base> does, gitCommitsSince falls back to refs/heads/<base> and
+// returns the feature commits correctly.
+//
+// M-6 killer (always-remote variant): a mutant that always uses refs/remotes/origin/<base>
+// without verifying existence would fail with git log exit 128 (ref not found) → returns nil.
+func TestGitCommitsSince_NoOriginRef_FallsBackToLocalRef(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not found in PATH")
+	}
+
+	work := t.TempDir()
+	bareDir := filepath.Join(work, "origin.git")
+	cloneDir := filepath.Join(work, "clone")
+
+	cfgPath := filepath.Join(work, "empty-gitconfig")
+	if err := os.WriteFile(cfgPath, []byte("[gc]\n\tauto = 0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	baseEnv := append(os.Environ(),
+		"GIT_CONFIG_GLOBAL="+cfgPath,
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_AUTHOR_NAME=t",
+		"GIT_AUTHOR_EMAIL=t@t",
+		"GIT_COMMITTER_NAME=t",
+		"GIT_COMMITTER_EMAIL=t@t",
+		"HOME="+work,
+	)
+
+	run := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = baseEnv
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v in %s: %v\n%s", args, dir, err, out)
+		}
+	}
+
+	if err := os.MkdirAll(bareDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run(bareDir, "init", "-q", "--bare", "-b", "master")
+
+	if err := os.MkdirAll(cloneDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run(work, "clone", "-q", bareDir, cloneDir)
+	run(cloneDir, "config", "commit.gpgsign", "false")
+
+	// Commit on master, push.
+	if err := os.WriteFile(filepath.Join(cloneDir, "base.txt"), []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(cloneDir, "add", "base.txt")
+	run(cloneDir, "commit", "-q", "-m", "base commit")
+	run(cloneDir, "push", "-q", "origin", "master")
+
+	// Remove the remote tracking ref (refs/remotes/origin/master) so only local master exists.
+	run(cloneDir, "update-ref", "-d", "refs/remotes/origin/master")
+
+	// Create feature branch with one commit.
+	run(cloneDir, "checkout", "-q", "-b", "feat")
+	if err := os.WriteFile(filepath.Join(cloneDir, "feature.txt"), []byte("feature\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(cloneDir, "add", "feature.txt")
+	run(cloneDir, "commit", "-q", "-m", "feat: no-origin feature")
+
+	// Guard: origin/master must be absent, local master must exist.
+	verifyOriginCmd := exec.Command("git", "rev-parse", "-q", "--verify", "refs/remotes/origin/master")
+	verifyOriginCmd.Dir = cloneDir
+	verifyOriginCmd.Env = baseEnv
+	if err := verifyOriginCmd.Run(); err == nil {
+		t.Fatal("setup: refs/remotes/origin/master must be absent for this test")
+	}
+	verifyLocalCmd := exec.Command("git", "rev-parse", "-q", "--verify", "refs/heads/master")
+	verifyLocalCmd.Dir = cloneDir
+	verifyLocalCmd.Env = baseEnv
+	if err := verifyLocalCmd.Run(); err != nil {
+		t.Fatal("setup: refs/heads/master must exist for this test")
+	}
+
+	execGit := func(args ...string) (string, error) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = cloneDir
+		cmd.Env = baseEnv
+		var se strings.Builder
+		cmd.Stderr = &se
+		out, err := cmd.Output()
+		if err != nil {
+			msg := se.String()
+			if msg == "" {
+				msg = err.Error()
+			}
+			return "", fmt.Errorf("%s", strings.TrimSpace(msg))
+		}
+		return strings.TrimSpace(string(out)), nil
+	}
+
+	commits := gitCommitsSince("master", execGit)
+	if len(commits) == 0 {
+		t.Fatalf("A-3: gitCommitsSince returned nil; expected 1 commit from feat. "+
+			"Without fallback to local ref, git log refs/remotes/origin/master..HEAD "+
+			"would fail (ref does not exist) and return nil.")
+	}
+	if !strings.Contains(commits[0], "feat: no-origin feature") {
+		t.Errorf("A-3: expected %q, got %q", "feat: no-origin feature", commits[0])
+	}
+}
+
+// TestGitCommitsSince_TagConflict_FullRefnameAvoidsDwim asserts: when a tag named "origin/<base>"
+// exists (pointing to an earlier commit) alongside refs/remotes/origin/<base>, gitCommitsSince
+// uses the full refname refs/remotes/origin/<base> and is not misled by DWIM tag resolution.
+//
+// With the full refname, git never consults refs/tags/. A mutant that uses the short name
+// "origin/master" would let DWIM prefer the tag (if git resolves tags before remotes), returning
+// a different (over-reported) commit list.
+func TestGitCommitsSince_TagConflict_FullRefnameAvoidsDwim(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not found in PATH")
+	}
+
+	work := t.TempDir()
+	bareDir := filepath.Join(work, "origin.git")
+	cloneDir := filepath.Join(work, "clone")
+
+	cfgPath := filepath.Join(work, "empty-gitconfig")
+	if err := os.WriteFile(cfgPath, []byte("[gc]\n\tauto = 0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	baseEnv := append(os.Environ(),
+		"GIT_CONFIG_GLOBAL="+cfgPath,
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_AUTHOR_NAME=t",
+		"GIT_AUTHOR_EMAIL=t@t",
+		"GIT_COMMITTER_NAME=t",
+		"GIT_COMMITTER_EMAIL=t@t",
+		"HOME="+work,
+	)
+
+	run := func(dir string, args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = baseEnv
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v in %s: %v\n%s", args, dir, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+
+	if err := os.MkdirAll(bareDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run(bareDir, "init", "-q", "--bare", "-b", "master")
+
+	if err := os.MkdirAll(cloneDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run(work, "clone", "-q", bareDir, cloneDir)
+	run(cloneDir, "config", "commit.gpgsign", "false")
+
+	// Commit A (base), push — origin/master = A.
+	if err := os.WriteFile(filepath.Join(cloneDir, "base.txt"), []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(cloneDir, "add", "base.txt")
+	run(cloneDir, "commit", "-q", "-m", "base commit")
+	run(cloneDir, "push", "-q", "origin", "master")
+	baseSHA := run(cloneDir, "rev-parse", "refs/heads/master")
+
+	// Create tag "origin/master" pointing to A (the base commit).
+	// This creates refs/tags/origin/master. DWIM would prefer this tag over
+	// refs/remotes/origin/master if the short name "origin/master" is used.
+	run(cloneDir, "tag", "origin/master", baseSHA)
+
+	// Create feat branch (at A), commit B "extra", push feat:master → origin/master = B.
+	run(cloneDir, "checkout", "-q", "-b", "feat")
+	if err := os.WriteFile(filepath.Join(cloneDir, "extra.txt"), []byte("extra\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(cloneDir, "add", "extra.txt")
+	run(cloneDir, "commit", "-q", "-m", "extra commit on origin")
+	run(cloneDir, "push", "-q", "origin", "feat:master")
+	// refs/remotes/origin/master now points to B; tag origin/master still points to A.
+
+	// Commit C "feat: tag-conflict feature" on feat.
+	if err := os.WriteFile(filepath.Join(cloneDir, "feature.txt"), []byte("feature\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(cloneDir, "add", "feature.txt")
+	run(cloneDir, "commit", "-q", "-m", "feat: tag-conflict feature")
+
+	// Guard: tag origin/master must point to A, refs/remotes/origin/master to B (different).
+	tagSHA := run(cloneDir, "rev-parse", "refs/tags/origin/master")
+	originRefSHA := run(cloneDir, "rev-parse", "refs/remotes/origin/master")
+	if tagSHA == originRefSHA {
+		t.Fatal("setup: tag origin/master and refs/remotes/origin/master must point to different commits")
+	}
+	if tagSHA != baseSHA {
+		t.Fatalf("setup: tag origin/master must point to base commit %s, got %s", baseSHA, tagSHA)
+	}
+
+	execGit := func(args ...string) (string, error) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = cloneDir
+		cmd.Env = baseEnv
+		var se strings.Builder
+		cmd.Stderr = &se
+		out, err := cmd.Output()
+		if err != nil {
+			msg := se.String()
+			if msg == "" {
+				msg = err.Error()
+			}
+			return "", fmt.Errorf("%s", strings.TrimSpace(msg))
+		}
+		return strings.TrimSpace(string(out)), nil
+	}
+
+	commits := gitCommitsSince("master", execGit)
+	if len(commits) != 1 {
+		t.Fatalf("A-3: gitCommitsSince with tag conflict returned %d commits, want exactly 1. "+
+			"Using short name 'origin/master' (DWIM → tag) would return 2 (extra+feature). "+
+			"Got: %v", len(commits), commits)
+	}
+	if !strings.Contains(commits[0], "feat: tag-conflict feature") {
+		t.Errorf("A-3: expected feature commit, got %q", commits[0])
 	}
 }

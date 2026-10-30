@@ -407,10 +407,11 @@ func TestReleaseTag_NoLocalSymref_ForgeBranchNameUsedWithoutFalseRefusal(t *test
 	// is no local opinion to disagree with the forge here, just an absent one.
 	// Reconciliation (ADR-2026-10-30 P-4): this test affirms that when symref is absent and
 	// ls-remote returns no valid symref, defaultBaseBranch falls back to "main" without blocking
-	// the tag. The ls-remote case returns "" (empty, not master): if it returned master, the
-	// staleness check would fire against refs/heads/master (absent in the mock → skipped), but
-	// then rev-parse origin/master would return releaseTestSHA, which the forge also returns for
-	// master — that path is exercised by other tests. Keeping it empty here tests the
+	// the tag. The ls-remote case returns "" (empty, not master): if it returned master,
+	// defaultBaseBranch would resolve "master", rev-parse origin/master would return
+	// releaseTestSHA, and the staleness check would proceed (mock default returns ("","nil") for
+	// rev-parse -q --verify refs/heads/master, so verr == nil) — localBranchSHA = "" ≠
+	// releaseTestSHA — and the test would fail. Keeping ls-remote empty tests the
 	// "no-symref → ls-remote empty → main fallback" path cleanly.
 	d, g := makeReleaseDeps(t, nil)
 	g.errors["symbolic-ref refs/remotes/origin/HEAD"] = errors.New("ref refs/remotes/origin/HEAD is not a symbolic ref")
