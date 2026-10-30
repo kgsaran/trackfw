@@ -92,17 +92,43 @@ env PATH="$(dirname "$(command -v go)"):/usr/bin:/bin" go test ./internal/comman
 > Dependencies: Wave 1 auditada.
 
 ### ML-2A — Red team da fonte ls-remote (hades-tf)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-10-30. Aprova com ressalvas; prazo de rede medido (`ship` offline cai em `main` em 2,0 s com `TRACKFW_NETWORK_TIMEOUT=2s`). Cinco achados viram a Wave 3 (defeito conhecido se corrige no mesmo PR): A-5 `HEAD` (e `.`, `x.lock`, `/x`, `x/`) aceitos como nome de branch; A-1 vetor de segundo campo ausente no teste do parse; A-2 `defaultBaseBranch` sem teste que fixe "ls-remote só quando o symref dá erro"; A-3 `gitCommitsSince` prefere a branch local, que pode estar atrás do remoto; A-4 comentário errado em `release_test.go`. Decisão do arquiteto no A-3: o PR vai contra o remoto, então a base é `refs/remotes/origin/<base>` quando existe, com `refs/heads/<base>` como fallback, sempre por refname completo (fecha também a ambiguidade com tag `origin/<base>` medida pelo red team).
 **Files affected:** `docs/seguranca/2026-10-30-redteam-branch-padrao-ls-remote.md`
 **Actions:**
 1. Tentar fazer a resolução aceitar saída malformada ou hostil do `ls-remote` sem teste reprovar.
 2. Veredito por prescrição da Wave 0, com evidência.
 **Acceptance criteria:**
-- [ ] cada prescrição com veredito e evidência
-- [ ] residual declarado
+- [x] cada prescrição com veredito e evidência
+- [x] residual declarado
 
 **Gates da wave:**
 ```bash
 test -f docs/seguranca/2026-10-30-redteam-branch-padrao-ls-remote.md
+```
+
+---
+
+## Wave 3 — Corretivos do red team (1 ML)
+> Dependencies: Wave 2 auditada.
+
+### ML-3A — Achados A-1 a A-5 do red team (apolo-tf)
+**Status:** ⬜ Pendente
+**Files affected:** `internal/commands/branch_prune_forge.go`, `internal/commands/ship.go`, `internal/commands/branch_default_ls_remote_test.go`, `internal/commands/ship_test.go`, `internal/commands/release_test.go`
+**Actions:**
+1. A-5: `isValidBranchLocalName` recusa também `HEAD`, componente que começa com `.`, sufixo `.lock`, `/` no início ou no fim e `//`. Vetores na tabela do teste (o caso `HEAD` documentado como aceito passa a recusar).
+2. A-1: vetor `ref: refs/heads/main\trefs/heads/HEAD` → recusa; nome do subteste corrigido para o que ele testa.
+3. A-2: teste em `ship_test.go` que reprova se `defaultBaseBranch` chamar `ls-remote` quando o `symbolic-ref` teve sucesso com saída malformada (caminhos b e c), e se chamar antes do `symbolic-ref`.
+4. A-3: `gitCommitsSince` usa `refs/remotes/origin/<base>` quando existe e `refs/heads/<base>` como fallback, por refname completo. Testes: branch local atrás do remoto lista só os commits da feature; sem `origin/<base>`, usa a local; tag chamada `origin/<base>` não interfere.
+5. A-4: corrigir o comentário de `release_test.go` ("absent in the mock → skipped").
+**Acceptance criteria:**
+- [ ] mutações M-2, M-4b, M-5b e M-6 do red team reprovam
+- [ ] `HEAD` servido pelo remoto cai no literal
+- [ ] pacote `internal/commands` verde
+
+**Gates da wave:**
+```bash
+go build ./...
+go vet ./internal/commands/
+env PATH="$(dirname "$(command -v go)"):/usr/bin:/bin" go test ./internal/commands/ -count=1
 make quality
 ```

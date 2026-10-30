@@ -88,14 +88,14 @@ env PATH="$(dirname "$(command -v go)"):/usr/bin:/bin" go test ./internal/genera
 > Dependencies: Wave 1 auditada.
 
 ### ML-2A — Red team do teste de atenção (hades-tf)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-10-30. Aprova: as quatro mutações reprovam e P-1 a P-4 foram cumpridas.
 **Files affected:** `docs/seguranca/2026-10-30-redteam-teste-atencao-sem-symlink.md`
 **Actions:**
 1. Tentar fazer o teste passar com o invólucro quebrado ou com `jq` alcançável.
 2. Veredito por prescrição da Wave 0, com evidência.
 **Acceptance criteria:**
-- [ ] cada prescrição com veredito e evidência
-- [ ] residual declarado
+- [x] cada prescrição com veredito e evidência
+- [x] residual declarado
 
 **Gates da wave:**
 ```bash
