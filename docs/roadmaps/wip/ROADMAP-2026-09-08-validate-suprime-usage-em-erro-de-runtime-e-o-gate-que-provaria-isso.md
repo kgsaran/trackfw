@@ -128,7 +128,7 @@ test -f docs/seguranca/2026-10-30-redteam-json-stderr-saida-silenciosa.md
 > Dependencies: Wave 2 auditada.
 
 ### ML-3A — Decisão de saída testável no `root.go` (apolo-tf) — F1, F2, F3, F5
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-10-30. `decideExit` em `root.go` decide código e mensagem; `Execute()` só aplica. Mutações repetidas pelo arquiteto numa cópia da árvore: `errors.As` reprova `TestJSONExit_DecideExit/noisy_wrapped_non-guard`; sem `!isCommandUnderGuard` reprova `noisy_Code=1_under_guard_rc=2`. O executor mediu a mutação D (sem 1..255) reprovando os casos de valor zero e 256. Construtor recusa fora de 1..255.
 **Files affected:** `internal/commands/root.go`, `internal/commands/exit_code_error.go`, `internal/commands/json_exit_test.go`
 **Actions:**
 1. Extrair do `Execute()` uma função pura que recebe o comando e o erro e decide código de saída e
@@ -139,10 +139,10 @@ test -f docs/seguranca/2026-10-30-redteam-json-stderr-saida-silenciosa.md
    Substituir `TestJSONExit_WrappedExitCodeError_NotSilenced` por esses casos.
 4. F5: docstring do `ExitCodeError` descreve a type assertion direta.
 **Acceptance criteria:**
-- [ ] mutação B (`errors.As` no lugar da type assertion) reprova os testes novos
-- [ ] mutação C (sem `!isCommandUnderGuard`) reprova os testes novos
-- [ ] `Code:256` não sai silencioso (teste)
-- [ ] `TestJSONExit_*` de stream continuam verdes
+- [x] mutação B (`errors.As` no lugar da type assertion) reprova os testes novos
+- [x] mutação C (sem `!isCommandUnderGuard`) reprova os testes novos
+- [x] `Code:256` não sai silencioso (teste)
+- [x] `TestJSONExit_*` de stream continuam verdes
 
 **Gates da wave:**
 ```bash

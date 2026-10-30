@@ -1,13 +1,19 @@
 package commands
 
 // json_exit_test.go — contrato de saída silenciosa do stream --json
-// (ML-1A, REQ-2026-09-07, AC1/AC1-bis/AC7/AC8).
+// (ML-1A + ML-3A, REQ-2026-09-07, AC1/AC1-bis/AC7/AC8).
 //
-// Todos os testes aqui usam exec.Command contra o binário real compilado pelo
-// rootBinary(t) (mesmo padrão de root_test.go). Isso é obrigatório: o caminho
-// de reconhecimento de *ExitCodeError está em Execute() (root.go), que nunca
-// é invocado por cmd.Execute() in-process, e que escreve em os.Stderr diretamente
-// (não em cmd.OutOrStderr()), tornando cmd.SetErr(&buf) ineficaz para capturar.
+// Dois tipos de teste:
+//
+// 1. Subprocess (exec.Command, rootBinary): AC1, AC1-bis, AC7, AC8. Obrigatório
+//    para esses casos porque Execute() escreve em os.Stderr diretamente e chama
+//    os.Exit; nenhuma dessas operações é capturável in-process.
+//
+// 2. In-process (contra decideExit): ML-3A. decideExit é a função pura extraída
+//    de Execute() — recebe (*cobra.Command, error) e devolve (code, stderr).
+//    Testa a lógica de decisão sem os.Exit nem proceso filho.
+//    TestJSONExit_DecideExit e TestJSONExit_NewExitCodeError_OutOfRangePanics
+//    são os únicos testes in-process deste arquivo.
 //
 // Regra Dura de Reconciliação: cada teste declara, em comentário, a conclusão do
 // ML que ele afirma.
@@ -22,6 +28,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 // setupValidateViolationFixtureDir cria um diretório temporário com uma
@@ -364,43 +372,132 @@ func TestJSONExit_ValidateLenient_StderrEmpty(t *testing.T) {
 	}
 }
 
-// ─── AC7 (wrapped *ExitCodeError NÃO é silenciado) ───────────────────────────
+// ─── ML-3A: decideExit in-process table tests ────────────────────────────────
 
-// TestJSONExit_WrappedExitCodeError_NotSilenced afirma que um *ExitCodeError
-// embrulhado com %w NÃO é silenciado pelo root.go (direct assertion, não errors.As).
+// TestJSONExit_DecideExit afirma o comportamento completo de decideExit contra
+// uma árvore cobra mínima, sem processo filho nem os.Exit.
 //
-// Conclusão do ML que este teste afirma: a direct assertion de root.go (T3
-// mitigation) não atravessa wrapping — fmt.Errorf("%w", exitErr) é impresso
-// como erro normal, não silenciado.
-func TestJSONExit_WrappedExitCodeError_NotSilenced(t *testing.T) {
-	// Teste in-process: cria o tipo e embrulha, verifica que a direct assertion
-	// retorna false (o wrapper não é *ExitCodeError diretamente).
-	inner := newExitCodeError(1, "silent message")
-	wrapped := fmt.Errorf("wrapped: %w", inner)
+// Cada caso declara a conclusão que afirma (Regra Dura de Reconciliação):
+//
+//   - "silent Code=1 non-guard": ExitCodeError válido (Code in [1,255]) no caminho
+//     não-guard é reconhecido por direct assertion e sai silencioso (code=1, msg="").
+//
+//   - "noisy zero-value non-guard": struct literal Code=0 não passa o range check
+//     [1,255] em decideExit — cai no caminho ruidoso (code=1, msg!="").
+//     Detecta mutação D (remoção do range check).
+//
+//   - "noisy Code=256 non-guard": Code=256 não passa o range check — caminho
+//     ruidoso (code=1, msg!=""). Detecta mutação D.
+//
+//   - "noisy wrapped non-guard": fmt.Errorf("%w", *ExitCodeError) não é reconhecido
+//     pela direct assertion — caminho ruidoso (code=1, msg!=""). Detecta mutação B
+//     (troca por errors.As: com errors.As, o erro embrulhado seria silenciado).
+//
+//   - "noisy Code=1 under guard rc=2": !isCommandUnderGuard bloqueia o ramo
+//     silencioso para guard — D7 aplica (code=2, msg!=""). Detecta mutação C
+//     (remoção de !isCommandUnderGuard: sem a guarda, o erro seria silenciado com code=1).
+//
+//   - "noisy common error non-guard": erro simples não-ExitCodeError segue o
+//     caminho ruidoso (code=1, msg!="").
+func TestJSONExit_DecideExit(t *testing.T) {
+	// Árvore não-guard: trackfw → validate (SilenceUsage=true, espelha PersistentPreRunE).
+	nonGuardRoot := &cobra.Command{Use: "trackfw"}
+	nonGuardCmd := &cobra.Command{Use: "validate", SilenceUsage: true}
+	nonGuardRoot.AddCommand(nonGuardCmd)
 
-	// Direct assertion sobre o wrapper deve falhar.
-	_, ok := wrapped.(*ExitCodeError)
-	if ok {
-		t.Error("fmt.Errorf('%w', *ExitCodeError) retornou true na direct assertion — root.go silenciaria erroneamente")
+	// Árvore guard: trackfw → guard → sub (SilenceUsage=true).
+	guardRoot := &cobra.Command{Use: "trackfw"}
+	guardGroup := &cobra.Command{Use: "guard"}
+	guardSub := &cobra.Command{Use: "sub", SilenceUsage: true}
+	guardGroup.AddCommand(guardSub)
+	guardRoot.AddCommand(guardGroup)
+
+	cases := []struct {
+		name       string
+		cmd        *cobra.Command
+		err        error
+		wantCode   int
+		wantSilent bool // true → msg must be ""
+	}{
+		{
+			name:       "silent Code=1 non-guard",
+			cmd:        nonGuardCmd,
+			err:        newExitCodeError(1, "test message"),
+			wantCode:   1,
+			wantSilent: true,
+		},
+		{
+			name:       "noisy zero-value non-guard",
+			cmd:        nonGuardCmd,
+			err:        &ExitCodeError{}, // struct literal Code=0; constructor would panic
+			wantCode:   1,
+			wantSilent: false,
+		},
+		{
+			name:       "noisy Code=256 non-guard",
+			cmd:        nonGuardCmd,
+			err:        &ExitCodeError{Code: 256, Msg: "code-256"}, // struct literal; constructor would panic
+			wantCode:   1,
+			wantSilent: false,
+		},
+		{
+			name:       "noisy wrapped non-guard",
+			cmd:        nonGuardCmd,
+			err:        fmt.Errorf("wrap: %w", newExitCodeError(1, "x")),
+			wantCode:   1,
+			wantSilent: false,
+		},
+		{
+			name:       "noisy Code=1 under guard rc=2",
+			cmd:        guardSub,
+			err:        newExitCodeError(1, "guard-error"),
+			wantCode:   2,
+			wantSilent: false,
+		},
+		{
+			name:       "noisy common error non-guard",
+			cmd:        nonGuardCmd,
+			err:        fmt.Errorf("something went wrong"),
+			wantCode:   1,
+			wantSilent: false,
+		},
 	}
-	// A mensagem do wrapper deve conter "wrapped: silent message".
-	if !strings.Contains(wrapped.Error(), "wrapped: silent message") {
-		t.Errorf("mensagem do wrapper incorreta: %q", wrapped.Error())
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			code, msg := decideExit(tc.cmd, tc.err)
+			if code != tc.wantCode {
+				t.Errorf("decideExit code = %d, want %d (msg=%q)", code, tc.wantCode, msg)
+			}
+			if tc.wantSilent && msg != "" {
+				t.Errorf("decideExit: want silent (msg=''), got %q", msg)
+			}
+			if !tc.wantSilent && msg == "" {
+				t.Errorf("decideExit: want noisy (msg!=''), got empty msg")
+			}
+		})
 	}
 }
 
-// ─── P6: pânico no construtor com código 0 ───────────────────────────────────
+// ─── ML-3A: construtor recusa código fora de [1,255] ─────────────────────────
 
-// TestJSONExit_NewExitCodeError_ZeroCodePanics afirma que newExitCodeError(0, ...)
-// entra em pânico (T1 mitigation: fail-open via código 0 impossível pelo construtor).
+// TestJSONExit_NewExitCodeError_OutOfRangePanics afirma que newExitCodeError
+// entra em pânico para qualquer código fora de [1,255].
 //
-// Conclusão do ML que este teste afirma: o construtor valida Code != 0, tornando
-// impossível criar um *ExitCodeError que saia com rc=0 pelo caminho normal.
-func TestJSONExit_NewExitCodeError_ZeroCodePanics(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("newExitCodeError(0, ...) não entrou em pânico — T1 não mitigado")
-		}
-	}()
-	_ = newExitCodeError(0, "should panic")
+// Conclusão do ML que este teste afirma: o construtor recusa Code=0 e Code=256;
+// struct literals com Code fora de [1,255] são tratados pelo decideExit como
+// erros comuns (caminho ruidoso, rc=1) — coberto pelo caso "noisy zero-value" e
+// "noisy Code=256" de TestJSONExit_DecideExit.
+func TestJSONExit_NewExitCodeError_OutOfRangePanics(t *testing.T) {
+	for _, code := range []int{0, 256} {
+		code := code
+		t.Run(fmt.Sprintf("code_%d", code), func(t *testing.T) {
+			defer func() {
+				if r := recover(); r == nil {
+					t.Errorf("newExitCodeError(%d, ...) não entrou em pânico — range [1,255] não aplicado", code)
+				}
+			}()
+			_ = newExitCodeError(code, "should panic")
+		})
+	}
 }
