@@ -75,11 +75,17 @@ harness', over a "scope": "project" JSON document — see docs/cli-parity.md.`,
 					cmd.SilenceUsage = true
 					return marshalErr
 				}
-				fmt.Fprintln(cmd.OutOrStdout(), string(out))
-			} else {
-				printUpdateReportText(cmd, report)
+				if _, writeErr := fmt.Fprintln(cmd.OutOrStdout(), string(out)); writeErr != nil {
+					return fmt.Errorf("trackfw update: failed to write JSON document: %w", writeErr)
+				}
+				cmd.SilenceUsage = true
+				if report.Summary().Failed > 0 {
+					return newExitCodeError(1, fmt.Sprintf("trackfw update: %d target(s) failed", report.Summary().Failed))
+				}
+				return nil
 			}
 
+			printUpdateReportText(cmd, report)
 			cmd.SilenceUsage = true
 			if report.Summary().Failed > 0 {
 				return fmt.Errorf("trackfw update: %d target(s) failed", report.Summary().Failed)

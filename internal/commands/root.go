@@ -114,31 +114,68 @@ func Execute() {
 
 	cmd, err := root.ExecuteC()
 	if err != nil {
-		if msg, ok := formatUnknownCommandError(root, err); ok {
-			fmt.Fprintln(os.Stderr, msg)
-		} else {
-			// Mirrors cobra's own two independent flags exactly (Command.ExecuteC):
-			// a command that opted out of the "Error: " prefix (cmd.SilenceErrors,
-			// e.g. branch.go's "new") still needs its bare message on stderr exactly
-			// once; usage is gated independently by cmd.SilenceUsage.
-			if cmd.SilenceErrors {
-				fmt.Fprintln(os.Stderr, err.Error())
-			} else {
-				fmt.Fprintln(os.Stderr, cmd.ErrPrefix(), err.Error())
-			}
-			if !cmd.SilenceUsage {
-				fmt.Fprintln(os.Stderr, cmd.UsageString())
-			}
+		code, msg := decideExit(cmd, err)
+		if msg != "" {
+			fmt.Fprint(os.Stderr, msg)
 		}
-		// D7 (ADR-2026-10-04): all errors from commands under `trackfw guard`
-		// exit with code 2, not 1. This matches the deny exit code of the guard
-		// itself and lets callers distinguish "guard denied" from "trackfw error".
-		exitCode := 1
-		if isCommandUnderGuard(cmd) {
-			exitCode = 2
-		}
-		os.Exit(exitCode)
+		os.Exit(code)
 	}
+}
+
+// decideExit computes the exit code and stderr message for an error returned by
+// root.ExecuteC. It is a pure function: construct a minimal cobra tree, call
+// decideExit(cmd, err), and assert on (code, stderr) without os.Exit side effects.
+//
+// Return contract:
+//   - code: value passed to os.Exit. For *ExitCodeError (valid range, non-guard),
+//     this is exitErr.Code. For guard errors, always 2 (D7). Otherwise 1.
+//   - stderr: full text to print before exiting. Empty string = silent exit (the
+//     command already wrote its result document). Non-empty = noisy exit.
+//
+// Branch order (evaluated top-to-bottom, first match wins):
+//  1. Unknown-command error → noisy; code 1 (2 for guard).
+//  2. *ExitCodeError with Code in [1,255], not under guard → silent; code = exitErr.Code.
+//  3. Everything else → noisy; code 1 (2 for guard).
+//
+// Direct type assertion, not errors.As: a wrapped *ExitCodeError
+// (fmt.Errorf("%w", exitErr)) falls through to branch 3 and is printed normally.
+// Guard commands (isCommandUnderGuard) always fall through to branch 3 (D7,
+// ADR-2026-10-04) — even when err is a *ExitCodeError.
+func decideExit(cmd *cobra.Command, err error) (code int, stderr string) {
+	exitCode := 1
+	if isCommandUnderGuard(cmd) {
+		exitCode = 2
+	}
+
+	// Branch 1: unknown-command error — custom canonical message.
+	if fmtMsg, ok := formatUnknownCommandError(cmd.Root(), err); ok {
+		return exitCode, fmt.Sprintln(fmtMsg)
+	}
+
+	// Branch 2: ExitCodeError with valid code, outside guard subtree — silent exit.
+	// Direct assertion (not errors.As): a wrapped *ExitCodeError is NOT silenced.
+	// Range [1,255]: Code=0 or Code>=256 falls through to the noisy branch below.
+	if !isCommandUnderGuard(cmd) {
+		if exitErr, ok := err.(*ExitCodeError); ok && exitErr.Code >= 1 && exitErr.Code <= 255 {
+			return exitErr.Code, ""
+		}
+	}
+
+	// Branch 3: regular error (or ExitCodeError out of [1,255], or under guard).
+	// Mirrors cobra's own two independent flags exactly (Command.ExecuteC):
+	// a command that opted out of the "Error: " prefix (cmd.SilenceErrors,
+	// e.g. branch.go's "new") still needs its bare message exactly once;
+	// usage is gated independently by cmd.SilenceUsage.
+	var sb strings.Builder
+	if cmd.SilenceErrors {
+		sb.WriteString(fmt.Sprintln(err.Error()))
+	} else {
+		sb.WriteString(fmt.Sprintln(cmd.ErrPrefix(), err.Error()))
+	}
+	if !cmd.SilenceUsage {
+		sb.WriteString(fmt.Sprintln(cmd.UsageString()))
+	}
+	return exitCode, sb.String()
 }
 
 // isCommandUnderGuard reports whether cmd lives in the `trackfw guard` subtree.
