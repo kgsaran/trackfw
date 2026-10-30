@@ -394,31 +394,22 @@ func TestAttentionScripts_FallbackWithoutJQ(t *testing.T) {
 		t.Fatalf("generateAttentionScripts erro: %v", err)
 	}
 
-	// Criar diretório temporário para PATH customizado sem jq
-	fakeBinDir := t.TempDir()
+	// O PATH do filho contém apenas o diretório onde compiledGuardBinary(t) foi compilado.
+	// Esse diretório contém exatamente um arquivo (o binário trackfw); jq nunca está lá.
+	trackfwBinDir := filepath.Dir(compiledGuardBinary(t))
 
-	// Utilitários necessários para o script rodar sem jq: bash, python3, date, grep, sed, tr, mkdir, printf, cat, rm
-	requiredBins := []string{"trackfw"}
-	for _, bin := range requiredBins {
-		binPath, err := exec.LookPath(bin)
-		if err == nil {
-			// Marginal corrigido: distingue "sem privilégio" (continua sem o
-			// binário — setup best-effort) de "falhou por outro motivo" (falha
-			// o teste, já que o source existe e o target não existe ainda).
-			if symlinkErr := os.Symlink(binPath, filepath.Join(fakeBinDir, bin)); symlinkErr != nil {
-				if !isSymlinkPrivilegeError(symlinkErr) {
-					t.Fatalf("os.Symlink(%q, fakeBinDir/%s): %v", binPath, bin, symlinkErr)
-				}
-				// Sem privilégio: prossegue sem este binário no fakeBinDir.
-			}
-		}
+	// P-2: verificar acessibilidade antes de rodar o script, com o mesmo env que o filho receberá.
+	probe := exec.Command("bash", "-c", "command -v trackfw")
+	probe.Env = []string{"PATH=" + trackfwBinDir}
+	if out, err := probe.CombinedOutput(); err != nil {
+		t.Fatalf("setup: trackfw não encontrado no PATH do filho (PATH=%q, saída=%q); "+
+			"verifique que compiledGuardBinary(t) produziu o binário em %q",
+			trackfwBinDir, strings.TrimSpace(string(out)), trackfwBinDir)
 	}
 
 	signalPath := filepath.Join("scripts", "trackfw-attention-signal.sh")
 	cmd := exec.Command("bash", signalPath)
-	cmd.Env = []string{
-		"PATH=" + fakeBinDir,
-	}
+	cmd.Env = []string{"PATH=" + trackfwBinDir}
 	cmd.Stdin = strings.NewReader(`{"tool_name":"fallback_tool","tool_input":{"question":"Testing fallback without jq"}}`)
 
 	out, err := cmd.CombinedOutput()
