@@ -7,6 +7,27 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [11.2.2] - 2026-10-31
+
+### Breaking Changes
+
+Nenhum.
+
+### Fixed
+
+- **`branch new`, `branch prune`, `ship` e `release` resolvem a branch padrão certa sem `origin/HEAD` local**
+  (#633, #640). Com git anterior à 2.48 (ou `remote.origin.followRemoteHEAD never`), um repositório cuja branch
+  padrão é `master` era tratado como `main`. Quando o `symbolic-ref` falha, o trackfw consulta
+  `git ls-remote --symref origin HEAD`; o nome devolvido pelo remoto passa por lista de permissão e, se recusado,
+  cai no literal `main`.
+- **O corpo do PR gerado pelo `ship` compara com a base remota** (`refs/remotes/origin/<base>`, com fallback para
+  a local), e não lista mais commits que já estão nela quando a branch local está atrás (#640).
+
+### Internal
+
+- O teste do invólucro de atenção não depende de privilégio de symlink e passa numa conta Windows sem
+  `SeCreateSymbolicLinkPrivilege` (#634, #640).
+
 ## [11.2.1] - 2026-10-30
 
 ### Breaking Changes
