@@ -1711,7 +1711,9 @@ GET repos/{owner}/{repo}                      (gh api repos/{owner}/{repo})
                                                   No comparison against the local symref-derived
                                                   base exists: a fresh/shallow clone legitimately
                                                   has no origin/HEAD symref at all (the local
-                                                  resolver then falls back to "main"), so refusing
+                                                  resolver tries ls-remote --symref origin HEAD
+                                                  and, if that also fails, falls back to "main"),
+                                                  so refusing
                                                   on a name disagreement would be a false refusal
                                                   against a legitimate repo, not a security check.
 
@@ -2013,8 +2015,9 @@ time.
    - Otherwise: check origin exists first; if absent, print actionable Portuguese message (hint:
      use --from HEAD or add an origin remote), exit non-zero. Then: best-effort
      `git fetch origin` (warns on failure, never aborts; R-1: fetch runs even in --dry-run so
-     both paths see the same default branch). Call resolveDefaultBranch (forge symref → remote
-     symref → "main") to obtain remoteRef (e.g. "origin/main"). Resolve remoteRef to SHA.
+     both paths see the same default branch). Call resolveDefaultBranch (forge → symref →
+     `ls-remote --symref origin HEAD` → "main") to obtain remoteRef (e.g. "origin/main").
+     Resolve remoteRef to SHA.
 5. --dry-run with a match (or chore|docs): governance passed → always print "would create".
    - If base resolved: "[dry-run] would create branch "<type>/<slug>" from <base>", exit 0.
    - If base failed (e.g. no origin): "[dry-run] would create branch "<type>/<slug>" (base não
@@ -2139,7 +2142,10 @@ It decides whether each local branch is safe to delete relative to `origin/<defa
 the default branch is resolved in three steps by `resolveDefaultBranchWithSource` (`branch_prune_forge.go`):
 (1) forge API (`gh api repos/<owner>/<repo>` → `default_branch`) via `forgeDefaultBranch`,
 (2) local tracking symref `git symbolic-ref --short refs/remotes/origin/HEAD`,
-(3) literal `main`. The forge name is authoritative and is never cross-checked against the symref
+(3) remote symref via `git ls-remote --symref origin HEAD` (only when source 2 returns an error
+— i.e. the symref is absent; git < 2.48 without followRemoteHEAD, fresh/shallow clone, or
+`followRemoteHEAD=never`; ADR-2026-10-30),
+(4) literal `main`. The forge name is authoritative and is never cross-checked against the symref
 (vault note `forge-anchoring-branch-name-must-be-unconditional-not-cross-checked-2026-08-19`). The
 report header prints `origin/<nome real>` — not necessarily `origin/main` (A7, ADR-2026-10-12).
 When `gh` is available and the origin remote points to GitHub, a **single** `gh pr list --state all`

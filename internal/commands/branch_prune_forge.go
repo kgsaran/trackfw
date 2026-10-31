@@ -8,14 +8,17 @@ import (
 )
 
 // resolveDefaultBranchWithSource resolves the repository's default branch name,
-// using three sources in order, and reports whether the result came from the
-// forge API (fromForge=true). The three sources are the same as resolveDefaultBranch:
+// using four sources in order, and reports whether the result came from the
+// forge API (fromForge=true). The sources are the same as resolveDefaultBranch:
 //  1. Forge API (gh api repos/<owner>/<repo> → default_branch), via ghExec.
 //  2. Local tracking symref: git symbolic-ref --short refs/remotes/origin/HEAD.
-//  3. Literal fallback: "main" / "origin/main".
+//  3. Remote symref via ls-remote: git ls-remote --symref origin HEAD (only when source 2
+//     returns an error — i.e. the symref is absent; never when the output is present but
+//     malformed, to avoid a network call for a local git data issue).
+//  4. Literal fallback: "main" / "origin/main".
 //
 // Returns (localName, remoteRef, fromForge) where remoteRef == "origin/" + localName.
-// fromForge is true only when source 1 succeeded. Sources 2 and 3 return fromForge=false.
+// fromForge is true only when source 1 succeeded. Sources 2, 3 and 4 return fromForge=false.
 // Callers that need to block remote deletions when the forge could not provide the
 // default branch (ADR-2026-10-12 D4 third bullet) should check fromForge.
 // Callers that only need (localName, remoteRef) should use the resolveDefaultBranch wrapper.
@@ -33,13 +36,117 @@ func resolveDefaultBranchWithSource(gitExec func(...string) (string, error), ghE
 		if after, ok := strings.CutPrefix(s, "origin/"); ok && after != "" {
 			return after, s, false
 		}
+		// (b/c) symref returned output but prefix absent or name empty (malformed git data);
+		// skip the network call and fall through to the literal.
+	} else {
+		// (a) err != nil: symref absent (git < 2.48 without followRemoteHEAD, fresh/shallow
+		// clone, or followRemoteHEAD=never). Ask the remote directly. The ls-remote call is
+		// governed by networkSubcmds (ADR-2026-10-12) and always returns quickly on offline
+		// (connection refused → exit 128 → lsErr != nil → fall through to literal).
+		if lsOut, lsErr := gitExec("ls-remote", "--symref", "origin", "HEAD"); lsErr == nil {
+			if name, ok := parseLsRemoteSymref(lsOut); ok {
+				return name, "origin/" + name, false
+			}
+		}
 	}
-	// 3. Literal fallback.
+	// 4. Literal fallback.
 	return branchPruneDefaultLocalName, branchPruneDefaultRemoteRef, false
 }
 
+// isValidBranchLocalName reports whether name is an acceptable local branch name returned
+// by ls-remote. It uses a PERMIT list (not a deny list) — git allows a wide range of
+// characters in refs, including revision-syntax characters like ~, ^, @{, :, * that a
+// hostile remote could serve to construct a relative-revision argument. A deny list would
+// be exhaustible; a permit list guarantees only characters with no special git meaning pass.
+//
+// Accepted: [a-zA-Z0-9._/-], no component empty, no component starting with '.', no
+// component ending with '.lock', no leading or trailing '/', not exactly "HEAD".
+//
+// Rejected: empty; starts with '-'; contains '..'; 'HEAD' exactly; leading or trailing '/'
+// (empty component); any component starting with '.'; any component ending with '.lock';
+// any character outside the permit set.
+//
+// R-2: names with valid git characters outside this set (e.g. unicode, %) fall to the literal
+// "main". This is the conservative, safe choice; the literal is no worse than today's behaviour
+// for those repositories.
+//
+// A-5 (ML-3A): added "HEAD" exact, empty-component, leading-dot-component, and ".lock"-suffix
+// rules to align with the subset of `git check-ref-format` rules that matter for downstream
+// rev-parse safety.
+func isValidBranchLocalName(name string) bool {
+	if name == "" {
+		return false
+	}
+	if name[0] == '-' {
+		return false
+	}
+	if name == "HEAD" {
+		return false
+	}
+	if strings.Contains(name, "..") {
+		return false
+	}
+	for _, c := range name {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+			c == '.' || c == '_' || c == '/' || c == '-') {
+			return false
+		}
+	}
+	// Component-based checks (A-5): split by '/' and inspect each piece.
+	for _, comp := range strings.Split(name, "/") {
+		if comp == "" {
+			// Empty component: leading '/', trailing '/', or consecutive '//'.
+			return false
+		}
+		if comp[0] == '.' {
+			// Component starts with '.'.
+			return false
+		}
+		if strings.HasSuffix(comp, ".lock") {
+			// Component ends with '.lock'.
+			return false
+		}
+	}
+	return true
+}
+
+// parseLsRemoteSymref parses the output of `git ls-remote --symref origin HEAD` and returns
+// the local branch name (e.g. "master") and true when a valid symref line is found.
+//
+// Accepted format (per ADR-2026-10-30 §4):
+//
+//	ref: refs/heads/<name>\tHEAD
+//
+// where the second tab-separated field is exactly "HEAD" (not "HEAD2", not "refs/heads/HEAD"),
+// and <name> passes isValidBranchLocalName. Each line is stripped of a trailing \r before
+// comparison (Windows CRLF output from the git protocol). Any other line, empty output, or
+// output matching a different ref type (e.g. refs/tags/) is ignored.
+//
+// Returns ("", false) when no acceptable line is found.
+func parseLsRemoteSymref(out string) (string, bool) {
+	const headsPrefix = "ref: refs/heads/"
+	for _, rawLine := range strings.Split(out, "\n") {
+		line := strings.TrimSuffix(rawLine, "\r")
+		if !strings.HasPrefix(line, headsPrefix) {
+			continue
+		}
+		after := line[len(headsPrefix):]
+		name, second, ok := strings.Cut(after, "\t")
+		if !ok {
+			continue
+		}
+		if second != "HEAD" {
+			continue
+		}
+		if isValidBranchLocalName(name) {
+			return name, true
+		}
+	}
+	return "", false
+}
+
 // resolveDefaultBranch resolves the repository's default branch name, using
-// three sources in order:
+// four sources in order:
 //  1. Forge API (gh api repos/<owner>/<repo> → default_branch), via ghExec.
 //     Requires ghExec != nil and a parseable github.com origin URL.
 //     The forge name is authoritative — unconditionally, without comparison
@@ -47,10 +154,13 @@ func resolveDefaultBranchWithSource(gitExec func(...string) (string, error), ghE
 //     unconditional-not-cross-checked-2026-08-19). No refusal fires if the
 //     symref disagrees.
 //  2. Local tracking symref: git symbolic-ref --short refs/remotes/origin/HEAD,
-//     stripping the "origin/" prefix. Absent in fresh/shallow clones.
-//  3. Literal fallback: branchPruneFallbackLocalName / branchPruneDefaultRemoteRef
-//     ("main" / "origin/main"). This is the pre-v8.1 hardcoded value and is
-//     used only when neither of the above sources is available.
+//     stripping the "origin/" prefix. Absent in git < 2.48 without
+//     followRemoteHEAD, in fresh/shallow clones, or when followRemoteHEAD=never.
+//  3. Remote symref via ls-remote: git ls-remote --symref origin HEAD, only when
+//     source 2 returns an error (symref absent). Requires a network connection;
+//     governed by networkSubcmds (ADR-2026-10-12).
+//  4. Literal fallback: branchPruneFallbackLocalName / branchPruneDefaultRemoteRef
+//     ("main" / "origin/main"). Used only when none of the above sources is available.
 //
 // Returns (localName, remoteRef) where remoteRef == "origin/" + localName.
 // Errors from any source are silently consumed — the function always returns a

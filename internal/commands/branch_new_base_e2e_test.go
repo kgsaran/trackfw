@@ -497,16 +497,20 @@ func TestBranchNew_DryRunFetchesMasterDefault(t *testing.T) {
 
 	addWIPRoadmapFile(t, workDir, "dry-run-master")
 
-	// Before fetch, origin/HEAD may not be set locally; dry-run must still report "origin/master".
-	// Delete origin/HEAD to simulate the pre-fetch state.
+	// AC1: prevent git ≥ 2.48 from recreating the symref on fetch, reproducing git < 2.48
+	// behaviour in any git version. Without this config, git ≥ 2.48 would silently create
+	// refs/remotes/origin/HEAD during the fetch inside `branch new`, masking the bug.
+	gitE2E(t, workDir, homeDir, "config", "remote.origin.followRemoteHEAD", "never")
+	// Delete origin/HEAD to simulate a clone that never had it (the state after git < 2.48 fetch).
 	gitE2E(t, workDir, homeDir, "remote", "set-head", "origin", "--delete")
 
 	out, code := runTFW(t, workDir, homeDir, "branch", "new", "--dry-run", "chore/dry-run-master")
 	if code != 0 {
-		t.Fatalf("R-1: dry-run returned non-zero (%d):\n%s", code, out)
+		t.Fatalf("AC1: dry-run returned non-zero (%d):\n%s", code, out)
 	}
-	// R-1: after fetch, origin/HEAD is updated; must report origin/master, not origin/main.
+	// AC1: with followRemoteHEAD=never and no local symref, branch new resolves origin/master
+	// via ls-remote --symref origin HEAD, not the literal "main".
 	if !strings.Contains(out, "origin/master") {
-		t.Errorf("R-1: dry-run must report 'origin/master' as base after fetch; got:\n%s", out)
+		t.Errorf("AC1: dry-run must report 'origin/master' as base (via ls-remote); got:\n%s", out)
 	}
 }

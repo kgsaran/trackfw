@@ -401,12 +401,24 @@ func TestReleaseTag_LocalSymrefDiverges_ForgeNameWinsWithoutRefusal(t *testing.T
 
 func TestReleaseTag_NoLocalSymref_ForgeBranchNameUsedWithoutFalseRefusal(t *testing.T) {
 	// Simulates a fresh/shallow clone that has no origin/HEAD symref at all — defaultBaseBranch
-	// falls back to its "main" default. If the repo's REAL default branch is "master" (as reported
-	// by the forge), the forge's name must still be used without any refusal: there is no local
-	// opinion to disagree with the forge here, just an absent one. Regression guard for treating
-	// "no symref" and "a genuinely repointed symref" as the same signal — they are not.
+	// tries ls-remote --symref origin HEAD but this test keeps the ls-remote result empty ("",nil)
+	// so defaultBaseBranch falls back to "main". If the repo's REAL default branch is "master"
+	// (as reported by the forge), the forge's name must still be used without any refusal: there
+	// is no local opinion to disagree with the forge here, just an absent one.
+	// Reconciliation (ADR-2026-10-30 P-4): this test affirms that when symref is absent and
+	// ls-remote returns no valid symref, defaultBaseBranch falls back to "main" without blocking
+	// the tag. The ls-remote case returns "" (empty, not master): if it returned master,
+	// defaultBaseBranch would resolve "master", rev-parse origin/master would return
+	// releaseTestSHA, and the staleness check would proceed (mock default returns ("","nil") for
+	// rev-parse -q --verify refs/heads/master, so verr == nil) — localBranchSHA = "" ≠
+	// releaseTestSHA — and the test would fail. Keeping ls-remote empty tests the
+	// "no-symref → ls-remote empty → main fallback" path cleanly.
 	d, g := makeReleaseDeps(t, nil)
 	g.errors["symbolic-ref refs/remotes/origin/HEAD"] = errors.New("ref refs/remotes/origin/HEAD is not a symbolic ref")
+	// P-4: ls-remote is now called after symref fails; declare the case explicitly.
+	// Returns "" (empty, not "ref: refs/heads/master") → parseLsRemoteSymref returns false →
+	// defaultBaseBranch falls back to "main".
+	g.responses["ls-remote --symref origin HEAD"] = ""
 	delete(g.responses, "rev-parse origin/main")
 	g.errors["rev-parse origin/main"] = errors.New("unknown revision")
 	g.responses["rev-parse origin/master"] = releaseTestSHA

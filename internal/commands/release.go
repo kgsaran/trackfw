@@ -265,9 +265,11 @@ func runReleaseTag(versionArg string, deps releaseDeps) error {
 	}
 
 	// ─── Precondition 2: default branch up to date with origin ──────────────
-	// base is symref-derived — a LOCAL, gravable ref (git symbolic-ref). It is used below only
-	// as (a) the value the forge's default_branch must agree with, and (b) input to the
-	// local-branch-staleness check, which is unrelated to the forge and unaffected by it.
+	// base is resolved by defaultBaseBranch: symref → ls-remote --symref origin HEAD → "main"
+	// (ADR-2026-10-30). It is used below only as (a) the value the forge's default_branch must
+	// agree with, and (b) input to the local-branch-staleness check, which is unrelated to the
+	// forge and unaffected by it. When the symref is absent, ls-remote may make a network call,
+	// but the fetch immediately above already opened the network window.
 	if _, err := deps.execGit("fetch", "origin", "--prune"); err != nil {
 		return fmt.Errorf(releaseTagFetchFailedFmt, err)
 	}
@@ -338,9 +340,10 @@ func runReleaseTag(versionArg string, deps releaseDeps) error {
 
 	// ─── The commit-target comes from the forge, never from a local ref ─────
 	// The forge's default_branch is authoritative for the BRANCH NAME — unconditionally, with no
-	// refusal if it disagrees with the local symref-derived base (a fresh/shallow clone may have
-	// no origin/HEAD symref at all, defaultBaseBranch then falls back to "main"; refusing on that
-	// mismatch would be a false refusal against a legitimate repo, not a security check). Only the
+	// refusal if it disagrees with the base resolved by defaultBaseBranch (a fresh/shallow clone
+	// may have no origin/HEAD symref at all; defaultBaseBranch tries ls-remote --symref origin
+	// HEAD and, if that also fails, falls back to "main"; refusing on a name disagreement would
+	// be a false refusal against a legitimate repo, not a security check). Only the
 	// forge's SHA is cross-checked against a local ref — resolved fresh, keyed to the forge's own
 	// branch name, never to the (possibly-forged) local base. See ADR-2026-08-19-caminho-
 	// governado-para-push-forcado-e-tag-de-release.md, Emenda 1.

@@ -410,9 +410,22 @@ func TestDefaultBaseBranch_SymbolicRefSucceeds(t *testing.T) {
 	}
 }
 
-func TestDefaultBaseBranch_SymbolicRefFails_FallsBackToMain(t *testing.T) {
+// TestDefaultBaseBranch_SymrefAndLsRemoteFail_FallsBackToMain asserts: when symbolic-ref returns
+// an error AND ls-remote also returns an error, defaultBaseBranch falls back to "main".
+// Reconciliation (ADR-2026-10-30 P-4): this test affirms that when both symref and ls-remote
+// fail, defaultBaseBranch falls back to "main". The ls-remote case is declared explicitly so
+// the fake documents that the new source is reached (path a) and also fails.
+func TestDefaultBaseBranch_SymrefAndLsRemoteFail_FallsBackToMain(t *testing.T) {
 	exec := func(args ...string) (string, error) {
-		return "", errors.New("no remote-tracking HEAD")
+		joined := strings.Join(args, " ")
+		switch {
+		case strings.HasPrefix(joined, "symbolic-ref refs/remotes/origin/HEAD"):
+			return "", errors.New("no remote-tracking HEAD")
+		case joined == "ls-remote --symref origin HEAD":
+			// P-4: explicitly declare that ls-remote also fails in this test.
+			return "", errors.New("ls-remote: offline")
+		}
+		return "", errors.New("unexpected git call in symref+ls-remote-fail test: " + joined)
 	}
 	if got := defaultBaseBranch(exec); got != "main" {
 		t.Fatalf("expected fallback %q, got %q", "main", got)
@@ -425,6 +438,102 @@ func TestDefaultBaseBranch_EmptyOutput_FallsBackToMain(t *testing.T) {
 	}
 	if got := defaultBaseBranch(exec); got != "main" {
 		t.Fatalf("expected fallback %q, got %q", "main", got)
+	}
+}
+
+// TestDefaultBaseBranch_SymrefMalformed_LsRemoteNotCalled asserts: when symbolic-ref returns
+// output that is present but malformed (no gitSymbolicRefOriginHeadPrefix, or prefix present
+// with empty name — paths b and c of defaultBaseBranch), ls-remote is NOT called and the
+// fallback is "main". Only err!=nil (path a) triggers ls-remote.
+//
+// M-5b killer: a mutant that calls ls-remote on paths b/c would trigger t.Errorf here.
+func TestDefaultBaseBranch_SymrefMalformed_LsRemoteNotCalled(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		symref  string // output from symbolic-ref (non-empty → no error)
+	}{
+		// path (b): output present but no gitSymbolicRefOriginHeadPrefix
+		{"no prefix", "refs/heads/main"},
+		// path (c): prefix present but empty name
+		{"empty name after prefix", gitSymbolicRefOriginHeadPrefix},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var calls []string
+			execFn := func(args ...string) (string, error) {
+				joined := strings.Join(args, " ")
+				calls = append(calls, joined)
+				switch {
+				case strings.HasPrefix(joined, "symbolic-ref refs/remotes/origin/HEAD"):
+					return tc.symref, nil // success but malformed output
+				case joined == "ls-remote --symref origin HEAD":
+					t.Errorf("ls-remote must NOT be called when symbolic-ref returned output (path b/c), input=%q", tc.symref)
+					return "", nil
+				default:
+					t.Fatalf("unexpected git call: %q", joined)
+					return "", nil
+				}
+			}
+			got := defaultBaseBranch(execFn)
+			if got != "main" {
+				t.Errorf("expected fallback %q, got %q (input=%q)", "main", got, tc.symref)
+			}
+		})
+	}
+}
+
+// TestDefaultBaseBranch_SymrefErrorPath_SymrefCalledBeforeLsRemote asserts: in the error path
+// (path a — symbolic-ref returns err != nil), symbolic-ref is called before ls-remote. The order
+// is verified by recording all calls and checking indices.
+//
+// M-4b killer: a mutant that places ls-remote before symbolic-ref would have ls-remote at
+// index 0 and symbolic-ref at index 1, failing the assertion.
+func TestDefaultBaseBranch_SymrefErrorPath_SymrefCalledBeforeLsRemote(t *testing.T) {
+	t.Parallel()
+
+	var calls []string
+	execFn := func(args ...string) (string, error) {
+		joined := strings.Join(args, " ")
+		calls = append(calls, joined)
+		switch {
+		case strings.HasPrefix(joined, "symbolic-ref refs/remotes/origin/HEAD"):
+			return "", errors.New("ref absent")
+		case joined == "ls-remote --symref origin HEAD":
+			return "ref: refs/heads/master\tHEAD\nabc\tHEAD", nil
+		default:
+			t.Fatalf("unexpected git call: %q", joined)
+			return "", nil
+		}
+	}
+
+	got := defaultBaseBranch(execFn)
+	if got != "master" {
+		t.Errorf("expected %q, got %q", "master", got)
+	}
+
+	symrefIdx := -1
+	lsRemoteIdx := -1
+	for i, c := range calls {
+		if strings.HasPrefix(c, "symbolic-ref refs/remotes/origin/HEAD") {
+			symrefIdx = i
+		}
+		if c == "ls-remote --symref origin HEAD" {
+			lsRemoteIdx = i
+		}
+	}
+	if symrefIdx < 0 {
+		t.Error("symbolic-ref was not called")
+	}
+	if lsRemoteIdx < 0 {
+		t.Error("ls-remote was not called")
+	}
+	if symrefIdx >= 0 && lsRemoteIdx >= 0 && symrefIdx >= lsRemoteIdx {
+		t.Errorf("symbolic-ref (index %d) must be called before ls-remote (index %d)", symrefIdx, lsRemoteIdx)
 	}
 }
 

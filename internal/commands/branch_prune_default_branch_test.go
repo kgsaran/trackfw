@@ -366,10 +366,12 @@ func TestDefaultBranch_ForgeVsSymref_ForgePrevails(t *testing.T) {
 	}
 }
 
-// TestDefaultBranch_NeitherAvailable_FallsBackToMain asserts: when ghExec is nil and the symref
-// call fails, resolveDefaultBranch falls back to the literal "main"/"origin/main".
-// Reconciliation: both forge and symref paths return errors; fallback constants are returned
-// unchanged. This matches the pre-A7 behavior for repositories that actually use "main".
+// TestDefaultBranch_NeitherAvailable_FallsBackToMain asserts: when ghExec is nil, the symref
+// call fails, and ls-remote also fails, resolveDefaultBranch falls back to the literal
+// "main"/"origin/main".
+// Reconciliation (ADR-2026-10-30 P-4): this test afirms that when forge, symref local and
+// ls-remote all fail, the chain falls back to the literal "main". The ls-remote case is declared
+// explicitly so that the t.Fatalf guard fires if the new source is unexpectedly not reached.
 func TestDefaultBranch_NeitherAvailable_FallsBackToMain(t *testing.T) {
 	t.Parallel()
 
@@ -378,6 +380,9 @@ func TestDefaultBranch_NeitherAvailable_FallsBackToMain(t *testing.T) {
 		switch {
 		case joined == "symbolic-ref --short refs/remotes/origin/HEAD":
 			return "", fmt.Errorf("no symref configured")
+		case joined == "ls-remote --symref origin HEAD":
+			// P-4: explicitly declare that ls-remote also fails in this test.
+			return "", fmt.Errorf("ls-remote: no network in neither-available test")
 		default:
 			return "", fmt.Errorf("unexpected gitExec in neither-available test: %v", args)
 		}

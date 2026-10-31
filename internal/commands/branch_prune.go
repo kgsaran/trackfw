@@ -416,7 +416,8 @@ func runBranchPrune(apply bool, deps branchPruneDeps) error {
 	// Resolve the default branch once per execution (A7, ADR-2026-10-12):
 	// 1. forge API (gh api repos/<owner>/<repo> → default_branch)
 	// 2. symref (refs/remotes/origin/HEAD)
-	// 3. fallback literal "main"/"origin/main"
+	// 3. remote symref via git ls-remote --symref origin HEAD (only when 2 fails; ADR-2026-10-30)
+	// 4. fallback literal "main"/"origin/main"
 	// The forge name is authoritative; no cross-check with the symref is done (vault note).
 	// defaultFromForge is used by ML-1B (remote prune D4 third bullet): remote deletion is
 	// blocked when the forge could not supply the default branch name.

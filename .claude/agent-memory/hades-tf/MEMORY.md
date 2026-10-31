@@ -1,5 +1,7 @@
 # Memory Index — Hades (Security, trackfw)
 
+- [parseLsRemoteSymref second field vector gap](project_parselsremotesymref_second_field_vector_gap.md) — missing test vector `\trefs/heads/HEAD` lets HasSuffix mutation survive; LOW severity; found ML-2A 2026-10-30
+
 - [Hardlink não converge por EvalSymlinks](project_write_scope_hardlink_bypass.md) — comparar caminho exige os.SameFile quando os dois existem; caso do write-scope corrigido no #606
 - [branch new --from "-f" injection discards uncommitted work](project_branch_new_from_flag_injection.md) — 2026-10-18 REQ-2026-09-12 Wave 1; BLOQUEANTE; fromRef not validated; fix: reject prefix "-"; guard bypassed by trackfw itself
 - [git add -An --no-dry-run bypasses guard; last-flag-wins not modeled](project_guard_add_no_dry_run_bypass.md) — 2026-10-17 Rodada 2 REQ-2026-09-05; B-3 BLOQUEANTE; --no-dry-run/--no-dry cancels dryRun set by B-1 fix; whole-tree staging confirmed
@@ -45,3 +47,6 @@
 - [Go 1.25 macOS reopens closed fd 1 as /dev/null — usar 1</dev/null para EBADF real](feedback_go_runtime_closes_fd1_as_devnull.md) — 2026-10-30; `1>&-` = writeErr nil; `1</dev/null` = EBADF; medido com os.Stdout.Stat() → char device
 - [Release assets mutáveis — .immutable=false, gh release upload --clobber, sem Sigstore](project_release_assets_mutable_goreleaser.md) — 2026-10-30 ML-0A #637; checksums.txt só integridade de transporte; AC3 pina script à tag mas não fecha a janela de mutabilidade
 - [! exempts from set -e — ! cmp -s não é guarda de no-op](feedback_bang_exempts_from_set_e.md) — 2026-10-30; bash: `! cmp -s a b` retorna 1 mas set -e não aborta; padrão correto: if cmp -s; then fail; fi
+- [guard bloqueia git branch em scratchpad — único caminho sancionado: zz_*_test.go](feedback_guard_blocks_git_branch_in_scratchpad.md) — 2026-10-30; `git branch` e `checkout -b` bloqueados pelo guard em qualquer dir; `git switch --create` não testado como evasão; usar `zz_*_test.go`
+- [followRemoteHEAD=never reproduz pré-2.48 em qualquer git](project_followremotehead_never_reproduces_pre248.md) — 2026-10-30 #633; impede fetch de criar symref; confirmado em git 2.54; padrão para fixtures do fix
+- [grep glob sobre *_test.go dispara credential guard — usar paths explícitos](feedback_grep_glob_test_triggers_credential_guard.md) — 2026-10-30; glob inclui fixtures JWT, guard bloqueia grep; especificar arquivos individualmente

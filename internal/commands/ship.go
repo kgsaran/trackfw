@@ -551,8 +551,22 @@ const commitMessageSep = "\x1e"
 // gitCommitsSince returns the full message (subject + body) of every non-merge commit in
 // base..HEAD, most-recent-first (git log's natural order). Returns nil on any git error or
 // when the range is empty.
+//
+// R-5 / A-3 (ML-3A): the range start is resolved in two steps using full refnames (to avoid
+// DWIM ambiguity with tags named "origin/<base>"):
+//  1. If refs/remotes/origin/<base> exists, use it — the remote tracking ref is the precise
+//     boundary of what the PR base already contains. A local branch that is behind the remote
+//     would over-report commits; the tracking ref gives the correct range.
+//  2. Otherwise, use refs/heads/<base>. This covers a fresh/shallow clone (no remote) and
+//     the case where the remote tracking ref was not created by the fetch.
+//
+// If neither ref exists git log returns exit ≠ 0 and this function returns nil. ADR-2026-10-30.
 func gitCommitsSince(base string, execGit func(args ...string) (string, error)) []string {
-	out, err := execGit("log", base+"..HEAD", "--no-merges", "--format=%B"+commitMessageSep)
+	effectiveBase := "refs/heads/" + base
+	if _, err := execGit("rev-parse", "-q", "--verify", "refs/remotes/origin/"+base); err == nil {
+		effectiveBase = "refs/remotes/origin/" + base
+	}
+	out, err := execGit("log", effectiveBase+"..HEAD", "--no-merges", "--format=%B"+commitMessageSep)
 	if err != nil {
 		return nil
 	}
@@ -582,16 +596,31 @@ func gitCommitsSince(base string, execGit func(args ...string) (string, error)) 
 const gitSymbolicRefOriginHeadPrefix = "refs/remotes/origin/"
 
 // defaultBaseBranch resolves the repository's default branch for `git log <base>..HEAD`.
-// It tries `git symbolic-ref refs/remotes/origin/HEAD` and falls back to "main" when that fails
-// or yields nothing (e.g. shallow clone without a remote-tracking HEAD). Same resolution
-// pattern already used for branch/governance checks in internal/validator/validator.go.
+// It tries `git symbolic-ref refs/remotes/origin/HEAD` first; when that returns an error
+// (symref absent — git < 2.48 without followRemoteHEAD, fresh/shallow clone, or
+// followRemoteHEAD=never), it falls back to `git ls-remote --symref origin HEAD` via the
+// shared parseLsRemoteSymref/isValidBranchLocalName helpers. Falls back to "main" when both
+// fail or yield nothing (e.g. truly offline with no symref). Same resolution pattern as
+// resolveDefaultBranchWithSource in branch_prune_forge.go (ADR-2026-10-30).
 //
-// This is a LOCAL, gravable ref — trackfw release tag treats its result as a cross-check
-// candidate only, never as the source of truth for the tag's commit target (the forge is the
-// source; see ADR-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md, Emenda 1).
+// This function resolves only via execGit (symref and ls-remote); it never consults the forge.
+// Three reasons: (1) signature incompatibility — forge access requires a different parameter;
+// (2) ordering in release.go — defaultBaseBranch is called before forge preconditions are
+// checked; (3) sufficiency — ls-remote (git protocol over local path or network) resolves the
+// remote HEAD without forge credentials (ADR-2026-10-30, P-3).
+//
+// trackfw release tag treats its result as a cross-check candidate only, never as the source
+// of truth for the tag's commit target (the forge is the source; see
+// ADR-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md, Emenda 1).
 func defaultBaseBranch(execGit func(args ...string) (string, error)) string {
 	out, err := execGit("symbolic-ref", "refs/remotes/origin/HEAD")
 	if err != nil {
+		// (a) symref absent: ask the remote directly via ls-remote.
+		if lsOut, lsErr := execGit("ls-remote", "--symref", "origin", "HEAD"); lsErr == nil {
+			if name, ok := parseLsRemoteSymref(lsOut); ok {
+				return name
+			}
+		}
 		return "main"
 	}
 	out = strings.TrimSpace(out)
