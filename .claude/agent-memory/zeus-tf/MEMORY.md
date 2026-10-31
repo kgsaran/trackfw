@@ -44,3 +44,4 @@
 - [Mover escrita roda o pathguard](feedback_mover_escrita_roda_pathguard.md) — escrita movida de função/pacote → `go test ./internal/pathguard/`; só o make quality pegou (#602)
 - [PATH local mascara a sonda de binário](project_path_local_mascara_sonda_de_binario.md) — trackfw instalado no PATH deixa teste verde local e vermelho no CI; rode go test com PATH sem trackfw
 - [Direção: A+C, B congelado](project_direcao_consolidar_e_adocao.md) — 2026-10-28: consolidar + adoção; radar é do Lourival; open source sempre
+- [Parser de roadmap mede o corpus](feedback_parser_de_roadmap_mede_o_corpus.md) — máscara HTML passou em 4 rodadas e quebrou o próprio roadmap; medir main×branch em docs/roadmaps

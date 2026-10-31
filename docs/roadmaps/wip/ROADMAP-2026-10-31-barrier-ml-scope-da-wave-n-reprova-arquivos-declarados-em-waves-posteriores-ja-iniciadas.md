@@ -20,7 +20,7 @@ O `ml_scope` do alvo passa de waves 0..N para 0..N mais cada wave posterior inic
 (opção B, decidida pelo KG depois da Wave 0). A exigência de declaração continua só nas waves 0..N.
 
 ## Acceptance Criteria
-- [ ] AC1–AC11 da REQ
+- [x] AC1–AC11 da REQ
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado

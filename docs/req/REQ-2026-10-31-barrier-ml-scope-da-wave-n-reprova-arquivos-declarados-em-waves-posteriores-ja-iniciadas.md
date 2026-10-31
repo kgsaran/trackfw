@@ -37,35 +37,35 @@ as waves iniciadas (a faixa contínua 0..K deles tinha o mesmo furo).
   ~1702) dizem "waves 0..N".
 
 ## Acceptance Criteria
-- [ ] **AC1** — roadmap de 2 waves, ambas iniciadas, com os arquivos das duas commitados: `--wave 1`
+- [x] **AC1** — roadmap de 2 waves, ambas iniciadas, com os arquivos das duas commitados: `--wave 1`
       passa no `ml_scope`. (Critério do issue.)
-- [ ] **AC2** — a mesma branch com mais um arquivo não declarado em wave nenhuma: `--wave 1` reprova
+- [x] **AC2** — a mesma branch com mais um arquivo não declarado em wave nenhuma: `--wave 1` reprova
       e nomeia esse arquivo, e só ele. (Critério do issue.)
-- [ ] **AC3** — arquivo declarado só numa wave posterior cujos MLs estão todos ⬜: `--wave 1` reprova
+- [x] **AC3** — arquivo declarado só numa wave posterior cujos MLs estão todos ⬜: `--wave 1` reprova
       e nomeia esse arquivo, inclusive quando há wave iniciada acima dela (waves 0,1 ✅, 2 ⬜ com
       `x.go`, 3 🔄 com `y.go`: reprova nomeando só `x.go`).
-- [ ] **AC3b** — o mesmo vetor de wave ⬜ entre waves iniciadas num **membro** da união: o arquivo da
+- [x] **AC3b** — o mesmo vetor de wave ⬜ entre waves iniciadas num **membro** da união: o arquivo da
       wave ⬜ do membro não entra no escopo.
-- [ ] **AC4** — ML de wave > N sem `**Files affected:**` não reprova o barrier da wave N; ML sem
+- [x] **AC4** — ML de wave > N sem `**Files affected:**` não reprova o barrier da wave N; ML sem
       declaração nas waves 0..N continua reprovando.
-- [ ] **AC5** — `TestMLScope_TargetRoadmapExcludedFromMemberLoop` reescrito para o contrato novo,
+- [x] **AC5** — `TestMLScope_TargetRoadmapExcludedFromMemberLoop` reescrito para o contrato novo,
       mantendo o que ele protege (o alvo não entra pelo laço de membros).
-- [ ] **AC6** — `docs/cli-parity.md` e os comentários de `barrier.go` descrevem a regra nova (0..N +
+- [x] **AC6** — `docs/cli-parity.md` e os comentários de `barrier.go` descrevem a regra nova (0..N +
       waves posteriores iniciadas; membros: waves iniciadas).
-- [ ] **AC7** — pacote `internal/commands` verde; `make quality` verde.
+- [x] **AC7** — pacote `internal/commands` verde; `make quality` verde.
 
 Acrescentados pelo red team (`docs/seguranca/2026-10-31-redteam-ml-scope-waves-iniciadas.md`);
 defeito conhecido se corrige neste PR:
-- [ ] **AC8** (A-1) — wave de rótulo fracionário é ordenada por `roadmapdoc.CompareWaveLabels`, não pela
+- [x] **AC8** (A-1) — wave de rótulo fracionário é ordenada por `roadmapdoc.CompareWaveLabels`, não pela
       parte inteira: com `--wave 1`, a wave `1b` ⬜ não entra no escopo e um ML dela sem declaração
       não reprova; com `1b` iniciada, entra. `--wave 1b` trata a wave `1` como ≤ N.
-- [ ] **AC9** (A-2) — `**Status:**` dentro de comentário HTML (`<!-- -->`) não é status do ML, em
+- [x] **AC9** (A-2) — `**Status:**` dentro de comentário HTML (`<!-- -->`) não é status do ML, em
       `MLStatusMarker` (vale para `mls_complete`, `ml_scope`, board e `roadmap show`); e critério de
       aceite dentro de comentário HTML não conta em `AcceptanceEvaluateFull` (residual T4, mesma causa).
-- [ ] **AC11** (mesma causa do A-2, enumerada no ML-3B) — `**Files affected:**` e o bloco
+- [x] **AC11** (mesma causa do A-2, enumerada no ML-3B) — `**Files affected:**` e o bloco
       `**Gates da wave:**` dentro de comentário HTML não contam: não ampliam o escopo do `ml_scope` e
       não viram gate executado.
-- [ ] **AC10** (A-3) — vetores ponta a ponta para wave > N iniciada só por `❌ Bloqueado` e só por
+- [x] **AC10** (A-3) — vetores ponta a ponta para wave > N iniciada só por `❌ Bloqueado` e só por
       `❌ Cancelado`/`🚫 Abandonado`.
 
 ## Negative Scope
