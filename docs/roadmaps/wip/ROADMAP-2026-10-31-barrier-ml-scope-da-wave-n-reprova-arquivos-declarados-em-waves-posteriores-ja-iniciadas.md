@@ -82,7 +82,7 @@ env PATH="$(dirname "$(command -v go)"):/usr/bin:/bin" go test ./internal/comman
 > Dependencies: Wave 1 auditada.
 
 ### ML-2A — Red team do recorte 0..max(N, K) (hades-tf)
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:** `docs/seguranca/2026-10-31-redteam-ml-scope-waves-iniciadas.md`
 **Actions:**
 1. Tentar fazer `--wave N` passar com arquivo fora de qualquer ML, ou com arquivo de wave ainda não iniciada.
