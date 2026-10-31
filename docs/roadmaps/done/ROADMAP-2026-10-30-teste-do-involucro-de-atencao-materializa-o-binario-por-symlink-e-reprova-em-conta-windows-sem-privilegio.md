@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-10-30
 req: "docs/req/REQ-2026-10-30-teste-do-involucro-de-atencao-materializa-o-binario-por-symlink-e-reprova-em-conta-windows-sem-privilegio.md"
 squad: "hades-tf, artemis-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, artemis-tf"
 
 # Roadmap: teste do invólucro de atencao materializa o binario por symlink e reprova em conta Windows sem privilegio
 
-> Created: 2026-10-30 | Status: wip
+> Created: 2026-10-30 | Status: done
 
 ## Context
 

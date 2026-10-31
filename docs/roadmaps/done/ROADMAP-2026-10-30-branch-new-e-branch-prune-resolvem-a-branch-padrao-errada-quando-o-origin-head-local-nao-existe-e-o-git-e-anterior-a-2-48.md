@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-10-30
 req: "docs/req/REQ-2026-10-30-branch-new-e-branch-prune-resolvem-a-branch-padrao-errada-quando-o-origin-head-local-nao-existe-e-o-git-e-anterior-a-2-48.md"
 squad: "hades-tf, apolo-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf"
 
 # Roadmap: branch new e branch prune resolvem a branch padrao errada quando o origin HEAD local nao existe e o git e anterior a 2.48
 
-> Created: 2026-10-30 | Status: wip
+> Created: 2026-10-30 | Status: done
 
 ## Context
 
