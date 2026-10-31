@@ -98,14 +98,19 @@ const (
 )
 
 // releaseVersionFile describes one location where the project version is recorded, and how
-// to extract it. All 3 checks (3 files) must agree with the version requested on the CLI
-// before release tag proceeds.
+// to extract it. All 5 checks (4 files; npm/package-lock.json contributes 2 independent field
+// checks) must agree with the version requested on the CLI before release tag proceeds.
 //
 // ML-1A (v8): pypi/trackfw/__init__.py was removed from this list. Wave 3 (ML-3A) deletes
 // pypi/trackfw/ — keeping those entries would cause 'trackfw release tag' to refuse on every
 // invocation after Wave 3. The single source of truth is internal/version/version.go;
 // TestReleaseVersionFiles_NoWave3DeletedPaths enforces that no path under pypi/trackfw/ or
 // npm/src/ is re-added here.
+//
+// ML-1A (REQ-2026-08-30, AC1): npm/package-lock.json added with two independent extractors —
+// one for the root "version" field and one for the packages[""].version field. Both fields are
+// updated by `npm version` in the release workflow, so a divergence in either means the lockfile
+// was not updated. The label in each entry names the diverging field in the refusal message.
 type releaseVersionFile struct {
 	label   string // used in refusal messages — names exactly what diverges
 	path    string // relative to repoDir
@@ -116,6 +121,8 @@ var releaseVersionFiles = []releaseVersionFile{
 	{"internal/version/version.go", "internal/version/version.go", extractGoVersion},
 	{"npm/package.json", "npm/package.json", extractNpmVersion},
 	{"pypi/pyproject.toml", "pypi/pyproject.toml", extractPyprojectVersion},
+	{"npm/package-lock.json (root version)", "npm/package-lock.json", extractPackageLockRootVersion},
+	{"npm/package-lock.json (packages[\"\"].version)", "npm/package-lock.json", extractPackageLockPackagesVersion},
 }
 
 var goVersionRE = regexp.MustCompile(`Version\s*=\s*"([^"]+)"`)
@@ -151,6 +158,49 @@ func extractPyprojectVersion(content string) (string, error) {
 	return m[1], nil
 }
 
+// extractPackageLockRootVersion extracts the top-level "version" field from
+// npm/package-lock.json. This field is updated by `npm version` in the release
+// workflow alongside npm/package.json — a divergence means the lockfile was not
+// committed after the npm version bump.
+func extractPackageLockRootVersion(content string) (string, error) {
+	var lock struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal([]byte(content), &lock); err != nil {
+		return "", fmt.Errorf("could not parse npm/package-lock.json: %w", err)
+	}
+	if lock.Version == "" {
+		return "", fmt.Errorf(`npm/package-lock.json has no "version" field at root`)
+	}
+	return lock.Version, nil
+}
+
+// extractPackageLockPackagesVersion extracts the "version" field from the
+// packages[""] entry of npm/package-lock.json (the workspace root package
+// record, present in lockfileVersion 2 and 3). A missing entry means the file
+// is a v1 lockfile (npm 6, pre-2020) or is corrupted — either way, fail closed.
+func extractPackageLockPackagesVersion(content string) (string, error) {
+	var lock struct {
+		Packages map[string]json.RawMessage `json:"packages"`
+	}
+	if err := json.Unmarshal([]byte(content), &lock); err != nil {
+		return "", fmt.Errorf("could not parse npm/package-lock.json: %w", err)
+	}
+	raw, ok := lock.Packages[""]
+	if !ok {
+		return "", fmt.Errorf(`npm/package-lock.json has no "packages[""]" entry (v1 lockfile or corrupted)`)
+	}
+	var pkg struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(raw, &pkg); err != nil {
+		return "", fmt.Errorf(`could not parse npm/package-lock.json packages[""]: %w`, err)
+	}
+	if pkg.Version == "" {
+		return "", fmt.Errorf(`npm/package-lock.json packages[""] has no "version" field`)
+	}
+	return pkg.Version, nil
+}
 
 func newReleaseCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -176,6 +226,8 @@ guesses:
   1. Working tree must be clean.
   2. The default branch (main/master), if checked out locally, must be up to date with origin.
   3. The 4 version files must all match <version> exactly.
+     (npm/package-lock.json is checked for both the root "version" field and
+     the packages[""].version field — 2 checks from this one file.)
   4. CHANGELOG.md must have a "## [<version>] - YYYY-MM-DD" section.
   5. The tag must not already exist, locally or on origin.
   6. The GitHub CLI (gh) must be available and authenticated — release tag currently only
@@ -398,7 +450,9 @@ func runReleaseTag(versionArg string, deps releaseDeps) error {
 		}
 		got, eerr := vf.extract(content)
 		if eerr != nil {
-			return fmt.Errorf("trackfw release tag refuses to run: %w", eerr)
+			// Include vf.label so the refusal names the exact file/field that could not
+			// be read (e.g. missing packages[""] entry in a v1 lockfile).
+			return fmt.Errorf("trackfw release tag refuses to run: %s: %w", vf.label, eerr)
 		}
 		if got != version {
 			return fmt.Errorf(releaseTagVersionMismatchFmt, vf.label, got, version)

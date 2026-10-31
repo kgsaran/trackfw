@@ -313,6 +313,51 @@ func TestInstallGates_Idempotente(t *testing.T) {
 	}
 }
 
+// TestInstallGates_ValidateScript_ExecBitPromotedWhenFileExistsWith0644 asserts AC2
+// (REQ-2026-08-30): when scripts/trackfw-validate.sh already exists with mode 0644,
+// InstallGates must promote it to 0755 (os.WriteFile applies perm only on O_CREATE;
+// os.Chmod is needed to fix pre-existing files). Affirmation: this test asserts that
+// InstallGates calls os.Chmod after os.WriteFile for writeValidateScript.
+func TestInstallGates_ValidateScript_ExecBitPromotedWhenFileExistsWith0644(t *testing.T) {
+	dir := t.TempDir()
+	// Pre-create the scripts dir and the validate script at mode 0644.
+	scriptsDir := filepath.Join(dir, "scripts")
+	if err := os.MkdirAll(scriptsDir, 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	scriptPath := filepath.Join(scriptsDir, "trackfw-validate.sh")
+	if err := os.WriteFile(scriptPath, []byte("# old content\n"), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	// Verify the precondition: file exists with mode 0644 (no exec bit).
+	if execBitRepresentavelPara(t, scriptPath) {
+		st, err := os.Stat(scriptPath)
+		if err != nil {
+			t.Fatalf("Stat precondition: %v", err)
+		}
+		if st.Mode().Perm()&0111 != 0 {
+			t.Fatal("precondition failed: file already has exec bit before InstallGates")
+		}
+	}
+
+	r := DiscoveryResult{}
+	if err := InstallGates(r, dir, io.Discard); err != nil {
+		t.Fatalf("InstallGates error: %v", err)
+	}
+
+	st, err := os.Stat(scriptPath)
+	if err != nil {
+		t.Fatalf("Stat after InstallGates: %v", err)
+	}
+	if execBitRepresentavelPara(t, scriptPath) {
+		if st.Mode().Perm() != 0755 {
+			t.Errorf("validate script mode = %04o, want 0755 (exec bit not promoted from 0644)", st.Mode().Perm())
+		}
+	} else {
+		execBitNaoExercitado(t, scriptPath)
+	}
+}
+
 // TestInstallGates_GeraAttentionScripts confirma que `discover --init` (via InstallGates)
 // gera scripts/trackfw-attention-signal.sh e scripts/trackfw-attention-cleanup.sh no
 // rootDir, com o mesmo conteúdo produzido por `trackfw init` (generators.GenerateAttentionScripts),

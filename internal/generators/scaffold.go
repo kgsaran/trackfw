@@ -1974,6 +1974,12 @@ func generateCommitMsgHook(cfg Config) error {
 		if err := os.WriteFile(path, []byte(script), 0755); err != nil {
 			return fmt.Errorf("writing husky commit-msg hook: %w", err)
 		}
+		// AC2b (REQ-2026-08-30): git executes hooks via fork+exec; +x is required.
+		// os.WriteFile applies perm only on O_CREATE — existing file with 0644 retains it.
+		// os.Chmod is unconditional, same pattern as scaffold.go:1077 (AC9, REQ-2026-08-28).
+		if err := os.Chmod(path, 0755); err != nil {
+			return fmt.Errorf("setting execute bit on husky commit-msg hook: %w", err)
+		}
 		fmt.Printf("  ✓ %s\n", path)
 	case "lefthook":
 		lefthookPath := "lefthook.yml"
@@ -2041,6 +2047,12 @@ func generateHuskyHook() error {
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks via rejectScaffoldPath above
 	if err := os.WriteFile(path, []byte(content), 0755); err != nil {
 		return fmt.Errorf("writing husky hook: %w", err)
+	}
+	// AC2b (REQ-2026-08-30): git executes hooks via fork+exec; +x is required.
+	// os.WriteFile applies perm only on O_CREATE — existing file with 0644 retains it.
+	// os.Chmod is unconditional, same pattern as scaffold.go:1077 (AC9, REQ-2026-08-28).
+	if err := os.Chmod(path, 0755); err != nil {
+		return fmt.Errorf("setting execute bit on husky hook: %w", err)
 	}
 	fmt.Printf("  ✓ %s\n", path)
 	return nil

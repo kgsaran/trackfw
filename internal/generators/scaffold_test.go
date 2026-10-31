@@ -830,3 +830,98 @@ func TestGenerateGitHubActionsWorkflow_WritesWhenValidateYmlAbsent(t *testing.T)
 		t.Errorf("gate.yml was NOT written for new project (validate.yml absent) — counter-arm: %v", statErr)
 	}
 }
+
+// TestGenerateCommitMsgHook_HuskyExecBitPromotedWhenFileExistsWith0644 asserts AC2b
+// (REQ-2026-08-30, husky commit-msg site): when .husky/commit-msg already exists with
+// mode 0644, generateCommitMsgHook must promote it to 0755 (git executes hooks via
+// fork+exec; the +x bit is required). Affirmation: this test asserts that
+// generateCommitMsgHook calls os.Chmod after os.WriteFile for the husky commit-msg hook.
+func TestGenerateCommitMsgHook_HuskyExecBitPromotedWhenFileExistsWith0644(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	// Pre-create .husky/commit-msg with mode 0644.
+	huskyDir := filepath.Join(dir, ".husky")
+	if err := os.MkdirAll(huskyDir, 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	hookPath := filepath.Join(huskyDir, "commit-msg")
+	if err := os.WriteFile(hookPath, []byte("# old content\n"), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	// Verify precondition: no exec bit.
+	if execBitRepresentavelPara(t, hookPath) {
+		st, _ := os.Stat(hookPath)
+		if st.Mode().Perm()&0111 != 0 {
+			t.Fatal("precondition failed: hook already has exec bit before generateCommitMsgHook")
+		}
+	}
+
+	cfg := Config{Hooks: "husky", RequireReqInCommit: true}
+	if err := generateCommitMsgHook(cfg); err != nil {
+		t.Fatalf("generateCommitMsgHook: %v", err)
+	}
+
+	st, err := os.Stat(hookPath)
+	if err != nil {
+		t.Fatalf("Stat after generateCommitMsgHook: %v", err)
+	}
+	if execBitRepresentavelPara(t, hookPath) {
+		if st.Mode().Perm() != 0755 {
+			t.Errorf("husky commit-msg hook mode = %04o, want 0755 (exec bit not promoted from 0644)", st.Mode().Perm())
+		}
+	} else {
+		execBitNaoExercitado(t, hookPath)
+	}
+}
+
+// TestGenerateHuskyHook_ExecBitPromotedWhenFileExistsWith0644 asserts AC2b
+// (REQ-2026-08-30, husky pre-commit site): when .husky/pre-commit already exists with
+// mode 0644, generateHuskyHook must promote it to 0755 (git executes hooks via
+// fork+exec; the +x bit is required). Affirmation: this test asserts that
+// generateHuskyHook calls os.Chmod after os.WriteFile for the husky pre-commit hook.
+func TestGenerateHuskyHook_ExecBitPromotedWhenFileExistsWith0644(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	// Pre-create .husky/pre-commit with mode 0644.
+	huskyDir := filepath.Join(dir, ".husky")
+	if err := os.MkdirAll(huskyDir, 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	hookPath := filepath.Join(huskyDir, "pre-commit")
+	if err := os.WriteFile(hookPath, []byte("# old content\n"), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	// Verify precondition: no exec bit.
+	if execBitRepresentavelPara(t, hookPath) {
+		st, _ := os.Stat(hookPath)
+		if st.Mode().Perm()&0111 != 0 {
+			t.Fatal("precondition failed: hook already has exec bit before generateHuskyHook")
+		}
+	}
+
+	if err := generateHuskyHook(); err != nil {
+		t.Fatalf("generateHuskyHook: %v", err)
+	}
+
+	st, err := os.Stat(hookPath)
+	if err != nil {
+		t.Fatalf("Stat after generateHuskyHook: %v", err)
+	}
+	if execBitRepresentavelPara(t, hookPath) {
+		if st.Mode().Perm() != 0755 {
+			t.Errorf("husky pre-commit hook mode = %04o, want 0755 (exec bit not promoted from 0644)", st.Mode().Perm())
+		}
+	} else {
+		execBitNaoExercitado(t, hookPath)
+	}
+}

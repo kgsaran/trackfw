@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/kgsaran/trackfw/internal/homedir"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -494,8 +495,12 @@ func (r UpdateReport) Summary() UpdateSummary {
 // trackfw update harness.
 type UpdateOptions struct {
 	DryRun         bool
-	Targets        []string // subset of declared target ids; empty selects all
+	Targets        []string  // subset of declared target ids; empty selects all
 	InstallMissing bool
+	// ErrWriter is where advisory messages (e.g. agent_models warnings) are
+	// written. If nil, os.Stderr is used. AC3 (REQ-2026-08-30): the advisory
+	// is emitted once per UpdateHarness call, not once per catalog target.
+	ErrWriter io.Writer
 }
 
 // harnessCatalogTargetOrder is the fixed catalog target order the pinned
@@ -634,6 +639,32 @@ func UpdateHarness(opts UpdateOptions) (UpdateReport, error) {
 		return UpdateReport{}, fmt.Errorf("loading integration catalog: %w", catalogErr)
 	}
 
+	// AC3 (REQ-2026-08-30): pre-scan selected for catalog targets so the
+	// agent_models advisory is resolved and emitted exactly once per
+	// UpdateHarness call, regardless of how many catalog targets are selected.
+	// ResolveAgentModels is only called when at least one catalog target is
+	// present — credential-guard-script targets never trigger it.
+	var harnessAgentModels map[string]string
+	hasCatalogTarget := false
+	for _, id := range selected {
+		if _, _, ok := splitHarnessCatalogTargetID(id); ok {
+			hasCatalogTarget = true
+			break
+		}
+	}
+	if hasCatalogTarget {
+		harnessCwd, _ := os.Getwd() // for AC14 diagnostic only; failure is OK (empty → no diagnostic)
+		var harnessWarnMsg string
+		harnessAgentModels, harnessWarnMsg = config.ResolveAgentModels("global", home, harnessCwd)
+		if harnessWarnMsg != "" {
+			errW := opts.ErrWriter
+			if errW == nil {
+				errW = os.Stderr
+			}
+			fmt.Fprintln(errW, harnessWarnMsg)
+		}
+	}
+
 	results := make([]TargetResult, 0, len(selected))
 	for _, id := range selected {
 		if id == "claude-skill" {
@@ -704,7 +735,7 @@ func UpdateHarness(opts UpdateOptions) (UpdateReport, error) {
 		if !ok {
 			continue
 		}
-		results = append(results, harnessCatalogTarget(catalog, id, tool, kind, home, claudeDir, claudeDirErr, opts))
+		results = append(results, harnessCatalogTarget(catalog, id, tool, kind, home, claudeDir, claudeDirErr, harnessAgentModels, opts))
 	}
 	return UpdateReport{Scope: "harness", DryRun: opts.DryRun, Targets: results}, nil
 }
@@ -2648,15 +2679,18 @@ func harnessGitBranchGuardTargetKiro(home string, opts UpdateOptions) TargetResu
 // displayPath is derived from the catalog itself (integrations.GlobalGroupPath)
 // rather than from any individual installed plan's destination, so the
 // reported path never depends on catalog item iteration order.
-// harnessCatalogTarget evaluates (and, unless DryRun, applies) every
-// global-scope catalog item of the given (tool, kind) pair.
 //
 // claudeDir is the pre-resolved agentconfig.ClaudeConfigDir value from the
 // caller (UpdateHarness). It is passed in to satisfy ADR-2026-10-14 D3 (writer
 // and auditor use the same resolver instance). claudeDirErr is the error from
 // that resolution; if non-nil and tool is "claude", the Manager will propagate
 // the error through ClaudeDir.
-func harnessCatalogTarget(catalog *integrations.Catalog, id, tool string, kind integrations.ItemKind, home, claudeDir string, claudeDirErr error, opts UpdateOptions) TargetResult {
+//
+// agentModels is pre-resolved by UpdateHarness (AC3, REQ-2026-08-30): the
+// advisory is emitted once per harness run, not once per catalog target.
+// Pass nil when no agent_models advisory applies (non-catalog targets never
+// call this function).
+func harnessCatalogTarget(catalog *integrations.Catalog, id, tool string, kind integrations.ItemKind, home, claudeDir string, claudeDirErr error, agentModels map[string]string, opts UpdateOptions) TargetResult {
 	displayPath, pathErr := integrations.GlobalGroupPath(catalog, tool, kind)
 	if pathErr != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: "", Message: pathErr.Error()}
@@ -2665,17 +2699,12 @@ func harnessCatalogTarget(catalog *integrations.Catalog, id, tool string, kind i
 	if err != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
 	}
-	harnessCwd, _ := os.Getwd() // for AC14 diagnostic only; failure is OK (empty → no diagnostic)
-	harnessAgentModels, harnessWarnMsg := config.ResolveAgentModels("global", home, harnessCwd)
-	if harnessWarnMsg != "" {
-		fmt.Fprintln(os.Stderr, harnessWarnMsg)
-	}
 	plans, err := integrations.BuildPlans(catalog, integrations.PlanRequest{
 		Kind:        kind,
 		Targets:     []string{tool},
 		Scope:       "global",
 		Identity:    ident,
-		AgentModels: harnessAgentModels,
+		AgentModels: agentModels,
 	})
 	if err != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}

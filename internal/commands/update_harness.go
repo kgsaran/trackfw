@@ -83,7 +83,7 @@ and left alone unless --install-missing is passed explicitly; a harness with
 nothing installed reports every target "missing" and exits 0.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			opts := generators.UpdateOptions{DryRun: dryRun, Targets: targets, InstallMissing: installMissing}
+			opts := generators.UpdateOptions{DryRun: dryRun, Targets: targets, InstallMissing: installMissing, ErrWriter: cmd.ErrOrStderr()}
 			report, err := generators.UpdateHarness(opts)
 			if err != nil {
 				// Unknown --targets id is a usage error — leave usage visible.

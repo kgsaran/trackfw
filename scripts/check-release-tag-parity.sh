@@ -493,8 +493,10 @@ RELEASE_TAG="v9.9.9"
 FAKE_TAG_OBJECT_SHA="deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
 
 # ---------------------------------------------------------------------------
-# write_version_files DIR VERSION — writes the 5 files release tag reads, all agreeing with
+# write_version_files DIR VERSION — writes the files release tag reads, all agreeing with
 # VERSION. Mirrors internal/commands/release_test.go's validReleaseVersionFiles.
+# AC1 (REQ-2026-08-30): npm/package-lock.json added with both root version and
+# packages[""].version fields, matching the two extractors in releaseVersionFiles.
 # ---------------------------------------------------------------------------
 write_version_files() {
   local dir=$1 version=$2
@@ -506,6 +508,9 @@ var Version = "$version"
 EOF
   cat >"$dir/npm/package.json" <<EOF
 {"name":"trackfw","version":"$version"}
+EOF
+  cat >"$dir/npm/package-lock.json" <<EOF
+{"name":"trackfw","version":"$version","lockfileVersion":3,"packages":{"":{"name":"trackfw","version":"$version"}}}
 EOF
   cat >"$dir/pypi/pyproject.toml" <<EOF
 [project]

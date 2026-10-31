@@ -2865,3 +2865,66 @@ func TestUpdateHarnessLeafSymlinkRefusesWrite(t *testing.T) {
 		t.Errorf("expected 'refusing write' on stderr, got: %q", stderrBuf.String())
 	}
 }
+
+// ---------------------------------------------------------------------------
+// AC3 (REQ-2026-08-30): agent_models advisory deduplication
+// ---------------------------------------------------------------------------
+
+// TestUpdateHarness_AgentModelsAdvisory_EmittedOnceForMultipleCatalogTargets
+// asserts that when N catalog targets (codex-agents + codex-skills) are
+// selected and the HOME has no global agent_models config, the advisory
+// message appears exactly once in ErrWriter — not once per catalog target.
+//
+// Affirmation: asserts UpdateHarness pre-scans selected and emits the
+// advisory at most once per call, regardless of how many catalog targets are
+// present.
+func TestUpdateHarness_AgentModelsAdvisory_EmittedOnceForMultipleCatalogTargets(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // Windows isolation
+
+	var errBuf strings.Builder
+	opts := UpdateOptions{
+		Targets:   []string{"codex-agents", "codex-skills"},
+		ErrWriter: &errBuf,
+	}
+	_, err := UpdateHarness(opts)
+	if err != nil {
+		t.Fatalf("UpdateHarness failed: %v", err)
+	}
+
+	got := errBuf.String()
+	want := config.GlobalAgentModelsNoneMessage
+	count := strings.Count(got, want)
+	if count != 1 {
+		t.Errorf("advisory message count = %d, want exactly 1\nfull output:\n%s", count, got)
+	}
+}
+
+// TestUpdateHarness_AgentModelsAdvisory_NotEmittedForNonCatalogTargets
+// asserts that when only non-catalog targets (credential-guard-script) are
+// selected, the agent_models advisory is never emitted — even though HOME has
+// no global agent_models config.
+//
+// Affirmation: asserts the pre-scan correctly skips ResolveAgentModels when
+// no catalog targets are present.
+func TestUpdateHarness_AgentModelsAdvisory_NotEmittedForNonCatalogTargets(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // Windows isolation
+
+	var errBuf strings.Builder
+	opts := UpdateOptions{
+		Targets:   []string{"credential-guard-script"},
+		ErrWriter: &errBuf,
+	}
+	_, err := UpdateHarness(opts)
+	if err != nil {
+		t.Fatalf("UpdateHarness failed: %v", err)
+	}
+
+	got := errBuf.String()
+	if strings.Contains(got, config.GlobalAgentModelsNoneMessage) {
+		t.Errorf("advisory must not be emitted for non-catalog targets, but got:\n%s", got)
+	}
+}

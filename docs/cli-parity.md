@@ -1672,11 +1672,14 @@ never guesses:**
    skipped — this is what lets `release tag` run from any checked-out branch as long as the
    working tree is clean. **This local resolution is a cross-check candidate only — see the
    "commit-target ancoring" note below for what actually decides the published commit.**
-3. **The 4 version files disagree with `<version>`** — `internal/version/version.go`,
-   `npm/package.json`, `pypi/pyproject.toml`, and `pypi/trackfw/__init__.py` (checked twice: the
-   `importlib.metadata` fallback and the `except`-block fallback, since both hold a version
-   literal) — 5 checks in total. Refuses naming exactly which file/occurrence diverges and both
-   values.
+3. **The 5 version files disagree with `<version>`** — `internal/version/version.go`,
+   `npm/package.json`, `npm/package-lock.json` (checked twice: the root `"version"` field and
+   `packages[""].version` — two independent checks from one file), `pypi/pyproject.toml`, and
+   `pypi/trackfw/__init__.py` (checked twice: the `importlib.metadata` fallback and the
+   `except`-block fallback, since both hold a version literal) — **7 checks in total** (AC1,
+   REQ-2026-08-30). Refuses naming exactly which file/occurrence diverges and both values. The
+   two lockfile checks are independent: a v1 lockfile (no `packages[""]` entry) or a corrupted
+   lockfile causes the `packages[""].version` check to fail closed (error, not silent pass).
 4. **`CHANGELOG.md` missing the version's section** — refuses unless a `## [<version>] -
    YYYY-MM-DD` heading exists; the matched section becomes the tag message
    (`changelog.FormatSection`/`format_section`/`formatSection` — the module `ship`-adjacent
@@ -4361,6 +4364,26 @@ template is `skipped`, even if the implementation rewrote the bytes. Deciding by
 instead of "did the content change" makes an idempotent re-run report `updated` in one runtime and
 `skipped` in another for the same input — measured divergence between Go and Node.js in the first
 Wave 6 round.
+
+### `agent_models` advisory — emitted at most once per `update harness` call (AC3, REQ-2026-08-30)
+
+<!-- trackfw-contract: gate=internal/generators/update_test.go partial=TestUpdateHarness_AgentModelsAdvisory_EmittedOnceForMultipleCatalogTargets e TestUpdateHarness_AgentModelsAdvisory_NotEmittedForNonCatalogTargets -->
+
+When `update harness` selects one or more catalog targets (`<tool>-agents`, `<tool>-skills`),
+`ResolveAgentModels("global", …)` is called **once** — in a pre-scan before the target loop — and
+any advisory message is emitted **once** to `ErrWriter` (command level: `cmd.ErrOrStderr()`), not
+once per catalog target. Non-catalog targets (`credential-guard-script`,
+`git-branch-guard-script`, per-tool guard wiring) never trigger the resolution.
+
+**Contract (binding):**
+
+- N catalog targets selected, no global `agent_models` configured → advisory appears **exactly once**
+  in `ErrWriter`; not 2 or N times.
+- Zero catalog targets selected (e.g. `--targets credential-guard-script`) → advisory **does not
+  appear** in `ErrWriter`, even if HOME has no global `agent_models`.
+- The advisory text is one of the three constants defined in `internal/config/config.go`:
+  `GlobalAgentModelsNoneMessage`, `GlobalAgentModelsProjectOnlyMessage`,
+  `MalformedGlobalConfigMessage`. The text is never modified by this layer.
 
 ### Declared harness targets — pinned list
 
