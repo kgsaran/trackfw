@@ -123,13 +123,14 @@ test -f docs/seguranca/2026-10-31-redteam-ml-scope-waves-iniciadas.md
 - [x] pacotes `internal/roadmapdoc`, `internal/commands`, `internal/serve` e `internal/generators` verdes
 
 ### ML-3C — Comentário HTML não declara escopo nem gate (apolo-tf) — AC11
-**Status:** ✅ Concluído — auditado em 2026-10-31. `parseMLScopeFilesAffected` e `ParseGatesLines` pulam linhas dentro de comentário; `StripInlineHTMLComments` descarta trechos de comentário na mesma linha do `**Files affected:**`; `htmlCommentMask` virou máquina de estado por linha. Wave com o único gate comentado fica com zero gates (`commands: []`), como uma wave sem gate. Contra-braço do gate refeito pelo arquiteto (a mutação do executor não compilava): sem a máscara, os dois testes de `ParseGatesLines` reprovam. 11 testes novos conferidos pelo nome em `-v`.
+**Status:** 🔄 Em andamento — reaberto em 2026-10-31: o barrier da Wave 3 reprovou neste roadmap (`ML-3C: no acceptance block`), porque a máscara trata o marcador de abertura citado em código inline (ação 3) como comentário aberto e esconde o resto do documento. Auditoria anterior: `parseMLScopeFilesAffected` e `ParseGatesLines` pulam linhas dentro de comentário; `StripInlineHTMLComments` descarta trechos de comentário na mesma linha do `**Files affected:**`; `htmlCommentMask` virou máquina de estado por linha. Wave com o único gate comentado fica com zero gates (`commands: []`), como uma wave sem gate. Contra-braço do gate refeito pelo arquiteto (a mutação do executor não compilava): sem a máscara, os dois testes de `ParseGatesLines` reprovam. 11 testes novos conferidos pelo nome em `-v`.
 **Files affected:** `internal/roadmapdoc/roadmapdoc.go`, `internal/roadmapdoc/gates_lines_test.go`, `internal/commands/barrier.go`, `internal/commands/barrier_ml_scope_test.go`, `docs/cli-parity.md`
 **Actions:**
 1. `parseMLScopeFilesAffected` e `ParseGatesLines` pulam linhas dentro de comentário HTML, com a mesma máscara do ML-3B (exportada se preciso).
 2. Medir o que o barrier faz quando o único gate da wave está dentro de comentário: o veredito não pode virar aprovação silenciosa.
 3. Comentário HTML na mesma linha (`<!-- … -->` inline, ou `<!--` sem fechamento até o fim da linha) não contribui token de `**Files affected:**`. Status, critério e gate já falham fechado nesse caso (status lê o primeiro token; critério e gate ficam visíveis).
 4. `htmlCommentMask` percorre cada linha como máquina de estado: uma linha que fecha e reabre (`a --> b <!-- c`) ou que tem span fechado seguido de `<!--` aberto (`x <!-- a --> <!-- b`) termina em comentário aberto.
+5. Código inline (crases) tem precedência sobre comentário HTML, como no CommonMark: marcador de abertura ou fechamento dentro de crase é texto, na máscara e na remoção inline. Medir o corpus inteiro de roadmaps (`main` × branch) para status, critérios, gates e `Files affected`.
 **Acceptance criteria:**
 - [x] AC11 da REQ; contra-braço: sem a máscara, os testes novos reprovam
 - [x] pacotes `internal/roadmapdoc` e `internal/commands` verdes
