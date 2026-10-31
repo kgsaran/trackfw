@@ -109,7 +109,7 @@ env PATH="$(dirname "$(command -v go)"):/usr/bin:/bin" go test ./internal/comman
 > Dependencies: Wave 1 auditada.
 
 ### ML-2A — Red team dos débitos de higiene (hades-tf)
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:** `docs/seguranca/2026-10-31-redteam-debitos-de-higiene.md`
 **Actions:**
 1. Tentar fazer o `release tag` aceitar lockfile divergente e o `discover --init` deixar o script sem bit.
