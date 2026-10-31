@@ -646,11 +646,114 @@ type AcceptanceDetail struct {
 	LapsedReasons     []LapsedReason // one entry per lapsed criterion; nil when Lapsed==0
 }
 
+// findCodeSpanClose returns the position just after a closing backtick run of length n
+// in line, searching from index searchFrom. A closing run consists of exactly n
+// backtick characters — not more, not fewer. A longer run does not close a shorter
+// code span per CommonMark semantics.
+// Returns -1 when no such run is found within line[searchFrom:].
+//
+// Shared by nextCommentOpener and StripInlineHTMLComments (ML-3C ação 5,
+// REQ-2026-10-31). Keep in sync with nextCommentOpener — do not duplicate.
+func findCodeSpanClose(line string, searchFrom, n int) int {
+	i := searchFrom
+	for i < len(line) {
+		if line[i] != '`' {
+			i++
+			continue
+		}
+		// Count the backtick run starting at i.
+		j := i
+		for j < len(line) && line[j] == '`' {
+			j++
+		}
+		if j-i == n {
+			return j // position after the closing run
+		}
+		i = j // different length run; skip it
+	}
+	return -1
+}
+
+// findCommentOpenerOrSpan advances from pos scanning line for either a "<!--" opener
+// or an unclosed backtick run. It returns one of three outcomes:
+//   - (openerPos, 0, 0):   found "<!--" at openerPos (spanN == 0).
+//   - (-1, n, resumePos):  found an unclosed backtick run of length n starting at some
+//     position; resumePos == pos_of_run+n is the scan position after the run.
+//   - (-1, 0, 0):          reached end of line cleanly.
+//
+// A backtick run is "unclosed" when findCodeSpanClose finds no matching close run of
+// the same length on the same line. When a matching close is found, the entire span
+// (openers + content + closers) is skipped and scanning continues.
+//
+// This is the shared low-level kernel of both nextCommentOpener (which treats unclosed
+// runs as literal and loops) and htmlCommentMask (which may propagate span state across
+// lines via lookAheadCodeSpanClose).
+func findCommentOpenerOrSpan(line string, pos int) (openerPos, spanN, resumePos int) {
+	for pos < len(line) {
+		ch := line[pos]
+		if ch == '`' {
+			n := 0
+			for pos+n < len(line) && line[pos+n] == '`' {
+				n++
+			}
+			closeEnd := findCodeSpanClose(line, pos+n, n)
+			if closeEnd >= 0 {
+				pos = closeEnd // closed span: skip it entirely
+				continue
+			}
+			// Unclosed backtick run.
+			return -1, n, pos + n
+		}
+		if ch == '<' && strings.HasPrefix(line[pos:], "<!--") {
+			return pos, 0, 0
+		}
+		pos++
+	}
+	return -1, 0, 0
+}
+
+// nextCommentOpener returns the position of the first "<!--" in line[pos:] that
+// is not inside a backtick code span. Returns -1 if none found.
+//
+// Code span precedence (ML-3C ação 5, REQ-2026-10-31): a backtick run of N
+// characters that has a matching closing run of exactly N characters later on
+// the same line opens a code span; any "<!--" inside that span is not treated as
+// a comment opener. When no matching closing run is found on the same line, the
+// opening backticks are literal and scanning continues immediately after them.
+//
+// This function is only called when the caller is OUTSIDE a comment. When inside
+// a comment, backticks are opaque and only "-->" closes — htmlCommentMask handles
+// that branch with a plain strings.Index.
+//
+// Residual (declared): code spans spanning multiple lines are not handled by this
+// function. An unclosed backtick run is treated as literal, so a "<!--" that follows
+// one on the same line is returned as an opener. htmlCommentMask handles multi-line
+// spans separately via lookAheadCodeSpanClose; this function is called only by
+// StripInlineHTMLComments (single-line semantics).
+//
+// Shared by StripInlineHTMLComments — do not duplicate.
+func nextCommentOpener(line string, pos int) int {
+	for {
+		openerPos, spanN, resumePos := findCommentOpenerOrSpan(line, pos)
+		if spanN > 0 {
+			// Unclosed backtick run: treat as literal, continue after the run.
+			pos = resumePos
+			continue
+		}
+		return openerPos
+	}
+}
+
 // StripInlineHTMLComments removes inline HTML comment regions from line.
 // Each complete "<!-- … -->" span is replaced with a single space so that
 // surrounding tokens remain separated (e.g. `` `a`<!--x-->`b` `` → `` `a` `b` ``).
 // If "<!--" appears without a closing "-->" on the same line, the rest of the
 // line from "<!--" onward is discarded and endsOpen is true.
+//
+// Code span precedence (ML-3C ação 5, REQ-2026-10-31): "<!--" inside a backtick
+// code span is not treated as an opener. nextCommentOpener (the shared helper)
+// implements this rule; see its doc comment for the code span grammar and the
+// declared residual for multi-line spans.
 //
 // The scanner pairs each "<!--" with the first "-->" found from opener+4 onward —
 // the same offset semantics as htmlCommentMask (ML-3C ação 4, REQ-2026-10-31) —
@@ -667,24 +770,99 @@ type AcceptanceDetail struct {
 // ("<!-- a --> <!-- b"). That gap is now closed in htmlCommentMask itself; this
 // endsOpen break is kept as belt-and-suspenders for parseMLScopeFilesAffected.
 func StripInlineHTMLComments(line string) (stripped string, endsOpen bool) {
+	var result strings.Builder
+	pos := 0
 	for {
-		start := strings.Index(line, "<!--")
-		if start < 0 {
+		openerPos := nextCommentOpener(line, pos)
+		if openerPos < 0 {
+			result.WriteString(line[pos:])
 			break
 		}
-		after := line[start+4:]
-		closeIdx := strings.Index(after, "-->")
+		result.WriteString(line[pos:openerPos])
+		after := openerPos + 4
+		closeIdx := strings.Index(line[after:], "-->")
 		if closeIdx < 0 {
 			// No closing "-->" on this line: truncate from "<!--" onward.
-			line = line[:start]
 			endsOpen = true
 			break
 		}
 		// Replace the entire span (including delimiters) with a single space to
 		// prevent adjacent tokens from merging (e.g. "`a`<!--x-->`b`" → "`a` `b`").
-		line = line[:start] + " " + after[closeIdx+3:]
+		result.WriteByte(' ')
+		pos = after + closeIdx + 3
 	}
-	return line, endsOpen
+	return result.String(), endsOpen
+}
+
+// interruptsParagraph reports whether line starts a CommonMark block element that would
+// interrupt a paragraph and therefore cannot be a code span continuation line. The check
+// is deliberately conservative (coarse first-non-space-char set): when doubtful, it
+// returns true, which restores the pre-fix "literal backtick" behaviour. Over-stopping
+// is always safe — it only prevents a multi-line span from being recognised, reverting
+// to current behaviour for that line.
+//
+// Stops on (after up to 3 leading spaces, per CommonMark): blank or whitespace-only
+// lines; lines starting with -, *, +, >, #, <, =, _, |, ~, or ` (covers list items,
+// blockquotes, ATX headings, HTML blocks, setext/thematic breaks, fences); and ordered
+// list items (digit run followed by '.' or ')').
+//
+// Used exclusively by lookAheadCodeSpanClose.
+func interruptsParagraph(line string) bool {
+	i := 0
+	for i < 3 && i < len(line) && line[i] == ' ' {
+		i++
+	}
+	if i >= len(line) {
+		return true // blank or whitespace-only
+	}
+	ch := line[i]
+	switch ch {
+	case '-', '*', '+', '>', '#', '<', '=', '_', '|', '~', '`':
+		return true
+	}
+	// Ordered list item: digit run followed by '.' or ')'.
+	if ch >= '0' && ch <= '9' {
+		j := i
+		for j < len(line) && line[j] >= '0' && line[j] <= '9' {
+			j++
+		}
+		if j < len(line) && (line[j] == '.' || line[j] == ')') {
+			return true
+		}
+	}
+	return false
+}
+
+// lookAheadCodeSpanClose scans forward from lines[startLine+1:] looking for a closing
+// backtick run of exactly n characters. Returns true if one is found before a
+// paragraph-interrupting boundary. Stops and returns false if it encounters a fenced
+// interior line (fenced[j]) or a line that interruptsParagraph.
+//
+// Security constraint: the paragraph-interrupt check covers HTML block starts (any line
+// whose first non-space character is '<'), among others. Without this boundary, an
+// attacker could write an unclosed backtick run on line A, then "<!--" alone on line B
+// (an HTML block start per CommonMark), then forge a **Status:** inside the comment,
+// then close the span on the "-->" line. lookAheadCodeSpanClose would find the close and
+// skip the "<!--", leaving the forged status unmasked.
+//
+// Similarly, list items (e.g. "- x <!--") and blockquotes (">" containing "<!--") are
+// also paragraph-interrupting and are handled by the same check.
+//
+// Used by htmlCommentMask to decide whether an unclosed backtick run starts a
+// multi-line span (set inCodeSpanN) or is literal (continue scanning for "<!--").
+func lookAheadCodeSpanClose(lines []string, fenced []bool, startLine, n int) bool {
+	for j := startLine + 1; j < len(lines); j++ {
+		if fenced[j] {
+			return false // interior fenced line — can't continue span across a fence
+		}
+		if interruptsParagraph(lines[j]) {
+			return false // paragraph-interrupting line — span cannot cross it
+		}
+		if findCodeSpanClose(lines[j], 0, n) >= 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // HTMLCommentMask is the exported counterpart of htmlCommentMask.
@@ -728,6 +906,25 @@ func HTMLCommentMask(lines []string, fenced []bool) []bool {
 // The old code used strings.Contains for each half, missing second openers after a
 // closed span on the same line (ML-3C ação 4 contra-braço).
 //
+// Code span precedence (ML-3C ação 5, REQ-2026-10-31 + ML-3C ação 5-bis): when outside
+// a comment, "<!--" inside a backtick code span is not treated as an opener. The
+// non-comment branch now uses findCommentOpenerOrSpan to distinguish a real "<!--" from
+// an unclosed backtick run. When an unclosed run is found and lookAheadCodeSpanClose
+// confirms a matching close exists on a later line (without crossing a
+// paragraph-interrupting boundary), the state machine sets inCodeSpanN and skips those
+// interior lines — the "<!--" inside the span is never returned as an opener. When
+// lookAheadCodeSpanClose finds no close (blank line, fence, list item, blockquote, ATX
+// heading, HTML block start, etc.), the run is treated as literal and scanning continues
+// (same behaviour as before, consistent with nextCommentOpener). Inside a comment,
+// backticks are opaque: only "-->" closes.
+//
+// Declared residual: StripInlineHTMLComments remains single-line — it calls
+// nextCommentOpener, which treats every unclosed run as literal. A multi-line span
+// containing "<!--" on the opening line will still be seen as an opener by
+// StripInlineHTMLComments. This is acceptable because parseMLScopeFilesAffected (the
+// only caller) operates on the Files-affected section, which does not typically contain
+// multi-line code spans with "<!--" (corpus-verified: zero occurrences in done/).
+//
 // MLStatusMarker uses this mask to ignore **Status:** lines inside multi-line HTML
 // comments (AC9, ADR-2026-10-31). Performance: O(len(lines)) per MLStatusMarker call,
 // repeated per ML in mlScopeWaveIsStarted. For typical roadmaps (hundreds of lines,
@@ -736,14 +933,37 @@ func HTMLCommentMask(lines []string, fenced []bool) []bool {
 func htmlCommentMask(lines []string, fenced []bool) []bool {
 	mask := make([]bool, len(lines))
 	inComment := false
+	inCodeSpanN := 0 // > 0: currently inside a multi-line code span of this run length
 	for i, line := range lines {
 		if fenced[i] {
+			inCodeSpanN = 0 // fenced line interrupts any in-progress code span
 			continue
 		}
 		// Column-0 semantics: mask[i] reflects inComment at the START of the line.
 		mask[i] = inComment
-		// Walk the line as a state machine to determine inComment for the next line.
 		pos := 0
+
+		// Handle continuation of a multi-line code span started on a previous line.
+		if inCodeSpanN > 0 {
+			if interruptsParagraph(line) {
+				// Paragraph-interrupting line ends the span. The opening backtick run
+				// was literal. Reset span state and let the state machine re-scan this
+				// line (it may contain a "<!--" that should open a comment).
+				inCodeSpanN = 0
+				// Fall through to the state machine below.
+			} else {
+				closeEnd := findCodeSpanClose(line, 0, inCodeSpanN)
+				if closeEnd < 0 {
+					// No close on this line; entire line is span interior. Skip it.
+					continue
+				}
+				// Close found: resume normal state-machine scanning from after close.
+				inCodeSpanN = 0
+				pos = closeEnd
+			}
+		}
+
+		// Walk the line as a state machine to determine inComment for the next line.
 		for pos < len(line) {
 			if inComment {
 				idx := strings.Index(line[pos:], "-->")
@@ -753,14 +973,30 @@ func htmlCommentMask(lines []string, fenced []bool) []bool {
 				inComment = false
 				pos += idx + 3
 			} else {
-				idx := strings.Index(line[pos:], "<!--")
-				if idx < 0 {
+				// findCommentOpenerOrSpan distinguishes a real "<!--" from an unclosed
+				// backtick run, enabling the multi-line span lookahead below.
+				openerPos, spanN, resumePos := findCommentOpenerOrSpan(line, pos)
+				if spanN > 0 {
+					// Unclosed backtick run. Check whether a matching close exists on a
+					// later line without crossing a paragraph-interrupting boundary.
+					if lookAheadCodeSpanClose(lines, fenced, i, spanN) {
+						// Multi-line span confirmed: enter span state and stop processing
+						// this line (the rest is span interior).
+						inCodeSpanN = spanN
+						break
+					}
+					// No close found across safe lines: treat the run as literal and
+					// continue scanning for "<!--" from after the run.
+					pos = resumePos
+					continue
+				}
+				if openerPos < 0 {
 					break // no opener found; stays closed
 				}
 				inComment = true
 				// Advance past "<!--" before resuming (mirrors StripInlineHTMLComments
-				// "after := line[start+4:]" — "-->x" at opener+0 is not a valid close).
-				pos += idx + 4
+				// "after := openerPos+4" — "-->x" at opener+0 is not a valid close).
+				pos = openerPos + 4
 			}
 		}
 	}

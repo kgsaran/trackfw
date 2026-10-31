@@ -101,6 +101,79 @@ package roadmapdoc
 //     StripInlineHTMLComments agree on whether the line ends open — proving the
 //     +4 offset rule is consistent across both functions for all listed rows.
 //
+// AC11 reconciliation (one sentence per test, ML-3C ação 5):
+//
+//   TestCodeSpan_SoloOpenerDoesNotOpenComment
+//     Affirms: a single backtick-quoted "<!--" (e.g. `` `<!--` ``) does not open
+//     an HTML comment in either htmlCommentMask or StripInlineHTMLComments — the
+//     code span protects the marker, so the next line is not masked and the line
+//     is returned unchanged with endsOpen=false.
+//
+//   TestCodeSpan_FullSpanNoEffect
+//     Affirms: a full comment-like sequence inside a code span
+//     (e.g. `` `<!-- a -->` ``) does not change comment state or strip anything —
+//     both opener and closer are inside the span and both functions leave the line
+//     unchanged, endsOpen=false, and the next line unmasked.
+//
+//   TestCodeSpan_AfterClosedSpanOpenerDoes
+//     Affirms: a closed code span followed by a real "<!--" (e.g. `` `x` <!-- y ``)
+//     correctly opens a comment — the code span is skipped, the subsequent opener
+//     is detected, the next line is masked, and endsOpen=true.
+//
+//   TestCodeSpan_InsideCommentBacktickNoProtection
+//     Affirms: when already inside an HTML comment, backticks do not protect "-->":
+//     the first "-->" closes the comment regardless of surrounding backticks
+//     (e.g. `` <!-- `-->` --> `` — column-0 is inside the comment, first "-->"
+//     closes it, the next line is not masked).
+//
+//   TestCodeSpan_UnpairedBacktickIsLiteral
+//     Affirms: an unpaired backtick (no matching close on the same line) is treated
+//     as a literal character and does not suppress a subsequent "<!--"
+//     (e.g. "` <!-- " — the single backtick has no close, so the "<!--" opens a
+//     comment and the next line is masked).
+//
+//   TestCodeSpan_RegressionRoadmapCase
+//     Affirms: AcceptanceEvaluateFull finds the acceptance block (HasBlock=true) for
+//     a ML whose action list cites `` `<!--` `` (without a matching "-->" on the same
+//     line) — the regression case that caused "no acceptance block" in the original
+//     roadmap before this fix.
+//
+// AC11 reconciliation (one sentence per test, ML-3C ação 5-bis — multi-line spans):
+//
+//   TestMultilineCodeSpan_ProtectsOpener
+//     Affirms: AcceptanceEvaluateFull finds the acceptance block (HasBlock=true, Met=2)
+//     for a ML whose body contains a multi-line code span with "<!--" on the opening
+//     line and the span close on the next line — the recognition of the span prevents
+//     the opener from masking the criteria.
+//
+//   TestMultilineCodeSpan_BlankLineMakesLiteral
+//     Affirms: when a blank line appears between the unclosed backtick run and the span
+//     close, lookAheadCodeSpanClose returns false (blank line interrupts the paragraph),
+//     the backtick is treated as literal, the "<!--" opens a comment, and the
+//     subsequent lines (including the forged status) are masked.
+//
+//   TestMultilineCodeSpan_HTMLBlockInterrupter
+//     Affirms: a line that starts with "<!--" (HTML block start, first-non-space '<')
+//     stops the lookahead, so the "<!--" on the preceding line opens a comment instead
+//     of being skipped as span interior — a forged **Status:** inside the comment
+//     remains masked and the real status after "-->" is returned.
+//
+//   TestMultilineCodeSpan_ListItemInterrupter
+//     Affirms: a list item line ("- x <!--") stops the lookahead (first-non-space '-'),
+//     so the backtick run on the preceding line is literal and "<!--" opens a comment —
+//     the same attack via a list item is blocked as it is via a standalone "<!--" line.
+//
+//   TestMultilineCodeSpan_BlockquoteInterrupter
+//     Affirms: a blockquote line ("> x <!--") stops the lookahead (first-non-space '>'),
+//     so the backtick run on the preceding line is literal and "<!--" opens a comment —
+//     confirming the blockquote interrupter pins the same boundary as list items.
+//
+//   TestMultilineCodeSpan_RealRoadmapSnippet
+//     Affirms: AcceptanceEvaluateFull finds status and criteria for ML-1D of the
+//     production roadmap that regressed: the exact text from lines 191–192 of
+//     ROADMAP-2026-09-29-traceid-orphan-req-reprova-estado-correto-por-duas-causas-distintas.md
+//     is handled without masking the acceptance block.
+//
 // CORPUS MEASUREMENT NOTE (updated by ML-1A of REQ #396):
 //   No specific-number assertion is written; the count is logged only.  The corpus grows with
 //   every merged roadmap; pinning a number here would cause false failures on every merge that
@@ -1156,5 +1229,423 @@ func TestHTMLCommentMask_OffsetParityWithStripInlineHTMLComments(t *testing.T) {
 					tc.line, mask[2], tc.wantNextMasked)
 			}
 		})
+	}
+}
+
+// ── ML-3C ação 5: code span precedence over HTML comment markers ──────────────
+
+// codeSpanCommentCase is one test row for the code-span tests.
+// It exercises both htmlCommentMask and StripInlineHTMLComments in one shot,
+// verifying that the shared nextCommentOpener helper keeps the two functions
+// consistent (AC11, ML-3C ação 5, REQ-2026-10-31).
+type codeSpanCommentCase struct {
+	name           string
+	line           string
+	startInComment bool   // whether line[0] is inside an HTML comment before this line
+	wantNextMasked bool   // htmlCommentMask: should the line AFTER this one be masked?
+	wantStripped   string // StripInlineHTMLComments result (only checked when startInComment=false)
+	wantEndsOpen   bool   // StripInlineHTMLComments endsOpen (only checked when startInComment=false)
+}
+
+// htmlCommentNextLineMasked runs a two-line snippet through htmlCommentMask and
+// returns whether the second line is masked. If startInComment is true, the snippet
+// is prefixed with an opener line ("<!--") so that line[0] starts inside a comment.
+func htmlCommentNextLineMasked(line string, startInComment bool) bool {
+	var lines []string
+	if startInComment {
+		lines = []string{"<!--", line, "next"}
+	} else {
+		lines = []string{line, "next"}
+	}
+	fenced := make([]bool, len(lines))
+	mask := htmlCommentMask(lines, fenced)
+	return mask[len(lines)-1]
+}
+
+// TestCodeSpan_SoloOpenerDoesNotOpenComment verifies that a sole backtick-quoted
+// "<!--" does not open an HTML comment in either function.
+//
+// AC11 (ML-3C ação 5): `` `<!--` `` protects the opener — no next-line masking and
+// StripInlineHTMLComments returns the line unchanged with endsOpen=false.
+func TestCodeSpan_SoloOpenerDoesNotOpenComment(t *testing.T) {
+	tc := codeSpanCommentCase{
+		name:           "solo backtick-quoted opener",
+		line:           "`<!--`",
+		startInComment: false,
+		wantNextMasked: false,
+		wantStripped:   "`<!--`",
+		wantEndsOpen:   false,
+	}
+	runCodeSpanCase(t, tc)
+}
+
+// TestCodeSpan_FullSpanNoEffect verifies that a full comment-like sequence inside
+// a code span does not change comment state or strip anything.
+//
+// AC11 (ML-3C ação 5): `` `<!-- a -->` `` — both opener and closer are inside the
+// span; neither function changes state, line is returned unchanged.
+func TestCodeSpan_FullSpanNoEffect(t *testing.T) {
+	tc := codeSpanCommentCase{
+		name:           "full comment span inside backticks",
+		line:           "`<!-- a -->`",
+		startInComment: false,
+		wantNextMasked: false,
+		wantStripped:   "`<!-- a -->`",
+		wantEndsOpen:   false,
+	}
+	runCodeSpanCase(t, tc)
+}
+
+// TestCodeSpan_AfterClosedSpanOpenerDoes verifies that a real "<!--" after a
+// closed code span correctly opens a comment.
+//
+// AC11 (ML-3C ação 5): `` `x` <!-- y `` — the code span closes, then the "<!--"
+// is a real opener; both functions detect it.
+func TestCodeSpan_AfterClosedSpanOpenerDoes(t *testing.T) {
+	tc := codeSpanCommentCase{
+		name:           "closed code span then real opener",
+		line:           "`x` <!-- y",
+		startInComment: false,
+		wantNextMasked: true,
+		wantStripped:   "`x` ",
+		wantEndsOpen:   true,
+	}
+	runCodeSpanCase(t, tc)
+}
+
+// TestCodeSpan_InsideCommentBacktickNoProtection verifies that inside an HTML
+// comment, backticks do not protect "-->" — the first "-->" closes the comment.
+//
+// AC11 (ML-3C ação 5): `` <!-- `-->` --> `` — column-0 is inside the comment
+// from a prior line; the first "-->" (at position 5) closes it regardless of
+// surrounding backticks; the next line is not masked.
+func TestCodeSpan_InsideCommentBacktickNoProtection(t *testing.T) {
+	tc := codeSpanCommentCase{
+		name:           "inside comment backtick does not protect -->",
+		line:           "<!-- `-->` -->",
+		startInComment: true,
+		wantNextMasked: false,
+		// StripInlineHTMLComments starts from outside-comment; skip its assertion here.
+	}
+	if got := htmlCommentNextLineMasked(tc.line, tc.startInComment); got != tc.wantNextMasked {
+		t.Errorf("[%s] htmlCommentNextLineMasked = %v, want %v",
+			tc.name, got, tc.wantNextMasked)
+	}
+}
+
+// TestCodeSpan_UnpairedBacktickIsLiteral verifies that an unpaired backtick is
+// treated as literal text and does not suppress a subsequent "<!--".
+//
+// AC11 (ML-3C ação 5): "` <!-- " — the single backtick has no matching close on
+// the same line, so it is literal; the "<!--" is a real opener; next line is masked
+// and StripInlineHTMLComments returns the part before "<!--" with endsOpen=true.
+func TestCodeSpan_UnpairedBacktickIsLiteral(t *testing.T) {
+	tc := codeSpanCommentCase{
+		name:           "unpaired backtick is literal, opener is real",
+		line:           "` <!--",
+		startInComment: false,
+		wantNextMasked: true,
+		wantStripped:   "` ",
+		wantEndsOpen:   true,
+	}
+	runCodeSpanCase(t, tc)
+}
+
+// TestCodeSpan_RegressionRoadmapCase verifies that AcceptanceEvaluateFull finds
+// the acceptance block (HasBlock=true) for a ML whose action line cites a
+// backtick-quoted "<!--" without a matching "-->" on the same line.
+//
+// AC11 (ML-3C ação 5): this is the exact pattern from the reopened ML-3C in the
+// working roadmap; without the fix, htmlCommentMask masks the acceptance block
+// and AcceptanceEvaluateFull returns HasBlock=false ("no acceptance block").
+func TestCodeSpan_RegressionRoadmapCase(t *testing.T) {
+	// Minimal reproduction of the roadmap defect: action 3 cites `<!--` in inline
+	// code without any closing --> on the same line; the acceptance block follows.
+	// The action text must not contain "-->" or "-->": the test validates that the
+	// code span protects the opener so the block is found without needing a closer.
+	content := strings.Join([]string{
+		"### ML-3C — Fix code span",
+		"**Status:** ✅ Concluído",
+		"**Actions:**",
+		"3. Inline code `<!--` sem fechamento na linha: não abre comentário.",
+		"**Acceptance criteria:**",
+		"- [x] code span protects opener",
+		"- [x] acceptance block is found",
+	}, "\n")
+
+	lines := strings.Split(content, "\n")
+	fenced := FenceMask(lines)
+	mls := ParseMLs(lines, fenced, 0, len(lines))
+	if len(mls) == 0 {
+		t.Fatal("no MLs parsed")
+	}
+	detail := AcceptanceEvaluateFull(lines, fenced, mls[0])
+	if !detail.HasBlock {
+		t.Fatal("AcceptanceEvaluateFull.HasBlock = false, want true — " +
+			"backtick-quoted `<!--` must not mask the acceptance block (ML-3C regression)")
+	}
+	if detail.Met != 2 {
+		t.Errorf("AcceptanceEvaluateFull.Met = %d, want 2", detail.Met)
+	}
+	if detail.Unmet != 0 {
+		t.Errorf("AcceptanceEvaluateFull.Unmet = %d, want 0", detail.Unmet)
+	}
+}
+
+// TestMultilineCodeSpan_ProtectsOpener verifies that AcceptanceEvaluateFull finds the
+// acceptance block for a ML whose body contains a multi-line code span with "<!--" on
+// the opening line and the span close on the next line.
+//
+// AC11 (ML-3C ação 5-bis): the production regression from
+// ROADMAP-2026-09-29-traceid-orphan-req-reprova-estado-correto-por-duas-causas-distintas.md
+// — the multi-line span with "<!--" masked the criteria that followed.
+func TestMultilineCodeSpan_ProtectsOpener(t *testing.T) {
+	content := strings.Join([]string{
+		"### ML-A — test",
+		"**Status:** ✅ Concluído",
+		"body text `contains <!-- no close on this line",
+		"span closes here` rest of text",
+		"**Acceptance criteria:**",
+		"- [x] criterion one",
+		"- [x] criterion two",
+	}, "\n")
+	lines := strings.Split(content, "\n")
+	fenced := FenceMask(lines)
+	mls := ParseMLs(lines, fenced, 0, len(lines))
+	if len(mls) == 0 {
+		t.Fatal("no MLs parsed")
+	}
+	detail := AcceptanceEvaluateFull(lines, fenced, mls[0])
+	if !detail.HasBlock {
+		t.Fatal("HasBlock = false — multi-line code span must not mask the acceptance block")
+	}
+	if detail.Met != 2 {
+		t.Errorf("Met = %d, want 2", detail.Met)
+	}
+	if detail.Unmet != 0 {
+		t.Errorf("Unmet = %d, want 0", detail.Unmet)
+	}
+}
+
+// TestMultilineCodeSpan_BlankLineMakesLiteral verifies that a blank line between the
+// unclosed backtick run and the span close causes the backtick to be treated as literal
+// and the "<!--" to open a real comment, masking the lines that follow.
+//
+// AC11 (ML-3C ação 5-bis): blank line is a paragraph interrupter — the backtick run is
+// literal, the "<!--" opens a comment, the forged status is masked.
+func TestMultilineCodeSpan_BlankLineMakesLiteral(t *testing.T) {
+	lines := []string{
+		"text `blank ahead <!-- opener",
+		"",
+		"close` not a real span close",
+		"**Status:** ✅ forged",
+	}
+	fenced := make([]bool, len(lines))
+	mask := htmlCommentMask(lines, fenced)
+	// Line 0: mask=false (column-0 is outside comment at start of line)
+	// Line 1 (blank): mask=true (inComment=true from line 0's <!--)
+	// Line 2: mask=true (still in comment — no --> found)
+	// Line 3: mask=true
+	if mask[0] {
+		t.Error("line 0 mask=true, want false (opener line is never masked at column-0)")
+	}
+	if !mask[1] {
+		t.Error("line 1 (blank) mask=false, want true — blank line interrupts span, <!-- opens comment")
+	}
+	if !mask[2] {
+		t.Error("line 2 mask=false, want true — still inside comment")
+	}
+	if !mask[3] {
+		t.Error("line 3 mask=false, want true — forged status must be masked")
+	}
+}
+
+// TestMultilineCodeSpan_HTMLBlockInterrupter verifies that a line starting with "<!--"
+// (first-non-space '<') stops lookAheadCodeSpanClose, so the backtick run on the
+// preceding line is treated as literal and the "<!--" on the interrupter line opens a
+// real comment, masking the content that follows.
+//
+// AC11 (ML-3C ação 5-bis): the '<' entry in interruptsParagraph pins the HTML block
+// start boundary.  The contra-braço for this boundary: removing '<' from the switch
+// makes lookAheadCodeSpanClose cross line 1, find the close on line 3 ("end`"), and
+// leave lines 1–2 unmasked (mask[2] = false instead of true).  The content on lines
+// 2–4 is deliberately free of other interrupter characters so that only '<' makes the
+// test fail when removed from the switch.
+func TestMultilineCodeSpan_HTMLBlockInterrupter(t *testing.T) {
+	lines := []string{
+		"prose `start",    // 0: backtick, no <!--, no close
+		"<!--",            // 1: HTML block start — should interrupt lookahead
+		"hidden content",  // 2: plain, no interrupter char at col 0
+		"end`",            // 3: span close (only reachable if '<' not checked)
+		"visible",         // 4: plain
+	}
+	fenced := make([]bool, len(lines))
+	mask := htmlCommentMask(lines, fenced)
+	// Line 0: backtick → lookahead hits line 1 ("<!--", first-non-space '<')
+	//         → interruptsParagraph=true → lookAheadCodeSpanClose returns false
+	//         → backtick is literal; no "<!--" on line 0 → inComment stays false.
+	// Line 1 ("<!--"): mask=false (column-0 not inside prior comment);
+	//         state machine finds "<!--" at pos 0 → inComment=true.
+	// Lines 2–4: mask=true (inside comment; no "-->" anywhere).
+	if mask[0] {
+		t.Error("line 0 mask=true, want false (no prior comment before this line)")
+	}
+	if mask[1] {
+		t.Error("line 1 mask=true, want false (column-0 not inside prior comment; <!-- opens here)")
+	}
+	if !mask[2] {
+		t.Error("line 2 mask=false, want true — content inside comment must be masked")
+	}
+	if !mask[3] {
+		t.Error("line 3 mask=false, want true — still inside comment")
+	}
+	if !mask[4] {
+		t.Error("line 4 mask=false, want true — still inside comment (no --> anywhere)")
+	}
+}
+
+// TestMultilineCodeSpan_ListItemInterrupter verifies that a list item line ("- x <!--")
+// stops lookAheadCodeSpanClose, so the backtick run on the preceding line is literal and
+// "<!--" in the list item opens a real comment.
+//
+// AC11 (ML-3C ação 5-bis): first-non-space '-' triggers interruptsParagraph.
+// The contra-braço for this boundary: removing '-' from the switch makes
+// lookAheadCodeSpanClose cross line 1, find the close on line 3 ("end`"), and leave
+// lines 1–2 unmasked (mask[2] = false instead of true).  The content on lines 2–4 is
+// deliberately free of other interrupter characters so that only '-' makes the test
+// fail when removed from the switch.
+func TestMultilineCodeSpan_ListItemInterrupter(t *testing.T) {
+	lines := []string{
+		"text `foo",       // 0: backtick, no <!--, no close
+		"- item <!--",     // 1: list item — should interrupt lookahead
+		"hidden content",  // 2: plain, no interrupter char at col 0
+		"end`",            // 3: span close (only reachable if '-' not checked)
+		"visible",         // 4: plain
+	}
+	fenced := make([]bool, len(lines))
+	mask := htmlCommentMask(lines, fenced)
+	// Line 0: backtick → lookahead hits line 1 ("- item <!--", first-non-space '-')
+	//         → interruptsParagraph=true → lookAheadCodeSpanClose returns false
+	//         → backtick is literal; no "<!--" on line 0 → inComment stays false.
+	// Line 1 ("- item <!--"): mask=false (column-0 not inside prior comment);
+	//         state machine finds "<!--" → inComment=true.
+	// Lines 2–4: mask=true (inside comment; no "-->" anywhere).
+	if mask[0] {
+		t.Error("line 0 mask=true, want false")
+	}
+	if mask[1] {
+		t.Error("line 1 mask=true, want false (list-item line column-0 is not in prior comment)")
+	}
+	if !mask[2] {
+		t.Error("line 2 mask=false, want true — content inside comment must be masked")
+	}
+	if !mask[3] {
+		t.Error("line 3 mask=false, want true — still inside comment")
+	}
+	if !mask[4] {
+		t.Error("line 4 mask=false, want true — still inside comment (no --> anywhere)")
+	}
+}
+
+// TestMultilineCodeSpan_BlockquoteInterrupter verifies that a blockquote line
+// ("> x <!--") stops lookAheadCodeSpanClose, confirming the '>' boundary pins the same
+// interrupter check as '-' and '<'.
+//
+// AC11 (ML-3C ação 5-bis): first-non-space '>' triggers interruptsParagraph.
+// The contra-braço: removing '>' from the switch makes lookAheadCodeSpanClose cross
+// line 1, find the close on line 3 ("end`"), and leave line 2 unmasked (mask[2] = false
+// instead of true).  Content on lines 2–4 has no other interrupter chars so that only
+// '>' makes the test fail when removed from the switch.
+func TestMultilineCodeSpan_BlockquoteInterrupter(t *testing.T) {
+	lines := []string{
+		"text `foo",          // 0: backtick, no <!--, no close
+		"> blockquote <!--",  // 1: blockquote — should interrupt lookahead
+		"hidden content",     // 2: plain, no interrupter char at col 0
+		"end`",               // 3: span close (only reachable if '>' not checked)
+		"visible",            // 4: plain
+	}
+	fenced := make([]bool, len(lines))
+	mask := htmlCommentMask(lines, fenced)
+	// Line 0: backtick → lookahead hits line 1 ("> blockquote <!--", first-non-space '>')
+	//         → interruptsParagraph=true → lookAheadCodeSpanClose returns false
+	//         → backtick is literal; no "<!--" on line 0 → inComment stays false.
+	// Line 1 ("> blockquote <!--"): mask=false (column-0 not inside prior comment);
+	//         state machine finds "<!--" → inComment=true.
+	// Lines 2–4: mask=true (inside comment; no "-->" anywhere).
+	if mask[0] {
+		t.Error("line 0 mask=true, want false")
+	}
+	if mask[1] {
+		t.Error("line 1 mask=true, want false (blockquote line column-0 is not in prior comment)")
+	}
+	if !mask[2] {
+		t.Error("line 2 mask=false, want true — content inside comment must be masked")
+	}
+	if !mask[3] {
+		t.Error("line 3 mask=false, want true — still inside comment")
+	}
+	if !mask[4] {
+		t.Error("line 4 mask=false, want true — still inside comment (no --> anywhere)")
+	}
+}
+
+// TestMultilineCodeSpan_RealRoadmapSnippet verifies that AcceptanceEvaluateFull finds
+// status and criteria for the exact ML-1D pattern from the production roadmap that
+// regressed: lines 191–192 of
+// ROADMAP-2026-09-29-traceid-orphan-req-reprova-estado-correto-por-duas-causas-distintas.md.
+//
+// AC11 (ML-3C ação 5-bis): the exact text that caused "status vazio, has_block False"
+// in the working tree must produce status=complete, HasBlock=true after this fix.
+func TestMultilineCodeSpan_RealRoadmapSnippet(t *testing.T) {
+	// Lines 191–192 verbatim from the production roadmap (the multi-line code span).
+	content := strings.Join([]string{
+		"### ML-1D — corrigir fixture",
+		"**Status:** ✅ Concluído — 2026-09-29",
+		"🔴 **Refuta o handoff:** o relatório dizia que a *liveness* arm era a falha. Medido",
+		"no scratchpad: o binário corrompido A na fixture A produz `✗ ... links to ADR \"<!--\" which does not",
+		"exist` — ambas as arms de direção A passariam.",
+		"**Critérios de aceite:**",
+		"- [x] Causa nomeada com evidência",
+		"- [x] Correção na camada certa",
+		"- [x] Fixture continua exercitando o seam",
+		"- [x] go test verde",
+		"- [x] make quality RC=0",
+	}, "\n")
+	lines := strings.Split(content, "\n")
+	fenced := FenceMask(lines)
+	mls := ParseMLs(lines, fenced, 0, len(lines))
+	if len(mls) == 0 {
+		t.Fatal("no MLs parsed")
+	}
+	detail := AcceptanceEvaluateFull(lines, fenced, mls[0])
+	if !detail.HasBlock {
+		t.Fatal("HasBlock = false — production regression: multi-line span must not mask the acceptance block")
+	}
+	if detail.Met != 5 {
+		t.Errorf("Met = %d, want 5", detail.Met)
+	}
+	if detail.Unmet != 0 {
+		t.Errorf("Unmet = %d, want 0", detail.Unmet)
+	}
+}
+
+// runCodeSpanCase runs assertions for htmlCommentMask and StripInlineHTMLComments
+// for a single codeSpanCommentCase where startInComment=false.
+func runCodeSpanCase(t *testing.T, tc codeSpanCommentCase) {
+	t.Helper()
+	// 1. htmlCommentMask: check whether the next line is masked.
+	if got := htmlCommentNextLineMasked(tc.line, tc.startInComment); got != tc.wantNextMasked {
+		t.Errorf("[%s] htmlCommentNextLineMasked = %v, want %v",
+			tc.name, got, tc.wantNextMasked)
+	}
+	// 2. StripInlineHTMLComments: check stripped result and endsOpen.
+	gotStripped, gotEndsOpen := StripInlineHTMLComments(tc.line)
+	if gotStripped != tc.wantStripped {
+		t.Errorf("[%s] StripInlineHTMLComments stripped = %q, want %q",
+			tc.name, gotStripped, tc.wantStripped)
+	}
+	if gotEndsOpen != tc.wantEndsOpen {
+		t.Errorf("[%s] StripInlineHTMLComments endsOpen = %v, want %v",
+			tc.name, gotEndsOpen, tc.wantEndsOpen)
 	}
 }

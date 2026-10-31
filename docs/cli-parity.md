@@ -3101,8 +3101,25 @@ determinado por uma **máquina de estado** que percorre a linha alternando entre
 (se dentro) e `<!--` (se fora), com o mesmo offset +4 de `StripInlineHTMLComments` — garantindo
 que `"<!-- a --> <!-- b"` (span fechado seguido de abridor sem fechamento) e `"a --> b <!-- c"`
 (fecha e reabre dentro de um comentário) terminem corretamente no estado aberto (ML-3C ação 4,
-REQ-2026-10-31). Isso impede que um `**Status:** 🔄` ou `- [x]` dentro de `<!-- … -->` forje
-o status ou o aceite de um ML real (AC9, ADR-2026-10-31).
+REQ-2026-10-31). Quando **fora** de comentário, a busca por `<!--` ignora trechos dentro de um
+*code span* CommonMark (corrida de N crases aberidoras, texto, corrida de fechamento de N crases
+do mesmo comprimento): um `` `<!--` `` entre crases é texto, não abridor de comentário — por
+precedência de código inline sobre HTML conforme CommonMark (ML-3C ação 5, REQ-2026-10-31). A
+mesma precedência aplica-se a `StripInlineHTMLComments`. **Code spans de múltiplas linhas** são
+tratados por `htmlCommentMask` via dois auxiliares (ML-3C ação 5-bis, REQ-2026-10-31):
+`lookAheadCodeSpanClose` verifica se uma corrida de crases sem fechamento na linha atual fecha em
+alguma linha posterior, sem cruzar um limite de interrupção de parágrafo (linha em branco, linha
+cercada, cabeçalho ATX, item de lista, bloco de citação, abertura de bloco HTML — qualquer linha
+cujo primeiro caractere não-espaço seja `-`, `*`, `+`, `>`, `#`, `<`, `=`, `_`, `|`, `~`, `` ` ``
+ou um item de lista ordenado). Se o fechamento existe, `htmlCommentMask` entra em estado
+`inCodeSpanN` e pula as linhas interiores sem mascará-las; se não existe, a corrida é literal e o
+`<!--` que porventura se siga abre comentário normalmente. **Residual declarado:** `StripInlineHTMLComments`
+permanece com semântica de linha única — corridas não fechadas são tratadas como literais, e um
+`<!--` dentro de um span de múltiplas linhas ainda é visto como abridor por essa função. Isso é
+aceitável porque o único chamador que poderia ser afetado, `parseMLScopeFilesAffected`, opera
+exclusivamente na seção *Files affected*, onde corpus verificado (` docs/roadmaps/done/`) não
+contém spans de múltiplas linhas com `` `<!--` ``. Isso impede que um `**Status:** 🔄` ou `- [x]`
+dentro de `<!-- … -->` forje o status ou o aceite de um ML real (AC9, AC11, ADR-2026-10-31).
 
 🔴 **A leitura de wave entrou depois, e por medição.** A decisão 7 original cobria três
 leituras; o comentário de `HasWave0` no Go declarava por escrito que deixar a wave de fora era
