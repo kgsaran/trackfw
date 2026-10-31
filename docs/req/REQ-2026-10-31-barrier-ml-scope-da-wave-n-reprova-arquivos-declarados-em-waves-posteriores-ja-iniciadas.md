@@ -62,6 +62,9 @@ defeito conhecido se corrige neste PR:
 - [ ] **AC9** (A-2) — `**Status:**` dentro de comentário HTML (`<!-- -->`) não é status do ML, em
       `MLStatusMarker` (vale para `mls_complete`, `ml_scope`, board e `roadmap show`); e critério de
       aceite dentro de comentário HTML não conta em `AcceptanceEvaluateFull` (residual T4, mesma causa).
+- [ ] **AC11** (mesma causa do A-2, enumerada no ML-3B) — `**Files affected:**` e o bloco
+      `**Gates da wave:**` dentro de comentário HTML não contam: não ampliam o escopo do `ml_scope` e
+      não viram gate executado.
 - [ ] **AC10** (A-3) — vetores ponta a ponta para wave > N iniciada só por `❌ Bloqueado` e só por
       `❌ Cancelado`/`🚫 Abandonado`.
 
@@ -72,7 +75,8 @@ defeito conhecido se corrige neste PR:
   de estado dos membros da união (só o recorte de waves deles muda).
 - Não restringe o diff por commit ou por wave (opção 2 do issue).
 - Não muda os outros checks do barrier, exceto o efeito do AC9 sobre `mls_complete` e
-  `acceptance_evidence` (status e critério dentro de comentário HTML deixam de contar).
+  `acceptance_evidence` (status e critério dentro de comentário HTML deixam de contar) e do AC11
+  sobre `gates` (gate dentro de comentário HTML deixa de rodar).
 
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->

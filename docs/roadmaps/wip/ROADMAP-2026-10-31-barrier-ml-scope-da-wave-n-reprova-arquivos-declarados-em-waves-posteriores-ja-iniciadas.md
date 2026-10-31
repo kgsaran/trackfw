@@ -20,7 +20,7 @@ O `ml_scope` do alvo passa de waves 0..N para 0..N mais cada wave posterior inic
 (opção B, decidida pelo KG depois da Wave 0). A exigência de declaração continua só nas waves 0..N.
 
 ## Acceptance Criteria
-- [ ] AC1–AC10 da REQ
+- [ ] AC1–AC11 da REQ
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -98,29 +98,39 @@ test -f docs/seguranca/2026-10-31-redteam-ml-scope-waves-iniciadas.md
 
 ---
 
-## Wave 3 — Corretivos do red team (2 MLs sequenciais: mesmo executor e `barrier_ml_scope_test.go` em comum)
+## Wave 3 — Corretivos do red team (3 MLs sequenciais: mesmo executor e `barrier_ml_scope_test.go` em comum)
 > Dependencies: Wave 2 auditada.
 
 ### ML-3A — Wave fracionária e cobertura de ❌/terminado (apolo-tf) — AC8, AC10
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-31. `checkMLScope` recebe o rótulo da wave e compara com `CompareWaveLabels` nos dois sítios; rótulo inválido continua ≤ N (parte inteira -1), como antes. 6 testes novos conferidos pelo nome em `-v`; contra-braços: comparação inteira reprova os dois testes de AC8; M8b e M8c agora morrem.
 **Files affected:** `internal/commands/barrier.go`, `internal/commands/barrier_ml_scope_test.go`, `docs/cli-parity.md`
 **Actions:**
 1. A-1: `checkMLScope` recebe o rótulo da wave alvo e decide "acima de N" e "≤ N" com `roadmapdoc.CompareWaveLabels`, nos dois sítios do passo 9.
 2. A-3: vetores ponta a ponta com wave > N iniciada só por `❌ Bloqueado`, e só por `❌ Cancelado`/`🚫 Abandonado`.
 **Acceptance criteria:**
-- [ ] AC8 e AC10 da REQ; contra-braço: com a comparação inteira de volta, o teste de AC8 reprova; M8b e M8c do red team passam a morrer
-- [ ] pacote `internal/commands` verde
+- [x] AC8 e AC10 da REQ; contra-braço: com a comparação inteira de volta, o teste de AC8 reprova; M8b e M8c do red team passam a morrer
+- [x] pacote `internal/commands` verde
 
 ### ML-3B — Comentário HTML não é status nem critério (apolo-tf) — AC9
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-31. `MLStatusMarker` e `AcceptanceEvaluateFull` pulam linhas dentro de comentário HTML. A máscara deixou de marcar a linha que abre o comentário; isso é seguro porque `StatusLineRe`, `CriterionLineRe` e `LapsedContinuationRe` são ancoradas no início da linha (conferido), e faz `- [ ] critério <!-- nota -->` continuar contando. 6 testes novos conferidos pelo nome em `-v`. A enumeração achou dois leitores com a mesma causa (`parseMLScopeFilesAffected`, `ParseGatesLines`), que viram o ML-3C.
 **Files affected:** `internal/roadmapdoc/roadmapdoc.go`, `internal/roadmapdoc/roadmapdoc_test.go`, `internal/roadmapdoc/acceptance_lapsed_test.go`, `internal/commands/barrier_ml_scope_test.go`, `docs/cli-parity.md`
 **Actions:**
 1. `MLStatusMarker` ignora linhas mascaradas por `htmlCommentMask`; `AcceptanceEvaluateFull` deixa de contar critério dentro de comentário (residual T4).
 2. Enumerar, com o comando que fecha a lista, os outros leitores de `roadmapdoc` que pulam cerca e não comentário; reportar sem corrigir os que não forem status ou critério.
 3. Testes no pacote `roadmapdoc` e um vetor ponta a ponta de `ml_scope` (status 🔄 dentro de comentário não inicia a wave).
 **Acceptance criteria:**
-- [ ] AC9 da REQ; contra-braço: sem a máscara, os testes novos reprovam
-- [ ] pacotes `internal/roadmapdoc`, `internal/commands`, `internal/serve` e `internal/generators` verdes
+- [x] AC9 da REQ; contra-braço: sem a máscara, os testes novos reprovam
+- [x] pacotes `internal/roadmapdoc`, `internal/commands`, `internal/serve` e `internal/generators` verdes
+
+### ML-3C — Comentário HTML não declara escopo nem gate (apolo-tf) — AC11
+**Status:** 🔄 Em andamento
+**Files affected:** `internal/roadmapdoc/roadmapdoc.go`, `internal/roadmapdoc/gates_lines_test.go`, `internal/commands/barrier.go`, `internal/commands/barrier_ml_scope_test.go`, `docs/cli-parity.md`
+**Actions:**
+1. `parseMLScopeFilesAffected` e `ParseGatesLines` pulam linhas dentro de comentário HTML, com a mesma máscara do ML-3B (exportada se preciso).
+2. Medir o que o barrier faz quando o único gate da wave está dentro de comentário: o veredito não pode virar aprovação silenciosa.
+**Acceptance criteria:**
+- [ ] AC11 da REQ; contra-braço: sem a máscara, os testes novos reprovam
+- [ ] pacotes `internal/roadmapdoc` e `internal/commands` verdes
 
 **Gates da wave:**
 ```bash
