@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-10-31
 req: "docs/req/REQ-2026-10-31-barrier-ml-scope-da-wave-n-reprova-arquivos-declarados-em-waves-posteriores-ja-iniciadas.md"
 squad: "hades-tf, apolo-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf"
 
 # Roadmap: barrier ml_scope da wave N reprova arquivos declarados em waves posteriores ja iniciadas
 
-> Created: 2026-10-31 | Status: wip
+> Created: 2026-10-31 | Status: done
 
 ## Context
 
