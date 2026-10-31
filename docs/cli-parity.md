@@ -2877,34 +2877,45 @@ These are literal parsing rules. The binary implements them.
    regex failed to match CRLF lines. Go's RE2 `.` includes `\r`; comparisons go through
    `strings.TrimSpace`. In v8 the Go implementation applies the same stripping.)
 
-3. **ML completion.** An ML is complete when its body contains a line, **at column 0 and
-   outside any fenced code block**, matching `^\*\*Status:\*\*`, and the **first whitespace-
-   delimited token** of the remainder — after Unicode NFD normalization and combining-mark
-   stripping (diacritics folded) and case-folding — is one of the closed vocabulary
-   `✅` / `done` / `concluído` (ADR-2026-08-29, decision 3). This replaced substring matching
-   (`contains(marker, "✅")`) precisely because substring accepted `**Status:** ⬜ Pendente ✅`
-   as complete — see "Contrato gerador↔`barrier`" below for the full rule and its history.
-   Any other first token (`⬜`, `🔄`, `❌`, or any word outside the closed vocabulary) is
-   incomplete. Absence of a `**Status:**` line at column 0 outside a fence is incomplete.
-4. **Acceptance evidence.** Inside an ML, the acceptance block starts at a line, **at column 0
-   and outside any fenced code block**, matching `^\*\*(?:Acceptance criteria|Crit[eé]rios de
-   aceite):\*\*` — both the English and the Portuguese header are accepted (ADR-2026-08-29,
-   decisions 1–2; English is canonical, Portuguese has no removal date) — and ends at the next
-   `^\*\*` line or at the ML boundary. Every line in that block matching `^- \[ \]` is unmet
-   evidence. The ML has evidence only when the block exists, is non-empty, and contains zero
-   `- [ ]` lines. **An ML with no acceptance block at all is `blocked`, not vacuously passed.**
+3. **ML completion.** An ML is complete when its body contains a line, **at column 0,
+   outside any fenced code block, and outside any HTML comment block (`<!-- … -->`)**,
+   matching `^\*\*Status:\*\*`, and the **first whitespace-delimited token** of the remainder
+   — after Unicode NFD normalization and combining-mark stripping (diacritics folded) and
+   case-folding — is one of the closed vocabulary `✅` / `done` / `concluído` (ADR-2026-08-29,
+   decision 3). This replaced substring matching (`contains(marker, "✅")`) precisely because
+   substring accepted `**Status:** ⬜ Pendente ✅` as complete — see "Contrato gerador↔`barrier`"
+   below for the full rule and its history. Any other first token (`⬜`, `🔄`, `❌`, or any word
+   outside the closed vocabulary) is incomplete. Absence of a `**Status:**` line at column 0
+   outside a fence and outside an HTML comment is incomplete. A `**Status:**` forged inside
+   `<!-- … -->` is invisible to this rule — it cannot satisfy `mls_complete` or initiate a wave
+   for `ml_scope` (AC9, ADR-2026-10-31).
+4. **Acceptance evidence.** Inside an ML, the acceptance block starts at a line, **at column 0,
+   outside any fenced code block, and outside any HTML comment block (`<!-- … -->`)**, matching
+   `^\*\*(?:Acceptance criteria|Crit[eé]rios de aceite):\*\*` — both the English and the
+   Portuguese header are accepted (ADR-2026-08-29, decisions 1–2; English is canonical,
+   Portuguese has no removal date) — and ends at the next `^\*\*` line or at the ML boundary.
+   Every line in that block matching `^- \[ \]` is unmet evidence. The ML has evidence only
+   when the block exists, is non-empty, and contains zero `- [ ]` lines outside fences and
+   outside HTML comments. **An ML with no acceptance block at all is `blocked`, not vacuously
+   passed.** A `- [x]` criterion forged inside `<!-- … -->` is not counted as Met (AC9,
+   ADR-2026-10-31; closes the T4 residual from REQ-2026-08-29).
 5. **Wave gates.** Gates are declared per wave by a `**Gates da wave:**` line followed by a
    fenced ```` ```bash ```` block. Each non-empty, non-comment line in that block is one gate
    command, executed from the repository root, in declaration order.
+   **The `**Gates da wave:**` marker must not be inside a fenced code block** (F1, REQ #491)
+   or **inside an HTML comment block** (`<!-- … -->`) (AC11, ML-3C, REQ-2026-10-31). A marker
+   whose column 0 is inside a multi-line HTML comment is silently skipped — the scan continues
+   so that a real marker later in the same wave is still found. A `**Gates da wave:**` block
+   entirely inside `<!-- … -->` produces zero gates, not a malformed-block error.
    **Prose is allowed between the marker and the fence** (#460): blank lines, blockquotes and
    paragraphs are skipped. 🔴 The search stops at the **next heading** (`## ` or `### `) — without
    that bound it would adopt a ```` ```bash ```` fence belonging to another section, such as an
    example inside an ML body, and the product would run a command nobody declared as a gate.
    A marker with no fence before the next heading is a malformed block, and the message says so
    instead of blaming the gate's content.
-   A wave with no `**Gates da wave:**` block declares zero gates — that is legal and yields a
-   `gates` check with `status: "passed"` and an empty `commands` array. The barrier **never**
-   invents a gate.
+   A wave with no `**Gates da wave:**` block outside a fence or HTML comment declares zero gates
+   — that is legal and yields a `gates` check with `status: "passed"` and an empty `commands`
+   array. The barrier **never** invents a gate.
    **Consequence of per-line execution:** each gate command runs in its own `sh -c` process.
    There is no shared state between lines: `export`, `cd`, and variable assignments do not
    survive to the next line. Multi-line constructs — unbalanced quotes, `$(`, heredoc openers,
@@ -3077,11 +3088,38 @@ de status, ao ser ampliado para aceitar palavras além de um único emoji, teria
 discriminante: `⬜`, `não` e `pending` não são marcadores, não importa o que vier depois na
 linha.
 
-**3. Consciência de cerca de código — as quatro leituras (ADR-2026-08-29, decisão 7;
-estendida pela #470).** `waveHeadingRe` (com a varredura de fim de bloco), `mlHeadingRe`,
-`statusLineRe` e `criteriaHeaderRe`/`unmetCriterionRe` ignoram qualquer linha dentro de um
-bloco cercado ao procurar, respectivamente, o heading real de uma wave, o heading real de um
-ML, a linha real de `**Status:**`, e o bloco real de aceite.
+**3. Consciência de cerca de código e de comentário HTML — as quatro leituras (ADR-2026-08-29,
+decisão 7; estendida pela #470; HTML comment masking adicionado por AC9, ADR-2026-10-31).**
+`waveHeadingRe` (com a varredura de fim de bloco), `mlHeadingRe`, `statusLineRe` e
+`criteriaHeaderRe`/`unmetCriterionRe` ignoram qualquer linha dentro de um bloco cercado ao
+procurar, respectivamente, o heading real de uma wave, o heading real de um ML, a linha real
+de `**Status:**`, e o bloco real de aceite. Adicionalmente, `statusLineRe` e
+`unmetCriterionRe` também ignoram linhas cujo **coluna 0 está dentro de um bloco de comentário
+HTML** (`<!-- … -->`): uma linha que abre o comentário (contém `<!--`) NÃO é mascarada, mas
+todas as linhas seguintes são, enquanto o estado permanecer aberto. O estado por linha é
+determinado por uma **máquina de estado** que percorre a linha alternando entre busca de `-->`
+(se dentro) e `<!--` (se fora), com o mesmo offset +4 de `StripInlineHTMLComments` — garantindo
+que `"<!-- a --> <!-- b"` (span fechado seguido de abridor sem fechamento) e `"a --> b <!-- c"`
+(fecha e reabre dentro de um comentário) terminem corretamente no estado aberto (ML-3C ação 4,
+REQ-2026-10-31). Quando **fora** de comentário, a busca por `<!--` ignora trechos dentro de um
+*code span* CommonMark (corrida de N crases aberidoras, texto, corrida de fechamento de N crases
+do mesmo comprimento): um `` `<!--` `` entre crases é texto, não abridor de comentário — por
+precedência de código inline sobre HTML conforme CommonMark (ML-3C ação 5, REQ-2026-10-31). A
+mesma precedência aplica-se a `StripInlineHTMLComments`. **Code spans de múltiplas linhas** são
+tratados por `htmlCommentMask` via dois auxiliares (ML-3C ação 5-bis, REQ-2026-10-31):
+`lookAheadCodeSpanClose` verifica se uma corrida de crases sem fechamento na linha atual fecha em
+alguma linha posterior, sem cruzar um limite de interrupção de parágrafo (linha em branco, linha
+cercada, cabeçalho ATX, item de lista, bloco de citação, abertura de bloco HTML — qualquer linha
+cujo primeiro caractere não-espaço seja `-`, `*`, `+`, `>`, `#`, `<`, `=`, `_`, `|`, `~`, `` ` ``
+ou um item de lista ordenado). Se o fechamento existe, `htmlCommentMask` entra em estado
+`inCodeSpanN` e pula as linhas interiores sem mascará-las; se não existe, a corrida é literal e o
+`<!--` que porventura se siga abre comentário normalmente. **Residual declarado:** `StripInlineHTMLComments`
+permanece com semântica de linha única — corridas não fechadas são tratadas como literais, e um
+`<!--` dentro de um span de múltiplas linhas ainda é visto como abridor por essa função. Isso é
+aceitável porque o único chamador que poderia ser afetado, `parseMLScopeFilesAffected`, opera
+exclusivamente na seção *Files affected*, onde corpus verificado (` docs/roadmaps/done/`) não
+contém spans de múltiplas linhas com `` `<!--` ``. Isso impede que um `**Status:** 🔄` ou `- [x]`
+dentro de `<!-- … -->` forje o status ou o aceite de um ML real (AC9, AC11, ADR-2026-10-31).
 
 🔴 **A leitura de wave entrou depois, e por medição.** A decisão 7 original cobria três
 leituras; o comentário de `HasWave0` no Go declarava por escrito que deixar a wave de fora era
@@ -3147,7 +3185,7 @@ Evaluated in this fixed order; the run continues through all checks so the repor
 | `acceptance_evidence` | Every ML in the wave satisfies rule 4 |
 | `gates` | Every command from rule 5 exits 0 |
 | `validate` | `trackfw validate --json` reports `violations: 0` |
-| `ml_scope` | Every file touched since `merge-base(origin/main, HEAD)` (diff + status) is covered by a `**Files affected:**` declaration in waves 0..N or by the orchestration set; `skipped` when outside a git repo, when the roadmap date predates 2026-07-18, or when the roadmap has not been committed yet; `blocked` when any file is undeclared or when `origin/main` is unavailable (the diff cannot be computed — fail-closed per Wave 0 contract) |
+| `ml_scope` | Every file touched since `merge-base(origin/main, HEAD)` (diff + status) is covered by a `**Files affected:**` declaration in waves 0..N or in any started wave above N (ADR-2026-10-31 D1; started = K match-positive predicate), or by the orchestration set; `skipped` when outside a git repo, when the roadmap date predates 2026-07-18, or when the roadmap has not been committed yet; `blocked` when any file is undeclared or when `origin/main` is unavailable (the diff cannot be computed — fail-closed per Wave 0 contract) |
 
 `trackfw validate` is invoked in-process, not by shelling out to a `trackfw` binary that may
 not be on `PATH`.
@@ -3196,7 +3234,7 @@ The `ml_scope` check verifies that every file touched by the current branch is c
 
 - **Roadmap from HEAD, not disk.** `git show HEAD:<roadmap>` is used to read the `**Files affected:**` lines. An uncommitted disk edit cannot expand scope. A roadmap not yet committed results in `skipped`.
 - **Touched files.** `git diff --name-only -z $(git merge-base origin/main HEAD) HEAD --no-renames` (committed changes, both sides of renames listed separately) plus `git status --porcelain=v1 -z --untracked-files=all --no-renames` (modified, staged, untracked), excluding gitignored files.
-- **Wave N scope.** The union of `**Files affected:**` from every ML in waves 0..N of the target roadmap, plus the union contribution from every roadmap member (see Union below).
+- **Wave N scope.** The union of `**Files affected:**` from every ML in waves 0..N of the target roadmap, plus every ML in any started wave above N of the target roadmap (ADR-2026-10-31 D1; wave ⬜ is never included regardless of position), plus the union contribution from every roadmap member (see Union below). `**Files affected:**` is required only for waves 0..N; a missing declaration in a started wave above N does not block the barrier of wave N. **"Above N" is determined by `CompareWaveLabels` (see "Wave label grammar" below), not by the integer part alone.** This means fractional labels are ordered correctly: `1 < 1b < 2`, so wave `1b` ⬜ is above N=1 and is excluded from scope; wave `1b` 🔄 is above N=1 but started and is included. With `--wave 1b`, wave `1` is ≤ N and requires declarations (AC8).
 - **Orchestration set (always permitted).** The roadmap file itself; the REQ from frontmatter `req:`; the ADR from the REQ's frontmatter `adr:`; `docs/agents-working-context/`; `vault/notes/`; `.claude/agent-memory/`; `<roadmap_dir>/.trackfw-log`; `<roadmap_dir>/.trackfw-log-entries/`; `<req_dir>/.trackfw-log`; `<req_dir>/.trackfw-log-entries/`. The roadmap counts as orchestration in every state directory of `roadmap_dir` with the same basename (`backlog/`, `analyzing/`, `wip/`, `blocked/`, `done/`, `abandoned/`), so a roadmap moved between states in the branch (e.g. `done/` → `wip/` on reopen) does not produce a spurious out-of-scope failure for the deleted old-state path.
 
 #### `**Files affected:**` grammar
@@ -3210,6 +3248,8 @@ Each backtick-quoted token on the `**Files affected:**` label line and on any su
 - **Heading** — a line starting with `#`.
 - **Code fence** — a line starting with `` ` `` `` ` `` ` `` ` `` (three or more backticks).
 - **Checkmark item** — any line matching `^- \[.\]` (a single character between the brackets) stops before acceptance-criteria items leak into scope. This covers `- [ ]`, `- [x]`, `- [X]`, `- [~]`, `- [-]`, and any other single-character marker. Generic Markdown links whose text is longer than one character (`- [text](url)`) are not stop conditions; a link with exactly one character in its text (`- [a](url)`) matches the pattern and does stop — this is the accepted cost of using the shared `CriterionLineRe` regex.
+- **HTML comment line** — a line whose **column 0 is inside an HTML comment block** (`<!-- … -->`) ends the declaration, treated identically to a code-fence line — "como cerca" (AC11, ML-3C, REQ-2026-10-31). The opening line itself (the one that contains `<!--`) is NOT masked; only lines that follow it, until `-->` is seen, are masked. A `**Files affected:**` label line whose column 0 is inside a comment is silently skipped (the scan continues — a real label after the comment is found).
+- **Inline HTML comment stripping** — before extracting backtick tokens from a line (label line or continuation), all complete `<!-- … -->` spans on that line are removed (replaced with a space so adjacent tokens don't merge). If `<!--` appears without a closing `-->` on the same line, the rest of the line from `<!--` onward is discarded and continuation collection stops immediately (`endsOpen=true`) — belt-and-suspenders for the label-line case; the underlying `htmlCommentMask` state machine (ML-3C ação 4, REQ-2026-10-31) now also correctly handles a second unclosed `<!--` that follows a closed span on the same line (AC11b, ML-3C ação 3, REQ-2026-10-31). The stop conditions (blank line, bold field, heading, criterion marker) are evaluated on the raw line before stripping, so HTML comment content cannot masquerade as a structure marker.
 
 List items (`- ` or `* ` prefix) contribute all their backtick tokens (Rule B — the same extraction primitive as the label line). This supports the **hybrid form**: tokens on the label line and tokens in list items below are all collected.
 
@@ -3257,9 +3297,11 @@ Every `.md` file under `roadmap_dir` that (a) appears in the branch diff, (b) ex
 | `abandoned/` or `backlog/` | — | Orchestration only |
 | `done/` | Existed at merge-base | Orchestration only |
 | `date:` before 2026-07-18 | — | Orchestration only |
-| All other cases | — | Orchestration + patterns from waves 0..K |
+| All other cases | — | Orchestration + patterns from started waves (ADR-2026-10-31 D2) |
 
-**K** is the highest wave number in the member that has at least one ML satisfying the K match-positive predicate: `StatusIsComplete` (✅), `StatusTerminated` (❌ Cancelado, 🚫 Abandonado), or `StatusPending` with first emoji `🔄` or `❌` (🔄 Em andamento, ❌ Bloqueado). All-`⬜` members contribute only orchestration (K undefined). A missing `date:` field is treated as post-cutoff.
+**Started wave** (for both the target and members): a wave with at least one ML satisfying the K match-positive predicate: `StatusIsComplete` (✅), `StatusTerminated` (❌ Cancelado, 🚫 Abandonado), or `StatusPending` with first emoji `🔄` or `❌` (🔄 Em andamento, ❌ Bloqueado). VS16 (U+FE0F) appended to the emoji is normalised before comparison. A wave ⬜ is never started. All-`⬜` members contribute only orchestration. A missing `date:` field is treated as post-cutoff.
+
+**Note:** the target roadmap and members use the same started-wave predicate. For members, K (the highest started wave number) is still computed to detect the all-`⬜` case early; the wave loop then contributes only started waves, not the contiguous range 0..K (ADR-2026-10-31 D2).
 
 Union members never produce "undeclared ML" failures — a missing declaration in member B does not block the barrier of target A. Broad-pattern rejections do fire for members (a `**` in member B would grant all files to target A).
 

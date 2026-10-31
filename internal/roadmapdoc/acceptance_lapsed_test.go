@@ -368,6 +368,39 @@ func TestAcceptanceEvaluateFull_LapsedParentMetNotUnmet(t *testing.T) {
 // Backward compat: AcceptanceEvaluate wrapper
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+// AC9: HTML comment masking for criteria (T4 residual, ADR-2026-10-31)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestAcceptanceEvaluateFull_CriterionInsideHTMLComment asserts that
+// AcceptanceEvaluateFull does NOT count a checkbox line whose column 0 is inside
+// a multi-line HTML comment block — neither as Met, Unmet, nor Lapsed.
+//
+// AC9 (ML-3B, REQ-2026-10-31): closes the T4 residual — a forged "- [x] done"
+// inside <!-- ... --> must not bump Met. Without htmlMask in AcceptanceEvaluateFull,
+// Met would be 1.
+func TestAcceptanceEvaluateFull_CriterionInsideHTMLComment(t *testing.T) {
+	content := strings.Join([]string{
+		"### ML-1A — Foo",
+		"**Status:** ✅",
+		"**Critérios de aceite:**",
+		"<!--",
+		"- [x] forged met inside comment",
+		"-->",
+	}, "\n")
+	lines, fenced, mls := mustParseMLs(t, content)
+	d := AcceptanceEvaluateFull(lines, fenced, mls[0])
+	if d.HasBlock {
+		t.Fatalf("expected HasBlock=false (criteria block is entirely inside HTML comment), got true (Met=%d Unmet=%d Lapsed=%d)", d.Met, d.Unmet, d.Lapsed)
+	}
+	if d.Met != 0 {
+		t.Fatalf("expected Met=0 (criterion inside comment must not be counted), got %d", d.Met)
+	}
+	if d.Unmet != 0 {
+		t.Fatalf("expected Unmet=0, got %d", d.Unmet)
+	}
+}
+
 // TestAcceptanceEvaluate_LapsedCountsAsUnmetInWrapper asserts that the legacy
 // AcceptanceEvaluate wrapper returns lapsed items in the unmet count (D2: "toda
 // contagem existente continua verdadeira" — the box is genuinely open).

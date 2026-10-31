@@ -603,8 +603,10 @@ func buildChildEnv(stack []barrierStackEntry) []string {
 // ml_scope check — D2 (ML-2A, REQ-2026-10-23)
 //
 // The ml_scope check verifies that every file touched since origin/main is within
-// the scope declared by **Files affected:** in all MLs of waves 0..N, plus a fixed
-// orchestration set (roadmap, REQ, ADR, vault notes, agent memory, trackfw-log).
+// the scope declared by **Files affected:** in all MLs of waves 0..N plus any
+// started wave above N (ADR-2026-10-31 D1; started = K match-positive predicate),
+// plus a fixed orchestration set (roadmap, REQ, ADR, vault notes, agent memory,
+// trackfw-log).
 //
 // Roadmap content is read from git HEAD (not from disk) so that a disk edit to
 // **Files affected:** by an agent cannot expand the scope it is being checked against.
@@ -761,15 +763,45 @@ func barrierGitFileExistsAtCommit(topLevel, commit, relPath string) bool {
 	return cmd.Run() == nil
 }
 
-// mlScopeComputeK returns the highest wave number with at least one ML satisfying
-// the K match-positive predicate (p.6, ADR-2026-10-29 D2). Returns -1 when no such
-// ML exists (K undefined; the member contributes only orchestration).
-//
-// K match-positive predicate:
+// mlScopeWaveIsStarted reports whether wave has at least one ML satisfying the
+// K match-positive predicate (ADR-2026-10-31 D1; same predicate as mlScopeComputeK):
 //   - roadmapdoc.StatusIsComplete(marker)                     → ✅, done, concluído
 //   - roadmapdoc.StatusCategory(marker) == StatusTerminated   → ❌ Cancelado, 🚫 Abandonado
 //   - roadmapdoc.StatusCategory(marker) == StatusPending
 //     AND first token ∈ {🔄, ❌} after VS16 (U+FE0F) strip  → 🔄 Em andamento, ❌ Bloqueado
+func mlScopeWaveIsStarted(lines []string, fenced []bool, wave waveBlock) bool {
+	mls := parseMLs(lines, fenced, wave.Start, wave.End)
+	for _, ml := range mls {
+		marker, found := mlStatusMarker(lines, fenced, ml)
+		if !found {
+			continue
+		}
+		if roadmapdoc.StatusIsComplete(marker) {
+			return true
+		}
+		cat := roadmapdoc.StatusCategory(marker)
+		if cat == roadmapdoc.StatusTerminated {
+			return true
+		}
+		if cat == roadmapdoc.StatusPending {
+			fields := strings.Fields(marker)
+			if len(fields) > 0 {
+				// Strip VS16 (U+FE0F) to normalise emoji variants.
+				first := strings.ReplaceAll(fields[0], "️", "")
+				if first == "🔄" || first == "❌" {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// mlScopeComputeK returns the highest wave number with at least one ML satisfying
+// the K match-positive predicate (p.6, ADR-2026-10-29 D2). Returns -1 when no such
+// ML exists (K undefined; the member contributes only orchestration).
+//
+// The K match-positive predicate is defined by mlScopeWaveIsStarted.
 func mlScopeComputeK(lines []string, fenced []bool, waves []waveBlock) int {
 	k := -1
 	for _, wave := range waves {
@@ -777,37 +809,9 @@ func mlScopeComputeK(lines []string, fenced []bool, waves []waveBlock) int {
 		if waveInt < 0 {
 			continue
 		}
-		mls := parseMLs(lines, fenced, wave.Start, wave.End)
-		for _, ml := range mls {
-			marker, found := mlStatusMarker(lines, fenced, ml)
-			if !found {
-				continue
-			}
-			if roadmapdoc.StatusIsComplete(marker) {
-				if waveInt > k {
-					k = waveInt
-				}
-				break // at least one ML in this wave qualifies
-			}
-			cat := roadmapdoc.StatusCategory(marker)
-			if cat == roadmapdoc.StatusTerminated {
-				if waveInt > k {
-					k = waveInt
-				}
-				break
-			}
-			if cat == roadmapdoc.StatusPending {
-				fields := strings.Fields(marker)
-				if len(fields) > 0 {
-					// Strip VS16 (U+FE0F) to normalise emoji variants.
-					first := strings.ReplaceAll(fields[0], "️", "")
-					if first == "🔄" || first == "❌" {
-						if waveInt > k {
-							k = waveInt
-						}
-						break
-					}
-				}
+		if mlScopeWaveIsStarted(lines, fenced, wave) {
+			if waveInt > k {
+				k = waveInt
 			}
 		}
 	}
@@ -822,6 +826,13 @@ func mlScopeComputeK(lines []string, fenced []bool, waves []waveBlock) int {
 // NOT start with "**", "#", or "- " is treated as a continuation and its backtick
 // tokens are also collected. This handles declarations that wrap across multiple
 // physical lines (e.g., long file lists).
+//
+// Lines whose column 0 is inside an HTML comment block (<!-- … -->) are treated the
+// same as fenced lines (AC11, ML-3C, REQ-2026-10-31):
+//   - A label line inside a comment is silently skipped (continue) so that the real
+//     declaration later in the ML is found.
+//   - A continuation line inside a comment ends the declaration (break), the same as
+//     a code-fence line does — "como cerca".
 //
 // Returns (patterns, true) when the label line is present.
 // Returns (nil, false) when no label line is found — the ML has no declaration.
@@ -851,8 +862,24 @@ func parseMLScopeFilesAffected(lines []string, fenced []bool, start, end int) ([
 		return toks
 	}
 
+	// htmlMask is computed over the full lines slice so that a comment opened
+	// before start is correctly carried into the ML block. The fenced slice is
+	// always the same length as lines (built by FenceMask); if it is shorter
+	// (test helper that passes a partial slice), we extend it with false.
+	safeFenced := fenced
+	if len(safeFenced) < len(lines) {
+		extended := make([]bool, len(lines))
+		copy(extended, safeFenced)
+		safeFenced = extended
+	}
+	htmlMask := roadmapdoc.HTMLCommentMask(lines, safeFenced)
+
 	for i := start; i < end && i < len(lines); i++ {
 		if i < len(fenced) && fenced[i] {
+			continue
+		}
+		// AC11: label inside HTML comment → skip (a real declaration may follow).
+		if i < len(htmlMask) && htmlMask[i] {
 			continue
 		}
 		line := lines[i]
@@ -860,11 +887,20 @@ func parseMLScopeFilesAffected(lines []string, fenced []bool, start, end int) ([
 			!strings.HasPrefix(line, "**Arquivos afetados:**") {
 			continue
 		}
-		// Found the label line — collect its tokens.
-		patterns := extractTokens(line)
+		// Found the label line — strip inline HTML comments then collect tokens (AC11b).
+		// endsOpen is true when the label line has an unclosed "<!--": the continuation
+		// loop is skipped entirely in that case (the multi-line comment it opens may not
+		// be detected by htmlCommentMask when a prior closed span consumed the first
+		// "<!--" — see StripInlineHTMLComments doc comment for the double-comment case).
+		labelStripped, labelEndsOpen := roadmapdoc.StripInlineHTMLComments(line)
+		patterns := extractTokens(labelStripped)
+		if labelEndsOpen {
+			return patterns, true
+		}
 
 		// Collect continuation lines and list items.
-		// Stops at: blank line, standalone bold field (**), heading (#), code fence.
+		// Stops at: blank line, standalone bold field (**), heading (#), code fence,
+		// HTML comment line (treated like a code fence — "como cerca", AC11).
 		// Any criterion marker "- [X]" where X is a single character (matched by
 		// roadmapdoc.CriterionLineRe = ^- \[.\]) stops the list BEFORE the generic
 		// list-item check so that acceptance-criteria items don't leak into scope
@@ -877,6 +913,10 @@ func parseMLScopeFilesAffected(lines []string, fenced []bool, start, end int) ([
 		// List items (- / *) contribute tokens by Regra B (p.1, p.2, §1.4c hybrid).
 		for j := i + 1; j < end && j < len(lines); j++ {
 			if j < len(fenced) && fenced[j] {
+				break
+			}
+			// AC11: continuation inside HTML comment ends the declaration (like fence).
+			if j < len(htmlMask) && htmlMask[j] {
 				break
 			}
 			cont := lines[j]
@@ -896,13 +936,26 @@ func parseMLScopeFilesAffected(lines []string, fenced []bool, start, end int) ([
 			if roadmapdoc.CriterionLineRe.MatchString(trimmed) {
 				break
 			}
+			// AC11b: strip inline HTML comments before extracting tokens. The stop
+			// conditions above run on the raw trimmed line so that markup structure
+			// (bold fields, headings, criterion markers) is never misclassified by a
+			// prior comment span. contEndsOpen signals an unclosed "<!--" on this
+			// continuation line; collecting stops after its tokens (same rationale as
+			// labelEndsOpen: htmlCommentMask may not detect a second unclosed "<!--").
+			contStripped, contEndsOpen := roadmapdoc.StripInlineHTMLComments(cont)
 			// List item (- / *): extract tokens and continue (AC1, §1.4c).
 			if strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ") {
-				patterns = append(patterns, extractTokens(cont)...)
+				patterns = append(patterns, extractTokens(contStripped)...)
+				if contEndsOpen {
+					break
+				}
 				continue
 			}
 			// Continuation/wrap line — collect its backtick tokens.
-			patterns = append(patterns, extractTokens(cont)...)
+			patterns = append(patterns, extractTokens(contStripped)...)
+			if contEndsOpen {
+				break
+			}
 		}
 
 		return patterns, true
@@ -1070,7 +1123,10 @@ func buildMLScopeOrchestrationSet(topLevel, roadmapRelPath, headContent string, 
 // checkMLScope is the D2 barrier check (ML-2A, REQ-2026-10-23). It reads the
 // roadmap from HEAD (not disk), collects all touched files since origin/main, and
 // verifies that each is within the scope declared by **Files affected:** in all
-// MLs of waves 0..currentWaveInt, plus the fixed orchestration set.
+// MLs of waves 0..N plus every started wave above N, where "above N" is determined
+// by roadmapdoc.CompareWaveLabels (supports fractional labels like "1b"; "1b" > "1"
+// so wave "1b" ⬜ is never in scope for --wave 1, ADR-2026-10-31 D1 + AC8),
+// plus the fixed orchestration set.
 //
 // Returned status values:
 //
@@ -1083,7 +1139,7 @@ func buildMLScopeOrchestrationSet(topLevel, roadmapRelPath, headContent string, 
 //	"skipped" — the check is not applicable: not a git repo, roadmap not in HEAD,
 //	            or pre-cutoff roadmap date. The skip reason is recorded in Evidence.
 //	            A skipped check does NOT block the overall barrier verdict.
-func checkMLScope(roadmapPath string, currentWaveInt int) barrierCheck {
+func checkMLScope(roadmapPath string, currentWaveLabel string) barrierCheck {
 	check := barrierCheck{Name: "ml_scope", Evidence: []string{}, Failures: []string{}}
 
 	dir := filepath.Dir(roadmapPath)
@@ -1170,10 +1226,15 @@ func checkMLScope(roadmapPath string, currentWaveInt int) barrierCheck {
 	// Step 8: build the fixed orchestration set.
 	orchestration := buildMLScopeOrchestrationSet(topLevel, relPath, string(headContent), cfg)
 
-	// Step 9: collect scope patterns from all MLs in waves 0..currentWaveInt,
-	// and record any ML that is missing a declaration (post-cutoff, in-wave failure).
-	// Patterns with no literal path segments (e.g. "**") are rejected (p.3, AC10);
-	// the rejection message includes the roadmap path and ML id for diagnostics.
+	// Step 9: collect scope patterns from all MLs in waves 0..N plus every started
+	// wave above N (ADR-2026-10-31 D1). "Above N" is determined by
+	// roadmapdoc.CompareWaveLabels, which respects fractional labels: for --wave 1,
+	// wave "1b" is above N (CompareWaveLabels("1b","1") > 0), so wave "1b" ⬜ is
+	// excluded even though its integer part equals 1 (AC8, ADR-2026-10-31 D1).
+	// declFailures (missing **Files affected:**) are only emitted for waves 0..N;
+	// a missing declaration in a started wave above N does not block the barrier of
+	// wave N (it is checked when that wave's own barrier runs).
+	// Broad-pattern rejection (addPatterns) applies to every contributing wave.
 	var scopePatterns []string
 	var declFailures []string
 	addPatterns := func(rdmPath, mlID string, patterns []string) {
@@ -1188,16 +1249,17 @@ func checkMLScope(roadmapPath string, currentWaveInt int) barrierCheck {
 		}
 	}
 	for _, wave := range headWaves {
-		waveInt, _ := splitWaveLabel(wave.Label)
-		if waveInt > currentWaveInt {
-			continue
+		if roadmapdoc.CompareWaveLabels(wave.Label, currentWaveLabel) > 0 && !mlScopeWaveIsStarted(headLines, headFenced, wave) {
+			continue // wave above N and not started: excluded from scope
 		}
 		mls := parseMLs(headLines, headFenced, wave.Start, wave.End)
 		for _, ml := range mls {
 			patterns, hasDecl := parseMLScopeFilesAffected(headLines, headFenced, ml.Start, ml.End)
 			if !hasDecl {
-				declFailures = append(declFailures,
-					fmt.Sprintf("%s: no **Files affected:** declaration (post-cutoff roadmap requires declaration for all MLs in the wave)", ml.ID))
+				if roadmapdoc.CompareWaveLabels(wave.Label, currentWaveLabel) <= 0 {
+					declFailures = append(declFailures,
+						fmt.Sprintf("%s: no **Files affected:** declaration (post-cutoff roadmap requires declaration for all MLs in the wave)", ml.ID))
+				}
 				continue
 			}
 			addPatterns(relPath, ml.ID, patterns)
@@ -1205,7 +1267,7 @@ func checkMLScope(roadmapPath string, currentWaveInt int) barrierCheck {
 	}
 
 	// Step 9.5: union — extend scope with patterns from all roadmap members touched
-	// by this branch (ADR-2026-10-29 D2, p.4–p.7).
+	// by this branch (ADR-2026-10-29 D2; ADR-2026-10-31 D2, p.4–p.7).
 	//
 	// Members: paths in diffFiles that are .md files under rdDir in a known state dir,
 	// exist in HEAD, and are NOT the target roadmap.
@@ -1214,7 +1276,7 @@ func checkMLScope(roadmapPath string, currentWaveInt int) barrierCheck {
 	//   abandoned/ or backlog/                        → orchestration only
 	//   done/ AND existed at merge-base               → orchestration only
 	//   date: pre-cutoff (same predicate as target)   → orchestration only
-	//   others                                         → orchestration + patterns 0..K
+	//   others                                         → orchestration + patterns from started waves
 	{
 		rdDir := path.Clean(filepath.ToSlash(cfg.RoadmapDir))
 		for _, diffPath := range diffFiles {
@@ -1275,14 +1337,15 @@ func checkMLScope(roadmapPath string, currentWaveInt int) barrierCheck {
 				continue // no started MLs: orchestration only
 			}
 
-			// Collect patterns from waves 0..K.
+			// Collect patterns from started waves (ADR-2026-10-31 D2).
 			// No "undeclared ML" declFailures for union members — a missing declaration
 			// in member B must not block the barrier of target A.
 			// Broad-pattern rejections do fire for members (a "**" in member B would
 			// grant all files to target A — rejected regardless of which roadmap it came from).
+			// Waves whose label cannot be parsed (waveInt < 0) are skipped (pre-existing).
 			for _, wave := range memberWaves {
 				waveInt, _ := splitWaveLabel(wave.Label)
-				if waveInt < 0 || waveInt > k {
+				if waveInt < 0 || !mlScopeWaveIsStarted(memberLines, memberFenced, wave) {
 					continue
 				}
 				mls := parseMLs(memberLines, memberFenced, wave.Start, wave.End)
@@ -1698,11 +1761,13 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveLabel string, jsonOut
 	}
 
 	// ── check: ml_scope ──────────────────────────────────────────────────────
-	// D2 (ML-2A, REQ-2026-10-23): verify that files touched since origin/main
-	// are within the scope declared by **Files affected:** for waves 0..N.
-	// currentWaveInt is the integer part of target.Label (the as-parsed label).
-	currentWaveInt, _ := splitWaveLabel(target.Label)
-	scopeCheck := checkMLScope(roadmapPath, currentWaveInt)
+	// D2 (ML-2A, REQ-2026-10-23; ADR-2026-10-31 D1): verify that files touched
+	// since origin/main are within the scope declared by **Files affected:** for
+	// waves 0..N plus every started wave above N.
+	// currentWaveLabel is the wave label string (e.g. "1", "1b") used by checkMLScope
+	// to compare wave labels with roadmapdoc.CompareWaveLabels, which correctly orders
+	// fractional labels: "1" < "1b" < "2" (AC8, ADR-2026-10-31 D1).
+	scopeCheck := checkMLScope(roadmapPath, target.Label)
 
 	checks := []barrierCheck{whCheck, mlsCheck, accCheck, gatesCheck, validateCheck, scopeCheck}
 	overallStatus := "passed"
