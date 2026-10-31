@@ -88,13 +88,13 @@ grep -q 'Prescrições' docs/seguranca/2026-10-31-wave0-debitos-de-higiene.md
 - [ ] pacote `internal/commands` verde
 
 ### ML-1D — Documentação do #633 e notas de vault (zeus-tf) — AC4
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — 2026-10-31. Nota do arquiteto no fim do parecer do #633 (R-5 corrigido no ML-1A do #633; P-5 sem issue, pela medição). Notas de vault `git-terminal-prompt-sem-terminal-falha-na-hora-2026-10-31` e `fixture-follow-remote-head-never-neutraliza-a-forge-2026-10-31`, linkadas no índice; nomes de função e de teste citados conferidos no código.
 **Files affected:** `docs/seguranca/2026-10-30-wave0-branch-padrao-ls-remote.md`, `vault/notes/index.md`, `vault/notes/fixture-follow-remote-head-never-neutraliza-a-forge-2026-10-31.md`, `vault/notes/git-terminal-prompt-sem-terminal-falha-na-hora-2026-10-31.md`
 **Actions:**
 1. Nota do arquiteto no fim do parecer: o R-5 foi corrigido no ML-1A do roadmap do #633.
 2. As duas notas de vault, linkadas no índice.
 **Acceptance criteria:**
-- [ ] AC4 da REQ
+- [x] AC4 da REQ
 
 **Gates da wave:**
 ```bash

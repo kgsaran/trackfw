@@ -3,6 +3,8 @@
 > Ponto de entrada de conhecimento do projeto para agentes e pessoas.
 
 ## Índice
+- [git-terminal-prompt-sem-terminal-falha-na-hora-2026-10-31](git-terminal-prompt-sem-terminal-falha-na-hora-2026-10-31.md) — sem terminal o git falha em 0 s ao pedir credencial (abre `/dev/tty`); `GIT_TERMINAL_PROMPT=0` não muda nada para agente/CI; GCM e SSH são outra causa
+- [fixture-follow-remote-head-never-neutraliza-a-forge-2026-10-31](fixture-follow-remote-head-never-neutraliza-a-forge-2026-10-31.md) — origin em caminho local pula a forge e `followRemoteHEAD never` força o `ls-remote`; sem ele o teste passa pela fonte errada no git ≥ 2.48
 
 - [update-harness-advisory-por-catalog-target-nao-warn-2026-10-31](update-harness-advisory-por-catalog-target-nao-warn-2026-10-31.md) — 🔴 **`update harness` emite advisory (sem `WARN:`) uma vez por catalog target (`harnessCatalogTarget:2669`); `WARN: agent_models.<tier>` só sai de `agents models`; fix: mover `ResolveAgentModels` para fora do loop, passar como parâmetro; relatório texto = stdout**
 - [barrier-ml-scope-k-gap-e-test-exclusion-vacuoso-2026-10-31](barrier-ml-scope-k-gap-e-test-exclusion-vacuoso-2026-10-31.md) — 🔴 wave ⬜ entre N e K passa no `--wave N` (K gap, medido); `TestMLScope_TargetRoadmapExcludedFromMemberLoop` vacuoso (target nunca em diffFiles); ❌ Bloqueado/Cancelado/🚫 Abandonado elevam K; decisão de KG bloqueante (#641 ML-0A)
