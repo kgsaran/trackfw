@@ -55,7 +55,7 @@ grep -q 'Prescrições' docs/seguranca/2026-10-31-wave0-debitos-de-higiene.md
 > Dependencies: Wave 0 auditada.
 
 ### ML-1A — `release tag` confere o `package-lock` (apolo-tf) — AC1
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:** `internal/commands/release.go`, `internal/commands/release_test.go`, `docs/cli-parity.md`
 **Actions:**
 1. `releaseVersionFiles` ganha `npm/package-lock.json` (raiz e `packages[""]`), com extrator próprio.
@@ -66,7 +66,7 @@ grep -q 'Prescrições' docs/seguranca/2026-10-31-wave0-debitos-de-higiene.md
 - [ ] pacote `internal/commands` verde
 
 ### ML-1B — `InstallGates` e hooks do husky aplicam o bit de execução (apolo-tf) — AC2, AC2b
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:** `internal/discover/discover.go`, `internal/discover/discover_test.go`, `internal/generators/scaffold.go`, `internal/generators/scaffold_test.go`
 **Actions:**
 1. Depois de gravar `scripts/trackfw-validate.sh`, aplicar o modo como os outros pontos de escrita (mesmo helper, se existir).
@@ -77,7 +77,7 @@ grep -q 'Prescrições' docs/seguranca/2026-10-31-wave0-debitos-de-higiene.md
 - [ ] pacotes `internal/discover` e `internal/generators` verdes
 
 ### ML-1C — `agent_models` e o relatório do `update harness` (apolo-tf) — AC3
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:** `internal/generators/update.go`, `internal/generators/update_test.go`, `internal/commands/update_harness.go`, `internal/commands/update_harness_test.go`, `docs/cli-parity.md`
 **Actions:**
 1. A mensagem de `agent_models` global sai uma vez por execução do `update harness`, antes do laço, só se houver destino do catálogo (pré-varredura dos ids, P-3 do parecer); `harnessCatalogTarget` recebe os modelos resolvidos por parâmetro.
@@ -88,7 +88,7 @@ grep -q 'Prescrições' docs/seguranca/2026-10-31-wave0-debitos-de-higiene.md
 - [ ] pacote `internal/commands` verde
 
 ### ML-1D — Documentação do #633 e notas de vault (zeus-tf) — AC4
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:** `docs/seguranca/2026-10-30-wave0-branch-padrao-ls-remote.md`, `vault/notes/index.md`, `vault/notes/fixture-follow-remote-head-never-neutraliza-a-forge-2026-10-31.md`, `vault/notes/git-terminal-prompt-sem-terminal-falha-na-hora-2026-10-31.md`
 **Actions:**
 1. Nota do arquiteto no fim do parecer: o R-5 foi corrigido no ML-1A do roadmap do #633.
