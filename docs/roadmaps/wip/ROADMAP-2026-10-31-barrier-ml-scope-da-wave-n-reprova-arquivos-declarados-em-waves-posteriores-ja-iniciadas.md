@@ -56,7 +56,7 @@ grep -q 'Prescrições' docs/seguranca/2026-10-31-wave0-ml-scope-waves-iniciadas
 > Dependencies: Wave 0 auditada.
 
 ### ML-1A — ml_scope cobre as waves 0..N e as posteriores iniciadas (apolo-tf) — AC1–AC7
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:** `internal/commands/barrier.go`, `internal/commands/barrier_ml_scope_test.go`, `docs/cli-parity.md`
 **Actions:**
 1. Predicado "wave iniciada" extraído do corpo de `mlScopeComputeK` e usado pelos dois laços: alvo = waves 0..N + waves > N iniciadas; membros = waves iniciadas (sem faixa contínua).
