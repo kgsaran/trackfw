@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-10-30
 author: "zeus-tf"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-10-30-teste-do-involucro-de-atencao-materializa-o-binario-por-symlink-e-reprova-em-conta-windows-sem-privilegio.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-10-30-teste-do-involucro-de-atencao-materializa-o-binario-por-symlink-e-reprova-em-conta-windows-sem-privilegio.md"
 ---
 
 # REQ: teste do invólucro de atencao materializa o binario por symlink e reprova em conta Windows sem privilegio
 
-> Date: 2026-10-30 | Status: Open
+> Date: 2026-10-30 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -59,4 +59,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-10-30-teste-do-involucro-de-atencao-materializa-o-binario-por-symlink-e-reprova-em-conta-windows-sem-privilegio.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-10-30-teste-do-involucro-de-atencao-materializa-o-binario-por-symlink-e-reprova-em-conta-windows-sem-privilegio.md

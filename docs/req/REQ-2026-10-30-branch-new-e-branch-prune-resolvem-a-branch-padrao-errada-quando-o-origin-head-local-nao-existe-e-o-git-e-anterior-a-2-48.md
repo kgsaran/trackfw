@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-10-30
 author: "zeus-tf"
 adr: "docs/adr/ADR-2026-10-30-resolucao-da-branch-padrao-consulta-o-remoto-quando-o-symref-local-falta.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-10-30-branch-new-e-branch-prune-resolvem-a-branch-padrao-errada-quando-o-origin-head-local-nao-existe-e-o-git-e-anterior-a-2-48.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-10-30-branch-new-e-branch-prune-resolvem-a-branch-padrao-errada-quando-o-origin-head-local-nao-existe-e-o-git-e-anterior-a-2-48.md"
 ---
 
 # REQ: branch new e branch prune resolvem a branch padrao errada quando o origin HEAD local nao existe e o git e anterior a 2.48
 
-> Date: 2026-10-30 | Status: Open
+> Date: 2026-10-30 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -70,4 +70,4 @@ ADR: docs/adr/ADR-2026-10-30-resolucao-da-branch-padrao-consulta-o-remoto-quando
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-10-30-branch-new-e-branch-prune-resolvem-a-branch-padrao-errada-quando-o-origin-head-local-nao-existe-e-o-git-e-anterior-a-2-48.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-10-30-branch-new-e-branch-prune-resolvem-a-branch-padrao-errada-quando-o-origin-head-local-nao-existe-e-o-git-e-anterior-a-2-48.md
