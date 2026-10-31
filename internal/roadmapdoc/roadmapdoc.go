@@ -653,20 +653,19 @@ type AcceptanceDetail struct {
 // line from "<!--" onward is discarded and endsOpen is true.
 //
 // The scanner pairs each "<!--" with the first "-->" found from opener+4 onward —
-// the same offset semantics as htmlCommentMask — so "<!-->x" reads as unclosed
-// (fail-closed direction, consistent with htmlCommentMask).
+// the same offset semantics as htmlCommentMask (ML-3C ação 4, REQ-2026-10-31) —
+// so "<!-->x" reads as unclosed (fail-closed direction, consistent with htmlCommentMask).
 //
 // Only single-line spans are handled here; multi-line comment blocks are handled
 // separately by htmlCommentMask (column-0 semantics). This function is applied to
 // individual lines before backtick-token extraction in parseMLScopeFilesAffected
 // (AC11b, ML-3C ação 3, REQ-2026-10-31).
 //
-// When endsOpen is true the caller should stop collecting continuation lines: the
-// multi-line comment opened on this line may not be detected by htmlCommentMask
-// when a prior closed span consumed the "<!--" it was searching for (see the
-// double-comment case: "<!-- a --> <!-- b" — htmlCommentMask sees the first
-// opener as closed and misses the second unclosed one). Breaking on endsOpen
-// closes that gap without modifying htmlCommentMask.
+// When endsOpen is true the caller should stop collecting continuation lines.
+// Prior to ML-3C ação 4, htmlCommentMask did not walk the full line as a state
+// machine and could miss a second unclosed "<!--" that followed a closed span
+// ("<!-- a --> <!-- b"). That gap is now closed in htmlCommentMask itself; this
+// endsOpen break is kept as belt-and-suspenders for parseMLScopeFilesAffected.
 func StripInlineHTMLComments(line string) (stripped string, endsOpen bool) {
 	for {
 		start := strings.Index(line, "<!--")
@@ -717,6 +716,18 @@ func HTMLCommentMask(lines []string, fenced []bool) []bool {
 // it as a valid lapsed continuation. Previously (opener-masked semantics) it was Unmet.
 // This is the correct behaviour: the justification text "x" is present.
 //
+// State-machine semantics (ML-3C ação 4, REQ-2026-10-31): after setting mask[i], the
+// function walks the remainder of the line as a state machine — alternating between
+// searching for "-->" (if inComment) and "<!--" (if not) — to determine inComment for
+// the next line. The "+4 offset" rule mirrors StripInlineHTMLComments: when "<!--" is
+// found at position p, the search for "-->" begins at p+4 (so "<!-->x" is unclosed).
+// This correctly handles:
+//   - "x <!-- a --> <!-- b" (outside, closed span then unclosed): ends open.
+//   - "a --> b <!-- c" (inside, closes then reopens unclosed): ends open.
+//   - "a --> b <!-- c --> d" (inside, closes/reopens/closes): ends closed.
+// The old code used strings.Contains for each half, missing second openers after a
+// closed span on the same line (ML-3C ação 4 contra-braço).
+//
 // MLStatusMarker uses this mask to ignore **Status:** lines inside multi-line HTML
 // comments (AC9, ADR-2026-10-31). Performance: O(len(lines)) per MLStatusMarker call,
 // repeated per ML in mlScopeWaveIsStarted. For typical roadmaps (hundreds of lines,
@@ -729,21 +740,27 @@ func htmlCommentMask(lines []string, fenced []bool) []bool {
 		if fenced[i] {
 			continue
 		}
-		if inComment {
-			// Column 0 is inside a comment opened on a previous line — mask this line.
-			mask[i] = true
-			if strings.Contains(line, "-->") {
-				inComment = false
-			}
-		} else {
-			// Column 0 is NOT inside a comment. mask[i] stays false.
-			// Update inComment state for subsequent lines based on this line's content.
-			if idx := strings.Index(line, "<!--"); idx >= 0 {
-				// Comment opens on this line. Check if it also closes on this line.
-				after := line[idx+4:]
-				if !strings.Contains(after, "-->") {
-					inComment = true
+		// Column-0 semantics: mask[i] reflects inComment at the START of the line.
+		mask[i] = inComment
+		// Walk the line as a state machine to determine inComment for the next line.
+		pos := 0
+		for pos < len(line) {
+			if inComment {
+				idx := strings.Index(line[pos:], "-->")
+				if idx < 0 {
+					break // comment still open at end of line
 				}
+				inComment = false
+				pos += idx + 3
+			} else {
+				idx := strings.Index(line[pos:], "<!--")
+				if idx < 0 {
+					break // no opener found; stays closed
+				}
+				inComment = true
+				// Advance past "<!--" before resuming (mirrors StripInlineHTMLComments
+				// "after := line[start+4:]" — "-->x" at opener+0 is not a valid close).
+				pos += idx + 4
 			}
 		}
 	}

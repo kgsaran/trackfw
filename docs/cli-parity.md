@@ -3096,8 +3096,13 @@ procurar, respectivamente, o heading real de uma wave, o heading real de um ML, 
 de `**Status:**`, e o bloco real de aceite. Adicionalmente, `statusLineRe` e
 `unmetCriterionRe` também ignoram linhas cujo **coluna 0 está dentro de um bloco de comentário
 HTML** (`<!-- … -->`): uma linha que abre o comentário (contém `<!--`) NÃO é mascarada, mas
-todas as linhas seguintes até o fechamento (`-->`) são. Isso impede que um `**Status:** 🔄`
-ou `- [x]` dentro de `<!-- … -->` forje o status ou o aceite de um ML real (AC9, ADR-2026-10-31).
+todas as linhas seguintes são, enquanto o estado permanecer aberto. O estado por linha é
+determinado por uma **máquina de estado** que percorre a linha alternando entre busca de `-->`
+(se dentro) e `<!--` (se fora), com o mesmo offset +4 de `StripInlineHTMLComments` — garantindo
+que `"<!-- a --> <!-- b"` (span fechado seguido de abridor sem fechamento) e `"a --> b <!-- c"`
+(fecha e reabre dentro de um comentário) terminem corretamente no estado aberto (ML-3C ação 4,
+REQ-2026-10-31). Isso impede que um `**Status:** 🔄` ou `- [x]` dentro de `<!-- … -->` forje
+o status ou o aceite de um ML real (AC9, ADR-2026-10-31).
 
 🔴 **A leitura de wave entrou depois, e por medição.** A decisão 7 original cobria três
 leituras; o comentário de `HasWave0` no Go declarava por escrito que deixar a wave de fora era
@@ -3227,7 +3232,7 @@ Each backtick-quoted token on the `**Files affected:**` label line and on any su
 - **Code fence** — a line starting with `` ` `` `` ` `` ` `` ` `` (three or more backticks).
 - **Checkmark item** — any line matching `^- \[.\]` (a single character between the brackets) stops before acceptance-criteria items leak into scope. This covers `- [ ]`, `- [x]`, `- [X]`, `- [~]`, `- [-]`, and any other single-character marker. Generic Markdown links whose text is longer than one character (`- [text](url)`) are not stop conditions; a link with exactly one character in its text (`- [a](url)`) matches the pattern and does stop — this is the accepted cost of using the shared `CriterionLineRe` regex.
 - **HTML comment line** — a line whose **column 0 is inside an HTML comment block** (`<!-- … -->`) ends the declaration, treated identically to a code-fence line — "como cerca" (AC11, ML-3C, REQ-2026-10-31). The opening line itself (the one that contains `<!--`) is NOT masked; only lines that follow it, until `-->` is seen, are masked. A `**Files affected:**` label line whose column 0 is inside a comment is silently skipped (the scan continues — a real label after the comment is found).
-- **Inline HTML comment stripping** — before extracting backtick tokens from a line (label line or continuation), all complete `<!-- … -->` spans on that line are removed (replaced with a space so adjacent tokens don't merge). If `<!--` appears without a closing `-->` on the same line, the rest of the line from `<!--` onward is discarded and continuation collection stops immediately (`endsOpen=true`) — this closes the double-comment gap where `htmlCommentMask` could miss a second unclosed `<!--` that followed a closed span on the same line (AC11b, ML-3C ação 3, REQ-2026-10-31). The stop conditions (blank line, bold field, heading, criterion marker) are evaluated on the raw line before stripping, so HTML comment content cannot masquerade as a structure marker.
+- **Inline HTML comment stripping** — before extracting backtick tokens from a line (label line or continuation), all complete `<!-- … -->` spans on that line are removed (replaced with a space so adjacent tokens don't merge). If `<!--` appears without a closing `-->` on the same line, the rest of the line from `<!--` onward is discarded and continuation collection stops immediately (`endsOpen=true`) — belt-and-suspenders for the label-line case; the underlying `htmlCommentMask` state machine (ML-3C ação 4, REQ-2026-10-31) now also correctly handles a second unclosed `<!--` that follows a closed span on the same line (AC11b, ML-3C ação 3, REQ-2026-10-31). The stop conditions (blank line, bold field, heading, criterion marker) are evaluated on the raw line before stripping, so HTML comment content cannot masquerade as a structure marker.
 
 List items (`- ` or `* ` prefix) contribute all their backtick tokens (Rule B — the same extraction primitive as the label line). This supports the **hybrid form**: tokens on the label line and tokens in list items below are all collected.
 

@@ -76,6 +76,31 @@ package roadmapdoc
 //     []MalformedWave AND a non-empty []WaveBlock — the malformed wave is isolated, not
 //     propagated, proving the cascade-abort behaviour of ADR-2026-07-29 decision 16 is reversed.
 //
+//   TestHTMLCommentMask_OutsideComment_ClosedSpanThenUnclosed (ML-3C ação 4)
+//     Affirms: a line outside a comment with a closed span then an unclosed "<!--"
+//     (e.g. "x <!-- a --> <!-- b") leaves htmlCommentMask in the open state so the
+//     next line is masked — the old strings.Contains loop missed the second opener.
+//
+//   TestHTMLCommentMask_InsideComment_ClosesAndReopens (ML-3C ação 4)
+//     Affirms: a line inside a comment that closes with "-->" then reopens with "<!-- … "
+//     without closing (e.g. "a --> b <!-- c") leaves htmlCommentMask in the open state —
+//     the old loop set inComment=false on the first "-->" and never saw the re-opener.
+//
+//   TestHTMLCommentMask_InsideComment_ClosesReopensCloses (ML-3C ação 4)
+//     Affirms: a line inside a comment that closes, reopens, and closes again
+//     ("a --> b <!-- c --> d") leaves htmlCommentMask closed — regression guard that
+//     verifies this case, which already worked, still works after the rewrite.
+//
+//   TestMLStatusMarker_DoubleCommentMasksForgedStatus (ML-3C ação 4)
+//     Affirms: a **Status:** line forged inside a double-comment pattern
+//     ("prose <!-- a --> <!--") is masked by htmlCommentMask and ignored by
+//     MLStatusMarker, so the real status that follows "-->" is returned.
+//
+//   TestHTMLCommentMask_OffsetParityWithStripInlineHTMLComments (ML-3C ação 4)
+//     Affirms: for a line starting outside a comment, htmlCommentMask and
+//     StripInlineHTMLComments agree on whether the line ends open — proving the
+//     +4 offset rule is consistent across both functions for all listed rows.
+//
 // CORPUS MEASUREMENT NOTE (updated by ML-1A of REQ #396):
 //   No specific-number assertion is written; the count is logged only.  The corpus grows with
 //   every merged roadmap; pinning a number here would cause false failures on every merge that
@@ -953,5 +978,183 @@ func TestMLStatusMarker_SingleLineHTMLComment(t *testing.T) {
 	}
 	if marker != "⬜ Pendente" {
 		t.Fatalf("MLStatusMarker = %q, want %q (single-line comment resets state; live status below must be returned)", marker, "⬜ Pendente")
+	}
+}
+
+// ── htmlCommentMask state-machine edge cases — ML-3C ação 4, REQ-2026-10-31 ──
+//
+// AC11 reconciliation (one sentence per test, ML-3C ação 4):
+//
+//   TestHTMLCommentMask_OutsideComment_ClosedSpanThenUnclosed
+//     Affirms: a line that starts outside a comment and contains a closed span
+//     followed by an unclosed "<!--" (e.g. "x <!-- a --> <!-- b") leaves
+//     htmlCommentMask in the open state — the line after it is masked.
+//
+//   TestHTMLCommentMask_InsideComment_ClosesAndReopens
+//     Affirms: a line that starts inside a comment and contains "-->" followed by
+//     a new "<!-- … " that does not close (e.g. "a --> b <!-- c") leaves
+//     htmlCommentMask in the open state — the line after it is also masked.
+//
+//   TestHTMLCommentMask_InsideComment_ClosesReopensCloses
+//     Affirms: a line that starts inside a comment and closes, reopens, and closes
+//     again ("a --> b <!-- c --> d") leaves htmlCommentMask closed — the line after
+//     it is NOT masked (regression guard: this case already worked; must stay working).
+//
+//   TestMLStatusMarker_DoubleCommentMasksForgedStatus
+//     Affirms: a **Status:** line whose column 0 is masked because of a double-comment
+//     pattern on a previous line ("prose <!-- a --> <!--") is ignored by MLStatusMarker,
+//     so the real status that follows after "-->" is returned.
+//
+//   TestHTMLCommentMask_OffsetParityWithStripInlineHTMLComments
+//     Affirms: for a line starting outside a comment, htmlCommentMask agrees with
+//     StripInlineHTMLComments on whether the line ends open (next-line mask == endsOpen),
+//     proving the +4 offset rule is consistent across both functions.
+
+// TestHTMLCommentMask_OutsideComment_ClosedSpanThenUnclosed is Case 1: a line
+// outside a comment with a closed "<!-- … -->" span followed by an unclosed "<!--"
+// must leave the state open so that the following line is masked.
+//
+// AC11 (ML-3C ação 4): "x <!-- a --> <!-- b" ends open; the old loop found "-->",
+// set inComment=false, and missed the second "<!--" — this test bites the old loop.
+func TestHTMLCommentMask_OutsideComment_ClosedSpanThenUnclosed(t *testing.T) {
+	lines := []string{
+		"preamble",           // line 0: no comment, inComment starts false
+		"x <!-- a --> <!-- b", // line 1: closed span then unclosed opener
+		"**Status:** 🔄 masked", // line 2: must be masked
+	}
+	fenced := make([]bool, len(lines))
+	mask := htmlCommentMask(lines, fenced)
+
+	if mask[0] {
+		t.Error("line 0 (preamble): mask=true, want false — no prior comment")
+	}
+	if mask[1] {
+		t.Error("line 1 (partial comment): mask=true, want false — col 0 is outside comment")
+	}
+	if !mask[2] {
+		t.Error("line 2 (after unclosed <!--): mask=false, want true — line 1 opened a comment that did not close")
+	}
+}
+
+// TestHTMLCommentMask_InsideComment_ClosesAndReopens is Case 2: a line that starts
+// inside a comment, closes with "-->", then reopens with "<!-- … " without closing,
+// must leave the state open.
+//
+// AC11 (ML-3C ação 4): "a --> b <!-- c" starting inside a comment ends open; the old
+// loop saw "-->" and set inComment=false, ignoring the second opener — this test bites.
+func TestHTMLCommentMask_InsideComment_ClosesAndReopens(t *testing.T) {
+	lines := []string{
+		"<!--",           // line 0: opens comment; inComment=false at start
+		"a --> b <!-- c", // line 1: closes then reopens; col 0 is masked
+		"next",           // line 2: must be masked (comment reopened on line 1)
+	}
+	fenced := make([]bool, len(lines))
+	mask := htmlCommentMask(lines, fenced)
+
+	if mask[0] {
+		t.Error("line 0 (opener): mask=true, want false — col 0 not in prior comment")
+	}
+	if !mask[1] {
+		t.Error("line 1 (close+reopen): mask=false, want true — col 0 is inside comment from line 0")
+	}
+	if !mask[2] {
+		t.Error("line 2 (after close+reopen): mask=false, want true — comment reopened on line 1 not closed")
+	}
+}
+
+// TestHTMLCommentMask_InsideComment_ClosesReopensCloses is Case 3: a line that starts
+// inside a comment, closes, reopens, and closes again must leave the state closed.
+// This case already worked with the old loop and serves as a regression guard.
+//
+// AC11 (ML-3C ação 4): "a --> b <!-- c --> d" starting inside a comment ends closed;
+// the line after it is not masked — this test is a regression guard (already passes).
+func TestHTMLCommentMask_InsideComment_ClosesReopensCloses(t *testing.T) {
+	lines := []string{
+		"<!--",                  // line 0: opens comment
+		"a --> b <!-- c --> d",  // line 1: closes, reopens, closes; col 0 is masked
+		"next",                  // line 2: must NOT be masked
+	}
+	fenced := make([]bool, len(lines))
+	mask := htmlCommentMask(lines, fenced)
+
+	if mask[0] {
+		t.Error("line 0 (opener): mask=true, want false — col 0 not in prior comment")
+	}
+	if !mask[1] {
+		t.Error("line 1 (close/reopen/close): mask=false, want true — col 0 is inside comment")
+	}
+	if mask[2] {
+		t.Error("line 2 (after full close): mask=true, want false — comment fully closed on line 1")
+	}
+}
+
+// TestMLStatusMarker_DoubleCommentMasksForgedStatus verifies the MLStatusMarker
+// vector: a **Status:** forged inside a double-comment pattern must be masked,
+// and the real status after "-->" must be returned.
+//
+// AC11 (ML-3C ação 4): "prose <!-- a --> <!--" leaves the next line masked; the
+// forged "✅" on that masked line is ignored; the real "⬜ Pendente" after "-->" is
+// returned. Without the state-machine fix, the forged ✅ would be returned instead.
+func TestMLStatusMarker_DoubleCommentMasksForgedStatus(t *testing.T) {
+	content := strings.Join([]string{
+		"### ML-1A — Foo",
+		"prose <!-- a --> <!--",
+		"**Status:** ✅ forged",
+		"-->",
+		"**Status:** ⬜ Pendente",
+	}, "\n")
+	lines := strings.Split(content, "\n")
+	fenced := FenceMask(lines)
+	mls := ParseMLs(lines, fenced, 0, len(lines))
+	if len(mls) == 0 {
+		t.Fatal("no MLs found")
+	}
+	marker, found := MLStatusMarker(lines, fenced, mls[0])
+	if !found {
+		t.Fatal("expected status found=true (real status exists after comment)")
+	}
+	if marker != "⬜ Pendente" {
+		t.Fatalf("MLStatusMarker = %q, want %q — double-comment must mask forged status", marker, "⬜ Pendente")
+	}
+}
+
+// TestHTMLCommentMask_OffsetParityWithStripInlineHTMLComments verifies that for a
+// line starting outside a comment, htmlCommentMask and StripInlineHTMLComments agree
+// on whether the line ends open. This proves the +4 offset rule (search for "-->"
+// only from opener+4 onward) is consistent across both functions.
+//
+// AC11 (ML-3C ação 4): offset parity is the property that makes StripInlineHTMLComments
+// and htmlCommentMask agree on the boundary case (e.g. "<!-->x" is unclosed in both).
+func TestHTMLCommentMask_OffsetParityWithStripInlineHTMLComments(t *testing.T) {
+	cases := []struct {
+		name           string
+		line           string
+		wantNextMasked bool // == endsOpen from StripInlineHTMLComments
+	}{
+		{"unclosed <!--> (> is not -->)", "<!-->"  , true},
+		{"unclosed <!--- > (-> is not -->)", "<!--->"  , true},
+		{"closed span then unclosed (Case 1)", "x <!-- a --> <!-- b", true},
+		{"single closed span", "a <!-- b --> c", false},
+		{"two consecutive closed spans", "<!-- a --><!-- b -->", false},
+		{"stray --> before <!-- ignored", "a --> b <!-- c", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, endsOpen := StripInlineHTMLComments(tc.line)
+			if endsOpen != tc.wantNextMasked {
+				t.Errorf("StripInlineHTMLComments(%q).endsOpen = %v, want %v",
+					tc.line, endsOpen, tc.wantNextMasked)
+			}
+			// Use a 3-line slice: line 0 starts outside comment (no opener),
+			// line 1 is the test line, line 2 is a dummy "x".
+			// mask[2] is true iff line 1 ended with inComment=true.
+			lines := []string{"", tc.line, "x"}
+			fenced := make([]bool, 3)
+			mask := htmlCommentMask(lines, fenced)
+			if mask[2] != tc.wantNextMasked {
+				t.Errorf("htmlCommentMask(%q) → mask[2]=%v, want %v (parity with StripInlineHTMLComments)",
+					tc.line, mask[2], tc.wantNextMasked)
+			}
+		})
 	}
 }
