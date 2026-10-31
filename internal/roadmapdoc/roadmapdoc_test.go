@@ -867,3 +867,91 @@ func TestDuplicateWaveOrMLLabels_FencedExampleIgnored(t *testing.T) {
 		t.Fatalf("DuplicateWaveOrMLLabels = %v for fenced example, want empty (fence-aware)", msgs)
 	}
 }
+
+// ── MLStatusMarker HTML comment masking — AC9, ADR-2026-10-31 ────────────────
+
+// TestMLStatusMarker_StatusInsideMultiLineHTMLComment asserts that MLStatusMarker
+// does NOT return a **Status:** line whose column 0 is inside a multi-line HTML
+// comment block opened on a previous line, even when the comment appears before the
+// live status.
+//
+// AC9 (ML-3B, REQ-2026-10-31): a status marker forged inside <!-- ... --> must not
+// shadow the real status that follows. Without htmlCommentMask the forged 🔄 (which
+// precedes the real ⬜) would be returned, and this test would fail.
+func TestMLStatusMarker_StatusInsideMultiLineHTMLComment(t *testing.T) {
+	content := strings.Join([]string{
+		"### ML-1A — Foo",
+		"<!--",
+		"**Status:** 🔄 Em andamento",
+		"-->",
+		"**Status:** ⬜ Pendente",
+	}, "\n")
+	lines := strings.Split(content, "\n")
+	fenced := FenceMask(lines)
+	mls := ParseMLs(lines, fenced, 0, len(lines))
+	if len(mls) == 0 {
+		t.Fatal("no MLs found")
+	}
+	marker, found := MLStatusMarker(lines, fenced, mls[0])
+	if !found {
+		t.Fatal("expected status found=true (live status exists)")
+	}
+	if marker != "⬜ Pendente" {
+		t.Fatalf("MLStatusMarker = %q, want %q (commented status must not shadow real status)", marker, "⬜ Pendente")
+	}
+}
+
+// TestMLStatusMarker_StatusAfterHTMLComment asserts that MLStatusMarker correctly
+// returns a **Status:** line that appears AFTER the closing --> of an HTML comment.
+//
+// AC9 (ML-3B, REQ-2026-10-31): comment close resets the mask; the real status below
+// the comment is live and must be returned.
+func TestMLStatusMarker_StatusAfterHTMLComment(t *testing.T) {
+	content := strings.Join([]string{
+		"### ML-1A — Foo",
+		"<!--",
+		"**Status:** 🔄 forged",
+		"-->",
+		"**Status:** ✅ Concluído",
+	}, "\n")
+	lines := strings.Split(content, "\n")
+	fenced := FenceMask(lines)
+	mls := ParseMLs(lines, fenced, 0, len(lines))
+	if len(mls) == 0 {
+		t.Fatal("no MLs found")
+	}
+	marker, found := MLStatusMarker(lines, fenced, mls[0])
+	if !found {
+		t.Fatal("expected status found=true (real status after comment exists)")
+	}
+	if marker != "✅ Concluído" {
+		t.Fatalf("MLStatusMarker = %q, want %q (status after comment close must be returned)", marker, "✅ Concluído")
+	}
+}
+
+// TestMLStatusMarker_SingleLineHTMLComment asserts that a single-line HTML comment
+// containing **Status:** does not affect subsequent lines (comment state resets).
+//
+// AC9 (ML-3B, REQ-2026-10-31): opener and closer on the same line; the next line is
+// live. Without correct state reset, the test would return no status or return the
+// in-comment marker.
+func TestMLStatusMarker_SingleLineHTMLComment(t *testing.T) {
+	content := strings.Join([]string{
+		"### ML-1A — Foo",
+		"<!-- **Status:** 🔄 forged -->",
+		"**Status:** ⬜ Pendente",
+	}, "\n")
+	lines := strings.Split(content, "\n")
+	fenced := FenceMask(lines)
+	mls := ParseMLs(lines, fenced, 0, len(lines))
+	if len(mls) == 0 {
+		t.Fatal("no MLs found")
+	}
+	marker, found := MLStatusMarker(lines, fenced, mls[0])
+	if !found {
+		t.Fatal("expected status found=true (real status after single-line comment exists)")
+	}
+	if marker != "⬜ Pendente" {
+		t.Fatalf("MLStatusMarker = %q, want %q (single-line comment resets state; live status below must be returned)", marker, "⬜ Pendente")
+	}
+}

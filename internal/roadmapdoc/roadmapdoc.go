@@ -599,12 +599,18 @@ func ParseMLs(lines []string, fenced []bool, waveStart, waveEnd int) []MLBlock {
 }
 
 // MLStatusMarker returns the trimmed remainder of the ML's "**Status:**" line,
-// if any (rule 3). Lines inside a fenced code block are ignored — a "**Status:**"
-// cited inside a cerca (e.g. as documentation of this very defect) is not the
-// ML's real status (ADR decision 7, AC13-a).
+// if any (rule 3). Lines inside a fenced code block or inside an HTML comment
+// block (<!-- ... -->) are ignored — a "**Status:**" cited inside a cerca or
+// inside an HTML comment is not the ML's real status (ADR decision 7, AC13-a;
+// AC9, ADR-2026-10-31).
+//
+// The htmlCommentMask is computed over the full lines slice so that a comment
+// opened before ml.Start is correctly carried into the ML. Cost is O(len(lines))
+// per call; see htmlCommentMask for the performance note.
 func MLStatusMarker(lines []string, fenced []bool, ml MLBlock) (marker string, found bool) {
+	htmlMask := htmlCommentMask(lines, fenced)
 	for i := ml.Start; i < ml.End; i++ {
-		if fenced[i] {
+		if fenced[i] || htmlMask[i] {
 			continue
 		}
 		if m := StatusLineRe.FindStringSubmatch(lines[i]); m != nil {
@@ -641,14 +647,28 @@ type AcceptanceDetail struct {
 }
 
 // htmlCommentMask returns a boolean slice (same length as lines) where true means the
-// line is inside an HTML comment block (<!-- ... -->). Used only by AcceptanceEvaluateFull
-// to prevent a Caducou: line that happens to appear inside a comment from counting as a
-// valid lapsed continuation. Fenced lines are never considered inside a comment.
+// line's column 0 is inside an HTML comment block (<!-- ... -->). Used by
+// AcceptanceEvaluateFull (Caducou: detection) and MLStatusMarker (status detection)
+// to prevent content inside <!-- ... --> from being treated as real status or criteria.
+// Fenced lines are never considered inside a comment.
 //
-// A line that opens AND closes on the same line (<!-- foo -->) is marked true and the
-// comment state resets, so subsequent lines are unaffected.
-// T4 (HTML [ ] counting) is a pre-existing residual and is NOT fixed here — this mask
-// applies only to the Caducou: detection path.
+// Column-0 semantics: a line is masked only when the comment was opened on a PREVIOUS
+// line (i.e. inComment=true at the start of processing that line). The opening line
+// itself is NOT masked, because StatusLineRe and CriterionLineRe are ^-anchored and
+// a line starting with <!-- can never match them anyway. This avoids masking lines like
+// "- [ ] criterion <!-- note -->" that open and close a comment inline — those lines
+// must still be counted as unmet criteria.
+//
+// Consequence: "  Caducou: x <!-- -->" (Caducou continuation with an inline comment)
+// has mask=false (column 0 not in a prior comment), so AcceptanceEvaluateFull treats
+// it as a valid lapsed continuation. Previously (opener-masked semantics) it was Unmet.
+// This is the correct behaviour: the justification text "x" is present.
+//
+// MLStatusMarker uses this mask to ignore **Status:** lines inside multi-line HTML
+// comments (AC9, ADR-2026-10-31). Performance: O(len(lines)) per MLStatusMarker call,
+// repeated per ML in mlScopeWaveIsStarted. For typical roadmaps (hundreds of lines,
+// tens of MLs) this is acceptable. If it becomes a bottleneck, elevate the mask to
+// the caller.
 func htmlCommentMask(lines []string, fenced []bool) []bool {
 	mask := make([]bool, len(lines))
 	inComment := false
@@ -657,14 +677,20 @@ func htmlCommentMask(lines []string, fenced []bool) []bool {
 			continue
 		}
 		if inComment {
+			// Column 0 is inside a comment opened on a previous line — mask this line.
 			mask[i] = true
 			if strings.Contains(line, "-->") {
 				inComment = false
 			}
-		} else if strings.Contains(line, "<!--") {
-			mask[i] = true
-			if !strings.Contains(line, "-->") {
-				inComment = true
+		} else {
+			// Column 0 is NOT inside a comment. mask[i] stays false.
+			// Update inComment state for subsequent lines based on this line's content.
+			if idx := strings.Index(line, "<!--"); idx >= 0 {
+				// Comment opens on this line. Check if it also closes on this line.
+				after := line[idx+4:]
+				if !strings.Contains(after, "-->") {
+					inComment = true
+				}
 			}
 		}
 	}
@@ -734,6 +760,11 @@ func acceptanceHeader(lines []string, fenced []bool, start, end int) (headerLine
 // anti-vacuity rule as AcceptanceEvaluate).
 //
 // Lines inside a fenced code block are skipped throughout (ADR decision 7, AC13-a).
+// Lines whose column 0 is inside an HTML comment block are also skipped (AC9,
+// ADR-2026-10-31): a "- [x]" inside <!-- ... --> does not count as met, and a
+// "- [ ]" inside a comment does not count as unmet. This closes the T4 residual
+// (previously only Caducou: continuations inside comments were masked; criteria
+// themselves were not). See htmlCommentMask for the column-0 masking semantics.
 func AcceptanceEvaluateFull(lines []string, fenced []bool, ml MLBlock) AcceptanceDetail {
 	detail := AcceptanceDetail{UnrecognizedLines: []int{}}
 
@@ -746,7 +777,7 @@ func AcceptanceEvaluateFull(lines []string, fenced []bool, ml MLBlock) Acceptanc
 
 	total := 0
 	for i := headerLine + 1; i < blockEnd; i++ {
-		if fenced[i] {
+		if fenced[i] || htmlMask[i] {
 			continue
 		}
 		line := lines[i]

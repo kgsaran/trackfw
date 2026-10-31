@@ -56,6 +56,16 @@ package commands
 // | TestMLScope_DiskEditOfWaveStatusDoesNotAmplifyScope/disk_edit | Disk edit marking wave ⬜ as 🔄 does not amplify scope (P-4)                                |
 // | TestMLScope_DiskEditOfWaveStatusDoesNotAmplifyScope/committed | Control: committed 🔄 in HEAD includes wave's file in scope (P-4 control arm)               |
 // | TestMLScopeWaveIsStarted_VS16Variant                          | mlScopeWaveIsStarted returns true for 🔄️ (VS16 emoji variant)                              |
+// ── New tests (ML-3A, REQ-2026-10-31) — AC8, AC10 ───────────────────────────────────────────
+// | TestMLScope_FractionalWave_UnstartedOutOfScope                | Wave "1b" ⬜ above --wave 1: side.go out of scope; with integer cmp side.go would be in scope (AC8 false-negative fix) |
+// | TestMLScope_FractionalWave_UnstartedNoDeclFailure             | Wave "1b" ⬜ with no **Files affected:** above --wave 1: no declFailure (AC8 false-positive fix)                        |
+// | TestMLScope_FractionalWave_StartedInScope                     | Wave "1b" 🔄 above --wave 1: side.go in scope (AC8 started variant)                                                   |
+// | TestMLScope_FractionalWave_LowerWaveHasDeclFailure            | --wave 1b: wave "1" is ≤ N; ML without **Files affected:** in wave "1" gets declFailure (AC8 reverse direction)       |
+// | TestMLScope_BlockedStatusAboveN_InScope                       | Wave 2 above N=1 with only ❌ Bloqueado: wave is started; its file is in scope (AC10, kills M8b)                      |
+// | TestMLScope_TerminatedStatusAboveN_InScope                    | Wave 2 above N=1 with only ❌ Cancelado / 🚫 Abandonado: wave is started; its file is in scope (AC10, kills M8c)      |
+// ── New tests (ML-3B, REQ-2026-10-31) — AC9 ─────────────────────────────────────────────────
+// | TestMLScope_HTMLCommentedStatus_WaveNotStarted                | Wave > N whose only **Status:** is inside <!-- -->: wave is ⬜, file NOT in scope (AC9 scope widening) |
+// | TestMLScope_HTMLCommentedStatus_MLSCompleteBlocked            | ML whose only ✅ is inside <!-- -->: mls_complete blocked (AC9 mls_complete)                        |
 
 import (
 	"encoding/json"
@@ -3350,5 +3360,527 @@ func TestMLScopeWaveIsStarted_VS16Variant(t *testing.T) {
 	wave := waveBlock{Label: "1", Start: 0, End: len(lines)}
 	if !mlScopeWaveIsStarted(lines, fenced, wave) {
 		t.Fatalf("mlScopeWaveIsStarted must return true for 🔄️ (VS16 variant of 🔄 Em andamento)")
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// T34 — AC8: fractional wave labels ordered by CompareWaveLabels, not integer
+// ────────────────────────────────────────────────────────────────────────────
+
+// buildFractionalRoadmap returns a roadmap with Wave 0 ✅, Wave 1 ✅ (wave1.go
+// declared), and Wave 1b in the given status with side.go declared.
+// If wave1bStatus is "" the Wave 1b ML has no **Files affected:** line.
+func buildFractionalRoadmap(wave1bStatus, wave1bFilesAffected string) string {
+	var b strings.Builder
+	b.WriteString("---\nstatus: wip\ndate: 2026-08-01\nreq: \"docs/req/REQ-ml-scope-fixture.md\"\n---\n\n")
+	b.WriteString("# Roadmap: AC8 Fractional Wave Test\n\n## Acceptance Criteria\n- [x] test\n\n")
+	// Wave 0
+	b.WriteString("## Wave 0 — Threat model\n> Dependências: nenhuma.\n\n")
+	b.WriteString("### ML-0A — Threat model\n**Status:** ✅ Concluído\n")
+	b.WriteString("**Files affected:** `docs/seguranca/wave0.md`\n")
+	b.WriteString("**Critérios de aceite:**\n- [x] done\n\n")
+	// Wave 1
+	b.WriteString("## Wave 1 — Implementation\n> Dependências: Wave 0.\n\n")
+	b.WriteString("### ML-1A — Impl\n**Status:** ✅ Concluído\n")
+	b.WriteString("**Files affected:** `wave1.go`\n")
+	b.WriteString("**Critérios de aceite:**\n- [x] done\n\n")
+	// Wave 1b
+	fmt.Fprintf(&b, "## Wave 1b — Corrective\n> Dependências: Wave 1.\n\n")
+	fmt.Fprintf(&b, "### ML-1b-A — Corrective\n**Status:** %s\n", wave1bStatus)
+	if wave1bFilesAffected != "" {
+		fmt.Fprintf(&b, "**Files affected:** %s\n", wave1bFilesAffected)
+	}
+	b.WriteString("**Critérios de aceite:**\n- [ ] pending\n\n")
+	return b.String()
+}
+
+// TestMLScope_FractionalWave_UnstartedOutOfScope asserts that a file declared in
+// wave "1b" ⬜ is OUT of scope for --wave 1, because CompareWaveLabels("1b","1") > 0
+// classifies "1b" as above N and it is not started.
+//
+// Contra-braço: with the integer comparison (waveInt > currentWaveInt ↔ 1 > 1 = false),
+// wave "1b" is never filtered, side.go would be silently in scope, and ml_scope would
+// pass — a false-negative. With CompareWaveLabels the test reproves that path.
+//
+// Reconciliation: AC8 afirma que a wave fracionária ⬜ "1b" está acima de N=1 por
+// CompareWaveLabels e não entra no escopo; com comparação inteira ela entraria.
+func TestMLScope_FractionalWave_UnstartedOutOfScope(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ml_scope uses git commands; windows path handling tested separately")
+	}
+
+	rdmContent := buildFractionalRoadmap("⬜ Pendente", "`side.go`")
+
+	dir := t.TempDir()
+	const rdmRel = "docs/roadmaps/wip/ROADMAP-ml-scope-ac8a.md"
+	dir = mlScopeSetupGitRepo(t, dir, rdmRel, rdmContent)
+	writeMLScopeREQFixture(t, dir, rdmRel)
+
+	env := mlScopeGitEnv(dir)
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add req+adr")
+	mlScopeGitRun(t, dir, env, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+	// Commit side.go — declared only in wave "1b" ⬜, which must be excluded for --wave 1.
+	if err := os.WriteFile(filepath.Join(dir, "side.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write side.go: %v", err)
+	}
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add side.go")
+
+	stdout, _ := mlScopeRunBarrier(t, dir, "ROADMAP-ml-scope-ac8a", "1")
+	check := findMLScopeCheck(t, stdout)
+
+	if check.Status == "skipped" {
+		t.Fatalf("expected ml_scope to run; evidence: %v", check.Evidence)
+	}
+	if check.Status == "passed" {
+		t.Fatalf("expected ml_scope blocked (side.go in wave 1b ⬜ must be out of scope for --wave 1); got passed\nevidence: %v", check.Evidence)
+	}
+	found := false
+	for _, f := range check.Failures {
+		if strings.Contains(f, "side.go") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("side.go must appear in ml_scope failures; got: %v", check.Failures)
+	}
+}
+
+// TestMLScope_FractionalWave_UnstartedNoDeclFailure asserts that a ML in wave "1b" ⬜
+// without a **Files affected:** declaration does NOT produce a declFailure for --wave 1,
+// because CompareWaveLabels("1b","1") > 0 classifies "1b" as above N, and declFailures
+// are only emitted for waves ≤ N.
+//
+// Contra-braço: with the integer comparison (waveInt <= currentWaveInt ↔ 1 <= 1 = true),
+// wave "1b" would be classified as ≤ N and a declFailure would fire for ML-1b-A.
+//
+// Reconciliation: AC8 afirma que ML sem declaração em wave fracionária ⬜ acima de N
+// não gera declFailure; com comparação inteira, geraria.
+func TestMLScope_FractionalWave_UnstartedNoDeclFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ml_scope uses git commands; windows path handling tested separately")
+	}
+
+	// Wave 1b ⬜ with NO **Files affected:** — would trigger declFailure under old code.
+	rdmContent := buildFractionalRoadmap("⬜ Pendente", "" /* no Files affected */)
+
+	dir := t.TempDir()
+	const rdmRel = "docs/roadmaps/wip/ROADMAP-ml-scope-ac8b.md"
+	dir = mlScopeSetupGitRepo(t, dir, rdmRel, rdmContent)
+	writeMLScopeREQFixture(t, dir, rdmRel)
+
+	env := mlScopeGitEnv(dir)
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add req+adr")
+	mlScopeGitRun(t, dir, env, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+	// Commit wave1.go (declared in wave 1 ✅ — definitely in scope).
+	if err := os.WriteFile(filepath.Join(dir, "wave1.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write wave1.go: %v", err)
+	}
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add wave1.go")
+
+	stdout, _ := mlScopeRunBarrier(t, dir, "ROADMAP-ml-scope-ac8b", "1")
+	check := findMLScopeCheck(t, stdout)
+
+	if check.Status == "skipped" {
+		t.Fatalf("expected ml_scope to run; evidence: %v", check.Evidence)
+	}
+	// ml_scope must NOT have a declFailure for ML-1b-A.
+	for _, f := range check.Failures {
+		if strings.Contains(f, "ML-1b-A") && strings.Contains(f, "Files affected") {
+			t.Fatalf("unexpected declFailure for ML-1b-A in wave 1b ⬜ (above N=1); got: %v", check.Failures)
+		}
+	}
+}
+
+// TestMLScope_FractionalWave_StartedInScope asserts that a file declared in wave "1b" 🔄
+// IS in scope for --wave 1, because CompareWaveLabels("1b","1") > 0 but the wave IS
+// started — the started-wave path contributes its patterns to scope.
+//
+// Reconciliation: AC8 afirma que wave fracionária 🔄 acima de N=1 está no escopo
+// (CompareWaveLabels > 0 AND started); side.go deve ser aceito sem falha.
+func TestMLScope_FractionalWave_StartedInScope(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ml_scope uses git commands; windows path handling tested separately")
+	}
+
+	rdmContent := buildFractionalRoadmap("🔄 Em andamento", "`side.go`")
+
+	dir := t.TempDir()
+	const rdmRel = "docs/roadmaps/wip/ROADMAP-ml-scope-ac8c.md"
+	dir = mlScopeSetupGitRepo(t, dir, rdmRel, rdmContent)
+	writeMLScopeREQFixture(t, dir, rdmRel)
+
+	env := mlScopeGitEnv(dir)
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add req+adr")
+	mlScopeGitRun(t, dir, env, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+	// Commit both wave1.go and side.go — both should be in scope.
+	if err := os.WriteFile(filepath.Join(dir, "wave1.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write wave1.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "side.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write side.go: %v", err)
+	}
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add wave1.go side.go")
+
+	stdout, _ := mlScopeRunBarrier(t, dir, "ROADMAP-ml-scope-ac8c", "1")
+	check := findMLScopeCheck(t, stdout)
+
+	if check.Status == "skipped" {
+		t.Fatalf("expected ml_scope to run; evidence: %v", check.Evidence)
+	}
+	if check.Status != "passed" {
+		t.Fatalf("expected ml_scope passed (side.go in wave 1b 🔄 is started above N=1 → in scope); got %q\nfailures: %v",
+			check.Status, check.Failures)
+	}
+}
+
+// TestMLScope_FractionalWave_LowerWaveHasDeclFailure asserts that --wave 1b treats
+// wave "1" as ≤ N (CompareWaveLabels("1","1b") < 0), so a ML in wave "1" without
+// **Files affected:** produces a declFailure.
+//
+// Reconciliation: AC8 afirma que --wave 1b classifica wave "1" como ≤ N e exige
+// declaração; um ML sem declaração nessa wave gera declFailure.
+func TestMLScope_FractionalWave_LowerWaveHasDeclFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ml_scope uses git commands; windows path handling tested separately")
+	}
+
+	// Wave 1 has ML-1A WITHOUT **Files affected:** (will be ≤ N for --wave 1b).
+	// Wave 1b 🔄 has **Files affected:** wave1b.go.
+	var b strings.Builder
+	b.WriteString("---\nstatus: wip\ndate: 2026-08-01\nreq: \"docs/req/REQ-ml-scope-fixture.md\"\n---\n\n")
+	b.WriteString("# Roadmap: AC8 Reverse Direction Test\n\n## Acceptance Criteria\n- [x] test\n\n")
+	b.WriteString("## Wave 0 — Threat model\n> Dependências: nenhuma.\n\n")
+	b.WriteString("### ML-0A — Threat model\n**Status:** ✅ Concluído\n")
+	b.WriteString("**Files affected:** `docs/seguranca/wave0.md`\n")
+	b.WriteString("**Critérios de aceite:**\n- [x] done\n\n")
+	// Wave 1 — ≤ N for --wave 1b, ML without declaration
+	b.WriteString("## Wave 1 — Implementation\n> Dependências: Wave 0.\n\n")
+	b.WriteString("### ML-1A — Impl\n**Status:** ✅ Concluído\n")
+	// NO **Files affected:** line — should trigger declFailure under --wave 1b
+	b.WriteString("**Critérios de aceite:**\n- [x] done\n\n")
+	// Wave 1b — the target wave
+	b.WriteString("## Wave 1b — Corrective\n> Dependências: Wave 1.\n\n")
+	b.WriteString("### ML-1b-A — Corrective\n**Status:** 🔄 Em andamento\n")
+	b.WriteString("**Files affected:** `wave1b.go`\n")
+	b.WriteString("**Critérios de aceite:**\n- [ ] pending\n\n")
+	rdmContent := b.String()
+
+	dir := t.TempDir()
+	const rdmRel = "docs/roadmaps/wip/ROADMAP-ml-scope-ac8d.md"
+	dir = mlScopeSetupGitRepo(t, dir, rdmRel, rdmContent)
+	writeMLScopeREQFixture(t, dir, rdmRel)
+
+	env := mlScopeGitEnv(dir)
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add req+adr")
+	mlScopeGitRun(t, dir, env, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+	// Commit wave1b.go (in scope via wave 1b 🔄).
+	if err := os.WriteFile(filepath.Join(dir, "wave1b.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write wave1b.go: %v", err)
+	}
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add wave1b.go")
+
+	stdout, _ := mlScopeRunBarrier(t, dir, "ROADMAP-ml-scope-ac8d", "1b")
+	check := findMLScopeCheck(t, stdout)
+
+	if check.Status == "skipped" {
+		t.Fatalf("expected ml_scope to run; evidence: %v", check.Evidence)
+	}
+	// ml_scope must have a declFailure for ML-1A (wave "1" ≤ N for --wave 1b).
+	found := false
+	for _, f := range check.Failures {
+		if strings.Contains(f, "ML-1A") && strings.Contains(f, "Files affected") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected declFailure for ML-1A (wave 1 is ≤ N for --wave 1b); got failures: %v", check.Failures)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// T35 — AC10: ❌ Bloqueado and ❌ Cancelado / 🚫 Abandonado above N
+// ────────────────────────────────────────────────────────────────────────────
+
+// buildHTMLCommentStatusRoadmap returns a roadmap with Wave 0 ✅, Wave 1 ✅ (wave1.go),
+// Wave 2 where the ML's **Status:** line appears only inside an HTML comment block
+// (so the live status is missing → ⬜ fail-safe), and wave2.go is declared.
+// For the mls_complete test the live status of wave 1 ML can be suppressed via the
+// wave1Status parameter.
+func buildHTMLCommentStatusRoadmap(wave2Status, wave1Status string) string {
+	var b strings.Builder
+	b.WriteString("---\nstatus: wip\ndate: 2026-08-01\nreq: \"docs/req/REQ-ml-scope-fixture.md\"\n---\n\n")
+	b.WriteString("# Roadmap: AC9 HTML Comment Status Test\n\n## Acceptance Criteria\n- [x] test\n\n")
+	b.WriteString("## Wave 0 — Threat model\n> Dependências: nenhuma.\n\n")
+	b.WriteString("### ML-0A — Threat model\n**Status:** ✅ Concluído\n")
+	b.WriteString("**Files affected:** `docs/seguranca/wave0.md`\n")
+	b.WriteString("**Critérios de aceite:**\n- [x] done\n\n")
+	b.WriteString("## Wave 1 — Implementation\n> Dependências: Wave 0.\n\n")
+	// Wave 1: ML-1A with configurable live status (or all status inside comment).
+	if wave1Status == "comment" {
+		b.WriteString("### ML-1A — Impl\n<!--\n**Status:** ✅ Concluído\n-->\n")
+	} else {
+		fmt.Fprintf(&b, "### ML-1A — Impl\n**Status:** %s\n", wave1Status)
+	}
+	b.WriteString("**Files affected:** `wave1.go`\n")
+	b.WriteString("**Critérios de aceite:**\n- [x] done\n\n")
+	// Wave 2: **Status:** inside HTML comment only; real status is missing (⬜ fail-safe).
+	b.WriteString("## Wave 2 — Red team\n> Dependências: Wave 1.\n\n")
+	fmt.Fprintf(&b, "### ML-2A — Check\n<!--\n**Status:** %s\n-->\n", wave2Status)
+	b.WriteString("**Files affected:** `wave2.go`\n")
+	b.WriteString("**Critérios de aceite:**\n- [ ] pending\n\n")
+	return b.String()
+}
+
+// buildBlockedStatusRoadmap returns a roadmap with Wave 0 ✅, Wave 1 ✅ (wave1.go),
+// Wave 2 with only one ML in the given status and wave2.go declared.
+func buildBlockedStatusRoadmap(wave2Status string) string {
+	var b strings.Builder
+	b.WriteString("---\nstatus: wip\ndate: 2026-08-01\nreq: \"docs/req/REQ-ml-scope-fixture.md\"\n---\n\n")
+	b.WriteString("# Roadmap: AC10 Status Test\n\n## Acceptance Criteria\n- [x] test\n\n")
+	b.WriteString("## Wave 0 — Threat model\n> Dependências: nenhuma.\n\n")
+	b.WriteString("### ML-0A — Threat model\n**Status:** ✅ Concluído\n")
+	b.WriteString("**Files affected:** `docs/seguranca/wave0.md`\n")
+	b.WriteString("**Critérios de aceite:**\n- [x] done\n\n")
+	b.WriteString("## Wave 1 — Implementation\n> Dependências: Wave 0.\n\n")
+	b.WriteString("### ML-1A — Impl\n**Status:** ✅ Concluído\n")
+	b.WriteString("**Files affected:** `wave1.go`\n")
+	b.WriteString("**Critérios de aceite:**\n- [x] done\n\n")
+	fmt.Fprintf(&b, "## Wave 2 — Red team\n> Dependências: Wave 1.\n\n")
+	fmt.Fprintf(&b, "### ML-2A — Check\n**Status:** %s\n", wave2Status)
+	b.WriteString("**Files affected:** `wave2.go`\n")
+	b.WriteString("**Critérios de aceite:**\n- [ ] pending\n\n")
+	return b.String()
+}
+
+// TestMLScope_BlockedStatusAboveN_InScope asserts that a wave above N=1 containing
+// only a ML with status "❌ Bloqueado" is treated as started (first token ❌ in a
+// StatusPending ML), and its declared file is in scope for --wave 1.
+//
+// Kills M8b: removing ❌ from the token set in mlScopeWaveIsStarted makes the wave
+// unstarted, so wave2.go would be out of scope and this test fails.
+//
+// Reconciliation: AC10 afirma que ❌ Bloqueado acima de N inicia a wave; wave2.go
+// deve estar em escopo (matar M8b).
+func TestMLScope_BlockedStatusAboveN_InScope(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ml_scope uses git commands; windows path handling tested separately")
+	}
+
+	rdmContent := buildBlockedStatusRoadmap("❌ Bloqueado")
+
+	dir := t.TempDir()
+	const rdmRel = "docs/roadmaps/wip/ROADMAP-ml-scope-ac10a.md"
+	dir = mlScopeSetupGitRepo(t, dir, rdmRel, rdmContent)
+	writeMLScopeREQFixture(t, dir, rdmRel)
+
+	env := mlScopeGitEnv(dir)
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add req+adr")
+	mlScopeGitRun(t, dir, env, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+	// Commit wave1.go (in scope via wave 1 ✅) and wave2.go (in scope via wave 2 ❌ Bloqueado).
+	if err := os.WriteFile(filepath.Join(dir, "wave1.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write wave1.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "wave2.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write wave2.go: %v", err)
+	}
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add wave1.go wave2.go")
+
+	stdout, _ := mlScopeRunBarrier(t, dir, "ROADMAP-ml-scope-ac10a", "1")
+	check := findMLScopeCheck(t, stdout)
+
+	if check.Status == "skipped" {
+		t.Fatalf("expected ml_scope to run; evidence: %v", check.Evidence)
+	}
+	if check.Status != "passed" {
+		t.Fatalf("expected ml_scope passed (wave2.go in wave 2 ❌ Bloqueado → started → in scope); got %q\nfailures: %v",
+			check.Status, check.Failures)
+	}
+}
+
+// TestMLScope_TerminatedStatusAboveN_InScope asserts that a wave above N=1 containing
+// only a ML with terminated status (❌ Cancelado or 🚫 Abandonado) is treated as
+// started (StatusTerminated), and its declared file is in scope for --wave 1.
+//
+// Kills M8c: removing the StatusTerminated branch in mlScopeWaveIsStarted makes the
+// wave unstarted, so wave2.go would be out of scope and this test fails.
+//
+// Reconciliation: AC10 afirma que ❌ Cancelado e 🚫 Abandonado acima de N iniciam a
+// wave; wave2.go deve estar em escopo (matar M8c).
+func TestMLScope_TerminatedStatusAboveN_InScope(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ml_scope uses git commands; windows path handling tested separately")
+	}
+
+	for _, status := range []string{"❌ Cancelado", "🚫 Abandonado"} {
+		status := status
+		t.Run(status, func(t *testing.T) {
+			rdmContent := buildBlockedStatusRoadmap(status)
+
+			dir := t.TempDir()
+			rdmRel := "docs/roadmaps/wip/ROADMAP-ml-scope-ac10b-" + strings.ReplaceAll(status, " ", "-") + ".md"
+			dir = mlScopeSetupGitRepo(t, dir, rdmRel, rdmContent)
+			writeMLScopeREQFixture(t, dir, rdmRel)
+
+			env := mlScopeGitEnv(dir)
+			mlScopeGitRun(t, dir, env, "add", ".")
+			mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add req+adr")
+			mlScopeGitRun(t, dir, env, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+			// Commit wave1.go and wave2.go — both should be in scope.
+			if err := os.WriteFile(filepath.Join(dir, "wave1.go"), []byte("package main\n"), 0644); err != nil {
+				t.Fatalf("write wave1.go: %v", err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "wave2.go"), []byte("package main\n"), 0644); err != nil {
+				t.Fatalf("write wave2.go: %v", err)
+			}
+			mlScopeGitRun(t, dir, env, "add", ".")
+			mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add wave1.go wave2.go")
+
+			// Use the basename of the roadmap file (without .md) as the argument.
+			rdmBasename := strings.TrimSuffix(filepath.Base(rdmRel), ".md")
+			stdout, _ := mlScopeRunBarrier(t, dir, rdmBasename, "1")
+			check := findMLScopeCheck(t, stdout)
+
+			if check.Status == "skipped" {
+				t.Fatalf("expected ml_scope to run; evidence: %v", check.Evidence)
+			}
+			if check.Status != "passed" {
+				t.Fatalf("expected ml_scope passed (wave2.go in wave 2 %q → started → in scope); got %q\nfailures: %v",
+					status, check.Status, check.Failures)
+			}
+		})
+	}
+}
+
+// TestMLScope_HTMLCommentedStatus_WaveNotStarted asserts that a wave above N=1 whose
+// only **Status:** line is inside an HTML comment block is treated as not started
+// (live status = missing → fail-safe ⬜), so its declared file is NOT in scope for
+// --wave 1.
+//
+// Contra-braço: without htmlCommentMask in MLStatusMarker the commented status
+// would be visible as 🔄, the wave would be considered started, and wave2.go would
+// be in scope — a scope-widening false-negative. With the mask this test reproves
+// that path.
+//
+// Reconciliation: AC9 afirma que **Status:** dentro de comentário HTML não inicia
+// a wave; wave2.go deve estar fora de escopo.
+func TestMLScope_HTMLCommentedStatus_WaveNotStarted(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ml_scope uses git commands; windows path handling tested separately")
+	}
+
+	// Wave 2 has "**Status:** 🔄 Em andamento" only inside <!-- -->; live status is missing.
+	rdmContent := buildHTMLCommentStatusRoadmap("🔄 Em andamento", "✅ Concluído")
+
+	dir := t.TempDir()
+	const rdmRel = "docs/roadmaps/wip/ROADMAP-ml-scope-ac9a.md"
+	dir = mlScopeSetupGitRepo(t, dir, rdmRel, rdmContent)
+	writeMLScopeREQFixture(t, dir, rdmRel)
+
+	env := mlScopeGitEnv(dir)
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add req+adr")
+	mlScopeGitRun(t, dir, env, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+	// Commit wave2.go — declared only in wave 2 whose status is inside a comment.
+	if err := os.WriteFile(filepath.Join(dir, "wave2.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write wave2.go: %v", err)
+	}
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add wave2.go")
+
+	stdout, _ := mlScopeRunBarrier(t, dir, "ROADMAP-ml-scope-ac9a", "1")
+	check := findMLScopeCheck(t, stdout)
+
+	if check.Status == "skipped" {
+		t.Fatalf("expected ml_scope to run; evidence: %v", check.Evidence)
+	}
+	if check.Status == "passed" {
+		t.Fatalf("expected ml_scope blocked (wave2.go in wave 2 whose status is inside HTML comment → wave not started → out of scope); got passed\nevidence: %v", check.Evidence)
+	}
+	found := false
+	for _, f := range check.Failures {
+		if strings.Contains(f, "wave2.go") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("wave2.go must appear in ml_scope failures (out of scope); got: %v", check.Failures)
+	}
+}
+
+// TestMLScope_HTMLCommentedStatus_MLSCompleteBlocked asserts that mls_complete is
+// blocked when an ML's only ✅ marker is inside an HTML comment block — the live
+// status is missing (fail-safe ⬜) so the check fails.
+//
+// Contra-braço: without htmlCommentMask in MLStatusMarker the commented ✅ would
+// satisfy mls_complete and the check would pass — a false-pass.
+//
+// Reconciliation: AC9 afirma que ✅ dentro de comentário HTML não satisfaz
+// mls_complete; o check deve ficar blocked.
+func TestMLScope_HTMLCommentedStatus_MLSCompleteBlocked(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ml_scope uses git commands; windows path handling tested separately")
+	}
+
+	// Wave 1: ML-1A has its ✅ only inside a comment; live status is missing.
+	rdmContent := buildHTMLCommentStatusRoadmap("🔄 Em andamento", "comment")
+
+	dir := t.TempDir()
+	const rdmRel = "docs/roadmaps/wip/ROADMAP-ml-scope-ac9b.md"
+	dir = mlScopeSetupGitRepo(t, dir, rdmRel, rdmContent)
+	writeMLScopeREQFixture(t, dir, rdmRel)
+
+	env := mlScopeGitEnv(dir)
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add req+adr")
+	mlScopeGitRun(t, dir, env, "update-ref", "refs/remotes/origin/main", "HEAD")
+
+	// Commit wave1.go — it's in scope but mls_complete must fail because ML-1A has no live ✅.
+	if err := os.WriteFile(filepath.Join(dir, "wave1.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write wave1.go: %v", err)
+	}
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "add wave1.go")
+
+	stdout, _ := mlScopeRunBarrier(t, dir, "ROADMAP-ml-scope-ac9b", "1")
+
+	// Parse all checks to find mls_complete.
+	var result struct {
+		Checks []barrierCheck `json:"checks"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+		t.Fatalf("json.Unmarshal barrier output: %v\nstdout: %s", err, stdout)
+	}
+	var mlsCheck *barrierCheck
+	for i := range result.Checks {
+		if result.Checks[i].Name == "mls_complete" {
+			mlsCheck = &result.Checks[i]
+			break
+		}
+	}
+	if mlsCheck == nil {
+		t.Fatalf("mls_complete check not found in barrier output; checks: %v", result.Checks)
+	}
+	if mlsCheck.Status == "passed" {
+		t.Fatalf("expected mls_complete blocked (ML-1A has ✅ only inside HTML comment → missing live status); got passed\nevidence: %v", mlsCheck.Evidence)
 	}
 }

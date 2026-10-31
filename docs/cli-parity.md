@@ -2877,22 +2877,28 @@ These are literal parsing rules. The binary implements them.
    regex failed to match CRLF lines. Go's RE2 `.` includes `\r`; comparisons go through
    `strings.TrimSpace`. In v8 the Go implementation applies the same stripping.)
 
-3. **ML completion.** An ML is complete when its body contains a line, **at column 0 and
-   outside any fenced code block**, matching `^\*\*Status:\*\*`, and the **first whitespace-
-   delimited token** of the remainder — after Unicode NFD normalization and combining-mark
-   stripping (diacritics folded) and case-folding — is one of the closed vocabulary
-   `✅` / `done` / `concluído` (ADR-2026-08-29, decision 3). This replaced substring matching
-   (`contains(marker, "✅")`) precisely because substring accepted `**Status:** ⬜ Pendente ✅`
-   as complete — see "Contrato gerador↔`barrier`" below for the full rule and its history.
-   Any other first token (`⬜`, `🔄`, `❌`, or any word outside the closed vocabulary) is
-   incomplete. Absence of a `**Status:**` line at column 0 outside a fence is incomplete.
-4. **Acceptance evidence.** Inside an ML, the acceptance block starts at a line, **at column 0
-   and outside any fenced code block**, matching `^\*\*(?:Acceptance criteria|Crit[eé]rios de
-   aceite):\*\*` — both the English and the Portuguese header are accepted (ADR-2026-08-29,
-   decisions 1–2; English is canonical, Portuguese has no removal date) — and ends at the next
-   `^\*\*` line or at the ML boundary. Every line in that block matching `^- \[ \]` is unmet
-   evidence. The ML has evidence only when the block exists, is non-empty, and contains zero
-   `- [ ]` lines. **An ML with no acceptance block at all is `blocked`, not vacuously passed.**
+3. **ML completion.** An ML is complete when its body contains a line, **at column 0,
+   outside any fenced code block, and outside any HTML comment block (`<!-- … -->`)**,
+   matching `^\*\*Status:\*\*`, and the **first whitespace-delimited token** of the remainder
+   — after Unicode NFD normalization and combining-mark stripping (diacritics folded) and
+   case-folding — is one of the closed vocabulary `✅` / `done` / `concluído` (ADR-2026-08-29,
+   decision 3). This replaced substring matching (`contains(marker, "✅")`) precisely because
+   substring accepted `**Status:** ⬜ Pendente ✅` as complete — see "Contrato gerador↔`barrier`"
+   below for the full rule and its history. Any other first token (`⬜`, `🔄`, `❌`, or any word
+   outside the closed vocabulary) is incomplete. Absence of a `**Status:**` line at column 0
+   outside a fence and outside an HTML comment is incomplete. A `**Status:**` forged inside
+   `<!-- … -->` is invisible to this rule — it cannot satisfy `mls_complete` or initiate a wave
+   for `ml_scope` (AC9, ADR-2026-10-31).
+4. **Acceptance evidence.** Inside an ML, the acceptance block starts at a line, **at column 0,
+   outside any fenced code block, and outside any HTML comment block (`<!-- … -->`)**, matching
+   `^\*\*(?:Acceptance criteria|Crit[eé]rios de aceite):\*\*` — both the English and the
+   Portuguese header are accepted (ADR-2026-08-29, decisions 1–2; English is canonical,
+   Portuguese has no removal date) — and ends at the next `^\*\*` line or at the ML boundary.
+   Every line in that block matching `^- \[ \]` is unmet evidence. The ML has evidence only
+   when the block exists, is non-empty, and contains zero `- [ ]` lines outside fences and
+   outside HTML comments. **An ML with no acceptance block at all is `blocked`, not vacuously
+   passed.** A `- [x]` criterion forged inside `<!-- … -->` is not counted as Met (AC9,
+   ADR-2026-10-31; closes the T4 residual from REQ-2026-08-29).
 5. **Wave gates.** Gates are declared per wave by a `**Gates da wave:**` line followed by a
    fenced ```` ```bash ```` block. Each non-empty, non-comment line in that block is one gate
    command, executed from the repository root, in declaration order.
@@ -3077,11 +3083,16 @@ de status, ao ser ampliado para aceitar palavras além de um único emoji, teria
 discriminante: `⬜`, `não` e `pending` não são marcadores, não importa o que vier depois na
 linha.
 
-**3. Consciência de cerca de código — as quatro leituras (ADR-2026-08-29, decisão 7;
-estendida pela #470).** `waveHeadingRe` (com a varredura de fim de bloco), `mlHeadingRe`,
-`statusLineRe` e `criteriaHeaderRe`/`unmetCriterionRe` ignoram qualquer linha dentro de um
-bloco cercado ao procurar, respectivamente, o heading real de uma wave, o heading real de um
-ML, a linha real de `**Status:**`, e o bloco real de aceite.
+**3. Consciência de cerca de código e de comentário HTML — as quatro leituras (ADR-2026-08-29,
+decisão 7; estendida pela #470; HTML comment masking adicionado por AC9, ADR-2026-10-31).**
+`waveHeadingRe` (com a varredura de fim de bloco), `mlHeadingRe`, `statusLineRe` e
+`criteriaHeaderRe`/`unmetCriterionRe` ignoram qualquer linha dentro de um bloco cercado ao
+procurar, respectivamente, o heading real de uma wave, o heading real de um ML, a linha real
+de `**Status:**`, e o bloco real de aceite. Adicionalmente, `statusLineRe` e
+`unmetCriterionRe` também ignoram linhas cujo **coluna 0 está dentro de um bloco de comentário
+HTML** (`<!-- … -->`): uma linha que abre o comentário (contém `<!--`) NÃO é mascarada, mas
+todas as linhas seguintes até o fechamento (`-->`) são. Isso impede que um `**Status:** 🔄`
+ou `- [x]` dentro de `<!-- … -->` forje o status ou o aceite de um ML real (AC9, ADR-2026-10-31).
 
 🔴 **A leitura de wave entrou depois, e por medição.** A decisão 7 original cobria três
 leituras; o comentário de `HasWave0` no Go declarava por escrito que deixar a wave de fora era
@@ -3196,7 +3207,7 @@ The `ml_scope` check verifies that every file touched by the current branch is c
 
 - **Roadmap from HEAD, not disk.** `git show HEAD:<roadmap>` is used to read the `**Files affected:**` lines. An uncommitted disk edit cannot expand scope. A roadmap not yet committed results in `skipped`.
 - **Touched files.** `git diff --name-only -z $(git merge-base origin/main HEAD) HEAD --no-renames` (committed changes, both sides of renames listed separately) plus `git status --porcelain=v1 -z --untracked-files=all --no-renames` (modified, staged, untracked), excluding gitignored files.
-- **Wave N scope.** The union of `**Files affected:**` from every ML in waves 0..N of the target roadmap, plus every ML in any started wave above N of the target roadmap (ADR-2026-10-31 D1; wave ⬜ is never included regardless of position), plus the union contribution from every roadmap member (see Union below). `**Files affected:**` is required only for waves 0..N; a missing declaration in a started wave above N does not block the barrier of wave N.
+- **Wave N scope.** The union of `**Files affected:**` from every ML in waves 0..N of the target roadmap, plus every ML in any started wave above N of the target roadmap (ADR-2026-10-31 D1; wave ⬜ is never included regardless of position), plus the union contribution from every roadmap member (see Union below). `**Files affected:**` is required only for waves 0..N; a missing declaration in a started wave above N does not block the barrier of wave N. **"Above N" is determined by `CompareWaveLabels` (see "Wave label grammar" below), not by the integer part alone.** This means fractional labels are ordered correctly: `1 < 1b < 2`, so wave `1b` ⬜ is above N=1 and is excluded from scope; wave `1b` 🔄 is above N=1 but started and is included. With `--wave 1b`, wave `1` is ≤ N and requires declarations (AC8).
 - **Orchestration set (always permitted).** The roadmap file itself; the REQ from frontmatter `req:`; the ADR from the REQ's frontmatter `adr:`; `docs/agents-working-context/`; `vault/notes/`; `.claude/agent-memory/`; `<roadmap_dir>/.trackfw-log`; `<roadmap_dir>/.trackfw-log-entries/`; `<req_dir>/.trackfw-log`; `<req_dir>/.trackfw-log-entries/`. The roadmap counts as orchestration in every state directory of `roadmap_dir` with the same basename (`backlog/`, `analyzing/`, `wip/`, `blocked/`, `done/`, `abandoned/`), so a roadmap moved between states in the branch (e.g. `done/` → `wip/` on reopen) does not produce a spurious out-of-scope failure for the deleted old-state path.
 
 #### `**Files affected:**` grammar

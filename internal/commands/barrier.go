@@ -1074,8 +1074,10 @@ func buildMLScopeOrchestrationSet(topLevel, roadmapRelPath, headContent string, 
 // checkMLScope is the D2 barrier check (ML-2A, REQ-2026-10-23). It reads the
 // roadmap from HEAD (not disk), collects all touched files since origin/main, and
 // verifies that each is within the scope declared by **Files affected:** in all
-// MLs of waves 0..currentWaveInt plus every started wave above currentWaveInt
-// (ADR-2026-10-31 D1), plus the fixed orchestration set.
+// MLs of waves 0..N plus every started wave above N, where "above N" is determined
+// by roadmapdoc.CompareWaveLabels (supports fractional labels like "1b"; "1b" > "1"
+// so wave "1b" ⬜ is never in scope for --wave 1, ADR-2026-10-31 D1 + AC8),
+// plus the fixed orchestration set.
 //
 // Returned status values:
 //
@@ -1088,7 +1090,7 @@ func buildMLScopeOrchestrationSet(topLevel, roadmapRelPath, headContent string, 
 //	"skipped" — the check is not applicable: not a git repo, roadmap not in HEAD,
 //	            or pre-cutoff roadmap date. The skip reason is recorded in Evidence.
 //	            A skipped check does NOT block the overall barrier verdict.
-func checkMLScope(roadmapPath string, currentWaveInt int) barrierCheck {
+func checkMLScope(roadmapPath string, currentWaveLabel string) barrierCheck {
 	check := barrierCheck{Name: "ml_scope", Evidence: []string{}, Failures: []string{}}
 
 	dir := filepath.Dir(roadmapPath)
@@ -1175,8 +1177,11 @@ func checkMLScope(roadmapPath string, currentWaveInt int) barrierCheck {
 	// Step 8: build the fixed orchestration set.
 	orchestration := buildMLScopeOrchestrationSet(topLevel, relPath, string(headContent), cfg)
 
-	// Step 9: collect scope patterns from all MLs in waves 0..currentWaveInt plus
-	// every started wave above currentWaveInt (ADR-2026-10-31 D1).
+	// Step 9: collect scope patterns from all MLs in waves 0..N plus every started
+	// wave above N (ADR-2026-10-31 D1). "Above N" is determined by
+	// roadmapdoc.CompareWaveLabels, which respects fractional labels: for --wave 1,
+	// wave "1b" is above N (CompareWaveLabels("1b","1") > 0), so wave "1b" ⬜ is
+	// excluded even though its integer part equals 1 (AC8, ADR-2026-10-31 D1).
 	// declFailures (missing **Files affected:**) are only emitted for waves 0..N;
 	// a missing declaration in a started wave above N does not block the barrier of
 	// wave N (it is checked when that wave's own barrier runs).
@@ -1195,15 +1200,14 @@ func checkMLScope(roadmapPath string, currentWaveInt int) barrierCheck {
 		}
 	}
 	for _, wave := range headWaves {
-		waveInt, _ := splitWaveLabel(wave.Label)
-		if waveInt > currentWaveInt && !mlScopeWaveIsStarted(headLines, headFenced, wave) {
+		if roadmapdoc.CompareWaveLabels(wave.Label, currentWaveLabel) > 0 && !mlScopeWaveIsStarted(headLines, headFenced, wave) {
 			continue // wave above N and not started: excluded from scope
 		}
 		mls := parseMLs(headLines, headFenced, wave.Start, wave.End)
 		for _, ml := range mls {
 			patterns, hasDecl := parseMLScopeFilesAffected(headLines, headFenced, ml.Start, ml.End)
 			if !hasDecl {
-				if waveInt <= currentWaveInt {
+				if roadmapdoc.CompareWaveLabels(wave.Label, currentWaveLabel) <= 0 {
 					declFailures = append(declFailures,
 						fmt.Sprintf("%s: no **Files affected:** declaration (post-cutoff roadmap requires declaration for all MLs in the wave)", ml.ID))
 				}
@@ -1711,9 +1715,10 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveLabel string, jsonOut
 	// D2 (ML-2A, REQ-2026-10-23; ADR-2026-10-31 D1): verify that files touched
 	// since origin/main are within the scope declared by **Files affected:** for
 	// waves 0..N plus every started wave above N.
-	// currentWaveInt is the integer part of target.Label (the as-parsed label).
-	currentWaveInt, _ := splitWaveLabel(target.Label)
-	scopeCheck := checkMLScope(roadmapPath, currentWaveInt)
+	// currentWaveLabel is the wave label string (e.g. "1", "1b") used by checkMLScope
+	// to compare wave labels with roadmapdoc.CompareWaveLabels, which correctly orders
+	// fractional labels: "1" < "1b" < "2" (AC8, ADR-2026-10-31 D1).
+	scopeCheck := checkMLScope(roadmapPath, target.Label)
 
 	checks := []barrierCheck{whCheck, mlsCheck, accCheck, gatesCheck, validateCheck, scopeCheck}
 	overallStatus := "passed"
