@@ -55,37 +55,37 @@ grep -q 'Prescrições' docs/seguranca/2026-10-31-wave0-debitos-de-higiene.md
 > Dependencies: Wave 0 auditada.
 
 ### ML-1A — `release tag` confere o `package-lock` (apolo-tf) — AC1
-**Status:** 🔄 Em andamento
-**Files affected:** `internal/commands/release.go`, `internal/commands/release_test.go`, `docs/cli-parity.md`
+**Status:** ✅ Concluído — auditado em 2026-10-31. Duas entradas novas em `releaseVersionFiles` (raiz e `packages[""]` do lockfile); lockfile sem `packages[""]` falha fechado; ajuda e `cli-parity.md` dizem 5 arquivos / 7 conferências. A fixture de `scripts/check-release-tag-parity.sh` ganhou o lockfile (arquivo acrescentado ao escopo); o script passa (rodado pelo arquiteto). 3 subtestes novos conferidos pelo nome; contra-braço: sem as entradas, reprovam.
+**Files affected:** `internal/commands/release.go`, `internal/commands/release_test.go`, `scripts/check-release-tag-parity.sh`, `docs/cli-parity.md`
 **Actions:**
 1. `releaseVersionFiles` ganha `npm/package-lock.json` (raiz e `packages[""]`), com extrator próprio.
 2. A ajuda do `release tag` diz o número real de arquivos.
 3. Prescrições da Wave 0.
 **Acceptance criteria:**
-- [ ] AC1 da REQ; contra-braço: sem a entrada nova, o teste de lockfile divergente reprova
-- [ ] pacote `internal/commands` verde
+- [x] AC1 da REQ; contra-braço: sem a entrada nova, o teste de lockfile divergente reprova
+- [x] pacote `internal/commands` verde
 
 ### ML-1B — `InstallGates` e hooks do husky aplicam o bit de execução (apolo-tf) — AC2, AC2b
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-31. `os.Chmod(…, 0755)` depois da escrita em `writeValidateScript` e nos dois hooks do husky. 3 testes novos conferidos pelo nome; contra-braço por sítio: sem o `Chmod`, o teste correspondente vê `0644`.
 **Files affected:** `internal/discover/discover.go`, `internal/discover/discover_test.go`, `internal/generators/scaffold.go`, `internal/generators/scaffold_test.go`
 **Actions:**
 1. Depois de gravar `scripts/trackfw-validate.sh`, aplicar o modo como os outros pontos de escrita (mesmo helper, se existir).
 2. O mesmo nos dois hooks do husky em `scaffold.go` (AC2b).
 3. Testes: arquivo pré-existente com `0644` fica executável, nos três sítios; no Windows, os testes pulam.
 **Acceptance criteria:**
-- [ ] AC2 e AC2b da REQ; contra-braço: sem o `Chmod`, os testes reprovam
-- [ ] pacotes `internal/discover` e `internal/generators` verdes
+- [x] AC2 e AC2b da REQ; contra-braço: sem o `Chmod`, os testes reprovam
+- [x] pacotes `internal/discover` e `internal/generators` verdes
 
 ### ML-1C — `agent_models` e o relatório do `update harness` (apolo-tf) — AC3
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-31. Pré-varredura dos ids em `UpdateHarness`: com destino do catálogo, `ResolveAgentModels` roda uma vez e a mensagem sai uma vez por `UpdateOptions.ErrWriter` (ligado a `cmd.ErrOrStderr()`); `harnessCatalogTarget` recebe os modelos por parâmetro. 2 testes novos conferidos pelo nome. Contra-braços: sem a pré-varredura, o de N destinos vê 0 mensagens; forçando a varredura verdadeira (medido pelo arquiteto, a mutação do executor não compilava), o de destinos fora do catálogo reprova.
 **Files affected:** `internal/generators/update.go`, `internal/generators/update_test.go`, `internal/commands/update_harness.go`, `internal/commands/update_harness_test.go`, `docs/cli-parity.md`
 **Actions:**
 1. A mensagem de `agent_models` global sai uma vez por execução do `update harness`, antes do laço, só se houver destino do catálogo (pré-varredura dos ids, P-3 do parecer); `harnessCatalogTarget` recebe os modelos resolvidos por parâmetro.
 2. `UpdateOptions` ganha escritor de erro, ligado ao `cmd.ErrOrStderr()` no comando, para o teste capturar a mensagem.
 3. Testes: N destinos do catálogo → 1 mensagem; só destinos fora do catálogo → 0.
 **Acceptance criteria:**
-- [ ] AC3 da REQ
-- [ ] pacote `internal/commands` verde
+- [x] AC3 da REQ
+- [x] pacote `internal/commands` verde
 
 ### ML-1D — Documentação do #633 e notas de vault (zeus-tf) — AC4
 **Status:** ✅ Concluído — 2026-10-31. Nota do arquiteto no fim do parecer do #633 (R-5 corrigido no ML-1A do #633; P-5 sem issue, pela medição). Notas de vault `git-terminal-prompt-sem-terminal-falha-na-hora-2026-10-31` e `fixture-follow-remote-head-never-neutraliza-a-forge-2026-10-31`, linkadas no índice; nomes de função e de teste citados conferidos no código.
