@@ -4,6 +4,7 @@
 
 ## Índice
 
+- [update-harness-advisory-por-catalog-target-nao-warn-2026-10-31](update-harness-advisory-por-catalog-target-nao-warn-2026-10-31.md) — 🔴 **`update harness` emite advisory (sem `WARN:`) uma vez por catalog target (`harnessCatalogTarget:2669`); `WARN: agent_models.<tier>` só sai de `agents models`; fix: mover `ResolveAgentModels` para fora do loop, passar como parâmetro; relatório texto = stdout**
 - [barrier-ml-scope-k-gap-e-test-exclusion-vacuoso-2026-10-31](barrier-ml-scope-k-gap-e-test-exclusion-vacuoso-2026-10-31.md) — 🔴 wave ⬜ entre N e K passa no `--wave N` (K gap, medido); `TestMLScope_TargetRoadmapExcludedFromMemberLoop` vacuoso (target nunca em diffFiles); ❌ Bloqueado/Cancelado/🚫 Abandonado elevam K; decisão de KG bloqueante (#641 ML-0A)
 - [barrier-fractional-sibling-wave-integer-comparison-2026-10-31](barrier-fractional-sibling-wave-integer-comparison-2026-10-31.md) — MEDIUM: wave "1b ⬜" sempre entra no escopo de `--wave 1` (waveInt=1=currentWaveInt, guard `> N` falsa); ADR D1 violado para labels fracionárias; fix: usar CompareWaveLabels; #641 ML-2A
 - [mlstatusmarker-html-comment-scope-widening-2026-10-31](mlstatusmarker-html-comment-scope-widening-2026-10-31.md) — MEDIUM: `MLStatusMarker` não aplica `htmlCommentMask`; forja mls_complete (pré-existente) + widena escopo no alvo (nova via ML-1A #641); membros da união pré-existentes; fix: nova REQ; não bloqueia #641

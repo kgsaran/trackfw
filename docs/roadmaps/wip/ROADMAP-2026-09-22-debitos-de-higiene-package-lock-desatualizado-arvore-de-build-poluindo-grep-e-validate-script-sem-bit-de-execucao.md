@@ -30,8 +30,8 @@ vivos: `release tag` não confere o `package-lock` (AC1); `InstallGates` sem `os
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model dos débitos de higiene (hades-tf)
-**Status:** ⬜ Pendente
-**Files affected:** `docs/seguranca/2026-10-31-wave0-debitos-de-higiene.md`
+**Status:** ✅ Concluído — auditado em 2026-10-31. P-1 a P-3 aceitas. AC1: o lockfile tem dois campos de versão (raiz e `packages[""]`); o extrator confere os dois. AC2: `writeValidateScript` sobrescreve sempre, sem `Chmod`; a enumeração achou os dois hooks do husky com a mesma causa (AC2b, decisão do arquiteto pela Regra Dura); lefthook e `O_APPEND` ficam fora, justificados. AC3: o aviso reproduzido é a mensagem de `agent_models` global ausente, emitida uma vez por destino do catálogo em `harnessCatalogTarget` (`internal/generators/update.go`), não o `WARN:` de `agents_models.go`; o relatório em texto já vai para o stdout. Decisão do arquiteto no R-5: emitir uma vez por execução, só com destino do catálogo presente.
+**Files affected:** `docs/seguranca/2026-10-31-wave0-debitos-de-higiene.md`, `vault/notes/update-harness-advisory-por-catalog-target-nao-warn-2026-10-31.md`, `vault/notes/index.md`
 **Actions:**
 1. Enumeração: todos os pontos que gravam script executável (`os.WriteFile` com modo de execução) e quais já aplicam `os.Chmod`; todos os arquivos que carregam a versão do projeto e quais o `release tag` confere. Lista fechada com o comando.
 2. AC1: o que o `release tag` pode passar a recusar indevidamente (lockfile sem `packages[""]`, formato antigo); ordem das verificações.
@@ -39,9 +39,9 @@ vivos: `release tag` não confere o `package-lock` (AC1); `InstallGates` sem `os
 4. AC3: em que condição o aviso de `agent_models` aparece (valores, camadas de configuração, com e sem `--dry-run`); se o relatório no stderr é contrato documentado.
 5. Alvos de falsificação e residual; prescrições numeradas.
 **Acceptance criteria:**
-- [ ] As cinco seções respondidas com evidência (comando e resultado)
-- [ ] Prescrições escritas em seção intitulada `Prescrições`
-- [ ] Nenhuma linha de implementação escrita
+- [x] As cinco seções respondidas com evidência (comando e resultado)
+- [x] Prescrições escritas em seção intitulada `Prescrições`
+- [x] Nenhuma linha de implementação escrita
 
 **Gates da wave:**
 ```bash
@@ -65,22 +65,24 @@ grep -q 'Prescrições' docs/seguranca/2026-10-31-wave0-debitos-de-higiene.md
 - [ ] AC1 da REQ; contra-braço: sem a entrada nova, o teste de lockfile divergente reprova
 - [ ] pacote `internal/commands` verde
 
-### ML-1B — `InstallGates` aplica o bit de execução (apolo-tf) — AC2
+### ML-1B — `InstallGates` e hooks do husky aplicam o bit de execução (apolo-tf) — AC2, AC2b
 **Status:** ⬜ Pendente
-**Files affected:** `internal/discover/discover.go`, `internal/discover/discover_test.go`
+**Files affected:** `internal/discover/discover.go`, `internal/discover/discover_test.go`, `internal/generators/scaffold.go`, `internal/generators/scaffold_test.go`
 **Actions:**
 1. Depois de gravar `scripts/trackfw-validate.sh`, aplicar o modo como os outros pontos de escrita (mesmo helper, se existir).
-2. Teste: arquivo pré-existente com `0644` fica executável; no Windows, o teste pula.
+2. O mesmo nos dois hooks do husky em `scaffold.go` (AC2b).
+3. Testes: arquivo pré-existente com `0644` fica executável, nos três sítios; no Windows, os testes pulam.
 **Acceptance criteria:**
-- [ ] AC2 da REQ; contra-braço: sem o `Chmod`, o teste reprova
-- [ ] pacote `internal/discover` verde
+- [ ] AC2 e AC2b da REQ; contra-braço: sem o `Chmod`, os testes reprovam
+- [ ] pacotes `internal/discover` e `internal/generators` verdes
 
 ### ML-1C — `agent_models` e o relatório do `update harness` (apolo-tf) — AC3
 **Status:** ⬜ Pendente
-**Files affected:** `internal/commands/agents_models.go`, `internal/commands/update_harness.go`, `internal/commands/update_harness_test.go`, `docs/cli-parity.md`
+**Files affected:** `internal/generators/update.go`, `internal/generators/update_test.go`, `internal/commands/update_harness.go`, `internal/commands/update_harness_test.go`, `docs/cli-parity.md`
 **Actions:**
-1. Reproduzir o aviso de 2026-10-30 a partir da condição medida na Wave 0; corrigir na causa ou registrar, com a medição, que não aparece mais.
-2. Conferir o destino do relatório em texto contra `docs/cli-parity.md`; mover para o stdout só se não for contrato.
+1. A mensagem de `agent_models` global sai uma vez por execução do `update harness`, antes do laço, só se houver destino do catálogo (pré-varredura dos ids, P-3 do parecer); `harnessCatalogTarget` recebe os modelos resolvidos por parâmetro.
+2. `UpdateOptions` ganha escritor de erro, ligado ao `cmd.ErrOrStderr()` no comando, para o teste capturar a mensagem.
+3. Testes: N destinos do catálogo → 1 mensagem; só destinos fora do catálogo → 0.
 **Acceptance criteria:**
 - [ ] AC3 da REQ
 - [ ] pacote `internal/commands` verde
@@ -97,8 +99,8 @@ grep -q 'Prescrições' docs/seguranca/2026-10-31-wave0-debitos-de-higiene.md
 **Gates da wave:**
 ```bash
 go build ./...
-go vet ./internal/commands/ ./internal/discover/
-env PATH="$(dirname "$(command -v go)"):/usr/bin:/bin" go test ./internal/commands/ ./internal/discover/ -count=1
+go vet ./internal/commands/ ./internal/discover/ ./internal/generators/
+env PATH="$(dirname "$(command -v go)"):/usr/bin:/bin" go test ./internal/commands/ ./internal/discover/ ./internal/generators/ -count=1
 ```
 
 ---

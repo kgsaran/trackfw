@@ -52,12 +52,17 @@ Resíduos que não quebram nada até quebrarem uma investigação ou uma release
       `version` da raiz e o de `packages[""]`) diverge da pedida, com mensagem que nomeia o arquivo; a
       ajuda do comando diz o número real de arquivos conferidos.
 - [ ] **AC2** — `InstallGates` deixa `scripts/trackfw-validate.sh` com bit de execução também quando o
-      arquivo já existia com `0644` (os outros pontos de escrita já fazem isso). No Windows, onde o bit
-      não existe, nada muda.
-- [ ] **AC3** — `agent_models`: o aviso de 2026-10-30 é reproduzido (configuração e comando escritos)
-      e corrigido na causa; ou fica escrito, com a medição, que ele não aparece mais e por quê. A
-      saída do relatório em texto do `update harness` no stderr é verificada contra o contrato de
-      `docs/cli-parity.md`: se for decisão documentada, fica; se não, vai para o stdout.
+      arquivo já existia com `0644`. No Windows, onde o bit não existe, nada muda.
+- [ ] **AC2b** (mesma causa, enumerada na Wave 0, `docs/seguranca/2026-10-31-wave0-debitos-de-higiene.md`) — os hooks do husky gravados por
+      `internal/generators/scaffold.go` (`.husky/commit-msg` e o hook de pre-commit), que o git só
+      executa com bit de execução, recebem o mesmo tratamento.
+- [ ] **AC3** — `agent_models`: a Wave 0 reproduziu as 20 linhas de 2026-10-30. Não são o `WARN:` de
+      `agents_models.go`: é a mensagem de configuração global de `agent_models` ausente ou parcial,
+      emitida por `harnessCatalogTarget` (`internal/generators/update.go`) uma vez por destino do
+      catálogo. Passa a ser emitida **uma vez por execução**, e só quando há pelo menos um destino do
+      catálogo na execução (sem destino do catálogo continua sem a mensagem, como hoje). O stderr fica
+      capturável em teste (`UpdateOptions` com escritor de erro), para o teste não ser vacuoso. O
+      relatório em texto já vai para o stdout (medido na Wave 0; o "stderr" anotado era a mensagem).
 - [ ] **AC4** — parecer do #633 corrigido quanto ao R-5 (nota do arquiteto, sem reescrever o
       parecer) e as duas notas de vault escritas (fixture `followRemoteHEAD never`;
       `GIT_TERMINAL_PROMPT` sem terminal), linkadas no `vault/notes/index.md`.
@@ -68,7 +73,9 @@ Resíduos que não quebram nada até quebrarem uma investigação ou uma release
 - **Não** mexe em `GIT_TERMINAL_PROMPT`, credential helper nem SSH (a medição mostrou que não há o
   que mudar no caso sem terminal).
 - **Não** altera o protocolo de release além de acrescentar o `package-lock` à verificação.
-- **Não** muda os modos de escrita dos outros pontos de escrita de script.
+- **Não** muda os modos de escrita do hook do lefthook (o `runner: sh` não exige bit de execução) nem
+  das escritas com `O_APPEND` em hook existente do usuário (`update.go`), que não devem alterar o modo de
+  um arquivo que não é nosso. Medido e justificado na Wave 0 (R-2, R-3).
 
 ## Linked ADR
 <!-- none -->

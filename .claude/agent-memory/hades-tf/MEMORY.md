@@ -1,5 +1,6 @@
 # Memory Index — Hades (Security, trackfw)
 
+- [update harness advisory: once per catalog target, no WARN token](project_update_harness_advisory_catalog_target.md) — fix in `harnessCatalogTarget` (update.go:2669); `UpdateOptions` has no stderr writer → os.Pipe needed for counter-arm; "move to UpdateHarness top" fires advisory on guard-only runs
 - [parseLsRemoteSymref second field vector gap](project_parselsremotesymref_second_field_vector_gap.md) — missing test vector `\trefs/heads/HEAD` lets HasSuffix mutation survive; LOW severity; found ML-2A 2026-10-30
 
 - [Hardlink não converge por EvalSymlinks](project_write_scope_hardlink_bypass.md) — comparar caminho exige os.SameFile quando os dois existem; caso do write-scope corrigido no #606
