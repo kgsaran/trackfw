@@ -129,6 +129,7 @@ test -f docs/seguranca/2026-10-31-redteam-ml-scope-waves-iniciadas.md
 1. `parseMLScopeFilesAffected` e `ParseGatesLines` pulam linhas dentro de comentário HTML, com a mesma máscara do ML-3B (exportada se preciso).
 2. Medir o que o barrier faz quando o único gate da wave está dentro de comentário: o veredito não pode virar aprovação silenciosa.
 3. Comentário HTML na mesma linha (`<!-- … -->` inline, ou `<!--` sem fechamento até o fim da linha) não contribui token de `**Files affected:**`. Status, critério e gate já falham fechado nesse caso (status lê o primeiro token; critério e gate ficam visíveis).
+4. `htmlCommentMask` percorre cada linha como máquina de estado: uma linha que fecha e reabre (`a --> b <!-- c`) ou que tem span fechado seguido de `<!--` aberto (`x <!-- a --> <!-- b`) termina em comentário aberto.
 **Acceptance criteria:**
 - [ ] AC11 da REQ; contra-braço: sem a máscara, os testes novos reprovam
 - [ ] pacotes `internal/roadmapdoc` e `internal/commands` verdes
