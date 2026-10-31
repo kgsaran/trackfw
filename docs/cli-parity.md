@@ -3147,7 +3147,7 @@ Evaluated in this fixed order; the run continues through all checks so the repor
 | `acceptance_evidence` | Every ML in the wave satisfies rule 4 |
 | `gates` | Every command from rule 5 exits 0 |
 | `validate` | `trackfw validate --json` reports `violations: 0` |
-| `ml_scope` | Every file touched since `merge-base(origin/main, HEAD)` (diff + status) is covered by a `**Files affected:**` declaration in waves 0..N or by the orchestration set; `skipped` when outside a git repo, when the roadmap date predates 2026-07-18, or when the roadmap has not been committed yet; `blocked` when any file is undeclared or when `origin/main` is unavailable (the diff cannot be computed — fail-closed per Wave 0 contract) |
+| `ml_scope` | Every file touched since `merge-base(origin/main, HEAD)` (diff + status) is covered by a `**Files affected:**` declaration in waves 0..N or in any started wave above N (ADR-2026-10-31 D1; started = K match-positive predicate), or by the orchestration set; `skipped` when outside a git repo, when the roadmap date predates 2026-07-18, or when the roadmap has not been committed yet; `blocked` when any file is undeclared or when `origin/main` is unavailable (the diff cannot be computed — fail-closed per Wave 0 contract) |
 
 `trackfw validate` is invoked in-process, not by shelling out to a `trackfw` binary that may
 not be on `PATH`.
@@ -3196,7 +3196,7 @@ The `ml_scope` check verifies that every file touched by the current branch is c
 
 - **Roadmap from HEAD, not disk.** `git show HEAD:<roadmap>` is used to read the `**Files affected:**` lines. An uncommitted disk edit cannot expand scope. A roadmap not yet committed results in `skipped`.
 - **Touched files.** `git diff --name-only -z $(git merge-base origin/main HEAD) HEAD --no-renames` (committed changes, both sides of renames listed separately) plus `git status --porcelain=v1 -z --untracked-files=all --no-renames` (modified, staged, untracked), excluding gitignored files.
-- **Wave N scope.** The union of `**Files affected:**` from every ML in waves 0..N of the target roadmap, plus the union contribution from every roadmap member (see Union below).
+- **Wave N scope.** The union of `**Files affected:**` from every ML in waves 0..N of the target roadmap, plus every ML in any started wave above N of the target roadmap (ADR-2026-10-31 D1; wave ⬜ is never included regardless of position), plus the union contribution from every roadmap member (see Union below). `**Files affected:**` is required only for waves 0..N; a missing declaration in a started wave above N does not block the barrier of wave N.
 - **Orchestration set (always permitted).** The roadmap file itself; the REQ from frontmatter `req:`; the ADR from the REQ's frontmatter `adr:`; `docs/agents-working-context/`; `vault/notes/`; `.claude/agent-memory/`; `<roadmap_dir>/.trackfw-log`; `<roadmap_dir>/.trackfw-log-entries/`; `<req_dir>/.trackfw-log`; `<req_dir>/.trackfw-log-entries/`. The roadmap counts as orchestration in every state directory of `roadmap_dir` with the same basename (`backlog/`, `analyzing/`, `wip/`, `blocked/`, `done/`, `abandoned/`), so a roadmap moved between states in the branch (e.g. `done/` → `wip/` on reopen) does not produce a spurious out-of-scope failure for the deleted old-state path.
 
 #### `**Files affected:**` grammar
@@ -3257,9 +3257,11 @@ Every `.md` file under `roadmap_dir` that (a) appears in the branch diff, (b) ex
 | `abandoned/` or `backlog/` | — | Orchestration only |
 | `done/` | Existed at merge-base | Orchestration only |
 | `date:` before 2026-07-18 | — | Orchestration only |
-| All other cases | — | Orchestration + patterns from waves 0..K |
+| All other cases | — | Orchestration + patterns from started waves (ADR-2026-10-31 D2) |
 
-**K** is the highest wave number in the member that has at least one ML satisfying the K match-positive predicate: `StatusIsComplete` (✅), `StatusTerminated` (❌ Cancelado, 🚫 Abandonado), or `StatusPending` with first emoji `🔄` or `❌` (🔄 Em andamento, ❌ Bloqueado). All-`⬜` members contribute only orchestration (K undefined). A missing `date:` field is treated as post-cutoff.
+**Started wave** (for both the target and members): a wave with at least one ML satisfying the K match-positive predicate: `StatusIsComplete` (✅), `StatusTerminated` (❌ Cancelado, 🚫 Abandonado), or `StatusPending` with first emoji `🔄` or `❌` (🔄 Em andamento, ❌ Bloqueado). VS16 (U+FE0F) appended to the emoji is normalised before comparison. A wave ⬜ is never started. All-`⬜` members contribute only orchestration. A missing `date:` field is treated as post-cutoff.
+
+**Note:** the target roadmap and members use the same started-wave predicate. For members, K (the highest started wave number) is still computed to detect the all-`⬜` case early; the wave loop then contributes only started waves, not the contiguous range 0..K (ADR-2026-10-31 D2).
 
 Union members never produce "undeclared ML" failures — a missing declaration in member B does not block the barrier of target A. Broad-pattern rejections do fire for members (a `**` in member B would grant all files to target A).
 
