@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-10-31
 author: "zeus-tf"
 adr: "docs/adr/ADR-2026-10-31-barrier-ml-scope-do-alvo-cobre-as-waves-ja-iniciadas.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-10-31-barrier-ml-scope-da-wave-n-reprova-arquivos-declarados-em-waves-posteriores-ja-iniciadas.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-10-31-barrier-ml-scope-da-wave-n-reprova-arquivos-declarados-em-waves-posteriores-ja-iniciadas.md"
 ---
 
 # REQ: barrier ml_scope da wave N reprova arquivos declarados em waves posteriores ja iniciadas
 
-> Date: 2026-10-31 | Status: Open
+> Date: 2026-10-31 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -87,4 +87,4 @@ ADR: docs/adr/ADR-2026-10-31-barrier-ml-scope-do-alvo-cobre-as-waves-ja-iniciada
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-10-31-barrier-ml-scope-da-wave-n-reprova-arquivos-declarados-em-waves-posteriores-ja-iniciadas.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-10-31-barrier-ml-scope-da-wave-n-reprova-arquivos-declarados-em-waves-posteriores-ja-iniciadas.md

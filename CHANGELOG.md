@@ -7,6 +7,24 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [11.2.3] - 2026-10-31
+
+### Breaking Changes
+
+Nenhum.
+
+### Fixed
+
+- **`trackfw barrier --wave N` deixa de reprovar uma wave já auditada quando as seguintes são commitadas**
+  (#641, #644). O `ml_scope` passa a aceitar os `Files affected` das waves 0..N e das waves posteriores já
+  iniciadas (algum ML ✅, 🔄, ❌ ou terminado); wave ⬜ continua fora, mesmo com wave iniciada acima dela. Os
+  outros roadmaps tocados pela branch seguem a mesma regra. Waves de rótulo fracionário são ordenadas pelo
+  rótulo (`1 < 1b < 2`).
+- **Conteúdo dentro de comentário HTML (`<!-- -->`) não conta no roadmap** (#644): não é status do ML, critério
+  de aceite, bloco de gates nem `Files affected`. Afeta `barrier`, o board do `serve` e o `roadmap show`. Um
+  marcador de comentário citado entre crases continua sendo texto. Uma wave cujo único bloco de gates está
+  comentado fica sem gates.
+
 ## [11.2.2] - 2026-10-31
 
 ### Breaking Changes
