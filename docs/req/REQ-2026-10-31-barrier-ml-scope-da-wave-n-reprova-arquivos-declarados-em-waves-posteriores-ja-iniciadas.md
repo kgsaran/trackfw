@@ -26,7 +26,9 @@ affected` das waves 0..N do alvo (passo 9, `if waveInt > currentWaveInt { contin
 da união, na mesma função, já usam as waves 0..K (`mlScopeComputeK`). O veredito de uma wave auditada
 muda sem mudança nela, e quem orquestra aprende a ignorar o `ml_scope` das waves antigas.
 
-Decisão (`docs/adr/ADR-2026-10-31-barrier-ml-scope-do-alvo-cobre-as-waves-ja-iniciadas.md`): o alvo contribui com as waves 0..max(N, K).
+Decisão (`docs/adr/ADR-2026-10-31-barrier-ml-scope-do-alvo-cobre-as-waves-ja-iniciadas.md`, opção B após a Wave 0): o alvo contribui
+com as waves 0..N e com cada wave posterior iniciada; os membros da união passam a contribuir só com
+as waves iniciadas (a faixa contínua 0..K deles tinha o mesmo furo).
 
 **Quem afirma o contrato antigo** (precisa mudar junto):
 - `TestMLScope_TargetRoadmapExcludedFromMemberLoop` (`internal/commands/barrier_ml_scope_test.go`)
@@ -40,19 +42,23 @@ Decisão (`docs/adr/ADR-2026-10-31-barrier-ml-scope-do-alvo-cobre-as-waves-ja-in
 - [ ] **AC2** — a mesma branch com mais um arquivo não declarado em wave nenhuma: `--wave 1` reprova
       e nomeia esse arquivo, e só ele. (Critério do issue.)
 - [ ] **AC3** — arquivo declarado só numa wave posterior cujos MLs estão todos ⬜: `--wave 1` reprova
-      e nomeia esse arquivo (trabalho adiantado continua detectado).
+      e nomeia esse arquivo, inclusive quando há wave iniciada acima dela (waves 0,1 ✅, 2 ⬜ com
+      `x.go`, 3 🔄 com `y.go`: reprova nomeando só `x.go`).
+- [ ] **AC3b** — o mesmo vetor de wave ⬜ entre waves iniciadas num **membro** da união: o arquivo da
+      wave ⬜ do membro não entra no escopo.
 - [ ] **AC4** — ML de wave > N sem `**Files affected:**` não reprova o barrier da wave N; ML sem
       declaração nas waves 0..N continua reprovando.
 - [ ] **AC5** — `TestMLScope_TargetRoadmapExcludedFromMemberLoop` reescrito para o contrato novo,
       mantendo o que ele protege (o alvo não entra pelo laço de membros).
-- [ ] **AC6** — `docs/cli-parity.md` e os comentários de `barrier.go` descrevem 0..max(N, K).
+- [ ] **AC6** — `docs/cli-parity.md` e os comentários de `barrier.go` descrevem a regra nova (0..N +
+      waves posteriores iniciadas; membros: waves iniciadas).
 - [ ] **AC7** — pacote `internal/commands` verde; `make quality` verde.
 
 ## Negative Scope
 
 - Não muda o diff (`merge-base..HEAD` + árvore de trabalho), a leitura do roadmap em `HEAD`, o
-  conjunto de orquestração, a rejeição de padrão sem segmento literal, o corte de data nem as regras
-  dos membros da união.
+  conjunto de orquestração, a rejeição de padrão sem segmento literal, o corte de data nem os filtros
+  de estado dos membros da união (só o recorte de waves deles muda).
 - Não restringe o diff por commit ou por wave (opção 2 do issue).
 - Não muda os outros checks do barrier.
 

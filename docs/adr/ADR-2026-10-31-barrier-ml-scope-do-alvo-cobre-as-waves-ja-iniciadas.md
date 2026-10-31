@@ -27,18 +27,28 @@ Na mesma função, os outros roadmaps tocados pela branch (membros da união) j�
 
 ## Decision
 
-1. **O roadmap-alvo contribui com os `Files affected` das waves 0..max(N, K)**, em que K é calculado
-   pelo mesmo `mlScopeComputeK` usado para os membros da união, sobre o conteúdo de `HEAD`.
-2. **A exigência de declaração continua só nas waves 0..N.** Um ML de wave > N sem `Files affected`
+1. **O roadmap-alvo contribui com os `Files affected` das waves 0..N e de cada wave posterior
+   iniciada.** Wave iniciada é a que tem pelo menos um ML que satisfaz o predicado de
+   `mlScopeComputeK` (✅/concluído, terminado, 🔄 ou ❌), lido do conteúdo de `HEAD`. Uma wave ⬜ não
+   entra, mesmo que haja wave iniciada acima dela.
+   *Revisado pela Wave 0* (`docs/seguranca/2026-10-31-wave0-ml-scope-waves-iniciadas.md`, P-5): a
+   primeira redação, faixa contínua 0..max(N, K), incluía waves ⬜ entre N e K; um único ML 🔄 ou ❌ na
+   última wave liberava todas as ⬜ abaixo. Decisão do KG: opção B.
+2. **O mesmo filtro vale para os membros da união.** Hoje eles contribuem com a faixa contínua 0..K
+   (ADR-2026-10-29) e têm o mesmo furo, pela mesma causa; passam a contribuir só com as waves
+   iniciadas.
+3. **A exigência de declaração continua só nas waves 0..N.** Um ML de wave > N sem `Files affected`
    não reprova o barrier da wave N; ele é cobrado no barrier da própria wave.
-3. **Nada mais muda:** diff, leitura do roadmap em `HEAD`, conjunto de orquestração, rejeição de
-   padrão sem segmento literal, corte de data e regras da união.
+4. **Nada mais muda:** diff, leitura do roadmap em `HEAD`, conjunto de orquestração, rejeição de
+   padrão sem segmento literal (vale também para as waves posteriores iniciadas), corte de data e os
+   filtros de estado dos membros da união.
 
 ## Consequences
 
 - Positivas: o veredito de uma wave auditada fica estável quando as waves seguintes entram, e volta a
   servir como registro reauditável. Arquivo fora de qualquer ML continua reprovando. Trabalho
-  adiantado de wave que ainda não começou (todos os MLs ⬜) continua reprovando.
+  adiantado de wave que ainda não começou (todos os MLs ⬜) continua reprovando, no alvo e nos
+  membros, em qualquer posição.
 - Negativas: depois que a wave N+1 começa, a reauditoria da wave N não distingue mais se um arquivo da
   N+1 foi tocado pelos commits da N. Essa atribuição exigiria olhar commit por commit.
 

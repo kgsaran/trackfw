@@ -15,8 +15,9 @@ REQ: docs/req/REQ-2026-10-31-barrier-ml-scope-da-wave-n-reprova-arquivos-declara
 ADR: docs/adr/ADR-2026-10-31-barrier-ml-scope-do-alvo-cobre-as-waves-ja-iniciadas.md
 Fecha o issue #641.
 
-O `ml_scope` do alvo passa de waves 0..N para 0..max(N, K), com K de `mlScopeComputeK` (a regra que os
-membros da união já usam). A exigência de declaração continua só nas waves 0..N.
+O `ml_scope` do alvo passa de waves 0..N para 0..N mais cada wave posterior iniciada (predicado de
+`mlScopeComputeK`); os membros da união passam da faixa contínua 0..K para só as waves iniciadas
+(opção B, decidida pelo KG depois da Wave 0). A exigência de declaração continua só nas waves 0..N.
 
 ## Acceptance Criteria
 - [ ] AC1–AC7 da REQ
@@ -30,7 +31,7 @@ membros da união já usam). A exigência de declaração continua só nas waves
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model do recorte 0..max(N, K) (hades-tf)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-10-31. Achado bloqueante P-5: a faixa contínua 0..max(N, K) inclui waves ⬜ entre N e K (waves 0,1 ✅, 2 ⬜, 3 🔄 → `--wave 1` aceitaria a wave 2). KG decidiu a opção B: só waves iniciadas além de 0..N, e o mesmo filtro nos membros da união (mesma causa na faixa 0..K deles). P-6: `TestMLScope_TargetRoadmapExcludedFromMemberLoop` é vacuoso (o alvo nunca aparece no diff da fixture) e é reescrito no ML-1A.
 **Files affected:** `docs/seguranca/2026-10-31-wave0-ml-scope-waves-iniciadas.md`
 **Actions:**
 1. Enumeração: todos os sítios que afirmam ou dependem do recorte 0..N (código, testes Go, `scripts/check-barrier.sh`, `docs/cli-parity.md`, gerador). Lista fechada com o comando que a fecha.
@@ -39,9 +40,9 @@ membros da união já usam). A exigência de declaração continua só nas waves
 4. Residual declarado.
 5. Prescrições numeradas para o ML-1A.
 **Acceptance criteria:**
-- [ ] As cinco seções respondidas com evidência (comando e resultado)
-- [ ] Prescrições escritas em seção intitulada `Prescrições`
-- [ ] Nenhuma linha de implementação escrita
+- [x] As cinco seções respondidas com evidência (comando e resultado)
+- [x] Prescrições escritas em seção intitulada `Prescrições`
+- [x] Nenhuma linha de implementação escrita
 
 **Gates da wave:**
 ```bash
@@ -54,18 +55,18 @@ grep -q 'Prescrições' docs/seguranca/2026-10-31-wave0-ml-scope-waves-iniciadas
 ## Wave 1 — Implementação
 > Dependencies: Wave 0 auditada.
 
-### ML-1A — Alvo do ml_scope cobre as waves 0..max(N, K) (apolo-tf) — AC1–AC7
+### ML-1A — ml_scope cobre as waves 0..N e as posteriores iniciadas (apolo-tf) — AC1–AC7
 **Status:** ⬜ Pendente
 **Files affected:** `internal/commands/barrier.go`, `internal/commands/barrier_ml_scope_test.go`, `docs/cli-parity.md`
 **Actions:**
-1. Em `checkMLScope`, calcular K do alvo com `mlScopeComputeK` sobre o conteúdo de `HEAD` e coletar padrões das waves 0..max(N, K).
-2. `declFailures` só para MLs das waves 0..N.
-3. Testes para AC1–AC4; reescrever `TestMLScope_TargetRoadmapExcludedFromMemberLoop` (AC5).
+1. Predicado "wave iniciada" extraído do corpo de `mlScopeComputeK` e usado pelos dois laços: alvo = waves 0..N + waves > N iniciadas; membros = waves iniciadas (sem faixa contínua).
+2. `declFailures` só para MLs das waves 0..N; rejeição de padrão sem segmento literal vale em todas as waves que contribuem.
+3. Testes para AC1–AC4 e AC3b; reescrever `TestMLScope_TargetRoadmapExcludedFromMemberLoop` (AC5, P-6).
 4. Atualizar comentários de `barrier.go` e `docs/cli-parity.md` (AC6).
-5. Prescrições do parecer da Wave 0.
+5. Prescrições P-1 a P-7 do parecer da Wave 0, com P-1 e P-5 lidas na opção B.
 **Acceptance criteria:**
 - [ ] AC1–AC6 da REQ, cada teste novo com a frase da Regra de Reconciliação
-- [ ] contra-braço: com o recorte 0..N de volta, o teste de AC1 reprova; com "todas as waves", o de AC3 reprova
+- [ ] contra-braço: com o recorte 0..N de volta, o teste de AC1 reprova; com a faixa contínua 0..max(N, K), o vetor de gap de AC3 reprova; com a faixa 0..K nos membros, o de AC3b reprova
 - [ ] pacote `internal/commands` verde
 
 **Gates da wave:**
