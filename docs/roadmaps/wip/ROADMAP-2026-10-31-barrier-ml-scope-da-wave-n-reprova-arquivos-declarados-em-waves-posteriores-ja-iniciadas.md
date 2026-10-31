@@ -102,7 +102,7 @@ test -f docs/seguranca/2026-10-31-redteam-ml-scope-waves-iniciadas.md
 > Dependencies: Wave 2 auditada.
 
 ### ML-3A — Wave fracionária e cobertura de ❌/terminado (apolo-tf) — AC8, AC10
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:** `internal/commands/barrier.go`, `internal/commands/barrier_ml_scope_test.go`, `docs/cli-parity.md`
 **Actions:**
 1. A-1: `checkMLScope` recebe o rótulo da wave alvo e decide "acima de N" e "≤ N" com `roadmapdoc.CompareWaveLabels`, nos dois sítios do passo 9.
@@ -112,7 +112,7 @@ test -f docs/seguranca/2026-10-31-redteam-ml-scope-waves-iniciadas.md
 - [ ] pacote `internal/commands` verde
 
 ### ML-3B — Comentário HTML não é status nem critério (apolo-tf) — AC9
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:** `internal/roadmapdoc/roadmapdoc.go`, `internal/roadmapdoc/roadmapdoc_test.go`, `internal/roadmapdoc/acceptance_lapsed_test.go`, `internal/commands/barrier_ml_scope_test.go`, `docs/cli-parity.md`
 **Actions:**
 1. `MLStatusMarker` ignora linhas mascaradas por `htmlCommentMask`; `AcceptanceEvaluateFull` deixa de contar critério dentro de comentário (residual T4).
