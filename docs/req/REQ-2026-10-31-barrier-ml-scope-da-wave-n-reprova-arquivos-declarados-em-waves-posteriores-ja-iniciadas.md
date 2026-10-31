@@ -54,13 +54,25 @@ as waves iniciadas (a faixa contínua 0..K deles tinha o mesmo furo).
       waves posteriores iniciadas; membros: waves iniciadas).
 - [ ] **AC7** — pacote `internal/commands` verde; `make quality` verde.
 
+Acrescentados pelo red team (`docs/seguranca/2026-10-31-redteam-ml-scope-waves-iniciadas.md`);
+defeito conhecido se corrige neste PR:
+- [ ] **AC8** (A-1) — wave de rótulo fracionário é ordenada por `roadmapdoc.CompareWaveLabels`, não pela
+      parte inteira: com `--wave 1`, a wave `1b` ⬜ não entra no escopo e um ML dela sem declaração
+      não reprova; com `1b` iniciada, entra. `--wave 1b` trata a wave `1` como ≤ N.
+- [ ] **AC9** (A-2) — `**Status:**` dentro de comentário HTML (`<!-- -->`) não é status do ML, em
+      `MLStatusMarker` (vale para `mls_complete`, `ml_scope`, board e `roadmap show`); e critério de
+      aceite dentro de comentário HTML não conta em `AcceptanceEvaluateFull` (residual T4, mesma causa).
+- [ ] **AC10** (A-3) — vetores ponta a ponta para wave > N iniciada só por `❌ Bloqueado` e só por
+      `❌ Cancelado`/`🚫 Abandonado`.
+
 ## Negative Scope
 
 - Não muda o diff (`merge-base..HEAD` + árvore de trabalho), a leitura do roadmap em `HEAD`, o
   conjunto de orquestração, a rejeição de padrão sem segmento literal, o corte de data nem os filtros
   de estado dos membros da união (só o recorte de waves deles muda).
 - Não restringe o diff por commit ou por wave (opção 2 do issue).
-- Não muda os outros checks do barrier.
+- Não muda os outros checks do barrier, exceto o efeito do AC9 sobre `mls_complete` e
+  `acceptance_evidence` (status e critério dentro de comentário HTML deixam de contar).
 
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->
