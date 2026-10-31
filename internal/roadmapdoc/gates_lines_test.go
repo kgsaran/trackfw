@@ -21,6 +21,25 @@ package roadmapdoc
 //     Affirms: ParseGates on Wave 2 of docs/roadmaps/done/ROADMAP-2026-08-22-wave-0-…
 //     now returns [] (the marker at line 226 is inside a 4-backtick fence and is masked),
 //     matching the measured before/after delta reported in the ML-1A handoff.
+//
+// ── New tests (ML-3C, REQ-2026-10-31) — AC11 ──────────────────────────────────
+//
+//   TestParseGatesLines_HTMLComment_MarkerNotGate
+//     Affirms: a "**Gates da wave:**" marker whose column 0 is inside an HTML comment block
+//     (<!-- … -->) is silently skipped (AC11), so no gate is generated from that block.
+//
+//   TestParseGatesLines_HTMLComment_RealMarkerAfterCommented
+//     Affirms: when a commented-out marker precedes a real marker outside the comment in
+//     the same wave, only the real marker's commands are returned — the scan continues past
+//     the commented marker rather than stopping.
+//
+// ── New tests (ML-3C ação 3, REQ-2026-10-31) — AC11b inline ──────────────────
+//
+//   TestStripInlineHTMLComments
+//     Affirms: StripInlineHTMLComments removes each complete "<!-- … -->" span from a
+//     line and truncates at an unclosed "<!--", returning (stripped, endsOpen) — so
+//     backtick tokens inside comments are invisible to extractTokens while tokens outside
+//     are preserved.
 
 import (
 	"os"
@@ -249,5 +268,212 @@ func TestParseGatesLines_RealFile_Wave2Returns_Empty(t *testing.T) {
 	}
 	if len(cmds) != 0 {
 		t.Errorf("expected ParseGates to return [] for Wave 2 (marker inside fence), got %v", cmds)
+	}
+}
+
+// ── TestParseGatesLines_HTMLComment_MarkerNotGate ─────────────────────────────
+
+// TestParseGatesLines_HTMLComment_MarkerNotGate asserts that a "**Gates da wave:**"
+// marker whose column 0 is inside an HTML comment block (<!-- … -->) is silently
+// skipped (AC11, ML-3C, REQ-2026-10-31), producing zero gates.
+//
+// Contra-braço: without htmlCommentMask in ParseGatesLines the marker inside the
+// comment would be treated as a real gate declaration; the exit 1 command would be
+// collected and the test would fail because len(gcmds) != 0.
+//
+// Reconciliation (Regra Dura): a "**Gates da wave:**" marker inside <!-- --> does NOT
+// produce a gate — the block is invisible to ParseGatesLines (AC11).
+func TestParseGatesLines_HTMLComment_MarkerNotGate(t *testing.T) {
+	// Wave with only one "**Gates da wave:**", but inside an HTML comment block.
+	// The wave should return zero gates.
+	//
+	//  line 1: ## Wave 3 — HTML Comment
+	//  line 2: (empty)
+	//  line 3: <!--
+	//  line 4: **Gates da wave:**   ← column 0 inside comment, must be skipped
+	//  line 5: ```bash
+	//  line 6: exit 1
+	//  line 7: ```
+	//  line 8: -->
+	doc := "## Wave 3 — HTML Comment\n" +
+		"\n" +
+		"<!--\n" +
+		"**Gates da wave:**\n" +
+		"```bash\n" +
+		"exit 1\n" +
+		"```\n" +
+		"-->\n"
+
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, _ := ParseWaves(lines, fenced)
+	if len(waves) != 1 {
+		t.Fatalf("expected 1 wave, got %d", len(waves))
+	}
+	w := waves[0]
+
+	// Sanity: GatesHeaderRe matches line 4 (0-indexed: 3).
+	if !GatesHeaderRe.MatchString(lines[3]) {
+		t.Errorf("sanity: GatesHeaderRe should match line 4 (0-indexed 3), but does not")
+	}
+	// Sanity: the header line is NOT fenced (it's inside a comment, not a code fence).
+	if fenced[3] {
+		t.Errorf("sanity: line 4 (0-indexed 3) should NOT be inside FenceMask (it is in HTML comment, not fence)")
+	}
+	// Sanity: the header line IS masked by htmlCommentMask.
+	htmlMask := HTMLCommentMask(lines, fenced)
+	if !htmlMask[3] {
+		t.Errorf("sanity: line 4 (0-indexed 3) should be masked by HTMLCommentMask (inside <!-- -->)")
+	}
+
+	gcmds, err := ParseGatesLines(lines, w.Start, w.End)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(gcmds) != 0 {
+		t.Errorf("expected 0 GateCmds (marker inside HTML comment), got %d: %v", len(gcmds), gcmds)
+	}
+}
+
+// ── TestParseGatesLines_HTMLComment_RealMarkerAfterCommented ──────────────────
+
+// TestParseGatesLines_HTMLComment_RealMarkerAfterCommented asserts that when a
+// commented-out "**Gates da wave:**" marker precedes a real marker outside the
+// comment in the same wave, only the real marker's commands are returned.
+//
+// Contra-braço: without htmlCommentMask in ParseGatesLines the first (commented)
+// marker would be treated as real; ParseGatesLines returns after the first match,
+// so the real marker's commands would be missed. The test fails because it expects
+// exactly one command from the real marker.
+//
+// Reconciliation (Regra Dura): the scan continues past a commented marker; the real
+// declaration after the comment is found and its commands returned (AC11).
+func TestParseGatesLines_HTMLComment_RealMarkerAfterCommented(t *testing.T) {
+	// Wave with a commented marker first (inside HTML comment) followed by a real marker.
+	//
+	//  line 1: ## Wave 4 — HTML Comment Two Markers
+	//  line 2: (empty)
+	//  line 3: <!--
+	//  line 4: **Gates da wave:**   ← inside HTML comment, skipped
+	//  line 5: ```bash
+	//  line 6: exit 1
+	//  line 7: ```
+	//  line 8: -->
+	//  line 9: (empty)
+	//  line 10: **Gates da wave:**   ← real marker, outside comment
+	//  line 11: ```bash
+	//  line 12: echo "real gate"
+	//  line 13: ```
+	doc := "## Wave 4 — HTML Comment Two Markers\n" +
+		"\n" +
+		"<!--\n" +
+		"**Gates da wave:**\n" +
+		"```bash\n" +
+		"exit 1\n" +
+		"```\n" +
+		"-->\n" +
+		"\n" +
+		"**Gates da wave:**\n" +
+		"```bash\n" +
+		"echo \"real gate\"\n" +
+		"```\n"
+
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, _ := ParseWaves(lines, fenced)
+	if len(waves) != 1 {
+		t.Fatalf("expected 1 wave, got %d", len(waves))
+	}
+	w := waves[0]
+
+	gcmds, err := ParseGatesLines(lines, w.Start, w.End)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(gcmds) != 1 {
+		t.Fatalf("expected 1 GateCmd (real marker after commented), got %d: %v", len(gcmds), gcmds)
+	}
+	// "echo \"real gate\"" is at 0-indexed line 11, so 1-based line 12.
+	if gcmds[0].Line != 12 {
+		t.Errorf("gcmds[0].Line = %d, want 12", gcmds[0].Line)
+	}
+	if gcmds[0].Text != `echo "real gate"` {
+		t.Errorf("gcmds[0].Text = %q, want %q", gcmds[0].Text, `echo "real gate"`)
+	}
+}
+
+// ── TestStripInlineHTMLComments ───────────────────────────────────────────────
+
+// TestStripInlineHTMLComments asserts that StripInlineHTMLComments removes
+// complete "<!-- … -->" spans (replacing each with a space) and truncates at an
+// unclosed "<!--", returning endsOpen=true in the latter case.
+//
+// Contra-braço: without the function, backtick-quoted tokens inside inline
+// comments would be visible to extractTokens and appear in Files affected scope.
+//
+// Reconciliation (Regra Dura): StripInlineHTMLComments removes inline comment
+// regions from a line so that tokens inside them are not extracted as file paths,
+// and signals an unclosed "<!--" so callers can stop collecting continuation lines.
+func TestStripInlineHTMLComments(t *testing.T) {
+	cases := []struct {
+		name     string
+		input    string
+		want     string
+		endsOpen bool
+	}{
+		{
+			name:     "no comment",
+			input:    "`a.go` and `b.go`",
+			want:     "`a.go` and `b.go`",
+			endsOpen: false,
+		},
+		{
+			name:     "single closed span",
+			input:    "`real.go` <!-- `evil.go` --> suffix",
+			want:     "`real.go`   suffix",
+			endsOpen: false,
+		},
+		{
+			name:     "unclosed comment truncates",
+			input:    "`real.go` <!-- `evil.go`",
+			want:     "`real.go` ",
+			endsOpen: true,
+		},
+		{
+			name:     "two closed spans — tokens outside both preserved",
+			input:    "<!-- `a.go` --> `x.go` <!-- `b.go` -->",
+			want:     "  `x.go`  ",
+			endsOpen: false,
+		},
+		{
+			name:     "closed span then unclosed — endsOpen true",
+			input:    "<!-- `a.go` --> <!-- `b.go`",
+			want:     "  ",
+			endsOpen: true,
+		},
+		{
+			name:     "empty string",
+			input:    "",
+			want:     "",
+			endsOpen: false,
+		},
+		{
+			name:     "adjacent tokens don't merge — space inserted",
+			input:    "`a`<!--x-->`b`",
+			want:     "`a` `b`",
+			endsOpen: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, gotEndsOpen := StripInlineHTMLComments(tc.input)
+			if got != tc.want {
+				t.Errorf("stripped: got %q, want %q", got, tc.want)
+			}
+			if gotEndsOpen != tc.endsOpen {
+				t.Errorf("endsOpen: got %v, want %v", gotEndsOpen, tc.endsOpen)
+			}
+		})
 	}
 }

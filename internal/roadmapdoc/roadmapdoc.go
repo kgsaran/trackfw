@@ -646,6 +646,59 @@ type AcceptanceDetail struct {
 	LapsedReasons     []LapsedReason // one entry per lapsed criterion; nil when Lapsed==0
 }
 
+// StripInlineHTMLComments removes inline HTML comment regions from line.
+// Each complete "<!-- … -->" span is replaced with a single space so that
+// surrounding tokens remain separated (e.g. `` `a`<!--x-->`b` `` → `` `a` `b` ``).
+// If "<!--" appears without a closing "-->" on the same line, the rest of the
+// line from "<!--" onward is discarded and endsOpen is true.
+//
+// The scanner pairs each "<!--" with the first "-->" found from opener+4 onward —
+// the same offset semantics as htmlCommentMask — so "<!-->x" reads as unclosed
+// (fail-closed direction, consistent with htmlCommentMask).
+//
+// Only single-line spans are handled here; multi-line comment blocks are handled
+// separately by htmlCommentMask (column-0 semantics). This function is applied to
+// individual lines before backtick-token extraction in parseMLScopeFilesAffected
+// (AC11b, ML-3C ação 3, REQ-2026-10-31).
+//
+// When endsOpen is true the caller should stop collecting continuation lines: the
+// multi-line comment opened on this line may not be detected by htmlCommentMask
+// when a prior closed span consumed the "<!--" it was searching for (see the
+// double-comment case: "<!-- a --> <!-- b" — htmlCommentMask sees the first
+// opener as closed and misses the second unclosed one). Breaking on endsOpen
+// closes that gap without modifying htmlCommentMask.
+func StripInlineHTMLComments(line string) (stripped string, endsOpen bool) {
+	for {
+		start := strings.Index(line, "<!--")
+		if start < 0 {
+			break
+		}
+		after := line[start+4:]
+		closeIdx := strings.Index(after, "-->")
+		if closeIdx < 0 {
+			// No closing "-->" on this line: truncate from "<!--" onward.
+			line = line[:start]
+			endsOpen = true
+			break
+		}
+		// Replace the entire span (including delimiters) with a single space to
+		// prevent adjacent tokens from merging (e.g. "`a`<!--x-->`b`" → "`a` `b`").
+		line = line[:start] + " " + after[closeIdx+3:]
+	}
+	return line, endsOpen
+}
+
+// HTMLCommentMask is the exported counterpart of htmlCommentMask.
+// It returns a boolean slice (same length as lines) where true means the line's column 0
+// is inside an HTML comment block (<!-- ... -->). Callers in other packages (e.g.
+// internal/commands/barrier.go parseMLScopeFilesAffected) use this so that the masking
+// logic has a single implementation (AC11, ML-3C, REQ-2026-10-31).
+//
+// See htmlCommentMask for the full column-0 semantics and residuals.
+func HTMLCommentMask(lines []string, fenced []bool) []bool {
+	return htmlCommentMask(lines, fenced)
+}
+
 // htmlCommentMask returns a boolean slice (same length as lines) where true means the
 // line's column 0 is inside an HTML comment block (<!-- ... -->). Used by
 // AcceptanceEvaluateFull (Caducou: detection) and MLStatusMarker (status detection)
@@ -848,15 +901,21 @@ type GateCmd struct {
 //     fence is silently skipped rather than treated as a real gate declaration.
 //     The scan continues past a skipped marker — a real marker after an example
 //     marker in the same wave is found and used.
+//   - The marker must not be inside an HTML comment block (<!-- … -->)
+//     (AC11, ML-3C, REQ-2026-10-31): a "**Gates da wave:**" whose column 0 is
+//     inside a multi-line comment is silently skipped (same continue behaviour
+//     as F1). The opening line of the comment is NOT masked (column-0 semantics),
+//     so a line starting with <!-- can never match GatesHeaderRe anyway.
 //   - The ```bash fence is found by scanning forward to the next heading
 //     boundary (## / ###), same as before. Headings and fence-delimiter lines
 //     are never included.
 //   - Empty lines and lines whose first non-space character is '#' are ignored.
 //
-// A wave with no "**Gates da wave:**" block outside a fence returns an empty,
-// non-nil slice — zero gates is legal and the barrier never invents one.
+// A wave with no "**Gates da wave:**" block outside a fence or comment returns
+// an empty, non-nil slice — zero gates is legal and the barrier never invents one.
 func ParseGatesLines(lines []string, waveStart, waveEnd int) ([]GateCmd, error) {
 	fenced := FenceMask(lines)
+	htmlMask := htmlCommentMask(lines, fenced)
 	for i := waveStart; i < waveEnd; i++ {
 		if !GatesHeaderRe.MatchString(lines[i]) {
 			continue
@@ -865,6 +924,11 @@ func ParseGatesLines(lines []string, waveStart, waveEnd int) ([]GateCmd, error) 
 		// Use continue (not return) so that a real marker later in the same wave
 		// is still found.
 		if fenced[i] {
+			continue
+		}
+		// AC11 (ML-3C, REQ-2026-10-31): skip markers that appear inside an HTML
+		// comment block. Same continue behaviour as F1 above.
+		if htmlMask[i] {
 			continue
 		}
 		// #460: a busca pula PROSA, nao so linha em branco. Escrever um gate real

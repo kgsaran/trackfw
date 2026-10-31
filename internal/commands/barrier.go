@@ -827,6 +827,13 @@ func mlScopeComputeK(lines []string, fenced []bool, waves []waveBlock) int {
 // tokens are also collected. This handles declarations that wrap across multiple
 // physical lines (e.g., long file lists).
 //
+// Lines whose column 0 is inside an HTML comment block (<!-- … -->) are treated the
+// same as fenced lines (AC11, ML-3C, REQ-2026-10-31):
+//   - A label line inside a comment is silently skipped (continue) so that the real
+//     declaration later in the ML is found.
+//   - A continuation line inside a comment ends the declaration (break), the same as
+//     a code-fence line does — "como cerca".
+//
 // Returns (patterns, true) when the label line is present.
 // Returns (nil, false) when no label line is found — the ML has no declaration.
 // A label line present but with no backticks (and no continuation tokens) returns
@@ -855,8 +862,24 @@ func parseMLScopeFilesAffected(lines []string, fenced []bool, start, end int) ([
 		return toks
 	}
 
+	// htmlMask is computed over the full lines slice so that a comment opened
+	// before start is correctly carried into the ML block. The fenced slice is
+	// always the same length as lines (built by FenceMask); if it is shorter
+	// (test helper that passes a partial slice), we extend it with false.
+	safeFenced := fenced
+	if len(safeFenced) < len(lines) {
+		extended := make([]bool, len(lines))
+		copy(extended, safeFenced)
+		safeFenced = extended
+	}
+	htmlMask := roadmapdoc.HTMLCommentMask(lines, safeFenced)
+
 	for i := start; i < end && i < len(lines); i++ {
 		if i < len(fenced) && fenced[i] {
+			continue
+		}
+		// AC11: label inside HTML comment → skip (a real declaration may follow).
+		if i < len(htmlMask) && htmlMask[i] {
 			continue
 		}
 		line := lines[i]
@@ -864,11 +887,20 @@ func parseMLScopeFilesAffected(lines []string, fenced []bool, start, end int) ([
 			!strings.HasPrefix(line, "**Arquivos afetados:**") {
 			continue
 		}
-		// Found the label line — collect its tokens.
-		patterns := extractTokens(line)
+		// Found the label line — strip inline HTML comments then collect tokens (AC11b).
+		// endsOpen is true when the label line has an unclosed "<!--": the continuation
+		// loop is skipped entirely in that case (the multi-line comment it opens may not
+		// be detected by htmlCommentMask when a prior closed span consumed the first
+		// "<!--" — see StripInlineHTMLComments doc comment for the double-comment case).
+		labelStripped, labelEndsOpen := roadmapdoc.StripInlineHTMLComments(line)
+		patterns := extractTokens(labelStripped)
+		if labelEndsOpen {
+			return patterns, true
+		}
 
 		// Collect continuation lines and list items.
-		// Stops at: blank line, standalone bold field (**), heading (#), code fence.
+		// Stops at: blank line, standalone bold field (**), heading (#), code fence,
+		// HTML comment line (treated like a code fence — "como cerca", AC11).
 		// Any criterion marker "- [X]" where X is a single character (matched by
 		// roadmapdoc.CriterionLineRe = ^- \[.\]) stops the list BEFORE the generic
 		// list-item check so that acceptance-criteria items don't leak into scope
@@ -881,6 +913,10 @@ func parseMLScopeFilesAffected(lines []string, fenced []bool, start, end int) ([
 		// List items (- / *) contribute tokens by Regra B (p.1, p.2, §1.4c hybrid).
 		for j := i + 1; j < end && j < len(lines); j++ {
 			if j < len(fenced) && fenced[j] {
+				break
+			}
+			// AC11: continuation inside HTML comment ends the declaration (like fence).
+			if j < len(htmlMask) && htmlMask[j] {
 				break
 			}
 			cont := lines[j]
@@ -900,13 +936,26 @@ func parseMLScopeFilesAffected(lines []string, fenced []bool, start, end int) ([
 			if roadmapdoc.CriterionLineRe.MatchString(trimmed) {
 				break
 			}
+			// AC11b: strip inline HTML comments before extracting tokens. The stop
+			// conditions above run on the raw trimmed line so that markup structure
+			// (bold fields, headings, criterion markers) is never misclassified by a
+			// prior comment span. contEndsOpen signals an unclosed "<!--" on this
+			// continuation line; collecting stops after its tokens (same rationale as
+			// labelEndsOpen: htmlCommentMask may not detect a second unclosed "<!--").
+			contStripped, contEndsOpen := roadmapdoc.StripInlineHTMLComments(cont)
 			// List item (- / *): extract tokens and continue (AC1, §1.4c).
 			if strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ") {
-				patterns = append(patterns, extractTokens(cont)...)
+				patterns = append(patterns, extractTokens(contStripped)...)
+				if contEndsOpen {
+					break
+				}
 				continue
 			}
 			// Continuation/wrap line — collect its backtick tokens.
-			patterns = append(patterns, extractTokens(cont)...)
+			patterns = append(patterns, extractTokens(contStripped)...)
+			if contEndsOpen {
+				break
+			}
 		}
 
 		return patterns, true

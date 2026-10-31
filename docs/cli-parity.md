@@ -2902,15 +2902,20 @@ These are literal parsing rules. The binary implements them.
 5. **Wave gates.** Gates are declared per wave by a `**Gates da wave:**` line followed by a
    fenced ```` ```bash ```` block. Each non-empty, non-comment line in that block is one gate
    command, executed from the repository root, in declaration order.
+   **The `**Gates da wave:**` marker must not be inside a fenced code block** (F1, REQ #491)
+   or **inside an HTML comment block** (`<!-- … -->`) (AC11, ML-3C, REQ-2026-10-31). A marker
+   whose column 0 is inside a multi-line HTML comment is silently skipped — the scan continues
+   so that a real marker later in the same wave is still found. A `**Gates da wave:**` block
+   entirely inside `<!-- … -->` produces zero gates, not a malformed-block error.
    **Prose is allowed between the marker and the fence** (#460): blank lines, blockquotes and
    paragraphs are skipped. 🔴 The search stops at the **next heading** (`## ` or `### `) — without
    that bound it would adopt a ```` ```bash ```` fence belonging to another section, such as an
    example inside an ML body, and the product would run a command nobody declared as a gate.
    A marker with no fence before the next heading is a malformed block, and the message says so
    instead of blaming the gate's content.
-   A wave with no `**Gates da wave:**` block declares zero gates — that is legal and yields a
-   `gates` check with `status: "passed"` and an empty `commands` array. The barrier **never**
-   invents a gate.
+   A wave with no `**Gates da wave:**` block outside a fence or HTML comment declares zero gates
+   — that is legal and yields a `gates` check with `status: "passed"` and an empty `commands`
+   array. The barrier **never** invents a gate.
    **Consequence of per-line execution:** each gate command runs in its own `sh -c` process.
    There is no shared state between lines: `export`, `cd`, and variable assignments do not
    survive to the next line. Multi-line constructs — unbalanced quotes, `$(`, heredoc openers,
@@ -3221,6 +3226,8 @@ Each backtick-quoted token on the `**Files affected:**` label line and on any su
 - **Heading** — a line starting with `#`.
 - **Code fence** — a line starting with `` ` `` `` ` `` ` `` ` `` (three or more backticks).
 - **Checkmark item** — any line matching `^- \[.\]` (a single character between the brackets) stops before acceptance-criteria items leak into scope. This covers `- [ ]`, `- [x]`, `- [X]`, `- [~]`, `- [-]`, and any other single-character marker. Generic Markdown links whose text is longer than one character (`- [text](url)`) are not stop conditions; a link with exactly one character in its text (`- [a](url)`) matches the pattern and does stop — this is the accepted cost of using the shared `CriterionLineRe` regex.
+- **HTML comment line** — a line whose **column 0 is inside an HTML comment block** (`<!-- … -->`) ends the declaration, treated identically to a code-fence line — "como cerca" (AC11, ML-3C, REQ-2026-10-31). The opening line itself (the one that contains `<!--`) is NOT masked; only lines that follow it, until `-->` is seen, are masked. A `**Files affected:**` label line whose column 0 is inside a comment is silently skipped (the scan continues — a real label after the comment is found).
+- **Inline HTML comment stripping** — before extracting backtick tokens from a line (label line or continuation), all complete `<!-- … -->` spans on that line are removed (replaced with a space so adjacent tokens don't merge). If `<!--` appears without a closing `-->` on the same line, the rest of the line from `<!--` onward is discarded and continuation collection stops immediately (`endsOpen=true`) — this closes the double-comment gap where `htmlCommentMask` could miss a second unclosed `<!--` that followed a closed span on the same line (AC11b, ML-3C ação 3, REQ-2026-10-31). The stop conditions (blank line, bold field, heading, criterion marker) are evaluated on the raw line before stripping, so HTML comment content cannot masquerade as a structure marker.
 
 List items (`- ` or `* ` prefix) contribute all their backtick tokens (Rule B — the same extraction primitive as the label line). This supports the **hybrid form**: tokens on the label line and tokens in list items below are all collected.
 

@@ -66,6 +66,14 @@ package commands
 // ── New tests (ML-3B, REQ-2026-10-31) — AC9 ─────────────────────────────────────────────────
 // | TestMLScope_HTMLCommentedStatus_WaveNotStarted                | Wave > N whose only **Status:** is inside <!-- -->: wave is ⬜, file NOT in scope (AC9 scope widening) |
 // | TestMLScope_HTMLCommentedStatus_MLSCompleteBlocked            | ML whose only ✅ is inside <!-- -->: mls_complete blocked (AC9 mls_complete)                        |
+// ── New tests (ML-3C, REQ-2026-10-31) — AC11 ────────────────────────────────────────────────
+// | TestMLScopeFilesAffected_LabelInComment_NotDeclaration        | **Files affected:** label-only inside <!-- -->: no file in scope; real label after comment found (AC11 label masked) |
+// | TestMLScopeFilesAffected_ContinuationInComment_Truncated      | List item inside <!-- --> after a real label: the commented item does NOT contribute tokens (AC11 continuation break) |
+// ── New tests (ML-3C ação 3, REQ-2026-10-31) — AC11b inline ──────────────────────────────────────
+// | TestMLScopeFilesAffected_InlineComment_HidesToken             | Token inside <!-- --> on label line is not extracted; token outside is (AC11b)                          |
+// | TestMLScopeFilesAffected_InlineComment_OpenNoClose             | Unclosed <!-- on label line discards tokens after it; continuation via htmlMask still blocked (AC11b)  |
+// | TestMLScopeFilesAffected_InlineComment_BetweenTokens           | Closed then unclosed comment on label: only token between spans returned; endsOpen stops continuation |
+// | TestMLScopeFilesAffected_InlineComment_ContinuationLine        | Inline <!-- --> on a list continuation line hides its token; token outside is returned (AC11b)         |
 
 import (
 	"encoding/json"
@@ -3882,5 +3890,248 @@ func TestMLScope_HTMLCommentedStatus_MLSCompleteBlocked(t *testing.T) {
 	}
 	if mlsCheck.Status == "passed" {
 		t.Fatalf("expected mls_complete blocked (ML-1A has ✅ only inside HTML comment → missing live status); got passed\nevidence: %v", mlsCheck.Evidence)
+	}
+}
+
+// ── ML-3C tests — AC11 (parseMLScopeFilesAffected, HTML comment masking) ────
+
+// TestMLScopeFilesAffected_LabelInComment_NotDeclaration asserts that a
+// **Files affected:** label line whose column 0 is inside an HTML comment
+// (<!-- … -->) is silently skipped, and a real declaration following the
+// comment is found and its tokens returned (AC11, ML-3C, REQ-2026-10-31).
+//
+// Contra-braço: without HTMLCommentMask in parseMLScopeFilesAffected the
+// commented label would be treated as the real one; evil.go would be added
+// to scope and this test would fail (hasDecl true, patterns contains evil.go).
+//
+// Reconciliation (Regra Dura): the function skips label lines inside <!-- -->
+// and continues scanning; the real label outside the comment is returned.
+func TestMLScopeFilesAffected_LabelInComment_NotDeclaration(t *testing.T) {
+	// Document:
+	//  line 0: ## Wave 1 — Test
+	//  line 1: ### ML-1A — scope
+	//  line 2: <!--
+	//  line 3: **Files affected:** `evil.go`    ← inside comment, must be skipped
+	//  line 4: -->
+	//  line 5: **Files affected:** `real.go`    ← real label, outside comment
+	doc := "## Wave 1 — Test\n" +
+		"### ML-1A — scope\n" +
+		"<!--\n" +
+		"**Files affected:** `evil.go`\n" +
+		"-->\n" +
+		"**Files affected:** `real.go`\n"
+
+	lines := splitRoadmapLines(doc)
+	fenced := fenceMask(lines)
+
+	patterns, hasDecl := parseMLScopeFilesAffected(lines, fenced, 0, len(lines))
+	if !hasDecl {
+		t.Fatalf("expected hasDecl=true (real label at line 6 must be found)")
+	}
+	if len(patterns) != 1 || patterns[0] != "real.go" {
+		t.Errorf("expected patterns=[real.go], got %v (evil.go must not appear)", patterns)
+	}
+}
+
+// TestMLScopeFilesAffected_ContinuationInComment_Truncated asserts that a list
+// item continuation line inside an HTML comment block ends the declaration
+// (treated like a code-fence line — "como cerca"), so the commented token is
+// NOT added to scope (AC11, ML-3C, REQ-2026-10-31).
+//
+// Contra-braço: without the htmlMask[j] break in the continuation loop the
+// commented item would be scanned past the closing --> line, and evil.go would
+// appear in patterns. The test fails because patterns does not contain evil.go.
+//
+// Reconciliation (Regra Dura): a continuation line inside <!-- --> stops the
+// declaration collection; only tokens before the comment appear in scope.
+func TestMLScopeFilesAffected_ContinuationInComment_Truncated(t *testing.T) {
+	// Document:
+	//  line 0: **Files affected:** `real.go`    ← real label
+	//  line 1: <!--                              ← opens comment
+	//  line 2: - `evil.go`                       ← inside comment, must NOT be a token
+	//  line 3: -->
+	doc := "**Files affected:** `real.go`\n" +
+		"<!--\n" +
+		"- `evil.go`\n" +
+		"-->\n"
+
+	lines := splitRoadmapLines(doc)
+	fenced := fenceMask(lines)
+
+	patterns, hasDecl := parseMLScopeFilesAffected(lines, fenced, 0, len(lines))
+	if !hasDecl {
+		t.Fatalf("expected hasDecl=true (real label at line 1)")
+	}
+	for _, p := range patterns {
+		if p == "evil.go" {
+			t.Errorf("evil.go must NOT be in scope (it is inside HTML comment); patterns: %v", patterns)
+		}
+	}
+	found := false
+	for _, p := range patterns {
+		if p == "real.go" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("real.go must be in scope; patterns: %v", patterns)
+	}
+}
+// ── ML-3C ação 3 tests — AC11b (parseMLScopeFilesAffected, inline HTML comment stripping) ─────
+
+// TestMLScopeFilesAffected_InlineComment_HidesToken asserts that a backtick-quoted
+// token inside an inline HTML comment (<!-- `token` -->) on the label line is NOT
+// added to scope, while a token outside the comment IS returned (AC11b, ML-3C ação 3).
+//
+// Contra-braço: without StripInlineHTMLComments applied to the label line,
+// extractTokens sees the raw line and returns both real.go and evil.go; the test
+// fails because evil.go appears in patterns.
+//
+// Reconciliation (Regra Dura): inline complete <!-- --> on the label line removes the
+// backtick-quoted token inside it; only tokens outside comments are extracted.
+func TestMLScopeFilesAffected_InlineComment_HidesToken(t *testing.T) {
+	// Label: **Files affected:** `real.go` <!-- `evil.go` -->
+	// After strip: **Files affected:** `real.go`  (comment replaced with space)
+	lines := []string{
+		"**Files affected:** `real.go` <!-- `evil.go` -->",
+	}
+	fenced := make([]bool, len(lines))
+
+	patterns, hasDecl := parseMLScopeFilesAffected(lines, fenced, 0, len(lines))
+	if !hasDecl {
+		t.Fatal("expected hasDecl=true")
+	}
+	for _, p := range patterns {
+		if p == "evil.go" {
+			t.Errorf("evil.go must NOT be in scope (inside inline comment); patterns: %v", patterns)
+		}
+	}
+	found := false
+	for _, p := range patterns {
+		if p == "real.go" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("real.go must be in scope (outside comment); patterns: %v", patterns)
+	}
+}
+
+// TestMLScopeFilesAffected_InlineComment_OpenNoClose asserts that an unclosed <!--
+// on the label line discards tokens that follow it on that line; a continuation line
+// whose column 0 is inside the resulting multi-line comment is blocked by the
+// existing htmlCommentMask ("o comportamento de máscara multi-linha que você já fez
+// continua", AC11b, ML-3C ação 3).
+//
+// Contra-braço: without StripInlineHTMLComments, extractTokens returns evil.go from
+// the raw label line (between <!-- and EOL); the test fails because evil.go appears.
+//
+// Reconciliation (Regra Dura): unclosed <!-- truncates the label line; tokens after
+// it are invisible; continuation lines inside the multi-line comment are blocked by
+// htmlCommentMask as before.
+func TestMLScopeFilesAffected_InlineComment_OpenNoClose(t *testing.T) {
+	// Document:
+	//  line 0: **Files affected:** `real.go` <!-- `evil.go`   ← unclosed comment
+	//  line 1: - `evil-cont.go`                               ← inside multi-line comment (htmlMask)
+	//  line 2: -->
+	doc := "**Files affected:** `real.go` <!-- `evil.go`\n" +
+		"- `evil-cont.go`\n" +
+		"-->\n"
+
+	lines := splitRoadmapLines(doc)
+	fenced := fenceMask(lines)
+
+	patterns, hasDecl := parseMLScopeFilesAffected(lines, fenced, 0, len(lines))
+	if !hasDecl {
+		t.Fatalf("expected hasDecl=true")
+	}
+	found := false
+	for _, p := range patterns {
+		if p == "real.go" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("real.go must be in scope (before <!--); patterns: %v", patterns)
+	}
+	for _, p := range patterns {
+		if p == "evil.go" || p == "evil-cont.go" {
+			t.Errorf("%q must NOT be in scope; patterns: %v", p, patterns)
+		}
+	}
+}
+
+// TestMLScopeFilesAffected_InlineComment_BetweenTokens asserts that when a label
+// line contains a closed inline comment followed by an unclosed one, only the token
+// between the two comments is returned, and the endsOpen=true from the unclosed
+// comment prevents any continuation lines from being collected (AC11b, ML-3C ação 3).
+//
+// Contra-braço: without StripInlineHTMLComments applied to the label, evil-a.go and
+// evil-b.go inside the comment spans would appear in patterns. Without endsOpen
+// breaking the continuation loop, other.go from the continuation would also appear.
+//
+// Reconciliation (Regra Dura): multiple inline comments on the label line are all
+// stripped left-to-right; only tokens outside every span are extracted; an unclosed
+// "<!--" stops continuation collection.
+func TestMLScopeFilesAffected_InlineComment_BetweenTokens(t *testing.T) {
+	// Document:
+	//  line 0: **Files affected:** <!-- `evil-a.go` --> `x.go` <!-- `evil-b.go`  ← closed then unclosed
+	//  line 1: `other.go`                                                          ← continuation; endsOpen stops loop before reaching it
+	doc := "**Files affected:** <!-- `evil-a.go` --> `x.go` <!-- `evil-b.go`\n" +
+		"`other.go`\n"
+
+	lines := splitRoadmapLines(doc)
+	fenced := fenceMask(lines)
+
+	patterns, hasDecl := parseMLScopeFilesAffected(lines, fenced, 0, len(lines))
+	if !hasDecl {
+		t.Fatalf("expected hasDecl=true")
+	}
+	if len(patterns) != 1 || patterns[0] != "x.go" {
+		t.Errorf("expected patterns=[x.go], got %v (evil-a.go, evil-b.go, other.go must not appear)", patterns)
+	}
+}
+
+// TestMLScopeFilesAffected_InlineComment_ContinuationLine asserts that an inline
+// HTML comment on a list-item continuation line hides the token inside it, while a
+// token outside the comment on the same line is still returned (AC11b, ML-3C ação 3).
+//
+// Contra-braço: without StripInlineHTMLComments applied to continuation lines,
+// extractTokens returns evil.go from the raw continuation; the test fails.
+//
+// Reconciliation (Regra Dura): inline stripping is applied to both the label line
+// and continuation lines; tokens inside comments are invisible regardless of which
+// line they appear on.
+func TestMLScopeFilesAffected_InlineComment_ContinuationLine(t *testing.T) {
+	// Document:
+	//  line 0: **Files affected:** `real.go`          ← label (no comment)
+	//  line 1: - `ok.go` <!-- `evil.go` -->            ← list item with inline comment
+	lines := []string{
+		"**Files affected:** `real.go`",
+		"- `ok.go` <!-- `evil.go` -->",
+	}
+	fenced := make([]bool, len(lines))
+
+	patterns, hasDecl := parseMLScopeFilesAffected(lines, fenced, 0, len(lines))
+	if !hasDecl {
+		t.Fatal("expected hasDecl=true")
+	}
+	for _, p := range patterns {
+		if p == "evil.go" {
+			t.Errorf("evil.go must NOT be in scope (inside inline comment on continuation); patterns: %v", patterns)
+		}
+	}
+	wantIn := []string{"real.go", "ok.go"}
+	for _, w := range wantIn {
+		found := false
+		for _, p := range patterns {
+			if p == w {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("%q must be in scope; patterns: %v", w, patterns)
+		}
 	}
 }
