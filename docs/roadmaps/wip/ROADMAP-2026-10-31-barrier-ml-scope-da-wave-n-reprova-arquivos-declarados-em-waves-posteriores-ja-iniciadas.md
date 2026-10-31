@@ -56,7 +56,7 @@ grep -q 'Prescrições' docs/seguranca/2026-10-31-wave0-ml-scope-waves-iniciadas
 > Dependencies: Wave 0 auditada.
 
 ### ML-1A — ml_scope cobre as waves 0..N e as posteriores iniciadas (apolo-tf) — AC1–AC7
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-31. Predicado `mlScopeWaveIsStarted` extraído de `mlScopeComputeK` (VS16 U+FE0F preservado, conferido por byte); alvo = waves 0..N + posteriores iniciadas, `declFailures` só em 0..N; membros só com waves iniciadas. 12 testes novos ou reescritos conferidos pelo nome em `-v`. Contra-braços medidos: 0..N reprova o AC1; faixa contínua 0..max(N, K) reprova o vetor de gap do AC3; faixa 0..K nos membros reprova o AC3b; sem a guarda `diffPath == relPath`, o T22 reescrito vê a rejeição duas vezes. `scripts/check-barrier.sh` verde.
 **Files affected:** `internal/commands/barrier.go`, `internal/commands/barrier_ml_scope_test.go`, `docs/cli-parity.md`
 **Actions:**
 1. Predicado "wave iniciada" extraído do corpo de `mlScopeComputeK` e usado pelos dois laços: alvo = waves 0..N + waves > N iniciadas; membros = waves iniciadas (sem faixa contínua).
@@ -65,9 +65,9 @@ grep -q 'Prescrições' docs/seguranca/2026-10-31-wave0-ml-scope-waves-iniciadas
 4. Atualizar comentários de `barrier.go` e `docs/cli-parity.md` (AC6).
 5. Prescrições P-1 a P-7 do parecer da Wave 0, com P-1 e P-5 lidas na opção B.
 **Acceptance criteria:**
-- [ ] AC1–AC6 da REQ, cada teste novo com a frase da Regra de Reconciliação
-- [ ] contra-braço: com o recorte 0..N de volta, o teste de AC1 reprova; com a faixa contínua 0..max(N, K), o vetor de gap de AC3 reprova; com a faixa 0..K nos membros, o de AC3b reprova
-- [ ] pacote `internal/commands` verde
+- [x] AC1–AC6 da REQ, cada teste novo com a frase da Regra de Reconciliação
+- [x] contra-braço: com o recorte 0..N de volta, o teste de AC1 reprova; com a faixa contínua 0..max(N, K), o vetor de gap de AC3 reprova; com a faixa 0..K nos membros, o de AC3b reprova
+- [x] pacote `internal/commands` verde
 
 **Gates da wave:**
 ```bash
