@@ -19,7 +19,7 @@ vivos: `release tag` não confere o `package-lock` (AC1); `InstallGates` sem `os
 (AC4). `GIT_TERMINAL_PROMPT` sai do escopo pela medição (REQ, Motivation).
 
 ## Acceptance Criteria
-- [ ] AC1–AC5 da REQ
+- [ ] AC1–AC6 da REQ
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -55,7 +55,7 @@ grep -q 'Prescrições' docs/seguranca/2026-10-31-wave0-debitos-de-higiene.md
 > Dependencies: Wave 0 auditada.
 
 ### ML-1A — `release tag` confere o `package-lock` (apolo-tf) — AC1
-**Status:** ✅ Concluído — auditado em 2026-10-31. Duas entradas novas em `releaseVersionFiles` (raiz e `packages[""]` do lockfile); lockfile sem `packages[""]` falha fechado; ajuda e `cli-parity.md` dizem 5 arquivos / 7 conferências. A fixture de `scripts/check-release-tag-parity.sh` ganhou o lockfile (arquivo acrescentado ao escopo); o script passa (rodado pelo arquiteto). 3 subtestes novos conferidos pelo nome; contra-braço: sem as entradas, reprovam.
+**Status:** ✅ Concluído — auditado em 2026-10-31. Duas entradas novas em `releaseVersionFiles` (raiz e `packages[""]` do lockfile); lockfile sem `packages[""]` falha fechado. São 4 arquivos e 5 conferências (corrigido depois do red team; o texto anterior desta nota dizia 5 e 7). A fixture de `scripts/check-release-tag-parity.sh` ganhou o lockfile (arquivo acrescentado ao escopo); o script passa (rodado pelo arquiteto). 3 subtestes novos conferidos pelo nome; contra-braço: sem as entradas, reprovam.
 **Files affected:** `internal/commands/release.go`, `internal/commands/release_test.go`, `scripts/check-release-tag-parity.sh`, `docs/cli-parity.md`
 **Actions:**
 1. `releaseVersionFiles` ganha `npm/package-lock.json` (raiz e `packages[""]`), com extrator próprio.
@@ -109,17 +109,42 @@ env PATH="$(dirname "$(command -v go)"):/usr/bin:/bin" go test ./internal/comman
 > Dependencies: Wave 1 auditada.
 
 ### ML-2A — Red team dos débitos de higiene (hades-tf)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-31. Aprova com ressalvas; P-1 a P-3 cumpridas. Quatro achados LOW e o residual R-4 viram a Wave 3 (defeito conhecido se corrige no mesmo PR): A-1 `cli-parity.md` ainda lista `pypi/trackfw/__init__.py` e diz 5 arquivos / 7 conferências (são 4 e 5; a nota de auditoria do ML-1A repetiu o número errado do relatório sem conferir, erro do arquiteto); A-2 extratores JSON aceitam `Version` por correspondência sem caixa; A-3 teste de 0 mensagens só procura uma das mensagens; A-4 nenhum teste prova que os modelos resolvidos chegam aos agentes gerados (mutação com `nil` sobrevive); R-4 `WriteFile`+`Chmod` seguem symlink trocado na corrida (Chmod pelo symlink em 171 de 5000 iterações) e hardlink.
 **Files affected:** `docs/seguranca/2026-10-31-redteam-debitos-de-higiene.md`
 **Actions:**
 1. Tentar fazer o `release tag` aceitar lockfile divergente e o `discover --init` deixar o script sem bit.
 2. Veredito por prescrição da Wave 0, com evidência.
 **Acceptance criteria:**
-- [ ] cada prescrição com veredito e evidência
-- [ ] residual declarado
+- [x] cada prescrição com veredito e evidência
+- [x] residual declarado
 
 **Gates da wave:**
 ```bash
 test -f docs/seguranca/2026-10-31-redteam-debitos-de-higiene.md
+```
+
+---
+
+## Wave 3 — Corretivos do red team (1 ML)
+> Dependencies: Wave 2 auditada.
+
+### ML-3A — Achados A-1 a A-4 e R-4 do red team (apolo-tf) — AC6
+**Status:** ⬜ Pendente
+**Files affected:** `docs/cli-parity.md`, `scripts/check-release-tag-parity.sh`, `internal/commands/release.go`, `internal/commands/release_test.go`, `internal/generators/update_test.go`, `internal/discover/discover.go`, `internal/discover/discover_test.go`, `internal/generators/scaffold.go`, `internal/generators/scaffold_test.go`
+**Actions:**
+1. A-1: `cli-parity.md` (pré-condição 3 do `release tag`) e comentários do script descrevem 4 arquivos e 5 conferências.
+2. A-2: extratores de versão de JSON (`package.json` e os dois do lockfile) leem a chave exata.
+3. A-3: o teste de destinos fora do catálogo exige stderr vazio.
+4. A-4: teste que prova que os modelos resolvidos chegam aos agentes gerados.
+5. R-4: os três pontos de escrita do AC2/AC2b passam a `pathguard.GuardedWrite`, mantendo os testes do bit de execução.
+**Acceptance criteria:**
+- [ ] AC6 da REQ; contra-braço por item (A-2 com chave `Version` diferente; A-3 com a mensagem de configuração só do projeto; A-4 com `nil`; R-4 com symlink plantado no lugar do arquivo)
+- [ ] pacotes `internal/commands`, `internal/discover`, `internal/generators` e `internal/pathguard` verdes
+
+**Gates da wave:**
+```bash
+go build ./...
+go vet ./internal/commands/ ./internal/discover/ ./internal/generators/
+env PATH="$(dirname "$(command -v go)"):/usr/bin:/bin" go test ./internal/commands/ ./internal/discover/ ./internal/generators/ ./internal/pathguard/ -count=1
 make quality
 ```

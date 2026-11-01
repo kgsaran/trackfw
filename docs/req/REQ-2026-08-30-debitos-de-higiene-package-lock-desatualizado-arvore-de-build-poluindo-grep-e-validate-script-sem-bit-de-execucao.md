@@ -66,6 +66,14 @@ Resíduos que não quebram nada até quebrarem uma investigação ou uma release
 - [ ] **AC4** — parecer do #633 corrigido quanto ao R-5 (nota do arquiteto, sem reescrever o
       parecer) e as duas notas de vault escritas (fixture `followRemoteHEAD never`;
       `GIT_TERMINAL_PROMPT` sem terminal), linkadas no `vault/notes/index.md`.
+- [ ] **AC6** (red team, `docs/seguranca/2026-10-31-redteam-debitos-de-higiene.md`; defeito conhecido se corrige neste PR) — (a) `docs/cli-parity.md` e
+      os comentários de `scripts/check-release-tag-parity.sh` descrevem 4 arquivos e 5 conferências, sem
+      o `pypi/trackfw/__init__.py` (A-1); (b) os extratores de versão de JSON leem a chave exata
+      (`version`), não a correspondência sem caixa do `encoding/json` (A-2); (c) o teste de "nenhuma
+      mensagem sem destino do catálogo" exige stderr vazio (A-3); (d) um teste prova que os modelos
+      resolvidos chegam aos agentes gerados (A-4); (e) os três pontos de escrita do AC2/AC2b gravam com
+      `pathguard.GuardedWrite` (arquivo temporário, `Chmod` no descritor, `rename`), fechando a corrida
+      entre a checagem e a escrita e o caminho por hardlink (R-4).
 - [ ] **AC5** — `make quality` exit 0 e CI verde.
 
 ## Negative Scope
