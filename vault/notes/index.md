@@ -3,6 +3,7 @@
 > Ponto de entrada de conhecimento do projeto para agentes e pessoas.
 
 ## Índice
+- [harness-memoria-read-side-nao-corrigivel-por-instrucao-e-nested-repo-root-2026-11-01](harness-memoria-read-side-nao-corrigivel-por-instrucao-e-nested-repo-root-2026-11-01.md) — 🔴 **harness injeta `MEMORY.md loaded` de cwd-dispatch (incontornável por instrução no body); `git rev-parse --show-toplevel` em nested repo retorna inner root; AC4 deve excluir nested repos de "stray"** (#646 Wave 0)
 - [git-terminal-prompt-sem-terminal-falha-na-hora-2026-10-31](git-terminal-prompt-sem-terminal-falha-na-hora-2026-10-31.md) — sem terminal o git falha em 0 s ao pedir credencial (abre `/dev/tty`); `GIT_TERMINAL_PROMPT=0` não muda nada para agente/CI; GCM e SSH são outra causa
 - [fixture-follow-remote-head-never-neutraliza-a-forge-2026-10-31](fixture-follow-remote-head-never-neutraliza-a-forge-2026-10-31.md) — origin em caminho local pula a forge e `followRemoteHEAD never` força o `ls-remote`; sem ele o teste passa pela fonte errada no git ≥ 2.48
 

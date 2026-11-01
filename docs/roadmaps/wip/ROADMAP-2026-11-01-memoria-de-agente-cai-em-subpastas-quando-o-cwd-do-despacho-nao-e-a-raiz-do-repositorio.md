@@ -29,7 +29,7 @@ Varredura de issues (2026-11-01): abertos #646 e #649; só o #646 trata do mecan
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model (hades-tf)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-11-01. P-1 a P-8 aceitas, com duas correções do arquiteto: (1) P-5 cita `scripts/check-doctor-parity.sh`, que não existe (`ls scripts | grep -i doctor` vazio); o novo tipo de achado entra só no `printDoctorReport` e nos testes; (2) P-2 aprovada como emenda ao AC1 (o harness carrega o `MEMORY.md` do caminho injetado, logo sem leitura explícita a memória da raiz não volta). Padrão `*/**/.claude/agent-memory/` remedido pelo arquiteto com `git check-ignore -v --no-index` num repositório do scratchpad: raiz não ignorada; `pypi/...`, `a/b/c/d/...` e o aninhado `.claude/agent-memory/zeus-tf/.claude/agent-memory/...` ignorados. O `doctor` sai 0 com achados (RunE retorna nil), então o aviso não muda o exit code.
 **Files affected:** `docs/seguranca/2026-11-01-wave0-memoria-de-agente-em-subpasta.md`
 **Actions:**
 1. Completude da enumeração: todos os sítios que geram prompt de agente com `memory:` (assets, golden files, renderização por destino em `internal/integrations/render.go`, o agente arquiteto), o mecanismo de regras de `.gitignore` (`generateGitIgnore`, `internal/generators/scaffold.go`; chamado por `init` e por `update` em `internal/generators/update.go`), o `doctor` (`internal/commands/doctor.go`), e o conjunto de orquestração do barrier (`buildMLScopeOrchestrationSet`, `internal/commands/barrier.go`, que só aceita `.claude/agent-memory/` na raiz).
@@ -37,9 +37,9 @@ Varredura de issues (2026-11-01): abertos #646 e #649; só o #646 trata do mecan
 3. Alvos de falsificação nos dois sentidos para cada AC.
 4. Residual declarado.
 **Acceptance criteria:**
-- [ ] As quatro seções respondidas com evidência (comando e resultado)
-- [ ] Prescrições em seção intitulada `Prescrições`
-- [ ] Nenhuma linha de implementação escrita
+- [x] As quatro seções respondidas com evidência (comando e resultado)
+- [x] Prescrições em seção intitulada `Prescrições`
+- [x] Nenhuma linha de implementação escrita
 
 **Gates da wave:**
 ```bash
@@ -47,8 +47,53 @@ test -f docs/seguranca/2026-11-01-wave0-memoria-de-agente-em-subpasta.md
 grep -q '^## Prescrições' docs/seguranca/2026-11-01-wave0-memoria-de-agente-em-subpasta.md
 ```
 
-## Wave 1 — Implementação (preenchida após a auditoria da Wave 0)
-> Dependencies: Wave 0 auditada.
+## Wave 1 — Implementação (2 executores em paralelo, pacotes disjuntos)
+> Dependencies: Wave 0 auditada. ML-1A só em `internal/integrations/` e no asset do arquiteto; ML-1B e ML-1C no mesmo executor, em sequência, porque ambos tocam `docs/cli-parity.md`.
+
+### ML-1A — Instrução de memória no renderizador do Claude Code e de despacho no arquiteto (apolo-tf) — AC1, AC2
+**Status:** ⬜ Pendente
+**Files affected:** `internal/integrations/render.go`, `internal/integrations/render_test.go`, `internal/integrations/assets/agents/architect.md`, `internal/integrations/testdata/`
+**Actions:**
+1. P-1/P-2: no renderizador, só para o destino `claude`, acrescentar ao corpo a instrução de memória do AC1 (escrita e leitura na raiz do repositório).
+2. P-3: instrução de despacho do AC2 no corpo de `architect.md`.
+3. Goldens atualizados; contra-braço: texto do AC1 ausente em codex, opencode, agent-directory e nos demais destinos.
+**Acceptance criteria:**
+- [ ] AC1 e AC2 da REQ; contra-braço por destino
+- [ ] pacote `internal/integrations` verde
+
+### ML-1B — Regra de `.gitignore` para memória em subpasta (apolo-tf) — AC3
+**Status:** ⬜ Pendente
+**Files affected:** `internal/generators/scaffold.go`, `internal/generators/gitignore_test.go`, `docs/cli-parity.md`
+**Actions:**
+1. P-4: `generateGitIgnore` garante `*/**/.claude/agent-memory/` com detecção por linha exata.
+2. P-7: testes com os quatro vetores da REQ medidos por `git check-ignore` e idempotência.
+**Acceptance criteria:**
+- [ ] AC3 da REQ; contra-braço: regra ausente → subpasta não ignorada; padrão `**/` → raiz ignorada
+- [ ] pacote `internal/generators` verde
+
+### ML-1C — `doctor` aponta memória fora da raiz (apolo-tf, depois do ML-1B) — AC4
+**Status:** ⬜ Pendente
+**Files affected:** `internal/commands/doctor.go`, `internal/commands/doctor_test.go`, `internal/integrations/doctor.go`, `docs/cli-parity.md`
+**Actions:**
+1. P-5 (sem o script inexistente): raiz por `git rev-parse --show-toplevel`; ignora `.git`, `node_modules`, symlink e repositório aninhado; conta arquivos; novo tipo no `printDoctorReport`.
+**Acceptance criteria:**
+- [ ] AC4 da REQ; contra-braço: sem diretório fora da raiz, nenhuma linha; com repositório aninhado, nenhuma linha
+- [ ] pacote `internal/commands` verde
+
+### ML-1D — Este repositório (arquiteto) — AC5
+**Status:** ⬜ Pendente
+**Files affected:** `.gitignore`
+**Actions:** P-6: regra no `.gitignore` e remoção dos três diretórios vazios (não rastreados).
+**Acceptance criteria:**
+- [ ] `find . -path ./node_modules -prune -o -type d -name agent-memory -print` retorna só `./.claude/agent-memory`
+
+**Gates da wave:**
+```bash
+go build ./...
+go vet ./internal/integrations/ ./internal/generators/ ./internal/commands/
+env PATH="$(dirname "$(command -v go)"):/usr/bin:/bin" go test ./internal/integrations/ ./internal/generators/ ./internal/commands/ -count=1
+make quality
+```
 
 ## Wave 2 — Red team (hades-tf)
 > Dependencies: Wave 1 auditada.

@@ -44,11 +44,16 @@ mitiga no que gera.
       `<raiz do repositório>/.claude/agent-memory/<nome-do-agente>/`, com a raiz dada por
       `git rev-parse --show-toplevel`; se o caminho injetado pelo harness não estiver sob essa raiz, o
       agente grava na raiz e não no caminho injetado; nunca grava em `.claude/` de subpasta.
+      **Lado de leitura** (P-2 da Wave 0, `docs/seguranca/2026-11-01-wave0-memoria-de-agente-em-subpasta.md`): o harness carrega o `MEMORY.md` do caminho
+      injetado; quando esse caminho não está sob a raiz, o agente lê explicitamente
+      `<raiz>/.claude/agent-memory/<nome-do-agente>/MEMORY.md` no início. O texto só chega ao destino
+      Claude Code (único que interpreta `memory:`), inserido pelo renderizador, não no corpo do asset.
 - [ ] **AC2 — prompt do orquestrador.** O agente arquiteto gerado instrui a despachar subagentes com o
       cwd na raiz do repositório (comandos em subpasta por caminho absoluto ou em subshell
       `(cd <subpasta> && ...)`), porque o cwd do despacho decide onde o harness cria a memória.
 - [ ] **AC3 — `.gitignore` do consumidor.** `trackfw init` e `trackfw update` garantem uma regra que
-      ignora `.claude/agent-memory/` em qualquer subpasta sem ignorar a da raiz. Medido com
+      ignora `.claude/agent-memory/` em qualquer subpasta sem ignorar a da raiz (padrão
+      `*/**/.claude/agent-memory/`, medido na Wave 0 e pelo arquiteto). Medido com
       `git check-ignore -v` nos quatro casos: subpasta comum, subpasta profunda, aninhada dentro da
       própria memória (`.claude/agent-memory/<agente>/.claude/agent-memory/x`) → ignorados; arquivo da
       memória da raiz → não ignorado. Idempotente: a segunda execução não duplica a regra.
