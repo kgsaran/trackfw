@@ -20,7 +20,7 @@ no prompt do agente; a sessão principal segue o mesmo cwd. O `cd` do agente nã
 Varredura de issues (2026-11-01): abertos #646 e #649; só o #646 trata do mecanismo.
 
 ## Acceptance Criteria
-- [ ] AC1–AC6 da REQ
+- [ ] AC1–AC7 da REQ
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -99,16 +99,41 @@ make quality
 > Dependencies: Wave 1 auditada.
 
 ### ML-2A — Red team da Wave 1 (hades-tf)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-11-01. Reprova a Wave 1 com três achados MEDIUM em código novo e um LOW; todos viram a Wave 3 (defeito conhecido se corrige no mesmo PR). A-1: uma negação `!` do consumidor para `.claude/agent-memory/` é ignorada pela detecção e o append posterior a sobrescreve (last match wins). A-2: o remédio do `doctor` sugere `rm -rf <rel>` sem aspas e relativo à raiz, e com espaço no caminho apaga outro diretório (confirmado no código: `"remove with: rm -rf " + rel`). A-3: o `WalkDir` interno ignora erro de leitura, e uma subpasta ilegível com arquivos é declarada vazia, com sugestão de apagar (confirmado no código: `if innerErr != nil { return nil }`). A-4: o texto `## Dispatch cwd` vai para todos os destinos e afirma comportamento do harness do Claude Code. Ataques que passaram: assinatura com identidade, idempotência do `agents update`, nenhum `hand-modified` depois do upgrade, worktree, laço de symlink, 6000 diretórios em 116 ms.
 **Files affected:** `docs/seguranca/2026-11-01-redteam-memoria-de-agente-em-subpasta.md`, `vault/notes/`
 **Actions:**
 1. Reimplementar a partir da leitura, não do diff: cada prescrição P-1 a P-7 com veredito e evidência.
 2. Atacar o renderizador (vazamento do texto para outro destino, efeito na assinatura e na identidade), a regra de `.gitignore` (padrões preexistentes do consumidor, negações, CRLF) e o `doctor` (custo em árvore grande, `rm -rf` sugerido com caminho que contém espaço ou metacaractere, repositório aninhado, symlink).
 **Acceptance criteria:**
-- [ ] cada prescrição com veredito e evidência
-- [ ] residual declarado
+- [x] cada prescrição com veredito e evidência
+- [x] residual declarado
 
 **Gates da wave:**
 ```bash
 test -f docs/seguranca/2026-11-01-redteam-memoria-de-agente-em-subpasta.md
+```
+
+---
+
+## Wave 3 — Corretivos do red team (1 ML)
+> Dependencies: Wave 2 auditada.
+
+### ML-3A — Achados A-1 a A-4 do red team (apolo-tf) — AC7
+**Status:** ⬜ Pendente
+**Files affected:** `internal/generators/scaffold.go`, `internal/generators/gitignore_test.go`, `internal/commands/doctor.go`, `internal/commands/doctor_test.go`, `internal/integrations/assets/agents/architect.md`, `internal/integrations/testdata/architect.subagent.golden.md`, `internal/integrations/testdata/architect.agent-directory.golden.md`, `internal/integrations/render_test.go`, `docs/cli-parity.md`, `.claude/agent-memory/apolo-tf/`
+**Actions:**
+1. A-1: uma linha `!` do consumidor cujo padrão termina em `.claude/agent-memory/` (ou `.claude/agent-memory`) é tratada como decisão dele: não acrescenta a regra e avisa uma linha.
+2. A-2: o remédio do `doctor` usa o caminho absoluto, entre aspas simples com escape de `'` interno.
+3. A-3: erro de leitura dentro do diretório fora da raiz não vira "vazio": o achado diz que há conteúdo ilegível e não sugere apagar.
+4. A-4: `## Dispatch cwd` qualifica que o comportamento é do Claude Code.
+**Acceptance criteria:**
+- [ ] AC7 da REQ; contra-braço por item (A-1 com a negação; A-2 com espaço e `'` no nome; A-3 com subpasta `chmod 000`, pulado no Windows e como root)
+- [ ] pacotes `internal/generators`, `internal/commands` e `internal/integrations` verdes
+
+**Gates da wave:**
+```bash
+go build ./...
+go vet ./internal/generators/ ./internal/commands/ ./internal/integrations/
+env PATH="$(dirname "$(command -v go)"):/usr/bin:/bin" go test ./internal/generators/ ./internal/commands/ ./internal/integrations/ -count=1
+make quality
 ```

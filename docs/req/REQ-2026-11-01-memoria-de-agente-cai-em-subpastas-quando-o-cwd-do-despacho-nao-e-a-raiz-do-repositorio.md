@@ -62,6 +62,11 @@ mitiga no que gera.
       memória perdida). Sem diretório fora da raiz, nenhuma linha. O `doctor` não apaga nada.
 - [ ] **AC5 — este repositório.** O `.gitignore` do trackfw recebe a mesma regra do AC3 e os três
       diretórios vazios medidos são removidos.
+- [ ] **AC7** (red team, `docs/seguranca/2026-11-01-redteam-memoria-de-agente-em-subpasta.md`; defeito conhecido se corrige neste PR) — (a) negação `!` do
+      consumidor para `.claude/agent-memory/` impede o append (A-1); (b) o remédio do `doctor` usa caminho
+      absoluto entre aspas (A-2); (c) conteúdo ilegível num diretório fora da raiz nunca é declarado vazio
+      nem recebe sugestão de apagar (A-3); (d) `## Dispatch cwd` diz que o comportamento é do Claude Code
+      (A-4).
 - [ ] **AC6** — `make quality` exit 0 e CI verde.
 
 ## Negative Scope
