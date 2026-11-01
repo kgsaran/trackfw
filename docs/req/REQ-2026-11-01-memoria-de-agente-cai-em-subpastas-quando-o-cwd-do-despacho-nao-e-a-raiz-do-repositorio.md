@@ -39,7 +39,7 @@ mitiga no que gera.
 
 ## Acceptance Criteria
 
-- [ ] **AC1 — prompt dos agentes gerados.** Os agentes gerados para o Claude Code (os 12 assets, e o
+- [x] **AC1 — prompt dos agentes gerados.** Os agentes gerados para o Claude Code (os 12 assets, e o
       que o gerador acrescenta a eles) instruem: a memória do agente é sempre
       `<raiz do repositório>/.claude/agent-memory/<nome-do-agente>/`, com a raiz dada por
       `git rev-parse --show-toplevel`; se o caminho injetado pelo harness não estiver sob essa raiz, o
@@ -48,21 +48,21 @@ mitiga no que gera.
       injetado; quando esse caminho não está sob a raiz, o agente lê explicitamente
       `<raiz>/.claude/agent-memory/<nome-do-agente>/MEMORY.md` no início. O texto só chega ao destino
       Claude Code (único que interpreta `memory:`), inserido pelo renderizador, não no corpo do asset.
-- [ ] **AC2 — prompt do orquestrador.** O agente arquiteto gerado instrui a despachar subagentes com o
+- [x] **AC2 — prompt do orquestrador.** O agente arquiteto gerado instrui a despachar subagentes com o
       cwd na raiz do repositório (comandos em subpasta por caminho absoluto ou em subshell
       `(cd <subpasta> && ...)`), porque o cwd do despacho decide onde o harness cria a memória.
-- [ ] **AC3 — `.gitignore` do consumidor.** `trackfw init` e `trackfw update` garantem uma regra que
+- [x] **AC3 — `.gitignore` do consumidor.** `trackfw init` e `trackfw update` garantem uma regra que
       ignora `.claude/agent-memory/` em qualquer subpasta sem ignorar a da raiz (padrão
       `*/**/.claude/agent-memory/`, medido na Wave 0 e pelo arquiteto). Medido com
       `git check-ignore -v` nos quatro casos: subpasta comum, subpasta profunda, aninhada dentro da
       própria memória (`.claude/agent-memory/<agente>/.claude/agent-memory/x`) → ignorados; arquivo da
       memória da raiz → não ignorado. Idempotente: a segunda execução não duplica a regra.
-- [ ] **AC4 — diagnóstico.** `trackfw doctor` lista, como aviso, os diretórios `.claude/agent-memory/`
+- [x] **AC4 — diagnóstico.** `trackfw doctor` lista, como aviso, os diretórios `.claude/agent-memory/`
       fora da raiz, dizendo quantos arquivos cada um tem (vazio é resíduo do harness; com arquivos é
       memória perdida). Sem diretório fora da raiz, nenhuma linha. O `doctor` não apaga nada.
-- [ ] **AC5 — este repositório.** O `.gitignore` do trackfw recebe a mesma regra do AC3 e os três
+- [x] **AC5 — este repositório.** O `.gitignore` do trackfw recebe a mesma regra do AC3 e os três
       diretórios vazios medidos são removidos.
-- [ ] **AC7** (red team, `docs/seguranca/2026-11-01-redteam-memoria-de-agente-em-subpasta.md`; defeito conhecido se corrige neste PR) — (a) negação `!` do
+- [x] **AC7** (red team, `docs/seguranca/2026-11-01-redteam-memoria-de-agente-em-subpasta.md`; defeito conhecido se corrige neste PR) — (a) negação `!` do
       consumidor para `.claude/agent-memory/` impede o append (A-1); (b) o remédio do `doctor` usa caminho
       absoluto entre aspas (A-2); (c) conteúdo ilegível num diretório fora da raiz nunca é declarado vazio
       nem recebe sugestão de apagar (A-3); (d) `## Dispatch cwd` diz que o comportamento é do Claude Code

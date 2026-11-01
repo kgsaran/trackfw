@@ -119,7 +119,7 @@ test -f docs/seguranca/2026-11-01-redteam-memoria-de-agente-em-subpasta.md
 > Dependencies: Wave 2 auditada.
 
 ### ML-3A — Achados A-1 a A-4 do red team (apolo-tf) — AC7
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-11-01. A-1: negação `!` que pode casar subpasta impede o append, com aviso; a primeira versão também bloqueava a negação ancorada na raiz (`!.claude/agent-memory/`, comum com `.claude/*`), que não conflita com a regra (medido pelo arquiteto com `git check-ignore`: raiz não ignorada, `pypi/...` e o aninhado ignorados) — corrigido num segundo despacho, subteste `RootAnchoredNegation_RuleEnters` com as duas formas, contra-braço do executor (lógica antiga reprova). A-2: `shellQuotePOSIX` e caminho absoluto; contra-braço refeito pelo arquiteto só no ramo vazio (sem aspas): o `rm -rf` sugerido apaga o irmão `my/` e `TestScanStrayAgentMemory_PathsWithSpaceAndQuote` reprova; restaurado e conferido com `cmp`. A-3: conteúdo ilegível vira "contents not fully readable", sem `rm -rf`. A-4: `## Dispatch cwd` qualificado como comportamento do Claude Code. Testes rodados por nome em `-v` pelo arquiteto.
 **Files affected:** `internal/generators/scaffold.go`, `internal/generators/gitignore_test.go`, `internal/commands/doctor.go`, `internal/commands/doctor_test.go`, `internal/integrations/assets/agents/architect.md`, `internal/integrations/testdata/architect.subagent.golden.md`, `internal/integrations/testdata/architect.agent-directory.golden.md`, `internal/integrations/render_test.go`, `docs/cli-parity.md`, `.claude/agent-memory/apolo-tf/`
 **Actions:**
 1. A-1: uma linha `!` do consumidor cujo padrão termina em `.claude/agent-memory/` (ou `.claude/agent-memory`) é tratada como decisão dele: não acrescenta a regra e avisa uma linha.
@@ -127,8 +127,8 @@ test -f docs/seguranca/2026-11-01-redteam-memoria-de-agente-em-subpasta.md
 3. A-3: erro de leitura dentro do diretório fora da raiz não vira "vazio": o achado diz que há conteúdo ilegível e não sugere apagar.
 4. A-4: `## Dispatch cwd` qualifica que o comportamento é do Claude Code.
 **Acceptance criteria:**
-- [ ] AC7 da REQ; contra-braço por item (A-1 com a negação; A-2 com espaço e `'` no nome; A-3 com subpasta `chmod 000`, pulado no Windows e como root)
-- [ ] pacotes `internal/generators`, `internal/commands` e `internal/integrations` verdes
+- [x] AC7 da REQ; contra-braço por item (A-1 com a negação; A-2 com espaço e `'` no nome; A-3 com subpasta `chmod 000`, pulado no Windows e como root)
+- [x] pacotes `internal/generators`, `internal/commands` e `internal/integrations` verdes
 
 **Gates da wave:**
 ```bash
