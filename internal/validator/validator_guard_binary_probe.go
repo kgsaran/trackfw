@@ -35,12 +35,23 @@ func guardProbeEndedByDeadline(ctx context.Context) bool {
 	return ctx.Err() != nil
 }
 
-// guardProbeTimeout e o prazo das sondas desta regra (binario, login shell e politica
-// do PowerShell). Vive numa var de pacote pelo mesmo motivo do cmdWaitDelay em
+// guardProbeTimeout e o prazo das sondas desta regra (binario e login shell).
+// Vive numa var de pacote pelo mesmo motivo do cmdWaitDelay em
 // internal/commands/netexec.go: ser substituivel nos testes que exercitam
 // comportamento especifico de prazo. Sem isso, o terceiro caso do doc de
 // guardRunBashLoginProbe so seria testavel com um processo que dorme 5 s.
+//
+// Nota: a sonda de politica do PowerShell usa guardPSPolicyTimeout (20 s) por
+// ter prazo de inicio a frio muito mais longo — ver o comentario de guardGetPSPolicy.
 var guardProbeTimeout = 5 * time.Second
+
+// guardPSPolicyTimeout e o prazo da sonda de politica do PowerShell (guardGetPSPolicy).
+// O powershell.exe 5.1 tem inicio a frio que foi medido entre 2,9 s e 15,1 s no CI de
+// Windows (18 jobs, 2026-10-29 a 2026-11-01, REQ #649). O guardProbeTimeout de 5 s
+// deixaria a sonda estourar nos dias de alta latencia, fazendo o guardCheckPS1RestrictedPolicy
+// ler "" em vez da politica real e ficar em silencio (fail-open). 20 s cobre a cauda medida
+// com margem, sem bloquear o validador de forma perceptivel numa maquina comum.
+var guardPSPolicyTimeout = 20 * time.Second
 
 // errGuardProbeDeadline marca o erro de guardRunProbe cujo processo foi morto pelo prazo.
 //
@@ -242,7 +253,12 @@ var guardFindTrackfwForPS = func() string {
 }
 
 // guardGetPSPolicy queries the effective PowerShell execution policy and returns the
-// policy string (e.g. "Restricted", "RemoteSigned") or "" on error.
+// policy string (e.g. "Restricted", "RemoteSigned") or "" on error, including when
+// the deadline expires. The deadline is guardPSPolicyTimeout (20 s) rather than
+// guardProbeTimeout (5 s) because powershell.exe 5.1 cold-start was measured at up
+// to 15.1 s on Windows CI (REQ #649). An empty return signals "unreadable" to
+// guardCheckPS1RestrictedPolicy, which emits a fail-open warning rather than
+// staying silent.
 //
 // PSExecutionPolicyPreference is unset from the child environment before the query:
 // a parent PowerShell with -ExecutionPolicy Bypass exports that variable, which child
@@ -250,7 +266,7 @@ var guardFindTrackfwForPS = func() string {
 // lines 245-248 / ML-1D measurement).
 // Only called when CurrentGOOS == "windows". Replaced in tests.
 var guardGetPSPolicy = func() string {
-	ctx, cancel := context.WithTimeout(context.Background(), guardProbeTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), guardPSPolicyTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-Command", "Get-ExecutionPolicy") //nolint:gosec
 	cmd.Stdin = nil
@@ -279,8 +295,11 @@ var guardGetPSPolicy = func() string {
 //
 //   - `trackfw` absent from PATH → violation.
 //   - `trackfw guard --help` exits non-zero → violation (subcomando guard ausente).
-//   - Windows + hasPSPosixEntry: shim .ps1 + política Restricted → violation
-//     (ML-1D: com o sufixo `; exit $LASTEXITCODE` a PSSecurityException sai 0 = falha aberta).
+//   - Windows + hasPSPosixEntry + .ps1 + Restricted policy → violation (definitive, short-circuits).
+//     ML-1D: com o sufixo `; exit $LASTEXITCODE` a PSSecurityException sai 0 = falha aberta.
+//   - Windows + hasPSPosixEntry + .ps1 + policy unreadable ("") → warning (not definitive);
+//     the Git Bash probe still runs and its messages are appended after the warning.
+//     AC6 ML-1B: an uncertain warning must not hide a certain finding (ML-5D Git Bash probe).
 func guardBinaryProbeOnce(hasPSPosixEntry bool) []string {
 	bin, err := guardLookupBinary("trackfw")
 	if err != nil {
@@ -306,15 +325,15 @@ func guardBinaryProbeOnce(hasPSPosixEntry bool) []string {
 
 	// Windows-only checks — only relevant when a PS/POSIX-family entry exists.
 	if CurrentGOOS == "windows" && hasPSPosixEntry {
-		if msgs := guardCheckPS1RestrictedPolicy(); len(msgs) > 0 {
-			return msgs
+		policyMsgs, definitive := guardCheckPS1RestrictedPolicy()
+		if definitive {
+			// Restricted: certain fail-open — short-circuit, skip Git Bash probe.
+			return policyMsgs
 		}
-		// ML-5D: also probe the binary that the Git Bash login shell resolves, because
-		// Claude Code runs hook commands via Git Bash whose login profile can prepend ~/bin
-		// to PATH, placing an old (no-guard) binary ahead of the one exec.LookPath sees.
-		if msgs := guardGitBashBinaryProbe(bin); len(msgs) > 0 {
-			return msgs
-		}
+		// policyMsgs is either nil (policy OK / no .ps1) or a single "unreadable" warning
+		// (policy == ""). Either way, continue to the Git Bash probe (AC6 ML-1B: an
+		// uncertain warning must not hide the certain finding of ML-5D).
+		return append(policyMsgs, guardGitBashBinaryProbe(bin)...)
 	}
 	return nil
 }
@@ -322,10 +341,17 @@ func guardBinaryProbeOnce(hasPSPosixEntry bool) []string {
 // guardCheckPS1RestrictedPolicy detects the npm .ps1 shim + Restricted policy scenario.
 // Portabilidade doc (§D5 risk / ML-1D): under Restricted, the PSSecurityException from loading
 // .ps1 exits 0 (not 1) when the hook has `; exit $LASTEXITCODE` — fail-open for ALL PS/POSIX CLIs.
-func guardCheckPS1RestrictedPolicy() []string {
+//
+// Returns (msgs, definitive):
+//   - ("Restricted" message, true):  policy is Restricted — certain fail-open; caller short-circuits.
+//   - ("unreadable" warning, false): policy is "" (e.g. powershell.exe cold-start exceeded
+//     guardPSPolicyTimeout, REQ #649) — uncertain risk; caller continues to Git Bash probe
+//     (AC6 ML-1B: an uncertain warning must not hide a certain finding).
+//   - (nil, false): no .ps1, or policy is readable and not Restricted — nothing to report.
+func guardCheckPS1RestrictedPolicy() ([]string, bool) {
 	resolved := guardFindTrackfwForPS()
 	if resolved == "" || !strings.HasSuffix(strings.ToLower(resolved), ".ps1") {
-		return nil
+		return nil, false
 	}
 	policy := guardGetPSPolicy()
 	if strings.EqualFold(policy, "Restricted") {
@@ -333,9 +359,16 @@ func guardCheckPS1RestrictedPolicy() []string {
 			"trackfw resolves to a PowerShell script (.ps1) under Restricted execution policy — " +
 				"the hook will fail open (exit 0 instead of exit 2); run: " +
 				"Set-ExecutionPolicy -Scope CurrentUser RemoteSigned",
-		}
+		}, true
 	}
-	return nil
+	if policy == "" {
+		return []string{
+			"trackfw resolves to a PowerShell script (.ps1) but the execution policy could not be read — " +
+				"if the policy is Restricted, the hook will fail open (exit 0 instead of exit 2); " +
+				"check with: Get-ExecutionPolicy and fix with: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned",
+		}, false
+	}
+	return nil, false
 }
 
 // --------------------------------------------------------------------------

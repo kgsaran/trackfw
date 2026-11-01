@@ -6675,6 +6675,16 @@ Quando qualquer arquivo de hook usa a nova forma, o validador verifica **uma vez
 - No Windows, se `trackfw` resolve para um `.ps1` sob política `Restricted`: o sufixo
   `; exit $LASTEXITCODE` faz a PSSecurityException sair 0 em vez de 2 — **fail-open**; o
   validador acusa e orienta `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
+- No Windows, se `trackfw` resolve para um `.ps1` mas a política **não pôde ser lida** (e.g.
+  `powershell.exe` não respondeu dentro de 20 s no início a frio — cauda medida até 15,1 s no
+  CI, REQ #649): o validador emite aviso de que se a política for `Restricted` o hook falha
+  aberto, com orientação `Get-ExecutionPolicy` para conferir e
+  `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` para corrigir. A sonda de política usa
+  prazo próprio de 20 s (não os 5 s das outras sondas) exatamente para reduzir este caso.
+  **Diferentemente do caso `Restricted` (que é definitivo e encerra o probe), o aviso de
+  política ilegível não é definitivo — a sonda do Git Bash (ML-5D) ainda é executada em
+  seguida, e suas mensagens são combinadas com o aviso (AC6 ML-1B: um aviso incerto não
+  pode ocultar um achado certo).**
 
 **3. Regra `trackfw_binary_in_project_root` (`validateTrackfwBinaryInProjectRoot`):**
 Detecta `trackfw.exe`, `trackfw.cmd` ou `trackfw.bat` na raiz do projeto. No Windows, cmd.exe

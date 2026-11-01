@@ -370,11 +370,11 @@ func TestGuardBinaryProbeOnce_ConfigSoLegado_SondaNaoRoda(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------
-// (c) Windows + PS1 + Restricted / RemoteSigned / não-Windows
+// (c) Windows + PS1 + Restricted / RemoteSigned / ilegível / não-Windows
 // --------------------------------------------------------------------------
 
 // Reconciliação: afirma que Windows + trackfw resolving para .ps1 + política Restricted
-// gera violation pedindo Set-ExecutionPolicy RemoteSigned.
+// gera violation com a mensagem exata de política Restricted (não a de política ilegível).
 func TestGuardBinaryProbeOnce_WindowsPS1Restricted_Violation(t *testing.T) {
 	CurrentGOOS = "windows"
 	t.Cleanup(func() { CurrentGOOS = runtime.GOOS })
@@ -395,8 +395,12 @@ func TestGuardBinaryProbeOnce_WindowsPS1Restricted_Violation(t *testing.T) {
 	})
 
 	msgs := guardBinaryProbeOnce(true /* hasPSPosixEntry */)
-	if !hasViolation(msgs, "Set-ExecutionPolicy") {
-		t.Errorf("esperado violation com Set-ExecutionPolicy, obteve: %v", msgs)
+	// Assert the Restricted-specific message, not the unreadable-policy message.
+	if !hasViolation(msgs, "under Restricted execution policy") {
+		t.Errorf("esperado violation com 'under Restricted execution policy', obteve: %v", msgs)
+	}
+	if hasViolation(msgs, "could not be read") {
+		t.Errorf("mensagem de política ilegível não deve aparecer para Restricted, obteve: %v", msgs)
 	}
 }
 
@@ -487,6 +491,119 @@ func TestGuardBinaryProbeOnce_WindowsExeRestrictedOk(t *testing.T) {
 	msgs := guardBinaryProbeOnce(true /* hasPSPosixEntry */)
 	if len(msgs) != 0 {
 		t.Errorf("esperado 0 msgs para .exe (discriminante é .ps1), obteve: %v", msgs)
+	}
+}
+
+// Reconciliação: afirma que Windows + .ps1 + política Restricted não chama guardFindGitBashExe
+// (contador = 0) — o retorno definitivo da sonda de política encerra o probe antes de chegar
+// à sonda do Git Bash (AC6 ML-1B: Restricted é certo, não chega a precisar do Git Bash).
+func TestGuardBinaryProbeOnce_WindowsPS1Restricted_GitBashNaoRoda(t *testing.T) {
+	CurrentGOOS = "windows"
+	t.Cleanup(func() { CurrentGOOS = runtime.GOOS })
+
+	origLookup := guardLookupBinary
+	origRun := guardRunProbe
+	origFind := guardFindTrackfwForPS
+	origPolicy := guardGetPSPolicy
+	origFindGitBash := guardFindGitBashExe
+	findGitBashCallCount := 0
+	guardLookupBinary = func(name string) (string, error) { return `C:\tools\trackfw.exe`, nil }
+	guardRunProbe = func(bin string) error { return nil }
+	guardFindTrackfwForPS = func() string { return `C:\npm\trackfw.ps1` }
+	guardGetPSPolicy = func() string { return "Restricted" }
+	guardFindGitBashExe = func() string { findGitBashCallCount++; return `C:\Program Files\Git\bin\bash.exe` }
+	t.Cleanup(func() {
+		guardLookupBinary = origLookup
+		guardRunProbe = origRun
+		guardFindTrackfwForPS = origFind
+		guardGetPSPolicy = origPolicy
+		guardFindGitBashExe = origFindGitBash
+	})
+
+	msgs := guardBinaryProbeOnce(true /* hasPSPosixEntry */)
+	if !hasViolation(msgs, "under Restricted execution policy") {
+		t.Errorf("esperado violation com 'under Restricted execution policy', obteve: %v", msgs)
+	}
+	if findGitBashCallCount != 0 {
+		t.Errorf("guardFindGitBashExe não deve ser chamada com Restricted (retorno definitivo); callCount=%d", findGitBashCallCount)
+	}
+}
+
+// Reconciliação: afirma que Windows + .ps1 + política ilegível ("") + sonda do Git Bash com
+// violação retorna AS DUAS mensagens — a de política ilegível e a do Git Bash — sem que o
+// aviso incerto esconda o achado certo (AC6 ML-1B: um aviso incerto não pode ocultar um
+// achado certo; a sonda do Git Bash ainda é executada após o aviso de ilegível).
+func TestGuardBinaryProbeOnce_WindowsPS1PolicyUnreadableWithGitBashViolation_BothMessagesAppear(t *testing.T) {
+	CurrentGOOS = "windows"
+	t.Cleanup(func() { CurrentGOOS = runtime.GOOS })
+
+	origLookup := guardLookupBinary
+	origRun := guardRunProbe
+	origFind := guardFindTrackfwForPS
+	origPolicy := guardGetPSPolicy
+	origFindGitBash := guardFindGitBashExe
+	origLoginProbe := guardRunBashLoginProbe
+	guardLookupBinary = func(name string) (string, error) { return `C:\tools\trackfw.exe`, nil }
+	guardRunProbe = func(bin string) error { return nil } // PATH binary has guard
+	guardFindTrackfwForPS = func() string { return `C:\npm\trackfw.ps1` }
+	guardGetPSPolicy = func() string { return "" } // unreadable
+	guardFindGitBashExe = func() string { return `C:\Program Files\Git\bin\bash.exe` }
+	// Git Bash login: trackfw not found → "exit 127" violation
+	guardRunBashLoginProbe = func(_ string) (string, bool) { return "", true }
+	t.Cleanup(func() {
+		guardLookupBinary = origLookup
+		guardRunProbe = origRun
+		guardFindTrackfwForPS = origFind
+		guardGetPSPolicy = origPolicy
+		guardFindGitBashExe = origFindGitBash
+		guardRunBashLoginProbe = origLoginProbe
+	})
+
+	msgs := guardBinaryProbeOnce(true /* hasPSPosixEntry */)
+	if len(msgs) != 2 {
+		t.Fatalf("esperado exatamente 2 mensagens (ilegível + Git Bash), obteve %d: %v", len(msgs), msgs)
+	}
+	if !hasViolation(msgs, "could not be read") {
+		t.Errorf("msgs[0] deve conter 'could not be read', obteve: %v", msgs)
+	}
+	if !hasViolation(msgs, "Git Bash") {
+		t.Errorf("msgs[1] deve conter 'Git Bash', obteve: %v", msgs)
+	}
+}
+
+// Reconciliação: afirma que Windows + trackfw resolvendo para .ps1 + política ilegível ("")
+// emite aviso de fail-open (política não pôde ser lida), distinto da mensagem de Restricted.
+// Afirma o AC6 do ML-1B: com policy == "", guardCheckPS1RestrictedPolicy não fica em silêncio.
+func TestGuardBinaryProbeOnce_WindowsPS1PolicyUnreadable_Warning(t *testing.T) {
+	CurrentGOOS = "windows"
+	t.Cleanup(func() { CurrentGOOS = runtime.GOOS })
+
+	origLookup := guardLookupBinary
+	origRun := guardRunProbe
+	origFind := guardFindTrackfwForPS
+	origPolicy := guardGetPSPolicy
+	origFindGitBash := guardFindGitBashExe
+	guardLookupBinary = func(name string) (string, error) { return `C:\tools\trackfw.exe`, nil }
+	guardRunProbe = func(bin string) error { return nil }
+	guardFindTrackfwForPS = func() string { return `C:\npm\trackfw.ps1` }
+	guardGetPSPolicy = func() string { return "" }
+	guardFindGitBashExe = func() string { return "" } // isola do Git Bash real no Windows CI
+	t.Cleanup(func() {
+		guardLookupBinary = origLookup
+		guardRunProbe = origRun
+		guardFindTrackfwForPS = origFind
+		guardGetPSPolicy = origPolicy
+		guardFindGitBashExe = origFindGitBash
+	})
+
+	msgs := guardBinaryProbeOnce(true /* hasPSPosixEntry */)
+	// A mensagem de política ilegível deve estar presente.
+	if !hasViolation(msgs, "could not be read") {
+		t.Errorf("esperado mensagem de política ilegível com 'could not be read', obteve: %v", msgs)
+	}
+	// A mensagem específica de Restricted NÃO deve aparecer — são casos distintos.
+	if hasViolation(msgs, "under Restricted execution policy") {
+		t.Errorf("mensagem de Restricted não deve aparecer para política ilegível, obteve: %v", msgs)
 	}
 }
 

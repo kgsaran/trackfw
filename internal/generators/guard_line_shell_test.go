@@ -22,12 +22,14 @@ package generators
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -44,6 +46,13 @@ const emulatePrefix = "emulate -R sh 2>${null-/dev/null}; "
 // Desliga EQUALS e NOMATCH, mas não protege contra zsh -o nounset nem zsh -o errexit nem cshnullglob.
 // Nunca chegou a ser publicada; mantida aqui só como referência para TestGuardLineShellMatrix_UnsetoptInsuficiente.
 const unsetoptOldPrefix = "unsetopt EQUALS NOMATCH 2>${null-/dev/null}; "
+
+// prazos e delays das chamadas PS (REQ-2026-11-01, AC1, AC2, P-5).
+const (
+	psAssertedTimeout = 15 * time.Second // prazo de cada chamada afirmada na matriz
+	psWarmupTimeout   = 60 * time.Second // prazo do aquecimento por binário (AC1)
+	psWaitDelay       = 5 * time.Second  // WaitDelay para drenar pipes após kill de grandchild (P-5)
+)
 
 // guardShellMatrix mapeia nome legível → constante gerada.
 // Deve conter exactamente as 4 formas PS/POSIX do registry (credential, git-branch,
@@ -225,31 +234,37 @@ func buildPSPath(fakeDir string) string {
 	return "/usr/bin:/bin"
 }
 
-// runGuardLinePS executa a linha de guard via PowerShell com
-// -NoProfile -NonInteractive -Command <linha>.
-// Retorna (exitCode, stderr, stdinCaptured).
-//
-// PATH construído via buildPSPath:
-//   - Windows: stub-dir + %SystemRoot%\System32 (necessário para cmd.exe/powershell.exe).
-//   - Outros SO: stub-dir + /usr/bin:/bin (mesmo padrão do runGuardLine POSIX).
-//
-// Env: herda o processo pai, substituindo PATH (case-insensitive no Windows) e FAKE_RC.
-// stdinCaptured tem CRLF normalizado e trailing \n removido — torna a comparação portável
-// entre "cat > file" (POSIX, sem trailing newline) e "more > file" (Windows, pode adicionar).
-func runGuardLinePS(
-	t *testing.T,
-	psBin string,
-	line string,
-	fakeDir string, // diretório com o stub; "" = trackfw ausente do PATH
-	fakeRC int,
-) (exitCode int, stderr string, stdinCaptured string) {
-	t.Helper()
+// psExecResult contém o resultado de execPSCommand.
+// runErr é não-nil apenas para erros que não são nil nem *exec.ExitError
+// (ex: exec.ErrWaitDelay ou falha de cmd.Start).
+type psExecResult struct {
+	exitCode int
+	stderr   string
+	timedOut bool // ctx.Err() == context.DeadlineExceeded — discriminante do #649 (AC2)
+	started  bool // cmd.ProcessState != nil: o processo chegou a iniciar (P-3)
+	runErr   error
+}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+// execPSCommand executa psBin com -NoProfile -NonInteractive -Command <command>.
+// Não chama funções de testing; todos os resultados são devolvidos em psExecResult.
+//
+// fakeDir != "" → inclui o stub no PATH e define FAKE_RC=fakeRC no env.
+// cmd.WaitDelay = psWaitDelay (P-5): evita bloqueio por grandchild que segura pipe após kill.
+//
+// Classificação do erro em três vias (P-5):
+//   - err == nil          → exitCode = 0
+//   - ErrWaitDelay        → runErr não-nil (grandchild travou pipe)
+//   - *exec.ExitError     → exitCode = ExitCode() (inclui kill por deadline: -1/macOS, 1/Windows)
+//   - outro               → runErr não-nil
+//
+// timedOut é definido como ctx.Err() == context.DeadlineExceeded, não pelo exit code (AC2).
+func execPSCommand(psBin, command, fakeDir string, fakeRC int, timeout time.Duration) psExecResult {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	args := []string{"-NoProfile", "-NonInteractive", "-Command", line}
+	args := []string{"-NoProfile", "-NonInteractive", "-Command", command}
 	cmd := exec.CommandContext(ctx, psBin, args...)
+	cmd.WaitDelay = psWaitDelay
 
 	// Montar PATH adequado ao SO via helper compartilhado com a sonda de absent.
 	pathVal := buildPSPath(fakeDir)
@@ -275,12 +290,112 @@ func runGuardLinePS(
 	var errBuf bytes.Buffer
 	cmd.Stderr = &errBuf
 
-	runErr := cmd.Run()
-	code := 0
-	if runErr != nil {
-		if exitErr, ok := runErr.(*exec.ExitError); ok {
-			code = exitErr.ExitCode()
+	err := cmd.Run()
+
+	var r psExecResult
+	r.stderr = errBuf.String()
+	r.started = cmd.ProcessState != nil
+
+	switch {
+	case err == nil:
+		r.exitCode = 0
+	case errors.Is(err, exec.ErrWaitDelay):
+		r.runErr = err
+	default:
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			r.exitCode = exitErr.ExitCode()
+		} else {
+			r.runErr = err
 		}
+	}
+	r.timedOut = ctx.Err() == context.DeadlineExceeded
+	return r
+}
+
+// psWarmupMu e psWarmupFns guardam, por binário, a função sync.OnceValues que executa
+// o aquecimento exatamente uma vez por processo (AC1, P-2).
+var (
+	psWarmupMu  sync.Mutex
+	psWarmupFns = make(map[string]func() (time.Duration, error))
+)
+
+// psWarmup retorna (dur, err, fresh) do aquecimento de psBin.
+// fresh=true indica que o aquecimento foi executado agora (primeira chamada para este binário).
+// O aquecimento executa: <psBin> -NoProfile -NonInteractive -Command "exit 0" com psWarmupTimeout.
+func psWarmup(psBin string) (dur time.Duration, err error, fresh bool) {
+	psWarmupMu.Lock()
+	fn, exists := psWarmupFns[psBin]
+	if !exists {
+		fn = sync.OnceValues(func() (time.Duration, error) {
+			start := time.Now()
+			ctx, cancel := context.WithTimeout(context.Background(), psWarmupTimeout)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, psBin, "-NoProfile", "-NonInteractive", "-Command", "exit 0")
+			runErr := cmd.Run()
+			d := time.Since(start)
+			if ctx.Err() == context.DeadlineExceeded {
+				return d, fmt.Errorf("timeout após %.1fs", d.Seconds())
+			}
+			if runErr != nil {
+				return d, runErr
+			}
+			return d, nil
+		})
+		psWarmupFns[psBin] = fn
+		fresh = true
+	}
+	psWarmupMu.Unlock()
+	dur, err = fn()
+	return
+}
+
+// ensurePSWarmup aquece psBin uma vez por processo e registra o resultado com t.Logf.
+// Chama t.Fatalf com mensagem própria se o aquecimento falhar (AC1).
+// Todo braço PS chama ensurePSWarmup logo após LookPath (P-2, P-8).
+func ensurePSWarmup(t *testing.T, psBin string) {
+	t.Helper()
+	dur, err, fresh := psWarmup(psBin)
+	if err != nil {
+		t.Fatalf("aquecimento de %s falhou: %v (%.2fs)", psBin, err, dur.Seconds())
+	}
+	if fresh {
+		t.Logf("aquecimento de %s: %.2fs", psBin, dur.Seconds())
+	} else {
+		t.Logf("aquecimento de %s: resultado em cache (%.2fs)", psBin, dur.Seconds())
+	}
+}
+
+// runGuardLinePS executa a linha de guard via PowerShell com
+// -NoProfile -NonInteractive -Command <linha>.
+// Retorna (exitCode, stderr, stdinCaptured).
+//
+// Delega a execução para execPSCommand (AC2):
+//   - Se timedOut: t.Fatalf com "timeout", o binário e o prazo.
+//   - Se runErr: t.Fatalf com o erro (ex: ErrWaitDelay de grandchild).
+//
+// PATH construído via buildPSPath:
+//   - Windows: stub-dir + %SystemRoot%\System32 (necessário para cmd.exe/powershell.exe).
+//   - Outros SO: stub-dir + /usr/bin:/bin (mesmo padrão do runGuardLine POSIX).
+//
+// stdinCaptured tem CRLF normalizado e trailing \n removido — torna a comparação portável
+// entre "cat > file" (POSIX, sem trailing newline) e "more > file" (Windows, pode adicionar).
+func runGuardLinePS(
+	t *testing.T,
+	psBin string,
+	line string,
+	fakeDir string, // diretório com o stub; "" = trackfw ausente do PATH
+	fakeRC int,
+) (exitCode int, stderr string, stdinCaptured string) {
+	t.Helper()
+
+	r := execPSCommand(psBin, line, fakeDir, fakeRC, psAssertedTimeout)
+
+	if r.timedOut {
+		t.Fatalf("timeout: %s após %.0fs — prazo da chamada afirmada esgotado", psBin, psAssertedTimeout.Seconds())
+	}
+	if r.runErr != nil {
+		t.Fatalf("erro de execução em %s: %v", psBin, r.runErr)
 	}
 
 	var captured string
@@ -294,7 +409,7 @@ func runGuardLinePS(
 		}
 	}
 
-	return code, errBuf.String(), captured
+	return r.exitCode, r.stderr, captured
 }
 
 // TestGuardLineShellMatrix é o teste principal exigido pelo AC da REQ-2026-10-20.
@@ -404,6 +519,11 @@ func TestGuardLineShellMatrix(t *testing.T) {
 					if err != nil {
 						t.Skipf("%s não encontrado em PATH — PowerShell ausente neste ambiente", ps.bin)
 					}
+
+					// Aquecimento por binário, uma vez por processo (AC1, P-2).
+					// ensurePSWarmup usa sync.OnceValues: o warmup roda uma única vez;
+					// arms subsequentes verificam o resultado em cache e emitem log próprio (P-8).
+					ensurePSWarmup(t, psBin)
 
 					// Caso 1: FAKE_RC=0 (allow) → exit 0, stdin preservado.
 					// Afirma: a linha PS/POSIX não altera o exit code quando trackfw sai 0.
@@ -624,4 +744,50 @@ func TestGuardLineShellMatrix_UnsetoptInsuficiente(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestRunGuardLinePS_TimeoutDiscriminado verifica que execPSCommand discrimina
+// corretamente timeout (kill por deadline) de saída natural, usando ctx.Err() (AC3, P-3, P-4).
+//
+// Usa apenas pwsh (P-9): evita cold start de powershell.exe no CI de Windows, que recriaria o #649.
+//
+// Reconciliação — AC3, dois braços:
+//
+//   - Braço "curto": afirma que ctx.Err()==DeadlineExceeded (não o exit code) é o discriminante
+//     de timeout — porque kill sai com exit ≠ 0, mas timedOut deve ser true pelo contexto.
+//
+//   - Braço "normal": afirma que timedOut=false quando pwsh sai naturalmente com exit 1
+//     (P-4: exit 1 falsifica mutação timedOut=(exitCode!=0), que produziria true incorretamente).
+func TestRunGuardLinePS_TimeoutDiscriminado(t *testing.T) {
+	// P-9: usa só pwsh para não causar cold start do powershell.exe no CI de Windows.
+	psBin, err := exec.LookPath("pwsh")
+	if err != nil {
+		t.Skip("pwsh não encontrado — teste do discriminante não aplicável neste ambiente")
+	}
+
+	// Braço curto: Start-Sleep 60 com prazo de 2 s (P-3).
+	// Afirma: timedOut=true quando o processo é morto pelo deadline antes de terminar.
+	// started=true confirma que o processo chegou a iniciar (ctx não expirou antes de cmd.Start).
+	t.Run("curto", func(t *testing.T) {
+		r := execPSCommand(psBin, "Start-Sleep 60", "", 0, 2*time.Second)
+		if !r.timedOut {
+			t.Errorf("braço curto: esperado timedOut=true (kill por deadline de 2s), obteve false; exitCode=%d runErr=%v", r.exitCode, r.runErr)
+		}
+		if !r.started {
+			t.Errorf("braço curto: processo não chegou a iniciar (ProcessState==nil) — contexto pré-cancelado antes de cmd.Start?")
+		}
+	})
+
+	// Braço normal: exit 1 com prazo de 15 s (P-4: exit 1 em vez de exit 0).
+	// Afirma: timedOut=false quando a saída é natural — distingue kill de saída legítima.
+	// P-4: exit 1 falsifica mutação timedOut=(exitCode!=0), que daria true incorretamente.
+	t.Run("normal", func(t *testing.T) {
+		r := execPSCommand(psBin, "exit 1", "", 0, 15*time.Second)
+		if r.timedOut {
+			t.Errorf("braço normal: esperado timedOut=false (saída natural exit 1), obteve true")
+		}
+		if r.exitCode != 1 {
+			t.Errorf("braço normal: esperado exitCode=1, obteve %d", r.exitCode)
+		}
+	})
 }
