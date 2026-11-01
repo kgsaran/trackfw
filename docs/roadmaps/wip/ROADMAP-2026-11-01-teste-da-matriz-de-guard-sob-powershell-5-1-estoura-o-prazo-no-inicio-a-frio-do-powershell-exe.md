@@ -99,6 +99,20 @@ go test ./internal/validator/ -count=1
 - [x] contra-braço medido, restaurado e conferido com `cmp`
 - [x] nenhum arquivo fora dos três listados alterado
 
+### ML-1C — Aviso de política ilegível roteado como warning; sonda uma vez por validação (apolo-tf) — AC6 (achado MEDIUM-1 do red team)
+**Status:** ⬜ Pendente
+**Origem:** MEDIUM-1 e LOW do parecer `docs/seguranca/2026-11-01-redteam-powershell-inicio-a-frio.md`, conferidos pelo arquiteto em `internal/validator/validator.go:559` (`applyRule`) e `:1059`. O aviso volta pelo mesmo `[]string` das violações, entra em `applyRule("credential_guard_hook_resolvable")`, cuja severidade padrão é `error`, e bloqueia o `validate`. O AC6 pede aviso. A sonda tem dois chamadores por validação (`validator_credential_guard.go:730` e `validator_git_branch_guard.go:418`), o que pode somar 2 × 20 s e duplicar a mensagem.
+**Files affected:** `internal/validator/validator_guard_binary_probe.go`, `internal/validator/validator_credential_guard.go`, `internal/validator/validator_git_branch_guard.go`, `internal/validator/validator.go`, testes do pacote `internal/validator`, `docs/cli-parity.md`
+**Actions:**
+1. O aviso não definitivo sai por `applyRuleWarnOnly` (e pela variante `Tagged`) nos dois pontos de entrada, `Validate` e `ValidateTagged`. Nunca entra em `violations`.
+2. A sonda roda no máximo uma vez por validação para cada valor de `hasPSPosixEntry`, com o cache zerado no início de cada validação. Isso evita somar 20 s por chamador e duplicar a mensagem.
+3. Teste de ponta a ponta por `Validate` e `ValidateTagged`: com `.ps1` e `policy == ""`, "could not be read" fica em `warnings` e fora de `violations`; com Restricted, a violação continua.
+**Acceptance criteria:**
+- [ ] `go vet ./internal/validator/` limpo
+- [ ] `go test ./internal/validator/ -count=1` verde
+- [ ] contra-braço: rotear o aviso por `applyRule` faz o teste de ponta a ponta reprovar
+- [ ] contra-braço do cache: sem o cache, um contador de chamadas a `guardGetPSPolicy` passa de 1 por validação
+
 ## Wave 2 — Red team e evidência no CI (hades-tf)
 > Dependencies: Wave 1 auditada e o PR com o `windows-full-suites` verde.
 
