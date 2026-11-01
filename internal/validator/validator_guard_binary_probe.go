@@ -289,38 +289,39 @@ var guardGetPSPolicy = func() string {
 // guardBinaryProbeOnce — probe centralizado
 // --------------------------------------------------------------------------
 
-// guardBinaryProbeOnce runs the binary probe and returns zero or more violation messages.
+// guardBinaryProbeOnce runs the binary probe and returns separate (violations, warnings) slices.
 // Called at most once per validateGuardHookResolvable invocation when a hook file references
 // the new `trackfw guard …` subcommand form.
 //
-//   - `trackfw` absent from PATH → violation.
-//   - `trackfw guard --help` exits non-zero → violation (subcomando guard ausente).
-//   - Windows + hasPSPosixEntry + .ps1 + Restricted policy → violation (definitive, short-circuits).
+//   - `trackfw` absent from PATH → violations (certain).
+//   - `trackfw guard --help` exits non-zero → violations (certain).
+//   - Windows + hasPSPosixEntry + .ps1 + Restricted policy → violations (definitive, short-circuits).
 //     ML-1D: com o sufixo `; exit $LASTEXITCODE` a PSSecurityException sai 0 = falha aberta.
-//   - Windows + hasPSPosixEntry + .ps1 + policy unreadable ("") → warning (not definitive);
-//     the Git Bash probe still runs and its messages are appended after the warning.
-//     AC6 ML-1B: an uncertain warning must not hide a certain finding (ML-5D Git Bash probe).
-func guardBinaryProbeOnce(hasPSPosixEntry bool) []string {
+//   - Windows + hasPSPosixEntry + .ps1 + policy unreadable ("") → warnings (not definitive);
+//     the Git Bash probe result goes to violations; warnings does not block `trackfw validate`.
+//     AC6 ML-1C: the uncertain "unreadable" message is routed as warning, never as violation.
+//   - Git Bash probe messages → violations (certain).
+func guardBinaryProbeOnce(hasPSPosixEntry bool) (violations, warnings []string) {
 	bin, err := guardLookupBinary("trackfw")
 	if err != nil {
 		return []string{
 			"trackfw binary not found in PATH — the hook will fail open; " +
 				"install trackfw (make install / pip install -g trackfw / npm install -g trackfw) " +
 				"or ensure it is on PATH",
-		}
+		}, nil
 	}
 
 	if probeErr := guardRunProbe(bin); probeErr != nil {
 		if errors.Is(probeErr, errGuardProbeDeadline) {
 			// Prazo estourado: nada afirmado. Melhor nao dizer nada que acusar o binario.
-			return nil
+			return nil, nil
 		}
 		return []string{fmt.Sprintf(
 			"the trackfw resolved at %q does not have the guard subcommand — "+
 				"the hook will fail open; update trackfw (make install / "+
 				"pip install --upgrade trackfw / npm install -g trackfw)",
 			bin,
-		)}
+		)}, nil
 	}
 
 	// Windows-only checks — only relevant when a PS/POSIX-family entry exists.
@@ -328,14 +329,81 @@ func guardBinaryProbeOnce(hasPSPosixEntry bool) []string {
 		policyMsgs, definitive := guardCheckPS1RestrictedPolicy()
 		if definitive {
 			// Restricted: certain fail-open — short-circuit, skip Git Bash probe.
-			return policyMsgs
+			return policyMsgs, nil
 		}
 		// policyMsgs is either nil (policy OK / no .ps1) or a single "unreadable" warning
-		// (policy == ""). Either way, continue to the Git Bash probe (AC6 ML-1B: an
+		// (policy == ""). Continue to the Git Bash probe regardless (AC6 ML-1B: an
 		// uncertain warning must not hide the certain finding of ML-5D).
-		return append(policyMsgs, guardGitBashBinaryProbe(bin)...)
+		// Routing: policyMsgs (unreadable = uncertain) → warnings; Git Bash → violations.
+		return guardGitBashBinaryProbe(bin), policyMsgs
 	}
-	return nil
+	return nil, nil
+}
+
+// --------------------------------------------------------------------------
+// guardBinaryProbeRunState — per-execution cache (ML-1C)
+// --------------------------------------------------------------------------
+
+// guardBinaryProbeRunState is the per-execution cache for guardBinaryProbeCached.
+// It holds the result for each possible hasPSPosixEntry value (index 0 = false, 1 = true),
+// and accumulates the uncertain warnings to be flushed once after all probe callers have run.
+//
+// Set to non-nil at the start of each Validate* call; deferred back to nil at the end.
+// This prevents stale cache entries from leaking between sequential validate calls in tests.
+type guardBinaryProbeRunState struct {
+	entries  [2]*guardBinaryProbeCacheEntry
+	warnings []string
+}
+
+type guardBinaryProbeCacheEntry struct {
+	violations []string
+	warnings   []string
+}
+
+// currentGuardProbeRun is the live per-execution cache. nil outside of Validate* calls.
+// Pattern mirrors currentOriginMain (set at the top of ValidateUnfiltered and
+// validateUnfilteredTagged, deferred to nil at the end).
+var currentGuardProbeRun *guardBinaryProbeRunState
+
+// guardBinaryProbeCached wraps guardBinaryProbeOnce with per-run deduplication.
+//   - Violations are returned directly to the caller.
+//   - Uncertain warnings (policy unreadable) are accumulated in currentGuardProbeRun.warnings
+//     and flushed once, after all probe callers have run, via guardBinaryProbeFlushWarnings.
+//   - On a cache hit, violations are returned; warnings are NOT re-added (dedup by construction).
+//   - Falls back to uncached behaviour when no run is active (unit tests that call this
+//     directly, or callers outside Validate*). In that case warnings are discarded; the
+//     unit tests that need them call guardBinaryProbeOnce directly.
+func guardBinaryProbeCached(hasPSPosixEntry bool) []string {
+	if currentGuardProbeRun == nil {
+		v, _ := guardBinaryProbeOnce(hasPSPosixEntry)
+		return v
+	}
+	idx := 0
+	if hasPSPosixEntry {
+		idx = 1
+	}
+	if e := currentGuardProbeRun.entries[idx]; e != nil {
+		// Cache hit: violations already returned on first call; warnings already in side channel.
+		return e.violations
+	}
+	v, w := guardBinaryProbeOnce(hasPSPosixEntry)
+	currentGuardProbeRun.entries[idx] = &guardBinaryProbeCacheEntry{violations: v, warnings: w}
+	// Append warnings to the side channel only on a cache miss (dedup by construction).
+	currentGuardProbeRun.warnings = append(currentGuardProbeRun.warnings, w...)
+	return v
+}
+
+// guardBinaryProbeFlushWarnings returns the accumulated uncertain warnings from the current
+// run's side channel and clears it. Returns nil when no run is active.
+// Called once in ValidateUnfiltered and validateUnfilteredTagged, after all four probe callers
+// (credential + git-branch, project + global) have run.
+func guardBinaryProbeFlushWarnings() []string {
+	if currentGuardProbeRun == nil {
+		return nil
+	}
+	w := currentGuardProbeRun.warnings
+	currentGuardProbeRun.warnings = nil
+	return w
 }
 
 // guardCheckPS1RestrictedPolicy detects the npm .ps1 shim + Restricted policy scenario.

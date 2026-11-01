@@ -414,8 +414,10 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker, subcmdMarker, sub
 	}
 
 	// Sonda do binário — uma vez se qualquer arquivo global usa a nova forma.
+	// ML-1C: guardBinaryProbeCached devolve apenas violations; warnings incertos (política
+	// ilegível) são acumulados no canal lateral via guardBinaryProbeFlushWarnings.
 	if anySubcmdFormFound {
-		probeMsgs := guardBinaryProbeOnce(hasPSPosixSubcmd)
+		probeMsgs := guardBinaryProbeCached(hasPSPosixSubcmd)
 		msgs = append(msgs, probeMsgs...)
 	}
 

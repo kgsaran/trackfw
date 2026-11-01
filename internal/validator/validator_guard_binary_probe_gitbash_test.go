@@ -200,9 +200,12 @@ func TestGuardBinaryProbeOnce_NaoWindows_GitBashFindNaoEhChamada(t *testing.T) {
 		guardFindGitBashExe = origFind
 	})
 
-	msgs := guardBinaryProbeOnce(true /* hasPSPosixEntry */)
-	if len(msgs) != 0 {
-		t.Errorf("esperado 0 msgs em não-Windows, obteve: %v", msgs)
+	violations, warnings := guardBinaryProbeOnce(true /* hasPSPosixEntry */)
+	if len(violations) != 0 {
+		t.Errorf("esperado 0 violations em não-Windows, obteve: %v", violations)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("esperado 0 warnings em não-Windows, obteve: %v", warnings)
 	}
 	if findCallCount != 0 {
 		t.Errorf("guardFindGitBashExe não deve ser chamada fora do Windows; callCount=%d", findCallCount)
@@ -398,19 +401,19 @@ func TestGuardBinaryProbeOnce_PrazoDoGuardHelp_NaoAcusaOBinario(t *testing.T) {
 	guardRunProbe = func(string) error {
 		return errors.Join(errGuardProbeDeadline, errors.New("signal: killed"))
 	}
-	if msgs := guardBinaryProbeOnce(false); len(msgs) != 0 {
-		t.Errorf("prazo estourado produziu %d violacao(oes): %v", len(msgs), msgs)
+	if v, w := guardBinaryProbeOnce(false); len(v) != 0 || len(w) != 0 {
+		t.Errorf("prazo estourado produziu %d violation(oes) e %d warning(s): v=%v w=%v", len(v), len(w), v, w)
 	}
 
 	// Controle positivo, e e ele que impede o conserto de ser "silenciar tudo":
 	// erro comum, sem o sentinela, continua acusando.
 	guardRunProbe = func(string) error { return errors.New("exit status 1") }
-	msgs := guardBinaryProbeOnce(false)
-	if len(msgs) != 1 {
-		t.Fatalf("erro sem prazo deveria acusar 1 violacao, obtive %d: %v", len(msgs), msgs)
+	violations, _ := guardBinaryProbeOnce(false)
+	if len(violations) != 1 {
+		t.Fatalf("erro sem prazo deveria acusar 1 violacao, obtive %d: %v", len(violations), violations)
 	}
-	if !strings.Contains(msgs[0], "does not have the guard subcommand") {
-		t.Errorf("mensagem inesperada: %q", msgs[0])
+	if !strings.Contains(violations[0], "does not have the guard subcommand") {
+		t.Errorf("mensagem inesperada: %q", violations[0])
 	}
 }
 

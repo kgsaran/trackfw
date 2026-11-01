@@ -6685,6 +6685,9 @@ Quando qualquer arquivo de hook usa a nova forma, o validador verifica **uma vez
   política ilegível não é definitivo — a sonda do Git Bash (ML-5D) ainda é executada em
   seguida, e suas mensagens são combinadas com o aviso (AC6 ML-1B: um aviso incerto não
   pode ocultar um achado certo).**
+  **ML-1C (#649): este aviso é roteado exclusivamente por `applyRuleWarnOnly` /
+  `applyRuleWarnOnlyTagged` — nunca bloqueia `trackfw validate`. O resultado definitivo
+  (`Restricted`) continua sendo violação; apenas o caso incerto (política ilegível) é aviso.**
 
 **3. Regra `trackfw_binary_in_project_root` (`validateTrackfwBinaryInProjectRoot`):**
 Detecta `trackfw.exe`, `trackfw.cmd` ou `trackfw.bat` na raiz do projeto. No Windows, cmd.exe

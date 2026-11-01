@@ -726,8 +726,11 @@ func validateGuardHookResolvable(ruleName, scriptMarker, subcmdMarker, subcmdNam
 	}
 
 	// Sonda do binário — executada uma vez se qualquer arquivo de hook usa a nova forma.
+	// ML-1C: guardBinaryProbeCached devolve apenas violations; warnings incertos (política
+	// ilegível) são acumulados no canal lateral e emitidos uma vez, depois de todos os
+	// chamadores, via guardBinaryProbeFlushWarnings em ValidateUnfiltered/validateUnfilteredTagged.
 	if anySubcmdFormFound {
-		probeMsgs := guardBinaryProbeOnce(hasPSPosixSubcmd)
+		probeMsgs := guardBinaryProbeCached(hasPSPosixSubcmd)
 		msgs = append(msgs, probeMsgs...)
 	}
 

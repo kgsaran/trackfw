@@ -855,6 +855,12 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	// is a CLI tool (one validate call per process). Must be set BEFORE config.Load() so that any
 	// diskRuleSeverity call during the first applyRule already sees the correct anchor state.
 	currentOriginMain = loadOriginMainAnchor()
+	// ML-1C (#649): reset the per-run probe cache so that guardBinaryProbeCached deduplicates
+	// across all callers within this single Validate* call. The defer ensures the cache is
+	// cleared even on early-return error paths, preventing stale state from leaking into a
+	// hypothetical future call in the same process.
+	currentGuardProbeRun = &guardBinaryProbeRunState{}
+	defer func() { currentGuardProbeRun = nil }()
 	switch currentOriginMain.state {
 	case originAnchorRefUnreadable:
 		// ML-1B (Defect 3): changed from unconditional violation to warning.
@@ -1170,6 +1176,10 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 		return nil, nil, e
 	}
 	applyRule("git_branch_guard_hook_resolvable", append(gitBranchGuardHookMsgs, gitBranchGuardGlobalHookMsgs...), &violations, &warnings)
+	// ML-1C (#649): flush uncertain probe warnings (policy unreadable) accumulated by
+	// guardBinaryProbeCached across all probe call sites above. These are warnings, never
+	// violations — the AC6 contract routes them through applyRuleWarnOnly.
+	applyRuleWarnOnly("credential_guard_hook_resolvable", guardBinaryProbeFlushWarnings(), &warnings)
 	// ML-2B: aviso (always-warning) para configs que ainda usam a forma legada .sh.
 	gitBranchGuardHookLegacyWarn, e := validateGitBranchGuardHookResolvableLegacyWarnings()
 	if e != nil {
@@ -1390,6 +1400,9 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 	// ValidateTagged). If they were called in the same process, the second call overwrites
 	// currentOriginMain — acceptable because the anchor result is deterministic for a given CWD.
 	currentOriginMain = loadOriginMainAnchor()
+	// ML-1C (#649): reset the per-run probe cache — mirrors the same block in ValidateUnfiltered.
+	currentGuardProbeRun = &guardBinaryProbeRunState{}
+	defer func() { currentGuardProbeRun = nil }()
 	const anchorRule = "origin_main_anchor"
 	switch currentOriginMain.state {
 	case originAnchorRefUnreadable:
@@ -1702,6 +1715,8 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 		return nil, nil, e
 	}
 	applyRuleTagged("git_branch_guard_hook_resolvable", append(gitBranchGuardHookMsgsT, gitBranchGuardGlobalHookMsgsT...), &violations, &warnings)
+	// ML-1C (#649): flush uncertain probe warnings — mirrors the same block in ValidateUnfiltered.
+	applyRuleWarnOnlyTagged("credential_guard_hook_resolvable", guardBinaryProbeFlushWarnings(), &warnings)
 	// ML-2B: mirror of ValidateUnfiltered legacy-warn block.
 	// 🔴 Missing this site silences git-branch .sh legacy warnings from --json output.
 	gitBranchGuardHookLegacyWarnT, e := validateGitBranchGuardHookResolvableLegacyWarnings()
