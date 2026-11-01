@@ -128,6 +128,23 @@ func runDoctor(remote bool) ([]integrations.DoctorFinding, error) {
 	return findings, nil
 }
 
+// shellQuotePOSIX wraps s in POSIX single quotes, escaping any embedded single-quote
+// character so the result is safe to embed verbatim in a shell command.
+//
+// POSIX single-quoting rules: a single-quoted string cannot contain a literal single
+// quote, so each ' is terminated ('...' → '...'), the literal ' emitted as '\” (that
+// is: close-quote, escaped-quote, reopen-quote), and quoting resumed.
+//
+// Examples:
+//
+//	plain    → 'plain'
+//	my dir   → 'my dir'
+//	it's     → 'it'\''s'
+//	$()      → '$()'          (no shell expansion inside single quotes)
+func shellQuotePOSIX(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
 // scanStrayAgentMemory walks the git repository rooted at start and returns one
 // DoctorFinding per .claude/agent-memory/ directory found outside the root. The
 // root .claude/agent-memory/ is legitimate and never reported.
@@ -142,10 +159,13 @@ func runDoctor(remote bool) ([]integrations.DoctorFinding, error) {
 //   - symlinks and Windows junctions (ModeSymlink|ModeIrregular) are not followed;
 //   - permission errors on directories skip that subtree, not the whole scan;
 //   - file count inside the stray is recursive over non-directory entries (not ReadDir,
-//     which would count subdirectory entries as "files" for otherwise-empty dirs).
+//     which would count subdirectory entries as "files" for otherwise-empty dirs);
+//   - a permission error reading a subdirectory inside the stray is treated as
+//     "contents not fully readable" — the finding does not suggest rm -rf.
 //
-// The finding message distinguishes empty directories (harness residue) from ones
-// with files (lost agent memory). The doctor never removes anything.
+// The remedy always uses the absolute path in POSIX single quotes (shellQuotePOSIX).
+// The finding message distinguishes: empty (harness residue), unreadable (inspect before
+// removing), and has files (lost agent memory). The doctor never removes anything.
 func scanStrayAgentMemory(start string) ([]integrations.DoctorFinding, error) {
 	// Resolve git root from start — independent of the process cwd.
 	gitCmd := exec.Command("git", "rev-parse", "--show-toplevel")
@@ -216,9 +236,13 @@ func scanStrayAgentMemory(start string) ([]integrations.DoctorFinding, error) {
 
 			// STRAY: count non-directory entries recursively (ReadDir would count
 			// subdirectory entries, misreporting an otherwise-empty stray as "has files").
+			// A permission error reading a subdirectory is tracked separately; that state
+			// suppresses both empty- and files-branch remedies (the content is unknown).
 			fileCount := 0
+			unreadable := false
 			_ = filepath.WalkDir(path, func(_ string, innerD fs.DirEntry, innerErr error) error {
 				if innerErr != nil {
+					unreadable = true
 					return nil
 				}
 				if innerD.Type()&(os.ModeSymlink|os.ModeIrregular) != 0 {
@@ -237,10 +261,12 @@ func scanStrayAgentMemory(start string) ([]integrations.DoctorFinding, error) {
 			rel = filepath.ToSlash(rel)
 
 			var remedy string
-			if fileCount == 0 {
-				remedy = "empty directory (harness residue from dispatch in a subdirectory cwd); remove with: rm -rf " + rel
+			if unreadable {
+				remedy = "contents not fully readable (permission denied reading subdirectory); inspect directory before removing: " + shellQuotePOSIX(path)
+			} else if fileCount == 0 {
+				remedy = "empty directory (harness residue from dispatch in a subdirectory cwd); remove with: rm -rf " + shellQuotePOSIX(path)
 			} else {
-				remedy = fmt.Sprintf("%d file(s) of lost agent memory (never loaded — harness read from dispatch cwd path); archive to .claude/agent-memory/ before removing: rm -rf %s", fileCount, rel)
+				remedy = fmt.Sprintf("%d file(s) of lost agent memory (never loaded — harness read from dispatch cwd path); archive to .claude/agent-memory/ before removing: rm -rf %s", fileCount, shellQuotePOSIX(path))
 			}
 			findings = append(findings, integrations.DoctorFinding{
 				FindingKind: integrations.DoctorStrayAgentMemory,

@@ -752,6 +752,10 @@ func TestBuildPlansDefaultsToFirstNonLegacySurface(t *testing.T) {
 // architect.md ganhou a nova seção "## Dispatch cwd" entre "## Dispatch contract" e
 // "## Post-microbatch audit" (AC2). O renderizador injeta "## Memory location" ao final do
 // body apenas para o destino "claude" (AC1/P-1/P-2); os demais destinos não a recebem.
+//
+// Re-congelado em 2026-11-01 (ML-3A, Wave 3): "## Dispatch cwd" qualificada como comportamento
+// do Claude Code — em outro harness a regra é boa prática mas o motivo de memória pode não
+// se aplicar. Goldens atualizados byte a byte com o asset (A-4 do red team).
 
 func readGolden(t *testing.T, name string) []byte {
 	t.Helper()
@@ -1299,19 +1303,19 @@ func TestIsVersionString(t *testing.T) {
 
 // TestComposeClaudeModelID verifica as três regras de composição
 // (ADR-2026-08-21 §2):
-//  - Regra 1: ponto vira traço ("4.6" → "claude-sonnet-4-6")
-//  - Regra 2: versão maior omite minor ("5" → "claude-sonnet-5")
-//  - (Regra 3 é tratada via escape hatch — non-version vai literal, não chega aqui)
+//   - Regra 1: ponto vira traço ("4.6" → "claude-sonnet-4-6")
+//   - Regra 2: versão maior omite minor ("5" → "claude-sonnet-5")
+//   - (Regra 3 é tratada via escape hatch — non-version vai literal, não chega aqui)
 func TestComposeClaudeModelID(t *testing.T) {
 	cases := []struct {
 		tier    string
 		version string
 		want    string
 	}{
-		{"sonnet", "4.6", "claude-sonnet-4-6"},  // regra 1
-		{"sonnet", "5", "claude-sonnet-5"},        // regra 2
-		{"opus", "5", "claude-opus-5"},            // regra 2, tier opus
-		{"opus", "4.1", "claude-opus-4-1"},        // regra 1, tier opus
+		{"sonnet", "4.6", "claude-sonnet-4-6"}, // regra 1
+		{"sonnet", "5", "claude-sonnet-5"},     // regra 2
+		{"opus", "5", "claude-opus-5"},         // regra 2, tier opus
+		{"opus", "4.1", "claude-opus-4-1"},     // regra 1, tier opus
 	}
 	for _, tc := range cases {
 		got := composeClaudeModelID(tc.tier, tc.version)
@@ -1444,9 +1448,9 @@ func TestRenderAgentModelsNoLeakage(t *testing.T) {
 	agentModels := map[string]string{"sonnet": "4.6", "opus": "5"} // ambos configurados
 
 	cases := []struct {
-		name           string
-		capability     Capability
-		targetID       string
+		name       string
+		capability Capability
+		targetID   string
 	}{
 		{"codex", Capability{Representation: "custom-agent-toml"}, "codex"},
 		{"cursor", Capability{Representation: "subagent"}, "cursor"},
@@ -2138,4 +2142,3 @@ func TestArchitectDispatchCwdSectionPresence(t *testing.T) {
 		})
 	}
 }
-

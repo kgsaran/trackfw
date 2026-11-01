@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -489,5 +490,173 @@ func TestDoctorStrayAgentMemory_ViaCommand(t *testing.T) {
 	report := out.String()
 	if !strings.Contains(report, "1 stray-agent-memory") {
 		t.Errorf("expected '1 stray-agent-memory' in summary, got:\n%s", report)
+	}
+}
+
+// TestShellQuotePOSIX verifies the POSIX single-quote escaping function.
+//
+// Reconciliation (ML-3A, AC7 / A-2): afirma que shellQuotePOSIX produz saída correta
+// para os casos de interesse: caminho vazio, caminho sem metacaracteres, espaço,
+// aspa simples embutida, e expansão de subshell — todos devem ser opacos ao shell.
+func TestShellQuotePOSIX(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"", "''"},
+		{"plain", "'plain'"},
+		{"my dir", "'my dir'"},
+		{"it's", "'it'\\''s'"},
+		{"a$(touch PWNED)", "'a$(touch PWNED)'"},
+	}
+	for _, c := range cases {
+		got := shellQuotePOSIX(c.in)
+		if got != c.want {
+			t.Errorf("shellQuotePOSIX(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// TestScanStrayAgentMemory_PathsWithSpaceAndQuote verifies that the remedy produced for
+// a stray inside a directory with a space or single-quote in the name can be executed
+// safely via sh -c: it removes exactly the target and leaves a sibling called "my" intact.
+//
+// Reconciliation (ML-3A, AC7 / A-2): afirma que shellQuotePOSIX é aplicado ao caminho
+// absoluto no remédio — sem as aspas, rm -rf interpreta o espaço como separador de tokens
+// e remove o irmão "my" (contra-braço: remover a chamada a shellQuotePOSIX faz o teste
+// do irmão reprovar).
+func TestScanStrayAgentMemory_PathsWithSpaceAndQuote(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("sh -c not available on Windows")
+	}
+
+	project, _ := integrationCommandFixture(t)
+	gitInitForDoctor(t, project)
+
+	// Stray 1: "my dir/.claude/agent-memory/zeus-tf/" (empty — 0 files).
+	myDirStray := filepath.Join(project, "my dir", ".claude", "agent-memory", "zeus-tf")
+	if err := os.MkdirAll(myDirStray, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Sibling "my/" must survive: without quoting, rm -rf tokenises "my dir" as
+	// two tokens and deletes "my" first.
+	siblingMy := filepath.Join(project, "my")
+	if err := os.MkdirAll(siblingMy, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(siblingMy, "sentinel.txt"), []byte("sentinel"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Stray 2: "don't/.claude/agent-memory/zeus-tf/" with one file.
+	quoteStray := filepath.Join(project, "don't", ".claude", "agent-memory", "zeus-tf")
+	if err := os.MkdirAll(quoteStray, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(quoteStray, "mem.md"), []byte("memory"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	findings, err := scanStrayAgentMemory(project)
+	if err != nil {
+		t.Fatalf("scan error: %v", err)
+	}
+	if len(findings) != 2 {
+		t.Fatalf("expected 2 findings, got %d: %+v", len(findings), findings)
+	}
+
+	// Run each remedy via sh -c with cwd = separate TempDir (not project) to prove the
+	// path in the command is absolute, not relative.
+	shDir := t.TempDir()
+	for _, f := range findings {
+		idx := strings.Index(f.Remedy, "rm -rf ")
+		if idx < 0 {
+			t.Fatalf("no 'rm -rf' in remedy: %q", f.Remedy)
+		}
+		rmCmd := f.Remedy[idx:]
+		cmd := exec.Command("sh", "-c", rmCmd)
+		cmd.Dir = shDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("sh -c %q: %v\n%s", rmCmd, err, out)
+		}
+	}
+
+	// "my dir" stray must be gone.
+	myDirAgentMem := filepath.Join(project, "my dir", ".claude", "agent-memory")
+	if _, err := os.Stat(myDirAgentMem); !os.IsNotExist(err) {
+		t.Errorf("'my dir' stray should have been removed, stat: %v", err)
+	}
+
+	// Sibling "my" must still exist.
+	if _, err := os.Stat(filepath.Join(siblingMy, "sentinel.txt")); err != nil {
+		t.Errorf("sibling 'my/' should be preserved after quoted rm, got: %v", err)
+	}
+
+	// "don't" stray must be gone.
+	quoteAgentMem := filepath.Join(project, "don't", ".claude", "agent-memory")
+	if _, err := os.Stat(quoteAgentMem); !os.IsNotExist(err) {
+		t.Errorf("\"don't\" stray should have been removed, stat: %v", err)
+	}
+}
+
+// TestScanStrayAgentMemory_UnreadableSubdir verifies that a stray whose subdirectory
+// has permission 000 (making its contents unreadable) is not reported as "empty" and
+// does not suggest rm -rf.
+//
+// Reconciliation (ML-3A, AC7 / A-3): afirma que innerErr != nil na inner WalkDir
+// marca o achado como "contents not fully readable" — sem "empty" na mensagem e sem
+// sugestão de rm -rf — contra o comportamento anterior que ignorava o erro e declarava
+// 0 arquivos ("empty directory … remove with: rm -rf").
+func TestScanStrayAgentMemory_UnreadableSubdir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod 000 not effective on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("chmod 000 has no effect when running as root")
+	}
+
+	project, _ := integrationCommandFixture(t)
+	gitInitForDoctor(t, project)
+
+	// Create stray: sub/.claude/agent-memory/zeus-tf/
+	strayDir := filepath.Join(project, "sub", ".claude", "agent-memory", "zeus-tf")
+	if err := os.MkdirAll(strayDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create hidden/ subdir with chmod 000, containing secret.md.
+	hiddenDir := filepath.Join(strayDir, "hidden")
+	if err := os.MkdirAll(hiddenDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(hiddenDir, "secret.md"), []byte("secret"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(hiddenDir, 0); err != nil {
+		t.Fatal(err)
+	}
+	// Restore permissions in Cleanup so TempDir RemoveAll can clean up.
+	t.Cleanup(func() {
+		_ = os.Chmod(hiddenDir, 0755)
+	})
+
+	findings, err := scanStrayAgentMemory(project)
+	if err != nil {
+		t.Fatalf("scan error: %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding, got %d: %+v", len(findings), findings)
+	}
+
+	remedy := findings[0].Remedy
+	if strings.Contains(strings.ToLower(remedy), "empty") {
+		t.Errorf("remedy must not say 'empty' for unreadable subdir: %q", remedy)
+	}
+	if strings.Contains(remedy, "rm -rf") {
+		t.Errorf("remedy must not suggest 'rm -rf' for unreadable subdir: %q", remedy)
+	}
+	if !strings.Contains(strings.ToLower(remedy), "inspect") {
+		t.Errorf("remedy must say 'inspect' for unreadable subdir: %q", remedy)
 	}
 }

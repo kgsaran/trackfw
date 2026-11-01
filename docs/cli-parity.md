@@ -7488,11 +7488,11 @@ As quatro classes acima têm `claim` zerado (`kind`, `item`, `target`, `surface`
 
 #### `stray-agent-memory` — memória de agente fora da raiz (REQ-2026-11-01, #646)
 
-<!-- trackfw-contract: gate=internal/commands/doctor_test.go partial=TestScanStrayAgentMemory_SubpastaComMemoriaVazia,TestScanStrayAgentMemory_ApenasRaizNenhumAchado,TestScanStrayAgentMemory_RepositorioAninhado cobrem os cenários do AC4: stray com 0 e 2 arquivos, root-only sem achado, repo aninhado não reportado -->
+<!-- trackfw-contract: gate=internal/commands/doctor_test.go partial=TestScanStrayAgentMemory_SubpastaComMemoriaVazia,TestScanStrayAgentMemory_ApenasRaizNenhumAchado,TestScanStrayAgentMemory_RepositorioAninhado,TestScanStrayAgentMemory_PathsWithSpaceAndQuote,TestScanStrayAgentMemory_UnreadableSubdir cobrem os cenários do AC4/AC7: stray com 0 e 2 arquivos, root-only sem achado, repo aninhado não reportado, caminho com espaço e aspas, subdir ilegível -->
 
 | classe | condição | remédio |
 |---|---|---|
-| `stray-agent-memory` | um diretório `.claude/agent-memory/` foi encontrado **fora** da raiz do repositório — criado pelo harness do Claude Code quando um agente é despachado com cwd em subpasta (issue #646). Mensagem diferencia: **vazio** (resíduo do harness — 0 arquivos) de **com arquivos** (memória perdida — nunca lida) | O `doctor` **não apaga** nada. Vazio: `rm -rf <caminho>`. Com arquivos: arquivar para `.claude/agent-memory/<agente>/` antes de remover. |
+| `stray-agent-memory` | um diretório `.claude/agent-memory/` foi encontrado **fora** da raiz do repositório — criado pelo harness do Claude Code quando um agente é despachado com cwd em subpasta (issue #646). Mensagem diferencia: **vazio** (resíduo do harness — 0 arquivos), **ilegível** (permissão negada num subdiretório — inspecionar antes de remover) e **com arquivos** (memória perdida — nunca lida) | O `doctor` **não apaga** nada. Vazio: `rm -rf '<caminho absoluto>'` (caminho entre aspas simples POSIX). Ilegível: inspecionar o diretório antes de remover. Com arquivos: arquivar para `.claude/agent-memory/<agente>/` antes de remover. |
 
 **Comportamento da varredura:**
 - Raiz obtida via `git rev-parse --show-toplevel` (não `os.Getwd()`), portanto correta mesmo quando `trackfw doctor` é invocado de subpasta.
@@ -7500,7 +7500,8 @@ As quatro classes acima têm `claim` zerado (`kind`, `item`, `target`, `surface`
 - `.git/` e `node_modules/` são pulados (`SkipDir`). Permissão negada em um diretório pula a subárvore, não aborta a varredura.
 - Repositórios aninhados (`.git` como dir ou arquivo de submódulo) são pulados — sua `.claude/agent-memory/` é legítima para os agentes daquele repo.
 - Symlinks e junctions Windows (`ModeSymlink|ModeIrregular`) não são seguidos.
-- A contagem de arquivos é recursiva sobre entradas não-diretório (evita o falso "memória perdida" num diretório com apenas subdirs).
+- A contagem de arquivos é recursiva sobre entradas não-diretório (evita o falso "memória perdida" num diretório com apenas subdirs). Um erro de leitura num subdiretório interno (ex.: `chmod 000`) marca o achado como ilegível e suprime o remédio de remoção.
+- O caminho no remédio é **absoluto** e entre aspas simples POSIX (`shellQuotePOSIX`): espaços e metacaracteres no nome do diretório não causam deleção indevida ao copiar o comando.
 - A `.claude/agent-memory/` da raiz é legítima e nunca reportada; a varredura continua dentro dela para detectar strays aninhados (ex.: `.claude/agent-memory/zeus-tf/.claude/agent-memory/`).
 - `claim` zerado (não é artefato de catálogo). Exit code do `doctor` não muda (RunE retorna nil com achados).
 
@@ -9404,7 +9405,7 @@ Quando `agent_id` está presente no payload (subagente) e `agent_type` é um slu
 
 **Busca em duas raízes (ML-3C / Decision 3 ML-4C):** o guard procura o lease em ambas as raízes (cwd e alvo). Se qualquer lease for inválido (expirado, versão errada, allow relativo etc.), a escrita é negada. Se nenhuma raiz tiver lease para o `agent_type`, só a D3 se aplica. O alvo precisa estar no `allow` de **todos** os leases válidos encontrados — não basta um. Isso impede que um projeto falso (cwd) com um lease permissivo (`allow: ["/private/"]`) sobreponha a permissão restrita do projeto do alvo (ataque 2E, Decision 3, ML-4C).
 
-**`.gitignore`:** o `trackfw init` garante que `.trackfw/leases/` esteja ignorado no `.gitignore` do projeto. Os leases contêm caminhos absolutos da máquina do arquiteto e não devem ser versionados. O `trackfw init` também garante a regra `*/**/.claude/agent-memory/` — ver seção `stray-agent-memory` do `trackfw doctor` abaixo.
+**`.gitignore`:** o `trackfw init` garante que `.trackfw/leases/` esteja ignorado no `.gitignore` do projeto. Os leases contêm caminhos absolutos da máquina do arquiteto e não devem ser versionados. O `trackfw init` também garante a regra `*/**/.claude/agent-memory/` — ver seção `stray-agent-memory` do `trackfw doctor` abaixo. **Negação respeitada:** se o `.gitignore` já tiver uma linha `!` cujo padrão (sem `!` e sem `/` final) termina em `.claude/agent-memory` **e não for ancorada na raiz**, o `trackfw init` trata isso como decisão do consumidor, não acrescenta a regra e exibe um aviso (`⚠ .gitignore: negation "…" respected — rule not added`). Formas ancoradas na raiz — `.claude/agent-memory` e `/.claude/agent-memory` — só desfazem o ignore do diretório de topo e são compatíveis com `*/**/.claude/agent-memory/`; não são tratadas como opt-out (issue #646, A-1).
 
 **Resíduos declarados:**
 - R6 (Wave 0): dois subagentes do mesmo `agent_type` em worktrees paralelos compartilham o mesmo lease — a instância menos privilegiada herda a permissão da mais privilegiada.
