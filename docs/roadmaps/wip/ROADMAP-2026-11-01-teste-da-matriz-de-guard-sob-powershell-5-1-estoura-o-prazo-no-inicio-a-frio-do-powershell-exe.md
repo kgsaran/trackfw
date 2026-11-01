@@ -2,7 +2,7 @@
 status: wip
 date: 2026-11-01
 req: "docs/req/REQ-2026-11-01-teste-da-matriz-de-guard-sob-powershell-5-1-estoura-o-prazo-no-inicio-a-frio-do-powershell-exe.md"
-squad: "hades-tf, artemis-tf"
+squad: "hades-tf, artemis-tf, apolo-tf"
 ---
 
 # Roadmap: Teste da matriz de guard sob PowerShell 5.1 estoura o prazo no início a frio do powershell.exe
@@ -21,7 +21,7 @@ Sítio único: `internal/generators/guard_line_shell_test.go`. A varredura de is
 #649.
 
 ## Acceptance Criteria
-- [ ] AC1–AC5 da REQ
+- [ ] AC1–AC6 da REQ
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -30,7 +30,7 @@ Sítio único: `internal/generators/guard_line_shell_test.go`. A varredura de is
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model (hades-tf)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-11-01. O discriminante `ctx.Err()` foi medido: kill por prazo dá `DeadlineExceeded`, e saída natural com 1 ou 0 dá `nil`. As prescrições P-2 a P-9 foram aceitas e entram no ML-1A. O P-1 foi conferido pelo arquiteto na leitura de `internal/validator/validator_guard_binary_probe.go`, linhas 253 e 325 a 337: o `guardGetPSPolicy` chama `powershell` com 5 s e devolve `""`, e o `guardCheckPS1RestrictedPolicy` lê `""` como não Restricted. É a mesma causa, então vira o AC6 e o ML-1B nesta REQ (Regra Dura de Causa Raiz).
 **Files affected:** `docs/seguranca/2026-11-01-wave0-powershell-inicio-a-frio.md`
 **Actions:**
 1. Completude da enumeração: confirmar, por grep de mecanismo (`CommandContext`, `WithTimeout`, `pwsh`, `powershell`), que nenhum outro teste do repositório chama PowerShell sob prazo fixo. Incluir `scripts/` e os testes `.ps1`, se houver.
@@ -41,9 +41,9 @@ Sítio único: `internal/generators/guard_line_shell_test.go`. A varredura de is
 3. Alvos de falsificação nos dois sentidos para o AC1, o AC2 e o AC3.
 4. Residual declarado.
 **Acceptance criteria:**
-- [ ] As quatro seções respondidas com evidência (comando e resultado)
-- [ ] Prescrições em seção intitulada `Prescrições`
-- [ ] Nenhuma linha de implementação escrita
+- [x] As quatro seções respondidas com evidência (comando e resultado)
+- [x] Prescrições em seção intitulada `Prescrições`
+- [x] Nenhuma linha de implementação escrita
 
 **Gates da wave:**
 ```bash
@@ -51,8 +51,8 @@ test -f docs/seguranca/2026-11-01-wave0-powershell-inicio-a-frio.md
 grep -q '^## Prescrições' docs/seguranca/2026-11-01-wave0-powershell-inicio-a-frio.md
 ```
 
-## Wave 1 — Implementação (1 executor)
-> Dependencies: Wave 0 auditada.
+## Wave 1 — Implementação (2 executores em paralelo, arquivos disjuntos)
+> Dependencies: Wave 0 auditada. O ML-1A só toca `internal/generators/guard_line_shell_test.go`; o ML-1B só toca `internal/validator/` e `docs/cli-parity.md`.
 
 ### ML-1A — Aquecimento e timeout distinguível na matriz PS (artemis-tf) — AC1 a AC4
 **Status:** ⬜ Pendente
@@ -64,6 +64,13 @@ grep -q '^## Prescrições' docs/seguranca/2026-11-01-wave0-powershell-inicio-a-
    - registrar a duração com `t.Logf`;
    - falhar com mensagem própria se o prazo estourar ou se o código de saída não for 0.
 3. Teste novo do discriminante (AC3): prazo de poucos milissegundos sobre o PS disponível afirma `timedOut`; o prazo normal afirma `!timedOut`; pular com motivo se nenhum PS existir. Contra-braço: sem a checagem de `ctx.Err()`, o teste reprova.
+4. Prescrições da Wave 0 (`docs/seguranca/2026-11-01-wave0-powershell-inicio-a-frio.md`):
+   - **P-2:** `sync.OnceValues` por binário, e todo braço PS confere o resultado guardado, com `t.Fatalf` se o aquecimento falhou.
+   - **P-3:** braço curto com `Start-Sleep 60` e prazo de cerca de 2 s; afirmar `ProcessState != nil`.
+   - **P-4:** braço normal com `-Command "exit 1"`.
+   - **P-5:** `cmd.WaitDelay` de 5 s e classificação em três vias: `nil` dá código 0; `*exec.ExitError` dá `ExitCode()`; qualquer outro erro, inclusive `ErrWaitDelay`, dá `t.Fatalf`.
+   - **P-8:** o aquecimento também dispara num braço que não é o primeiro.
+   - **P-9:** o teste do AC3 usa só `pwsh`.
 **Acceptance criteria:**
 - [ ] `go vet ./internal/generators/` limpo
 - [ ] `go test ./internal/generators/ -run 'TestGuardLineShellMatrix|TestRunGuardLinePS' -count=1 -v` verde no macOS, com a linha do aquecimento do `pwsh` no log
@@ -75,7 +82,22 @@ grep -q '^## Prescrições' docs/seguranca/2026-11-01-wave0-powershell-inicio-a-
 go build ./...
 go vet ./internal/generators/
 go test ./internal/generators/ -count=1
+go vet ./internal/validator/
+go test ./internal/validator/ -count=1
 ```
+
+### ML-1B — Sonda de política do PowerShell sem fail-open no início a frio (apolo-tf) — AC6
+**Status:** ⬜ Pendente
+**Files affected:** `internal/validator/validator_guard_binary_probe.go`, `internal/validator/validator_guard_binary_probe_test.go`, `docs/cli-parity.md` (se a mensagem estiver documentada lá)
+**Actions:**
+1. Criar a var de pacote `guardPSPolicyTimeout = 20 * time.Second` e usá-la no `guardGetPSPolicy` no lugar do `guardProbeTimeout`.
+2. No `guardCheckPS1RestrictedPolicy`, com o `trackfw` resolvendo para `.ps1` e `policy == ""`, emitir um aviso: a política não pôde ser lida; se for Restricted, o hook falha aberto; conferir com `Get-ExecutionPolicy`.
+3. Testes: um novo para a política ilegível, que afirma o aviso; os de Restricted e RemoteSigned continuam passando. Contra-braço: sem o ramo do `""`, o teste novo reprova.
+**Acceptance criteria:**
+- [ ] `go vet ./internal/validator/` limpo
+- [ ] `go test ./internal/validator/ -count=1` verde
+- [ ] contra-braço medido, restaurado e conferido com `cmp`
+- [ ] nenhum arquivo fora dos três listados alterado
 
 ## Wave 2 — Red team e evidência no CI (hades-tf)
 > Dependencies: Wave 1 auditada e o PR com o `windows-full-suites` verde.
@@ -84,7 +106,7 @@ go test ./internal/generators/ -count=1
 **Status:** ⬜ Pendente
 **Files affected:** `docs/seguranca/2026-11-01-redteam-powershell-inicio-a-frio.md`
 **Actions:**
-1. Reimplementar, a partir da leitura, os alvos de falsificação do ML-0A contra o diff do ML-1A.
+1. Reimplementar, a partir da leitura, os alvos de falsificação do ML-0A contra os diffs do ML-1A e do ML-1B.
 2. Ler o log do `windows-full-suites` do PR. Registrar a duração do aquecimento do `powershell` e a do `git-branch/powershell/RC0-allow` (AC5).
 **Acceptance criteria:**
 - [ ] Parecer com achados classificados e evidência

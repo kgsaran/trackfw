@@ -75,11 +75,25 @@ o custo a frio da janela que o teste afirma.
 - [ ] **AC5 — Evidência no CI de Windows:** no `windows-full-suites` do PR, o log mostra a linha do
   `t.Logf` do aquecimento do `powershell`. O `git-branch/powershell/RC0-allow` fica abaixo de 3 s,
   na faixa das chamadas aquecidas.
+- [ ] **AC6 — Sonda de política do PowerShell sem fail-open no início a frio** (achado P-1 da Wave 0,
+  mesma causa):
+  - em `internal/validator/validator_guard_binary_probe.go`, o `guardGetPSPolicy` chama o `powershell`
+    com o prazo de 5 s do `guardProbeTimeout` e devolve `""` quando o prazo estoura;
+  - o `guardCheckPS1RestrictedPolicy` lê esse `""` como política diferente de Restricted e fica em
+    silêncio, mesmo com o `trackfw` resolvendo para `.ps1`;
+  - a sonda de política passa a ter prazo próprio, de 20 s, porque o início a frio medido chega a
+    15 s;
+  - com o `trackfw` resolvendo para `.ps1`, uma política ilegível (`""`) emite um aviso de que a
+    política não pôde ser lida e de que o hook falha aberto se ela for Restricted, com o comando
+    `Get-ExecutionPolicy` para conferir;
+  - os testes cobrem os três casos: Restricted, legível e diferente de Restricted, e ilegível.
 
 ## Negative scope
 
-- Não muda nenhum guard, nenhuma linha de guard gerada e nenhum código de produto em `internal/`
-  fora de `internal/generators/guard_line_shell_test.go`.
+- Não muda nenhum guard nem nenhuma linha de guard gerada. O único código de produto alterado é a
+  sonda de política do AC6, em `internal/validator/validator_guard_binary_probe.go`.
+  - O escopo original excluía qualquer código de produto. A Wave 0 achou a mesma causa nessa sonda, e
+    a Regra Dura de Causa Raiz manda trazê-la para esta REQ.
 - Não muda o workflow `quality.yml` nem o ratchet de falhas conhecidas. Pôr o teste na lista de
   conhecidos esconderia o sintoma.
 - Não muda os prazos de 10 s dos braços POSIX (`runGuardLine`, `_DefeitoAntigo`,
