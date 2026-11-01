@@ -3,6 +3,11 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 
 	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/generators"
@@ -108,11 +113,147 @@ func runDoctor(remote bool) ([]integrations.DoctorFinding, error) {
 		return nil, fmt.Errorf("doctor: scaffold scan: %w", err)
 	}
 	findings := append(catalogFindings, scaffoldFindings...)
+	// Stray agent-memory scan (REQ-2026-11-01, #646): find .claude/agent-memory/ directories
+	// outside the repository root — harness residue from dispatch in a subdirectory cwd.
+	strayFindings, err := scanStrayAgentMemory(manager.ProjectRoot)
+	if err != nil {
+		return nil, fmt.Errorf("doctor: stray agent-memory scan: %w", err)
+	}
+	findings = append(findings, strayFindings...)
 	// Remote modality (ADR-2026-09-02, ML-3A): opt-in only — never runs without --remote, so
 	// doctor's offline default is unchanged.
 	if remote {
 		findings = append(findings, runDoctorRemote(defaultDoctorRemoteDeps(manager.ProjectRoot))...)
 	}
+	return findings, nil
+}
+
+// scanStrayAgentMemory walks the git repository rooted at start and returns one
+// DoctorFinding per .claude/agent-memory/ directory found outside the root. The
+// root .claude/agent-memory/ is legitimate and never reported.
+//
+// Rules:
+//   - root is resolved via `git rev-parse --show-toplevel` (not os.Getwd), so the
+//     scan is correct even when `trackfw doctor` is invoked from a subdirectory;
+//   - if start is not inside a git repository, or git is unavailable, returns nil;
+//   - .git/ and node_modules/ are skipped (SkipDir);
+//   - a subdirectory that contains a .git entry (file or dir) is a nested repo and
+//     is skipped — its .claude/agent-memory/ is legitimate for agents of that repo;
+//   - symlinks and Windows junctions (ModeSymlink|ModeIrregular) are not followed;
+//   - permission errors on directories skip that subtree, not the whole scan;
+//   - file count inside the stray is recursive over non-directory entries (not ReadDir,
+//     which would count subdirectory entries as "files" for otherwise-empty dirs).
+//
+// The finding message distinguishes empty directories (harness residue) from ones
+// with files (lost agent memory). The doctor never removes anything.
+func scanStrayAgentMemory(start string) ([]integrations.DoctorFinding, error) {
+	// Resolve git root from start — independent of the process cwd.
+	gitCmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	gitCmd.Dir = start
+	topOut, err := gitCmd.Output()
+	if err != nil {
+		// Not a git repo or git unavailable — no findings, no error.
+		return nil, nil
+	}
+	gitRoot := strings.TrimRight(string(topOut), "\r\n")
+	// Resolve symlinks so filepath.EvalSymlinks comparisons are stable (macOS: /tmp → /private/tmp).
+	if resolved, resolveErr := filepath.EvalSymlinks(gitRoot); resolveErr == nil {
+		gitRoot = resolved
+	}
+
+	var findings []integrations.DoctorFinding
+
+	_ = filepath.WalkDir(gitRoot, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			// Permission error or unreadable entry — skip the subtree if it is a directory.
+			if d != nil && d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		if path == gitRoot {
+			return nil
+		}
+
+		// Never follow symlinks or Windows junctions (go.mod ≥ 1.23: junctions = ModeIrregular).
+		if d.Type()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+			return nil
+		}
+
+		if !d.IsDir() {
+			return nil
+		}
+
+		name := d.Name()
+
+		// Skip well-known large/irrelevant directory trees.
+		if name == ".git" || name == "node_modules" {
+			return filepath.SkipDir
+		}
+
+		// Skip nested git repositories entirely — their .claude/agent-memory/ is
+		// the legitimate root for agents dispatched in that repo, not a stray.
+		// Check must happen HERE (before entering the directory's children) because
+		// .claude/ is lexicographically before .git/, so the .claude subtree would
+		// be visited before the .git entry is encountered as a child.
+		if _, lstatErr := os.Lstat(filepath.Join(path, ".git")); lstatErr == nil {
+			return filepath.SkipDir
+		}
+
+		// Detect .claude/agent-memory/ at any depth.
+		if name == "agent-memory" && filepath.Base(filepath.Dir(path)) == ".claude" {
+			grandparent := filepath.Dir(filepath.Dir(path))
+			// Resolve symlinks for a stable comparison with gitRoot.
+			if resolved, resolveErr := filepath.EvalSymlinks(grandparent); resolveErr == nil {
+				grandparent = resolved
+			}
+			if grandparent == gitRoot {
+				// This is the repository root's .claude/agent-memory/ — legitimate.
+				// Continue walking inside it to find nested strays.
+				return nil
+			}
+
+			// STRAY: count non-directory entries recursively (ReadDir would count
+			// subdirectory entries, misreporting an otherwise-empty stray as "has files").
+			fileCount := 0
+			_ = filepath.WalkDir(path, func(_ string, innerD fs.DirEntry, innerErr error) error {
+				if innerErr != nil {
+					return nil
+				}
+				if innerD.Type()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+					return nil
+				}
+				if !innerD.IsDir() {
+					fileCount++
+				}
+				return nil
+			})
+
+			rel, relErr := filepath.Rel(gitRoot, path)
+			if relErr != nil {
+				rel = path
+			}
+			rel = filepath.ToSlash(rel)
+
+			var remedy string
+			if fileCount == 0 {
+				remedy = "empty directory (harness residue from dispatch in a subdirectory cwd); remove with: rm -rf " + rel
+			} else {
+				remedy = fmt.Sprintf("%d file(s) of lost agent memory (never loaded — harness read from dispatch cwd path); archive to .claude/agent-memory/ before removing: rm -rf %s", fileCount, rel)
+			}
+			findings = append(findings, integrations.DoctorFinding{
+				FindingKind: integrations.DoctorStrayAgentMemory,
+				Destination: rel,
+				Remedy:      remedy,
+			})
+			// Don't recurse further inside the stray — we already counted its contents.
+			return filepath.SkipDir
+		}
+
+		return nil
+	})
+
 	return findings, nil
 }
 
@@ -128,6 +269,7 @@ func printDoctorReport(cmd *cobra.Command, findings []integrations.DoctorFinding
 	var unregistered, handModified, unknownContent, scaffoldDivergent, scaffoldMissing, scaffoldWrongMode int
 	var requiredChecksMissing, enforceAdminsDisabled, hooksPathNeutralized, notEvaluated int
 	var workflowDuplicated int
+	var strayAgentMemory int
 	for _, finding := range findings {
 		switch finding.FindingKind {
 		case integrations.DoctorUnregisteredWrite:
@@ -152,10 +294,12 @@ func printDoctorReport(cmd *cobra.Command, findings []integrations.DoctorFinding
 			notEvaluated++
 		case integrations.DoctorScaffoldWorkflowDuplicated:
 			workflowDuplicated++
+		case integrations.DoctorStrayAgentMemory:
+			strayAgentMemory++
 		}
 	}
-	fmt.Fprintf(out, "trackfw doctor: %d finding(s) -- %d unregistered-write, %d hand-modified, %d unknown-content, %d scaffold-divergent, %d scaffold-missing, %d scaffold-wrong-mode, %d required-status-checks-missing, %d enforce-admins-disabled, %d hooks-path-neutralized, %d not-evaluated, %d scaffold-workflow-duplicated\n\n",
-		len(findings), unregistered, handModified, unknownContent, scaffoldDivergent, scaffoldMissing, scaffoldWrongMode, requiredChecksMissing, enforceAdminsDisabled, hooksPathNeutralized, notEvaluated, workflowDuplicated)
+	fmt.Fprintf(out, "trackfw doctor: %d finding(s) -- %d unregistered-write, %d hand-modified, %d unknown-content, %d scaffold-divergent, %d scaffold-missing, %d scaffold-wrong-mode, %d required-status-checks-missing, %d enforce-admins-disabled, %d hooks-path-neutralized, %d not-evaluated, %d scaffold-workflow-duplicated, %d stray-agent-memory\n\n",
+		len(findings), unregistered, handModified, unknownContent, scaffoldDivergent, scaffoldMissing, scaffoldWrongMode, requiredChecksMissing, enforceAdminsDisabled, hooksPathNeutralized, notEvaluated, workflowDuplicated, strayAgentMemory)
 	// One blank line BETWEEN findings, none trailing after the last one — matches Node's
 	// `lines.join('\n').replace(/\n$/, '')` and Python's `"\n".join(lines).rstrip("\n")`
 	// (npm/src/commands/doctor.js, pypi/trackfw/commands/doctor.py). A naive per-finding

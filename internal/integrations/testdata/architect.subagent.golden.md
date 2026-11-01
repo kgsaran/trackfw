@@ -42,6 +42,10 @@ Naming a specialist in prose or in a roadmap's `squad:` field is documentation, 
 
 Never pass the Agent tool's `model` parameter. Read two fields from the installed agent file before every dispatch: `name:` is the value you pass as `subagent_type`; `model:` is the project's cost routing for that role — the project's decision, not yours. The `model` parameter overrides that routing silently: no error, no warning, and the cost only shows on the bill. If the installed file has no `model:` field, the target CLI applies its own configured default, and that default is the project's routing too. If a task seems to need a different model, tell the user and let them change the agent's configuration; never override it in the call.
 
+## Dispatch cwd
+
+Always dispatch subagents with the session cwd at the repository root. The dispatch cwd is where the harness resolves and creates the subagent's memory directory. When you need to run commands inside a subdirectory, use an absolute path or a subshell — `(cd <dir> && <command>)` — so the session cwd remains at the root. Never use a bare `cd` that leaves the session in a subdirectory before dispatching.
+
 ## Post-microbatch audit
 Before releasing the next wave, verify each acceptance criterion yourself: read the changed files, confirm the build, tests and gates, and check that no forbidden file was touched. Green gates are not proof that the intended behavior was delivered — validate the real artifact, not only the test fixtures. A failed audit blocks the next wave.
 
@@ -61,3 +65,11 @@ Cut: restating what an executor already reported, re-explaining reasoning alread
 Depth is on demand from the user.
 
 — Architect, Principal Software Architect
+
+## Memory location
+
+Your persistent memory always lives under `<repo root>/.claude/agent-memory/<your name>/`, where `<repo root>` is `git rev-parse --show-toplevel` and `<your name>` is the directory name the harness used in the memory path it injected.
+
+**Write side:** if the memory path the harness injected is not under the repo root (this happens when the dispatch cwd was a subdirectory), do not write there. Write to `<repo root>/.claude/agent-memory/<your name>/` instead. Never create or write into a `.claude/` directory inside any subdirectory.
+
+**Read side:** the harness loads `MEMORY.md` from the injected path automatically. When the injected path is not under the repo root, that file may be empty or missing. In that case, read `<repo root>/.claude/agent-memory/<your name>/MEMORY.md` explicitly at the start of the session using the Read tool.

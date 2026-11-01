@@ -747,6 +747,11 @@ func TestBuildPlansDefaultsToFirstNonLegacySurface(t *testing.T) {
 // architect.md ganhou um segundo parágrafo em "## Dispatch contract" proibindo explicitamente
 // passar o parâmetro `model` do Agent tool, com a razão escrita (roteamento de custo é decisão
 // do projeto, silenciosamente sobrescrita sem erro ou aviso quando `model` é passado).
+//
+// Re-congelado em 2026-11-01 pela REQ-2026-11-01-memoria-de-agente-cai-em-subpastas-quando-o-cwd-do-despacho-nao-e-a-raiz-do-repositorio (ML-1A):
+// architect.md ganhou a nova seção "## Dispatch cwd" entre "## Dispatch contract" e
+// "## Post-microbatch audit" (AC2). O renderizador injeta "## Memory location" ao final do
+// body apenas para o destino "claude" (AC1/P-1/P-2); os demais destinos não a recebem.
 
 func readGolden(t *testing.T, name string) []byte {
 	t.Helper()
@@ -2003,6 +2008,134 @@ func TestArchitectDispatchContractForbidsModelOverride(t *testing.T) {
 		if !coveredReprs[r] {
 			t.Errorf("required representation %q not covered by catalog iteration — add it or remove from requiredReprs", r)
 		}
+	}
+}
+
+// TestClaudeMemoryLocationSectionPresence asserts that the "## Memory location"
+// section injected by render.go (REQ-2026-11-01 AC1, P-1/P-2) appears in the
+// rendered output for the "claude" target and the architect agent.
+// Conclusion: the claudeMemoryRootAnchor constant is appended to the body when
+// kind==KindAgents && targetID=="claude".
+func TestClaudeMemoryLocationSectionPresence(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, ok := catalog.Item(KindAgents, "architect")
+	if !ok {
+		t.Fatal("agente 'architect' não encontrado no catalog")
+	}
+	source, err := catalog.ReadAsset(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := Render(item, KindAgents, Capability{Representation: "subagent"}, source, identity.Config{}, "claude", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := string(out)
+	if !strings.Contains(output, "## Memory location") {
+		t.Fatalf("AC1: '## Memory location' section absent from claude output:\n%s", output)
+	}
+	if !strings.Contains(output, "git rev-parse --show-toplevel") {
+		t.Fatalf("AC1: 'git rev-parse --show-toplevel' absent from claude output:\n%s", output)
+	}
+	if !strings.Contains(output, "not under the repo root") {
+		t.Fatalf("AC1: write-side instruction absent from claude output:\n%s", output)
+	}
+	if !strings.Contains(output, "Read tool") {
+		t.Fatalf("AC1: read-side instruction absent from claude output:\n%s", output)
+	}
+}
+
+// TestClaudeMemoryLocationSectionAbsentFromNonClaudeTargets asserts that the
+// "## Memory location" section (REQ-2026-11-01 AC1) does NOT appear in outputs
+// for destinations that do not interpret "memory: project".
+//
+// Counter-arm for the gate: gemini and cursor use the same default branch as
+// claude but with a different targetID — they are the true counter-arm that
+// proves the `targetID == "claude"` guard has bite. codex and opencode use
+// distinct branches in Render (never reach default), and antigravity uses
+// agent-directory reconstruction — their absence is structural.
+//
+// Conclusion: the injection is conditioned on `kind==KindAgents && targetID=="claude"`;
+// removing the condition makes the gemini/cursor arms fail.
+func TestClaudeMemoryLocationSectionAbsentFromNonClaudeTargets(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, ok := catalog.Item(KindAgents, "architect")
+	if !ok {
+		t.Fatal("agente 'architect' não encontrado no catalog")
+	}
+	source, err := catalog.ReadAsset(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// gemini and cursor: default branch, non-claude targets — true gate counter-arm.
+	for _, tc := range []struct {
+		targetID string
+		repr     string
+	}{
+		{"gemini", "subagent"},
+		{"cursor", "subagent"},
+		{"opencode", "opencode-agent"},
+		{"codex", "custom-agent-toml"},
+		{"antigravity", "agent-directory"},
+	} {
+		t.Run(tc.targetID, func(t *testing.T) {
+			out, err := Render(item, KindAgents, Capability{Representation: tc.repr}, source, identity.Config{}, tc.targetID, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(out), "## Memory location") {
+				t.Errorf("AC1 counter-arm: '## Memory location' leaked into %s output", tc.targetID)
+			}
+		})
+	}
+}
+
+// TestArchitectDispatchCwdSectionPresence asserts that the "## Dispatch cwd"
+// section added to architect.md (REQ-2026-11-01 AC2, P-3) is present in the
+// claude-rendered architect output.
+// Conclusion: the section in assets/agents/architect.md body flows through
+// Render for every target, including claude and antigravity.
+func TestArchitectDispatchCwdSectionPresence(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, ok := catalog.Item(KindAgents, "architect")
+	if !ok {
+		t.Fatal("agente 'architect' não encontrado no catalog")
+	}
+	source, err := catalog.ReadAsset(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		targetID string
+		repr     string
+	}{
+		{"claude", "subagent"},
+		{"antigravity", "agent-directory"},
+	} {
+		t.Run(tc.targetID, func(t *testing.T) {
+			out, err := Render(item, KindAgents, Capability{Representation: tc.repr}, source, identity.Config{}, tc.targetID, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			output := string(out)
+			if !strings.Contains(output, "## Dispatch cwd") {
+				t.Errorf("AC2: '## Dispatch cwd' section absent from %s output:\n%s", tc.targetID, output)
+			}
+			if !strings.Contains(output, "repository root") {
+				t.Errorf("AC2: 'repository root' phrase absent from %s output:\n%s", tc.targetID, output)
+			}
+		})
 	}
 }
 

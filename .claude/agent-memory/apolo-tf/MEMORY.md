@@ -20,3 +20,4 @@
 - [AC6 arms precisam de semente](feedback_ac6_arms_precisam_de_semente.md) — dir vazio nunca exercita removeGuardFromFlatArrayInHooks; sempre semear com formas legadas; verificar remoção AND adição canônica
 - [Dois clones no loop falham no segundo push](feedback_git_fixture_loop_double_push.md) — usar clone "semente" + dois clones independentes; nunca commit+push no segundo clone dos mesmos arquivos
 - [Subagente não escreve working context](feedback_subagente_nao_escreve_working_context.md) — D1 REQ-2026-10-23: apenas o arquiteto escreve; subagente reporta no relatório final; handoff prevalece sobre arquivo instalado
+- [Counter-arm: emissão e detecção devem usar o mesmo constante](feedback_counter_arm_emission_detection_drift.md) — arm verde pode significar que a mutação nunca chegou ao artefato emitido; grepar os sítios de emissão antes de rodar o arm

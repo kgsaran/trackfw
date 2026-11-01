@@ -41,3 +41,6 @@ docs/roadmaps/.trackfw-credential-guard.json
 # ML-1B, ROADMAP-2026-10-28-documentacao-e-canais-refletem-o-produto-11-x.
 npm/README.md
 pypi/README.md
+
+# Memória de agente criada pelo harness em subpasta (cwd do despacho fora da raiz) — #646
+*/**/.claude/agent-memory/

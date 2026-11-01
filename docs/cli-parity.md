@@ -7483,8 +7483,26 @@ por caminho, não por manifesto (ADR-2026-08-27).
 | `scaffold-wrong-mode` | artefato de scaffold existe com conteúdo correto, mas o bit de execução do owner está ausente (`mode & 0o100 == 0`) em um artefato que deve ser executável | `trackfw update` — o `update` restaura o conteúdo **e** o modo (ver AC9 abaixo) |
 | `scaffold-workflow-duplicated` | `trackfw-gate.yml` e `trackfw-validate.yml` estão ambos presentes como arquivos regulares — executam o mesmo `trackfw validate` com instaladores diferentes (`ADR-2026-09-29` D3). **Advisory, não bloqueante.** O `gate.yml` é o canônico; o consumidor decide se remove o `validate.yml` **após verificar** que `governance-go-install` não está nos `required_status_checks` do repositório (o produto não pode verificar isso) | Nenhum comando automático — a mensagem descreve o que verificar antes de remover `trackfw-validate.yml` manualmente |
 
-As quatro classes têm `claim` zerado (`kind`, `item`, `target`, `surface`, `scope` = string vazia)
+As quatro classes acima têm `claim` zerado (`kind`, `item`, `target`, `surface`, `scope` = string vazia)
 — artefatos de scaffold nunca têm entrada no manifesto.
+
+#### `stray-agent-memory` — memória de agente fora da raiz (REQ-2026-11-01, #646)
+
+<!-- trackfw-contract: gate=internal/commands/doctor_test.go partial=TestScanStrayAgentMemory_SubpastaComMemoriaVazia,TestScanStrayAgentMemory_ApenasRaizNenhumAchado,TestScanStrayAgentMemory_RepositorioAninhado cobrem os cenários do AC4: stray com 0 e 2 arquivos, root-only sem achado, repo aninhado não reportado -->
+
+| classe | condição | remédio |
+|---|---|---|
+| `stray-agent-memory` | um diretório `.claude/agent-memory/` foi encontrado **fora** da raiz do repositório — criado pelo harness do Claude Code quando um agente é despachado com cwd em subpasta (issue #646). Mensagem diferencia: **vazio** (resíduo do harness — 0 arquivos) de **com arquivos** (memória perdida — nunca lida) | O `doctor` **não apaga** nada. Vazio: `rm -rf <caminho>`. Com arquivos: arquivar para `.claude/agent-memory/<agente>/` antes de remover. |
+
+**Comportamento da varredura:**
+- Raiz obtida via `git rev-parse --show-toplevel` (não `os.Getwd()`), portanto correta mesmo quando `trackfw doctor` é invocado de subpasta.
+- Se o diretório não estiver dentro de um repositório git (ou git indisponível), nenhum achado é emitido.
+- `.git/` e `node_modules/` são pulados (`SkipDir`). Permissão negada em um diretório pula a subárvore, não aborta a varredura.
+- Repositórios aninhados (`.git` como dir ou arquivo de submódulo) são pulados — sua `.claude/agent-memory/` é legítima para os agentes daquele repo.
+- Symlinks e junctions Windows (`ModeSymlink|ModeIrregular`) não são seguidos.
+- A contagem de arquivos é recursiva sobre entradas não-diretório (evita o falso "memória perdida" num diretório com apenas subdirs).
+- A `.claude/agent-memory/` da raiz é legítima e nunca reportada; a varredura continua dentro dela para detectar strays aninhados (ex.: `.claude/agent-memory/zeus-tf/.claude/agent-memory/`).
+- `claim` zerado (não é artefato de catálogo). Exit code do `doctor` não muda (RunE retorna nil com achados).
 
 ### Propriedade por caminho — artefatos cobertos pelo binário
 
@@ -9386,7 +9404,7 @@ Quando `agent_id` está presente no payload (subagente) e `agent_type` é um slu
 
 **Busca em duas raízes (ML-3C / Decision 3 ML-4C):** o guard procura o lease em ambas as raízes (cwd e alvo). Se qualquer lease for inválido (expirado, versão errada, allow relativo etc.), a escrita é negada. Se nenhuma raiz tiver lease para o `agent_type`, só a D3 se aplica. O alvo precisa estar no `allow` de **todos** os leases válidos encontrados — não basta um. Isso impede que um projeto falso (cwd) com um lease permissivo (`allow: ["/private/"]`) sobreponha a permissão restrita do projeto do alvo (ataque 2E, Decision 3, ML-4C).
 
-**`.gitignore`:** o `trackfw init` garante que `.trackfw/leases/` esteja ignorado no `.gitignore` do projeto. Os leases contêm caminhos absolutos da máquina do arquiteto e não devem ser versionados.
+**`.gitignore`:** o `trackfw init` garante que `.trackfw/leases/` esteja ignorado no `.gitignore` do projeto. Os leases contêm caminhos absolutos da máquina do arquiteto e não devem ser versionados. O `trackfw init` também garante a regra `*/**/.claude/agent-memory/` — ver seção `stray-agent-memory` do `trackfw doctor` abaixo.
 
 **Resíduos declarados:**
 - R6 (Wave 0): dois subagentes do mesmo `agent_type` em worktrees paralelos compartilham o mesmo lease — a instância menos privilegiada herda a permissão da mais privilegiada.
