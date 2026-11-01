@@ -51,41 +51,41 @@ grep -q '^## Prescrições' docs/seguranca/2026-11-01-wave0-memoria-de-agente-em
 > Dependencies: Wave 0 auditada. ML-1A só em `internal/integrations/` e no asset do arquiteto; ML-1B e ML-1C no mesmo executor, em sequência, porque ambos tocam `docs/cli-parity.md`.
 
 ### ML-1A — Instrução de memória no renderizador do Claude Code e de despacho no arquiteto (apolo-tf) — AC1, AC2
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-11-01. Seção `## Memory location` (escrita e leitura na raiz) acrescentada pelo renderizador só para o destino `claude`, depois da reescrita de `model:` e antes da identidade; a reescrita da assinatura procura de trás para a frente a última linha `— nome, título`, então continua funcionando com o sufixo. `## Dispatch cwd` no corpo de `architect.md`. Dois goldens do arquiteto refeitos. Testes rodados por nome em `-v` pelo arquiteto: presença no `claude`, ausência em gemini, cursor, opencode, codex e antigravity, e `Dispatch cwd` presente; contra-braço do executor (sem a injeção, a presença reprova).
 **Files affected:** `internal/integrations/render.go`, `internal/integrations/render_test.go`, `internal/integrations/assets/agents/architect.md`, `internal/integrations/testdata/`
 **Actions:**
 1. P-1/P-2: no renderizador, só para o destino `claude`, acrescentar ao corpo a instrução de memória do AC1 (escrita e leitura na raiz do repositório).
 2. P-3: instrução de despacho do AC2 no corpo de `architect.md`.
 3. Goldens atualizados; contra-braço: texto do AC1 ausente em codex, opencode, agent-directory e nos demais destinos.
 **Acceptance criteria:**
-- [ ] AC1 e AC2 da REQ; contra-braço por destino
-- [ ] pacote `internal/integrations` verde
+- [x] AC1 e AC2 da REQ; contra-braço por destino
+- [x] pacote `internal/integrations` verde
 
 ### ML-1B — Regra de `.gitignore` para memória em subpasta (apolo-tf) — AC3
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-11-01. `gitIgnoreAgentMemoryEntry = "*/**/.claude/agent-memory/"`, emissão e detecção derivadas da mesma constante (o executor achou e corrigiu a divergência entre literal e constante que deixava o contra-braço verde pelo motivo errado). Detecção por linha exata. Quatro vetores com `git check-ignore` e idempotência rodados por nome em `-v` pelo arquiteto; contra-braço do executor com `**/`: a raiz passa a ser ignorada e o teste reprova.
 **Files affected:** `internal/generators/scaffold.go`, `internal/generators/gitignore_test.go`, `docs/cli-parity.md`
 **Actions:**
 1. P-4: `generateGitIgnore` garante `*/**/.claude/agent-memory/` com detecção por linha exata.
 2. P-7: testes com os quatro vetores da REQ medidos por `git check-ignore` e idempotência.
 **Acceptance criteria:**
-- [ ] AC3 da REQ; contra-braço: regra ausente → subpasta não ignorada; padrão `**/` → raiz ignorada
-- [ ] pacote `internal/generators` verde
+- [x] AC3 da REQ; contra-braço: regra ausente → subpasta não ignorada; padrão `**/` → raiz ignorada
+- [x] pacote `internal/generators` verde
 
 ### ML-1C — `doctor` aponta memória fora da raiz (apolo-tf, depois do ML-1B) — AC4
-**Status:** ⬜ Pendente
-**Files affected:** `internal/commands/doctor.go`, `internal/commands/doctor_test.go`, `internal/integrations/doctor.go`, `docs/cli-parity.md`
+**Status:** ✅ Concluído — auditado em 2026-11-01. `scanStrayAgentMemory` (`internal/commands/doctor.go`), tipo `stray-agent-memory`, exit code inalterado. Sete testes rodados por nome em `-v` pelo arquiteto. Contra-braço refeito pelo arquiteto: com o filtro de repositório aninhado desligado (`&& false`), `TestScanStrayAgentMemory_RepositorioAninhado` reprova; restaurado e conferido com `cmp`. O executor mediu que o guarda de symlink do laço externo é redundante (o `WalkDir` não segue symlink); fica como defesa.
+**Files affected:** `internal/commands/doctor.go`, `internal/commands/doctor_test.go`, `internal/integrations/doctor.go`, `docs/cli-parity.md`, `.claude/agent-memory/apolo-tf/`
 **Actions:**
 1. P-5 (sem o script inexistente): raiz por `git rev-parse --show-toplevel`; ignora `.git`, `node_modules`, symlink e repositório aninhado; conta arquivos; novo tipo no `printDoctorReport`.
 **Acceptance criteria:**
-- [ ] AC4 da REQ; contra-braço: sem diretório fora da raiz, nenhuma linha; com repositório aninhado, nenhuma linha
-- [ ] pacote `internal/commands` verde
+- [x] AC4 da REQ; contra-braço: sem diretório fora da raiz, nenhuma linha; com repositório aninhado, nenhuma linha
+- [x] pacote `internal/commands` verde
 
 ### ML-1D — Este repositório (arquiteto) — AC5
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — arquiteto, 2026-11-01. Regra no `.gitignore`; os três diretórios vazios removidos (tinham `zeus-tf/` vazio dentro). `find . -path ./node_modules -prune -o -type d -name agent-memory -print` → só `./.claude/agent-memory`; `git check-ignore -v` ignora `pypi/.claude/agent-memory/x` e o aninhado, e não ignora `.claude/agent-memory/zeus-tf/MEMORY.md`.
 **Files affected:** `.gitignore`
 **Actions:** P-6: regra no `.gitignore` e remoção dos três diretórios vazios (não rastreados).
 **Acceptance criteria:**
-- [ ] `find . -path ./node_modules -prune -o -type d -name agent-memory -print` retorna só `./.claude/agent-memory`
+- [x] `find . -path ./node_modules -prune -o -type d -name agent-memory -print` retorna só `./.claude/agent-memory`
 
 **Gates da wave:**
 ```bash
