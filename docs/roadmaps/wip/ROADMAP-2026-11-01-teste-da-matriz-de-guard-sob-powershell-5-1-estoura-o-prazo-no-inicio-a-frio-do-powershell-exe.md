@@ -55,7 +55,7 @@ grep -q '^## Prescrições' docs/seguranca/2026-11-01-wave0-powershell-inicio-a-
 > Dependencies: Wave 0 auditada. O ML-1A só toca `internal/generators/guard_line_shell_test.go`; o ML-1B só toca `internal/validator/` e `docs/cli-parity.md`.
 
 ### ML-1A — Aquecimento e timeout distinguível na matriz PS (artemis-tf) — AC1 a AC4
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-11-01. Entregue: `execPSCommand` com prazo como parâmetro, `WaitDelay` de 5 s e classificação em três vias (`ErrWaitDelay` e erro que não é `ExitError` caem em `runErr`, que dá `t.Fatalf`). `timedOut` vem de `ctx.Err() == DeadlineExceeded`, e o `runGuardLinePS` dá `t.Fatalf` dizendo "timeout", o binário e o prazo. O aquecimento usa `sync.OnceValues` por binário, com 60 s, `t.Logf` e conferência do resultado em todo braço PS. `TestRunGuardLinePS_TimeoutDiscriminado` tem o braço `curto` (`Start-Sleep 60` com 2 s; `timedOut` e `started`) e o `normal` (`exit 1`; `!timedOut` e código 1), só com `pwsh`. Contra-braços do executor: `timedOut=false` reprova o `curto`, e `timedOut=(code!=0)` reprova o `normal`. A matriz não mudou. O aquecimento aparece no `credential/pwsh` rodado sozinho (P-8).
 **Files affected:** `internal/generators/guard_line_shell_test.go`
 **Actions:**
 1. Separar a execução de `runGuardLinePS` numa função que recebe o prazo e devolve, além de código, stderr e stdin capturado, um `timedOut bool` (`ctx.Err() == context.DeadlineExceeded`). O `runGuardLinePS` chama essa função com 15 s e dá `t.Fatalf` com "timeout", o binário e o prazo quando `timedOut` for verdadeiro (AC2).
@@ -72,10 +72,10 @@ grep -q '^## Prescrições' docs/seguranca/2026-11-01-wave0-powershell-inicio-a-
    - **P-8:** o aquecimento também dispara num braço que não é o primeiro.
    - **P-9:** o teste do AC3 usa só `pwsh`.
 **Acceptance criteria:**
-- [ ] `go vet ./internal/generators/` limpo
-- [ ] `go test ./internal/generators/ -run 'TestGuardLineShellMatrix|TestRunGuardLinePS' -count=1 -v` verde no macOS, com a linha do aquecimento do `pwsh` no log
-- [ ] contra-braço do AC3 medido, restaurado e conferido com `cmp`
-- [ ] nenhum arquivo fora de `internal/generators/guard_line_shell_test.go` alterado
+- [x] `go vet ./internal/generators/` limpo
+- [x] `go test ./internal/generators/ -run 'TestGuardLineShellMatrix|TestRunGuardLinePS' -count=1 -v` verde no macOS, com a linha do aquecimento do `pwsh` no log
+- [x] contra-braço do AC3 medido, restaurado e conferido com `cmp`
+- [x] nenhum arquivo fora de `internal/generators/guard_line_shell_test.go` alterado
 
 **Gates da wave:**
 ```bash
@@ -87,17 +87,17 @@ go test ./internal/validator/ -count=1
 ```
 
 ### ML-1B — Sonda de política do PowerShell sem fail-open no início a frio (apolo-tf) — AC6
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-11-01. Entregue: `guardPSPolicyTimeout` de 20 s e aviso de política ilegível. A auditoria achou um retorno cedo: o aviso incerto pulava a sonda do Git Bash (ML-5D), que acusa um fail-open certo. Foi corrigido num segundo despacho: `guardCheckPS1RestrictedPolicy` passou a devolver `([]string, definitive bool)`. Com Restricted, o retorno continua cedo; com política ilegível, o aviso sai junto com as mensagens da sonda do Git Bash. Testes novos: `..._PolicyUnreadable_Warning`, `..._Restricted_GitBashNaoRoda` e `..._PolicyUnreadableWithGitBashViolation_BothMessagesAppear`. Os contra-braços do executor reprovam sem cada correção. Os testes foram rodados por nome em `-v` pelo arquiteto. Residual: o prazo de 20 s só é exercitado num runner Windows.
 **Files affected:** `internal/validator/validator_guard_binary_probe.go`, `internal/validator/validator_guard_binary_probe_test.go`, `docs/cli-parity.md` (se a mensagem estiver documentada lá)
 **Actions:**
 1. Criar a var de pacote `guardPSPolicyTimeout = 20 * time.Second` e usá-la no `guardGetPSPolicy` no lugar do `guardProbeTimeout`.
 2. No `guardCheckPS1RestrictedPolicy`, com o `trackfw` resolvendo para `.ps1` e `policy == ""`, emitir um aviso: a política não pôde ser lida; se for Restricted, o hook falha aberto; conferir com `Get-ExecutionPolicy`.
 3. Testes: um novo para a política ilegível, que afirma o aviso; os de Restricted e RemoteSigned continuam passando. Contra-braço: sem o ramo do `""`, o teste novo reprova.
 **Acceptance criteria:**
-- [ ] `go vet ./internal/validator/` limpo
-- [ ] `go test ./internal/validator/ -count=1` verde
-- [ ] contra-braço medido, restaurado e conferido com `cmp`
-- [ ] nenhum arquivo fora dos três listados alterado
+- [x] `go vet ./internal/validator/` limpo
+- [x] `go test ./internal/validator/ -count=1` verde
+- [x] contra-braço medido, restaurado e conferido com `cmp`
+- [x] nenhum arquivo fora dos três listados alterado
 
 ## Wave 2 — Red team e evidência no CI (hades-tf)
 > Dependencies: Wave 1 auditada e o PR com o `windows-full-suites` verde.
