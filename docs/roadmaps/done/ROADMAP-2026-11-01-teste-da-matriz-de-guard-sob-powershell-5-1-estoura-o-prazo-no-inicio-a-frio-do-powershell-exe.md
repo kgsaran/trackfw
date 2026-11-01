@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-11-01
 req: "docs/req/REQ-2026-11-01-teste-da-matriz-de-guard-sob-powershell-5-1-estoura-o-prazo-no-inicio-a-frio-do-powershell-exe.md"
 squad: "hades-tf, artemis-tf, apolo-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, artemis-tf, apolo-tf"
 
 # Roadmap: Teste da matriz de guard sob PowerShell 5.1 estoura o prazo no início a frio do powershell.exe
 
-> Created: 2026-11-01 | Status: wip
+> Created: 2026-11-01 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-11-01-teste-da-matriz-de-guard-sob-powershell-5-1-estoura-o-prazo-no-inicio-a-frio-do-powershell-exe.md
