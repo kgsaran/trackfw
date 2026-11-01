@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-11-01
 author: "Zeus (trackfw_architect)"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-11-01-teste-da-matriz-de-guard-sob-powershell-5-1-estoura-o-prazo-no-inicio-a-frio-do-powershell-exe.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-11-01-teste-da-matriz-de-guard-sob-powershell-5-1-estoura-o-prazo-no-inicio-a-frio-do-powershell-exe.md"
 ---
 
 # REQ: Teste da matriz de guard sob PowerShell 5.1 estoura o prazo no início a frio do powershell.exe
 
-> Date: 2026-11-01 | Status: Open
+> Date: 2026-11-01 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 | GitHub Issue: #649
@@ -109,4 +109,4 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-11-01-teste-da-matriz-de-guard-sob-powershell-5-1-estoura-o-prazo-no-inicio-a-frio-do-powershell-exe.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-11-01-teste-da-matriz-de-guard-sob-powershell-5-1-estoura-o-prazo-no-inicio-a-frio-do-powershell-exe.md
