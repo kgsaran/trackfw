@@ -129,7 +129,7 @@ test -f docs/seguranca/2026-10-31-redteam-debitos-de-higiene.md
 > Dependencies: Wave 2 auditada.
 
 ### ML-3A — Achados A-1 a A-4 e R-4 do red team (apolo-tf) — AC6
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:** `docs/cli-parity.md`, `scripts/check-release-tag-parity.sh`, `internal/commands/release.go`, `internal/commands/release_test.go`, `internal/generators/update_test.go`, `internal/discover/discover.go`, `internal/discover/discover_test.go`, `internal/generators/scaffold.go`, `internal/generators/scaffold_test.go`
 **Actions:**
 1. A-1: `cli-parity.md` (pré-condição 3 do `release tag`) e comentários do script descrevem 4 arquivos e 5 conferências.
