@@ -35,12 +35,23 @@ func guardProbeEndedByDeadline(ctx context.Context) bool {
 	return ctx.Err() != nil
 }
 
-// guardProbeTimeout e o prazo das sondas desta regra (binario, login shell e politica
-// do PowerShell). Vive numa var de pacote pelo mesmo motivo do cmdWaitDelay em
+// guardProbeTimeout e o prazo das sondas desta regra (binario e login shell).
+// Vive numa var de pacote pelo mesmo motivo do cmdWaitDelay em
 // internal/commands/netexec.go: ser substituivel nos testes que exercitam
 // comportamento especifico de prazo. Sem isso, o terceiro caso do doc de
 // guardRunBashLoginProbe so seria testavel com um processo que dorme 5 s.
+//
+// Nota: a sonda de politica do PowerShell usa guardPSPolicyTimeout (20 s) por
+// ter prazo de inicio a frio muito mais longo — ver o comentario de guardGetPSPolicy.
 var guardProbeTimeout = 5 * time.Second
+
+// guardPSPolicyTimeout e o prazo da sonda de politica do PowerShell (guardGetPSPolicy).
+// O powershell.exe 5.1 tem inicio a frio que foi medido entre 2,9 s e 15,1 s no CI de
+// Windows (18 jobs, 2026-10-29 a 2026-11-01, REQ #649). O guardProbeTimeout de 5 s
+// deixaria a sonda estourar nos dias de alta latencia, fazendo o guardCheckPS1RestrictedPolicy
+// ler "" em vez da politica real e ficar em silencio (fail-open). 20 s cobre a cauda medida
+// com margem, sem bloquear o validador de forma perceptivel numa maquina comum.
+var guardPSPolicyTimeout = 20 * time.Second
 
 // errGuardProbeDeadline marca o erro de guardRunProbe cujo processo foi morto pelo prazo.
 //
@@ -242,7 +253,12 @@ var guardFindTrackfwForPS = func() string {
 }
 
 // guardGetPSPolicy queries the effective PowerShell execution policy and returns the
-// policy string (e.g. "Restricted", "RemoteSigned") or "" on error.
+// policy string (e.g. "Restricted", "RemoteSigned") or "" on error, including when
+// the deadline expires. The deadline is guardPSPolicyTimeout (20 s) rather than
+// guardProbeTimeout (5 s) because powershell.exe 5.1 cold-start was measured at up
+// to 15.1 s on Windows CI (REQ #649). An empty return signals "unreadable" to
+// guardCheckPS1RestrictedPolicy, which emits a fail-open warning rather than
+// staying silent.
 //
 // PSExecutionPolicyPreference is unset from the child environment before the query:
 // a parent PowerShell with -ExecutionPolicy Bypass exports that variable, which child
@@ -250,7 +266,7 @@ var guardFindTrackfwForPS = func() string {
 // lines 245-248 / ML-1D measurement).
 // Only called when CurrentGOOS == "windows". Replaced in tests.
 var guardGetPSPolicy = func() string {
-	ctx, cancel := context.WithTimeout(context.Background(), guardProbeTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), guardPSPolicyTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-Command", "Get-ExecutionPolicy") //nolint:gosec
 	cmd.Stdin = nil
@@ -273,59 +289,137 @@ var guardGetPSPolicy = func() string {
 // guardBinaryProbeOnce — probe centralizado
 // --------------------------------------------------------------------------
 
-// guardBinaryProbeOnce runs the binary probe and returns zero or more violation messages.
+// guardBinaryProbeOnce runs the binary probe and returns separate (violations, warnings) slices.
 // Called at most once per validateGuardHookResolvable invocation when a hook file references
 // the new `trackfw guard …` subcommand form.
 //
-//   - `trackfw` absent from PATH → violation.
-//   - `trackfw guard --help` exits non-zero → violation (subcomando guard ausente).
-//   - Windows + hasPSPosixEntry: shim .ps1 + política Restricted → violation
-//     (ML-1D: com o sufixo `; exit $LASTEXITCODE` a PSSecurityException sai 0 = falha aberta).
-func guardBinaryProbeOnce(hasPSPosixEntry bool) []string {
+//   - `trackfw` absent from PATH → violations (certain).
+//   - `trackfw guard --help` exits non-zero → violations (certain).
+//   - Windows + hasPSPosixEntry + .ps1 + Restricted policy → violations (definitive, short-circuits).
+//     ML-1D: com o sufixo `; exit $LASTEXITCODE` a PSSecurityException sai 0 = falha aberta.
+//   - Windows + hasPSPosixEntry + .ps1 + policy unreadable ("") → warnings (not definitive);
+//     the Git Bash probe result goes to violations; warnings does not block `trackfw validate`.
+//     AC6 ML-1C: the uncertain "unreadable" message is routed as warning, never as violation.
+//   - Git Bash probe messages → violations (certain).
+func guardBinaryProbeOnce(hasPSPosixEntry bool) (violations, warnings []string) {
 	bin, err := guardLookupBinary("trackfw")
 	if err != nil {
 		return []string{
 			"trackfw binary not found in PATH — the hook will fail open; " +
 				"install trackfw (make install / pip install -g trackfw / npm install -g trackfw) " +
 				"or ensure it is on PATH",
-		}
+		}, nil
 	}
 
 	if probeErr := guardRunProbe(bin); probeErr != nil {
 		if errors.Is(probeErr, errGuardProbeDeadline) {
 			// Prazo estourado: nada afirmado. Melhor nao dizer nada que acusar o binario.
-			return nil
+			return nil, nil
 		}
 		return []string{fmt.Sprintf(
 			"the trackfw resolved at %q does not have the guard subcommand — "+
 				"the hook will fail open; update trackfw (make install / "+
 				"pip install --upgrade trackfw / npm install -g trackfw)",
 			bin,
-		)}
+		)}, nil
 	}
 
 	// Windows-only checks — only relevant when a PS/POSIX-family entry exists.
 	if CurrentGOOS == "windows" && hasPSPosixEntry {
-		if msgs := guardCheckPS1RestrictedPolicy(); len(msgs) > 0 {
-			return msgs
+		policyMsgs, definitive := guardCheckPS1RestrictedPolicy()
+		if definitive {
+			// Restricted: certain fail-open — short-circuit, skip Git Bash probe.
+			return policyMsgs, nil
 		}
-		// ML-5D: also probe the binary that the Git Bash login shell resolves, because
-		// Claude Code runs hook commands via Git Bash whose login profile can prepend ~/bin
-		// to PATH, placing an old (no-guard) binary ahead of the one exec.LookPath sees.
-		if msgs := guardGitBashBinaryProbe(bin); len(msgs) > 0 {
-			return msgs
-		}
+		// policyMsgs is either nil (policy OK / no .ps1) or a single "unreadable" warning
+		// (policy == ""). Continue to the Git Bash probe regardless (AC6 ML-1B: an
+		// uncertain warning must not hide the certain finding of ML-5D).
+		// Routing: policyMsgs (unreadable = uncertain) → warnings; Git Bash → violations.
+		return guardGitBashBinaryProbe(bin), policyMsgs
 	}
-	return nil
+	return nil, nil
+}
+
+// --------------------------------------------------------------------------
+// guardBinaryProbeRunState — per-execution cache (ML-1C)
+// --------------------------------------------------------------------------
+
+// guardBinaryProbeRunState is the per-execution cache for guardBinaryProbeCached.
+// It holds the result for each possible hasPSPosixEntry value (index 0 = false, 1 = true),
+// and accumulates the uncertain warnings to be flushed once after all probe callers have run.
+//
+// Set to non-nil at the start of each Validate* call; deferred back to nil at the end.
+// This prevents stale cache entries from leaking between sequential validate calls in tests.
+type guardBinaryProbeRunState struct {
+	entries  [2]*guardBinaryProbeCacheEntry
+	warnings []string
+}
+
+type guardBinaryProbeCacheEntry struct {
+	violations []string
+	warnings   []string
+}
+
+// currentGuardProbeRun is the live per-execution cache. nil outside of Validate* calls.
+// Pattern mirrors currentOriginMain (set at the top of ValidateUnfiltered and
+// validateUnfilteredTagged, deferred to nil at the end).
+var currentGuardProbeRun *guardBinaryProbeRunState
+
+// guardBinaryProbeCached wraps guardBinaryProbeOnce with per-run deduplication.
+//   - Violations are returned directly to the caller.
+//   - Uncertain warnings (policy unreadable) are accumulated in currentGuardProbeRun.warnings
+//     and flushed once, after all probe callers have run, via guardBinaryProbeFlushWarnings.
+//   - On a cache hit, violations are returned; warnings are NOT re-added (dedup by construction).
+//   - Falls back to uncached behaviour when no run is active (unit tests that call this
+//     directly, or callers outside Validate*). In that case warnings are discarded; the
+//     unit tests that need them call guardBinaryProbeOnce directly.
+func guardBinaryProbeCached(hasPSPosixEntry bool) []string {
+	if currentGuardProbeRun == nil {
+		v, _ := guardBinaryProbeOnce(hasPSPosixEntry)
+		return v
+	}
+	idx := 0
+	if hasPSPosixEntry {
+		idx = 1
+	}
+	if e := currentGuardProbeRun.entries[idx]; e != nil {
+		// Cache hit: violations already returned on first call; warnings already in side channel.
+		return e.violations
+	}
+	v, w := guardBinaryProbeOnce(hasPSPosixEntry)
+	currentGuardProbeRun.entries[idx] = &guardBinaryProbeCacheEntry{violations: v, warnings: w}
+	// Append warnings to the side channel only on a cache miss (dedup by construction).
+	currentGuardProbeRun.warnings = append(currentGuardProbeRun.warnings, w...)
+	return v
+}
+
+// guardBinaryProbeFlushWarnings returns the accumulated uncertain warnings from the current
+// run's side channel and clears it. Returns nil when no run is active.
+// Called once in ValidateUnfiltered and validateUnfilteredTagged, after all four probe callers
+// (credential + git-branch, project + global) have run.
+func guardBinaryProbeFlushWarnings() []string {
+	if currentGuardProbeRun == nil {
+		return nil
+	}
+	w := currentGuardProbeRun.warnings
+	currentGuardProbeRun.warnings = nil
+	return w
 }
 
 // guardCheckPS1RestrictedPolicy detects the npm .ps1 shim + Restricted policy scenario.
 // Portabilidade doc (§D5 risk / ML-1D): under Restricted, the PSSecurityException from loading
 // .ps1 exits 0 (not 1) when the hook has `; exit $LASTEXITCODE` — fail-open for ALL PS/POSIX CLIs.
-func guardCheckPS1RestrictedPolicy() []string {
+//
+// Returns (msgs, definitive):
+//   - ("Restricted" message, true):  policy is Restricted — certain fail-open; caller short-circuits.
+//   - ("unreadable" warning, false): policy is "" (e.g. powershell.exe cold-start exceeded
+//     guardPSPolicyTimeout, REQ #649) — uncertain risk; caller continues to Git Bash probe
+//     (AC6 ML-1B: an uncertain warning must not hide a certain finding).
+//   - (nil, false): no .ps1, or policy is readable and not Restricted — nothing to report.
+func guardCheckPS1RestrictedPolicy() ([]string, bool) {
 	resolved := guardFindTrackfwForPS()
 	if resolved == "" || !strings.HasSuffix(strings.ToLower(resolved), ".ps1") {
-		return nil
+		return nil, false
 	}
 	policy := guardGetPSPolicy()
 	if strings.EqualFold(policy, "Restricted") {
@@ -333,9 +427,16 @@ func guardCheckPS1RestrictedPolicy() []string {
 			"trackfw resolves to a PowerShell script (.ps1) under Restricted execution policy — " +
 				"the hook will fail open (exit 0 instead of exit 2); run: " +
 				"Set-ExecutionPolicy -Scope CurrentUser RemoteSigned",
-		}
+		}, true
 	}
-	return nil
+	if policy == "" {
+		return []string{
+			"trackfw resolves to a PowerShell script (.ps1) but the execution policy could not be read — " +
+				"if the policy is Restricted, the hook will fail open (exit 0 instead of exit 2); " +
+				"check with: Get-ExecutionPolicy and fix with: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned",
+		}, false
+	}
+	return nil, false
 }
 
 // --------------------------------------------------------------------------

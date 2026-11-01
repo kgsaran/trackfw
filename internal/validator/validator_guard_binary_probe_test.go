@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -298,7 +299,7 @@ func TestGuardGlobalHookResolvable_CredentialSemGlobal_Violation(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // Reconciliação: afirma que, quando o binário não está no PATH, guardBinaryProbeOnce
-// retorna violation mencionando "not found in PATH".
+// retorna violation mencionando "not found in PATH" e sem warnings.
 func TestGuardBinaryProbeOnce_BinarioAusente_Violation(t *testing.T) {
 	origLookup := guardLookupBinary
 	guardLookupBinary = func(name string) (string, error) {
@@ -306,14 +307,17 @@ func TestGuardBinaryProbeOnce_BinarioAusente_Violation(t *testing.T) {
 	}
 	t.Cleanup(func() { guardLookupBinary = origLookup })
 
-	msgs := guardBinaryProbeOnce(false)
-	if !hasViolation(msgs, "not found in PATH") {
-		t.Errorf("esperado violation 'not found in PATH', obteve: %v", msgs)
+	violations, warnings := guardBinaryProbeOnce(false)
+	if !hasViolation(violations, "not found in PATH") {
+		t.Errorf("esperado violation 'not found in PATH', obteve violations: %v", violations)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("esperado 0 warnings, obteve: %v", warnings)
 	}
 }
 
 // Reconciliação: afirma que, quando o binário existe mas `guard --help` sai ≠ 0,
-// guardBinaryProbeOnce retorna violation mencionando "does not have the guard subcommand".
+// guardBinaryProbeOnce retorna violation mencionando "does not have the guard subcommand" e sem warnings.
 func TestGuardBinaryProbeOnce_BinarioSemGuard_Violation(t *testing.T) {
 	origLookup := guardLookupBinary
 	origRun := guardRunProbe
@@ -324,22 +328,28 @@ func TestGuardBinaryProbeOnce_BinarioSemGuard_Violation(t *testing.T) {
 		guardRunProbe = origRun
 	})
 
-	msgs := guardBinaryProbeOnce(false)
-	if !hasViolation(msgs, "does not have the guard subcommand") {
-		t.Errorf("esperado violation de guard ausente, obteve: %v", msgs)
+	violations, warnings := guardBinaryProbeOnce(false)
+	if !hasViolation(violations, "does not have the guard subcommand") {
+		t.Errorf("esperado violation de guard ausente, obteve violations: %v", violations)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("esperado 0 warnings, obteve: %v", warnings)
 	}
 }
 
 // Reconciliação: afirma que, quando o binário existe e tem o guard, guardBinaryProbeOnce
-// retorna 0 mensagens (não-Windows, sem PS1).
+// retorna 0 violations e 0 warnings (não-Windows, sem PS1).
 func TestGuardBinaryProbeOnce_BinarioComGuard_Ok(t *testing.T) {
 	CurrentGOOS = "linux"
 	t.Cleanup(func() { CurrentGOOS = runtime.GOOS })
 	stubProbeOK(t)
 
-	msgs := guardBinaryProbeOnce(false)
-	if len(msgs) != 0 {
-		t.Errorf("esperado 0 msgs, obteve: %v", msgs)
+	violations, warnings := guardBinaryProbeOnce(false)
+	if len(violations) != 0 {
+		t.Errorf("esperado 0 violations, obteve: %v", violations)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("esperado 0 warnings, obteve: %v", warnings)
 	}
 }
 
@@ -370,11 +380,11 @@ func TestGuardBinaryProbeOnce_ConfigSoLegado_SondaNaoRoda(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------
-// (c) Windows + PS1 + Restricted / RemoteSigned / não-Windows
+// (c) Windows + PS1 + Restricted / RemoteSigned / ilegível / não-Windows
 // --------------------------------------------------------------------------
 
 // Reconciliação: afirma que Windows + trackfw resolving para .ps1 + política Restricted
-// gera violation pedindo Set-ExecutionPolicy RemoteSigned.
+// gera violation com a mensagem exata de política Restricted (não a de política ilegível).
 func TestGuardBinaryProbeOnce_WindowsPS1Restricted_Violation(t *testing.T) {
 	CurrentGOOS = "windows"
 	t.Cleanup(func() { CurrentGOOS = runtime.GOOS })
@@ -394,9 +404,16 @@ func TestGuardBinaryProbeOnce_WindowsPS1Restricted_Violation(t *testing.T) {
 		guardGetPSPolicy = origPolicy
 	})
 
-	msgs := guardBinaryProbeOnce(true /* hasPSPosixEntry */)
-	if !hasViolation(msgs, "Set-ExecutionPolicy") {
-		t.Errorf("esperado violation com Set-ExecutionPolicy, obteve: %v", msgs)
+	violations, warnings := guardBinaryProbeOnce(true /* hasPSPosixEntry */)
+	// Assert the Restricted-specific message, not the unreadable-policy message.
+	if !hasViolation(violations, "under Restricted execution policy") {
+		t.Errorf("esperado violation com 'under Restricted execution policy', obteve violations: %v", violations)
+	}
+	if hasViolation(violations, "could not be read") {
+		t.Errorf("mensagem de política ilegível não deve aparecer para Restricted em violations, obteve: %v", violations)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("esperado 0 warnings para Restricted, obteve: %v", warnings)
 	}
 }
 
@@ -423,9 +440,12 @@ func TestGuardBinaryProbeOnce_WindowsPS1RemoteSigned_Ok(t *testing.T) {
 		guardFindGitBashExe = origFindGitBash
 	})
 
-	msgs := guardBinaryProbeOnce(true /* hasPSPosixEntry */)
-	if len(msgs) != 0 {
-		t.Errorf("esperado 0 msgs para RemoteSigned, obteve: %v", msgs)
+	violations, warnings := guardBinaryProbeOnce(true /* hasPSPosixEntry */)
+	if len(violations) != 0 {
+		t.Errorf("esperado 0 violations para RemoteSigned, obteve: %v", violations)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("esperado 0 warnings para RemoteSigned, obteve: %v", warnings)
 	}
 }
 
@@ -451,9 +471,12 @@ func TestGuardBinaryProbeOnce_NaoWindows_PolicyNaoEhChamada(t *testing.T) {
 		guardGetPSPolicy = origPolicy
 	})
 
-	msgs := guardBinaryProbeOnce(true /* hasPSPosixEntry */)
-	if len(msgs) != 0 {
-		t.Errorf("esperado 0 msgs (não-Windows), obteve: %v", msgs)
+	violations, warnings := guardBinaryProbeOnce(true /* hasPSPosixEntry */)
+	if len(violations) != 0 {
+		t.Errorf("esperado 0 violations (não-Windows), obteve: %v", violations)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("esperado 0 warnings (não-Windows), obteve: %v", warnings)
 	}
 	if policyCallCount != 0 {
 		t.Errorf("costuras de política não devem ser chamadas fora do Windows; callCount = %d", policyCallCount)
@@ -484,9 +507,136 @@ func TestGuardBinaryProbeOnce_WindowsExeRestrictedOk(t *testing.T) {
 		guardFindGitBashExe = origFindGitBash
 	})
 
-	msgs := guardBinaryProbeOnce(true /* hasPSPosixEntry */)
-	if len(msgs) != 0 {
-		t.Errorf("esperado 0 msgs para .exe (discriminante é .ps1), obteve: %v", msgs)
+	violations, warnings := guardBinaryProbeOnce(true /* hasPSPosixEntry */)
+	if len(violations) != 0 {
+		t.Errorf("esperado 0 violations para .exe (discriminante é .ps1), obteve: %v", violations)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("esperado 0 warnings para .exe (discriminante é .ps1), obteve: %v", warnings)
+	}
+}
+
+// Reconciliação: afirma que Windows + .ps1 + política Restricted não chama guardFindGitBashExe
+// (contador = 0) — o retorno definitivo da sonda de política encerra o probe antes de chegar
+// à sonda do Git Bash (AC6 ML-1B: Restricted é certo, não chega a precisar do Git Bash).
+func TestGuardBinaryProbeOnce_WindowsPS1Restricted_GitBashNaoRoda(t *testing.T) {
+	CurrentGOOS = "windows"
+	t.Cleanup(func() { CurrentGOOS = runtime.GOOS })
+
+	origLookup := guardLookupBinary
+	origRun := guardRunProbe
+	origFind := guardFindTrackfwForPS
+	origPolicy := guardGetPSPolicy
+	origFindGitBash := guardFindGitBashExe
+	findGitBashCallCount := 0
+	guardLookupBinary = func(name string) (string, error) { return `C:\tools\trackfw.exe`, nil }
+	guardRunProbe = func(bin string) error { return nil }
+	guardFindTrackfwForPS = func() string { return `C:\npm\trackfw.ps1` }
+	guardGetPSPolicy = func() string { return "Restricted" }
+	guardFindGitBashExe = func() string { findGitBashCallCount++; return `C:\Program Files\Git\bin\bash.exe` }
+	t.Cleanup(func() {
+		guardLookupBinary = origLookup
+		guardRunProbe = origRun
+		guardFindTrackfwForPS = origFind
+		guardGetPSPolicy = origPolicy
+		guardFindGitBashExe = origFindGitBash
+	})
+
+	violations, warnings := guardBinaryProbeOnce(true /* hasPSPosixEntry */)
+	if !hasViolation(violations, "under Restricted execution policy") {
+		t.Errorf("esperado violation com 'under Restricted execution policy', obteve violations: %v", violations)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("esperado 0 warnings para Restricted (definitivo), obteve: %v", warnings)
+	}
+	if findGitBashCallCount != 0 {
+		t.Errorf("guardFindGitBashExe não deve ser chamada com Restricted (retorno definitivo); callCount=%d", findGitBashCallCount)
+	}
+}
+
+// Reconciliação: afirma que Windows + .ps1 + política ilegível ("") + sonda do Git Bash com
+// violação retorna: o aviso "could not be read" em warnings e a violação do Git Bash em
+// violations — sem que o aviso incerto esconda o achado certo (AC6 ML-1B/ML-1C: um aviso
+// incerto é roteado como warning, nunca oculta nem eleva a uma violation).
+func TestGuardBinaryProbeOnce_WindowsPS1PolicyUnreadableWithGitBashViolation_BothMessagesAppear(t *testing.T) {
+	CurrentGOOS = "windows"
+	t.Cleanup(func() { CurrentGOOS = runtime.GOOS })
+
+	origLookup := guardLookupBinary
+	origRun := guardRunProbe
+	origFind := guardFindTrackfwForPS
+	origPolicy := guardGetPSPolicy
+	origFindGitBash := guardFindGitBashExe
+	origLoginProbe := guardRunBashLoginProbe
+	guardLookupBinary = func(name string) (string, error) { return `C:\tools\trackfw.exe`, nil }
+	guardRunProbe = func(bin string) error { return nil } // PATH binary has guard
+	guardFindTrackfwForPS = func() string { return `C:\npm\trackfw.ps1` }
+	guardGetPSPolicy = func() string { return "" } // unreadable
+	guardFindGitBashExe = func() string { return `C:\Program Files\Git\bin\bash.exe` }
+	// Git Bash login: trackfw not found → "exit 127" violation
+	guardRunBashLoginProbe = func(_ string) (string, bool) { return "", true }
+	t.Cleanup(func() {
+		guardLookupBinary = origLookup
+		guardRunProbe = origRun
+		guardFindTrackfwForPS = origFind
+		guardGetPSPolicy = origPolicy
+		guardFindGitBashExe = origFindGitBash
+		guardRunBashLoginProbe = origLoginProbe
+	})
+
+	violations, warnings := guardBinaryProbeOnce(true /* hasPSPosixEntry */)
+	// Policy unreadable → warning (uncertain); Git Bash → violation (certain).
+	if len(violations) != 1 {
+		t.Fatalf("esperado exatamente 1 violation (Git Bash), obteve %d: %v", len(violations), violations)
+	}
+	if !hasViolation(violations, "Git Bash") {
+		t.Errorf("violation deve conter 'Git Bash', obteve: %v", violations)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("esperado exatamente 1 warning (ilegível), obteve %d: %v", len(warnings), warnings)
+	}
+	if !hasWarning(warnings, "could not be read") {
+		t.Errorf("warning deve conter 'could not be read', obteve: %v", warnings)
+	}
+}
+
+// Reconciliação: afirma que Windows + trackfw resolvendo para .ps1 + política ilegível ("")
+// emite aviso de fail-open (política não pôde ser lida) em warnings, nunca em violations —
+// confirmando o AC6 ML-1C: a mensagem incerta não bloqueia `trackfw validate`.
+func TestGuardBinaryProbeOnce_WindowsPS1PolicyUnreadable_Warning(t *testing.T) {
+	CurrentGOOS = "windows"
+	t.Cleanup(func() { CurrentGOOS = runtime.GOOS })
+
+	origLookup := guardLookupBinary
+	origRun := guardRunProbe
+	origFind := guardFindTrackfwForPS
+	origPolicy := guardGetPSPolicy
+	origFindGitBash := guardFindGitBashExe
+	guardLookupBinary = func(name string) (string, error) { return `C:\tools\trackfw.exe`, nil }
+	guardRunProbe = func(bin string) error { return nil }
+	guardFindTrackfwForPS = func() string { return `C:\npm\trackfw.ps1` }
+	guardGetPSPolicy = func() string { return "" }
+	guardFindGitBashExe = func() string { return "" } // isola do Git Bash real no Windows CI
+	t.Cleanup(func() {
+		guardLookupBinary = origLookup
+		guardRunProbe = origRun
+		guardFindTrackfwForPS = origFind
+		guardGetPSPolicy = origPolicy
+		guardFindGitBashExe = origFindGitBash
+	})
+
+	violations, warnings := guardBinaryProbeOnce(true /* hasPSPosixEntry */)
+	// A mensagem de política ilegível deve estar em warnings (incerto), não em violations.
+	if !hasWarning(warnings, "could not be read") {
+		t.Errorf("esperado warning de política ilegível com 'could not be read', obteve warnings: %v", warnings)
+	}
+	// Não deve haver violations — Git Bash não está disponível (guardFindGitBashExe retorna "").
+	if len(violations) != 0 {
+		t.Errorf("esperado 0 violations (sem Git Bash), obteve: %v", violations)
+	}
+	// A mensagem específica de Restricted NÃO deve aparecer — são casos distintos.
+	if hasWarning(warnings, "under Restricted execution policy") {
+		t.Errorf("mensagem de Restricted não deve aparecer para política ilegível, obteve: %v", warnings)
 	}
 }
 
@@ -623,4 +773,258 @@ func TestValidateTagged_TrackfwBinaryInProjectRoot_TemRule(t *testing.T) {
 	if !found {
 		t.Errorf("esperado TaggedMsg com Rule=trackfw_binary_in_project_root; violations=%v warnings=%v", violations, warnings)
 	}
+}
+
+// --------------------------------------------------------------------------
+// (f) ML-1C — aviso de política ilegível roteado como warning; sonda uma vez por validação
+// --------------------------------------------------------------------------
+
+// stubPSPolicyUnreadable configura todas as seams para o cenário Windows + .ps1 + policy="".
+// Retorna uma função restoreAll que NÃO precisa ser chamada: t.Cleanup já é registrado.
+// A função guardGetPSPolicy substituta é controlada pelo parâmetro policyFn.
+func stubPSPolicyUnreadable(t *testing.T, policyFn func() string) {
+	t.Helper()
+	CurrentGOOS = "windows"
+	t.Cleanup(func() { CurrentGOOS = runtime.GOOS })
+
+	origLookup := guardLookupBinary
+	origRun := guardRunProbe
+	origFind := guardFindTrackfwForPS
+	origPolicy := guardGetPSPolicy
+	origFindGitBash := guardFindGitBashExe
+	guardLookupBinary = func(_ string) (string, error) { return `C:\tools\trackfw.exe`, nil }
+	guardRunProbe = func(_ string) error { return nil }
+	guardFindTrackfwForPS = func() string { return `C:\npm\trackfw.ps1` }
+	guardGetPSPolicy = policyFn
+	guardFindGitBashExe = func() string { return "" } // isola do Git Bash real no Windows CI
+	t.Cleanup(func() {
+		guardLookupBinary = origLookup
+		guardRunProbe = origRun
+		guardFindTrackfwForPS = origFind
+		guardGetPSPolicy = origPolicy
+		guardFindGitBashExe = origFindGitBash
+	})
+}
+
+// setupML1CProjectAndGlobalHooks cria:
+//   - project dir com .claude/settings.json com o form PS/POSIX do credential guard
+//   - global dir (home) com .claude/settings.json com o form PS/POSIX do global credential guard
+//
+// Ambos garantem que tanto validateCredentialGuardHookResolvable (projeto) quanto
+// validateCredentialGuardGlobalHookResolvable (global) chamem guardBinaryProbeCached,
+// o que é necessário para provar o dedup do cache.
+//
+// Retorna (projectDir, homeDir).
+func setupML1CProjectAndGlobalHooks(t *testing.T) (projectDir, homeDir string) {
+	t.Helper()
+
+	homeDir = t.TempDir()
+	projectDir = t.TempDir()
+
+	// Setar HOME e CLAUDE_CONFIG_DIR para isolar do ambiente real.
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(homeDir, ".claude"))
+
+	// Form PS/POSIX do credential guard de projeto (trackfw guard credential).
+	const credPSPOSIX = `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+	// Form PS/POSIX do credential guard global (trackfw guard credential --global).
+	const credGlobalPSPOSIX = `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+
+	// Projeto: .claude/settings.json com credential guard (PS/POSIX form).
+	writeFile(t, projectDir, ".claude/settings.json", claudeSettingsWithSubcmd(credPSPOSIX))
+
+	// Global: HOME/.claude/settings.json com credential guard --global (PS/POSIX form).
+	writeFile(t, homeDir, ".claude/settings.json", claudeSettingsWithSubcmd(credGlobalPSPOSIX))
+
+	return projectDir, homeDir
+}
+
+// countSubstring conta quantas vezes substr aparece em algum elemento de ss.
+func countSubstringInSlice(ss []string, substr string) int {
+	n := 0
+	for _, s := range ss {
+		n += strings.Count(s, substr)
+	}
+	return n
+}
+
+// Reconciliação: afirma que a mensagem "could not be read" (política ilegível) aparece em
+// warnings e não em violations após Validate(), provando que o aviso incerto não bloqueia
+// `trackfw validate` (AC6 ML-1C). Este teste afirma que a mensagem de política ilegível não
+// bloqueia `trackfw validate` sob a severidade padrão de `credential_guard_hook_resolvable`.
+func TestML1C_Validate_PolicyUnreadable_AppearsInWarningsNotViolations(t *testing.T) {
+	projectDir, _ := setupML1CProjectAndGlobalHooks(t)
+	stubPSPolicyUnreadable(t, func() string { return "" }) // policy ilegível
+	chdir(t, projectDir)
+
+	violations, warnings, err := Validate()
+	if err != nil {
+		t.Fatalf("Validate() erro inesperado: %v", err)
+	}
+	// A mensagem incerta deve estar em warnings.
+	if !hasWarning(warnings, "could not be read") {
+		t.Errorf("esperado warning 'could not be read', obteve warnings: %v", warnings)
+	}
+	// A mensagem incerta NÃO deve estar em violations.
+	if hasViolation(violations, "could not be read") {
+		t.Errorf("'could not be read' não deve aparecer em violations, obteve: %v", violations)
+	}
+	// A mensagem deve aparecer exatamente uma vez (cache dedup).
+	if n := countSubstringInSlice(warnings, "could not be read"); n != 1 {
+		t.Errorf("esperado 'could not be read' exatamente 1 vez em warnings, obteve %d: %v", n, warnings)
+	}
+}
+
+// Reconciliação: afirma que a mensagem "could not be read" aparece em warnings e não em
+// violations após ValidateTagged() — espelho do teste acima para o caminho tagged.
+// Este teste afirma que a mensagem de política ilegível não bloqueia `trackfw validate`
+// no caminho ValidateTagged (usado pelo --json output e pelo Validate()).
+func TestML1C_ValidateTagged_PolicyUnreadable_AppearsInWarningsNotViolations(t *testing.T) {
+	projectDir, _ := setupML1CProjectAndGlobalHooks(t)
+	stubPSPolicyUnreadable(t, func() string { return "" }) // policy ilegível
+	chdir(t, projectDir)
+
+	violations, warnings, err := ValidateTagged()
+	if err != nil {
+		t.Fatalf("ValidateTagged() erro inesperado: %v", err)
+	}
+	// Extrair os msgs de warnings e violations para busca por substring.
+	warnMsgs := make([]string, len(warnings))
+	for i, w := range warnings {
+		warnMsgs[i] = w.Msg
+	}
+	violMsgs := make([]string, len(violations))
+	for i, v := range violations {
+		violMsgs[i] = v.Msg
+	}
+	if !hasWarning(warnMsgs, "could not be read") {
+		t.Errorf("esperado warning 'could not be read' em ValidateTagged, obteve warnings: %v", warnMsgs)
+	}
+	if hasViolation(violMsgs, "could not be read") {
+		t.Errorf("'could not be read' não deve aparecer em violations de ValidateTagged, obteve: %v", violMsgs)
+	}
+	if n := countSubstringInSlice(warnMsgs, "could not be read"); n != 1 {
+		t.Errorf("esperado 'could not be read' exatamente 1 vez em warnings de ValidateTagged, obteve %d: %v", n, warnMsgs)
+	}
+}
+
+// Reconciliação: afirma que com policy="Restricted" a mensagem definitiva aparece em violations
+// (não em warnings), confirmando que o roteamento seletivo não afeta o caminho certo.
+// Este teste afirma que a mensagem de política Restricted continua bloqueando `trackfw validate`.
+func TestML1C_Validate_Restricted_AppearsInViolations(t *testing.T) {
+	projectDir, _ := setupML1CProjectAndGlobalHooks(t)
+	stubPSPolicyUnreadable(t, func() string { return "Restricted" }) // policy Restricted
+	chdir(t, projectDir)
+
+	violations, warnings, err := Validate()
+	if err != nil {
+		t.Fatalf("Validate() erro inesperado: %v", err)
+	}
+	if !hasViolation(violations, "under Restricted execution policy") {
+		t.Errorf("esperado violation 'under Restricted execution policy', obteve violations: %v", violations)
+	}
+	// A mensagem de Restricted NÃO deve estar em warnings.
+	if hasWarning(warnings, "under Restricted execution policy") {
+		t.Errorf("'under Restricted execution policy' não deve aparecer em warnings, obteve: %v", warnings)
+	}
+}
+
+// Reconciliação: afirma que guardGetPSPolicy é chamada exatamente uma vez por Validate()
+// mesmo com hooks de projeto e global presentes — o cache de sonda evita a chamada duplicada.
+// Este teste afirma que o cache de sonda do ML-1C reduz de N para 1 a chamada a guardGetPSPolicy
+// por Validate(), evitando timeout acumulado de N×20s em sistemas com powershell.exe lento.
+func TestML1C_Validate_CacheSonda_GetPSPolicyChamadaUmaVez(t *testing.T) {
+	projectDir, _ := setupML1CProjectAndGlobalHooks(t)
+	chdir(t, projectDir)
+
+	callCount := 0
+	origPolicy := guardGetPSPolicy
+	guardGetPSPolicy = func() string {
+		callCount++
+		return "" // política ilegível
+	}
+	t.Cleanup(func() { guardGetPSPolicy = origPolicy })
+
+	// Demais seams idênticas ao stubPSPolicyUnreadable (sem a substituição de guardGetPSPolicy).
+	CurrentGOOS = "windows"
+	t.Cleanup(func() { CurrentGOOS = runtime.GOOS })
+	origLookup := guardLookupBinary
+	origRun := guardRunProbe
+	origFind := guardFindTrackfwForPS
+	origFindGitBash := guardFindGitBashExe
+	guardLookupBinary = func(_ string) (string, error) { return `C:\tools\trackfw.exe`, nil }
+	guardRunProbe = func(_ string) error { return nil }
+	guardFindTrackfwForPS = func() string { return `C:\npm\trackfw.ps1` }
+	guardFindGitBashExe = func() string { return "" }
+	t.Cleanup(func() {
+		guardLookupBinary = origLookup
+		guardRunProbe = origRun
+		guardFindTrackfwForPS = origFind
+		guardFindGitBashExe = origFindGitBash
+	})
+
+	_, _, err := Validate()
+	if err != nil {
+		t.Fatalf("Validate() erro inesperado: %v", err)
+	}
+	if callCount != 1 {
+		t.Errorf("guardGetPSPolicy deve ser chamada exatamente 1 vez por Validate(); callCount = %d", callCount)
+	}
+}
+
+// --------------------------------------------------------------------------
+// (g) ML-1C — caminho ValidateUnfiltered (não tagueado, usado por `trackfw baseline`)
+// --------------------------------------------------------------------------
+
+// Reconciliação: afirma que a mensagem "could not be read" (política ilegível) aparece em
+// warnings e não em violations após ValidateUnfiltered(), provando que o flush de
+// applyRuleWarnOnly na linha ~1182 de validator.go roteia o aviso incerto como warning
+// também no caminho não-tagueado, que é o caminho real do `trackfw baseline`
+// (internal/commands/baseline.go).
+//
+// Braço "restricted": afirma que com policy="Restricted" a mensagem definitiva aparece em
+// violations, confirmando que o roteamento selectivo não afeta o caminho certo.
+func TestML1C_ValidateUnfiltered_PolicyUnreadable_AppearsInWarningsNotViolations(t *testing.T) {
+	t.Run("policy_unreadable", func(t *testing.T) {
+		projectDir, _ := setupML1CProjectAndGlobalHooks(t)
+		stubPSPolicyUnreadable(t, func() string { return "" }) // política ilegível
+		chdir(t, projectDir)
+
+		violations, warnings, err := ValidateUnfiltered()
+		if err != nil {
+			t.Fatalf("ValidateUnfiltered() erro inesperado: %v", err)
+		}
+		// A mensagem incerta deve estar em warnings.
+		if !hasWarning(warnings, "could not be read") {
+			t.Errorf("esperado warning 'could not be read', obteve warnings: %v", warnings)
+		}
+		// A mensagem incerta NÃO deve estar em violations.
+		if hasViolation(violations, "could not be read") {
+			t.Errorf("'could not be read' não deve aparecer em violations, obteve: %v", violations)
+		}
+		// A mensagem deve aparecer exatamente uma vez (cache dedup).
+		if n := countSubstringInSlice(warnings, "could not be read"); n != 1 {
+			t.Errorf("esperado 'could not be read' exatamente 1 vez em warnings, obteve %d: %v", n, warnings)
+		}
+	})
+
+	t.Run("restricted", func(t *testing.T) {
+		projectDir, _ := setupML1CProjectAndGlobalHooks(t)
+		stubPSPolicyUnreadable(t, func() string { return "Restricted" }) // política Restricted
+		chdir(t, projectDir)
+
+		violations, warnings, err := ValidateUnfiltered()
+		if err != nil {
+			t.Fatalf("ValidateUnfiltered() erro inesperado: %v", err)
+		}
+		// A mensagem definitiva de Restricted deve estar em violations.
+		if !hasViolation(violations, "under Restricted execution policy") {
+			t.Errorf("esperado violation 'under Restricted execution policy', obteve violations: %v", violations)
+		}
+		// NÃO deve aparecer em warnings.
+		if hasWarning(warnings, "under Restricted execution policy") {
+			t.Errorf("'under Restricted execution policy' não deve aparecer em warnings, obteve: %v", warnings)
+		}
+	})
 }
