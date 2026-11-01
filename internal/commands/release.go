@@ -136,16 +136,25 @@ func extractGoVersion(content string) (string, error) {
 }
 
 func extractNpmVersion(content string) (string, error) {
-	var pkg struct {
-		Version string `json:"version"`
-	}
+	// A-2 (REQ-2026-08-30): map lookup is case-sensitive; struct tag json:"version" is
+	// case-insensitive and lets "Version":"x" win over "version":"y". npm always writes
+	// lower-case keys, but a manually-edited file with "Version" would diverge silently.
+	var pkg map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(content), &pkg); err != nil {
 		return "", fmt.Errorf("could not parse npm/package.json: %w", err)
 	}
-	if pkg.Version == "" {
+	raw, ok := pkg["version"]
+	if !ok {
 		return "", fmt.Errorf(`npm/package.json has no "version" field`)
 	}
-	return pkg.Version, nil
+	var v string
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return "", fmt.Errorf("npm/package.json version is not a string: %w", err)
+	}
+	if v == "" {
+		return "", fmt.Errorf(`npm/package.json has no "version" field`)
+	}
+	return v, nil
 }
 
 var pyprojectVersionRE = regexp.MustCompile(`(?m)^version\s*=\s*"([^"]+)"`)
@@ -163,16 +172,23 @@ func extractPyprojectVersion(content string) (string, error) {
 // workflow alongside npm/package.json — a divergence means the lockfile was not
 // committed after the npm version bump.
 func extractPackageLockRootVersion(content string) (string, error) {
-	var lock struct {
-		Version string `json:"version"`
-	}
+	// A-2 (REQ-2026-08-30): case-sensitive map lookup — see extractNpmVersion for rationale.
+	var lock map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(content), &lock); err != nil {
 		return "", fmt.Errorf("could not parse npm/package-lock.json: %w", err)
 	}
-	if lock.Version == "" {
+	raw, ok := lock["version"]
+	if !ok {
 		return "", fmt.Errorf(`npm/package-lock.json has no "version" field at root`)
 	}
-	return lock.Version, nil
+	var v string
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return "", fmt.Errorf("npm/package-lock.json root version is not a string: %w", err)
+	}
+	if v == "" {
+		return "", fmt.Errorf(`npm/package-lock.json has no "version" field at root`)
+	}
+	return v, nil
 }
 
 // extractPackageLockPackagesVersion extracts the "version" field from the
@@ -180,26 +196,41 @@ func extractPackageLockRootVersion(content string) (string, error) {
 // record, present in lockfileVersion 2 and 3). A missing entry means the file
 // is a v1 lockfile (npm 6, pre-2020) or is corrupted — either way, fail closed.
 func extractPackageLockPackagesVersion(content string) (string, error) {
-	var lock struct {
-		Packages map[string]json.RawMessage `json:"packages"`
-	}
-	if err := json.Unmarshal([]byte(content), &lock); err != nil {
+	// A-2 (REQ-2026-08-30): three-level case-sensitive map lookup — outer "packages" key,
+	// the workspace root key "", and the "version" field within it. Struct tags are
+	// case-insensitive in encoding/json; map lookups are not.
+	var outer map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(content), &outer); err != nil {
 		return "", fmt.Errorf("could not parse npm/package-lock.json: %w", err)
 	}
-	raw, ok := lock.Packages[""]
+	packagesRaw, ok := outer["packages"]
 	if !ok {
 		return "", fmt.Errorf(`npm/package-lock.json has no "packages[""]" entry (v1 lockfile or corrupted)`)
 	}
-	var pkg struct {
-		Version string `json:"version"`
+	var packages map[string]json.RawMessage
+	if err := json.Unmarshal(packagesRaw, &packages); err != nil {
+		return "", fmt.Errorf("could not parse npm/package-lock.json: %w", err)
 	}
-	if err := json.Unmarshal(raw, &pkg); err != nil {
+	raw, ok := packages[""]
+	if !ok {
+		return "", fmt.Errorf(`npm/package-lock.json has no "packages[""]" entry (v1 lockfile or corrupted)`)
+	}
+	var inner map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &inner); err != nil {
 		return "", fmt.Errorf(`could not parse npm/package-lock.json packages[""]: %w`, err)
 	}
-	if pkg.Version == "" {
+	vRaw, ok := inner["version"]
+	if !ok {
 		return "", fmt.Errorf(`npm/package-lock.json packages[""] has no "version" field`)
 	}
-	return pkg.Version, nil
+	var v string
+	if err := json.Unmarshal(vRaw, &v); err != nil {
+		return "", fmt.Errorf(`npm/package-lock.json packages[""] version is not a string: %w`, err)
+	}
+	if v == "" {
+		return "", fmt.Errorf(`npm/package-lock.json packages[""] has no "version" field`)
+	}
+	return v, nil
 }
 
 func newReleaseCmd() *cobra.Command {

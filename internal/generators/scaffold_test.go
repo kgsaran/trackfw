@@ -835,7 +835,8 @@ func TestGenerateGitHubActionsWorkflow_WritesWhenValidateYmlAbsent(t *testing.T)
 // (REQ-2026-08-30, husky commit-msg site): when .husky/commit-msg already exists with
 // mode 0644, generateCommitMsgHook must promote it to 0755 (git executes hooks via
 // fork+exec; the +x bit is required). Affirmation: this test asserts that
-// generateCommitMsgHook calls os.Chmod after os.WriteFile for the husky commit-msg hook.
+// generateCommitMsgHook writes with mode 0755 via pathguard.GuardedWrite (fd.Chmod
+// before rename), replacing a pre-existing 0644 file atomically.
 func TestGenerateCommitMsgHook_HuskyExecBitPromotedWhenFileExistsWith0644(t *testing.T) {
 	dir := t.TempDir()
 	orig, _ := os.Getwd()
@@ -883,7 +884,8 @@ func TestGenerateCommitMsgHook_HuskyExecBitPromotedWhenFileExistsWith0644(t *tes
 // (REQ-2026-08-30, husky pre-commit site): when .husky/pre-commit already exists with
 // mode 0644, generateHuskyHook must promote it to 0755 (git executes hooks via
 // fork+exec; the +x bit is required). Affirmation: this test asserts that
-// generateHuskyHook calls os.Chmod after os.WriteFile for the husky pre-commit hook.
+// generateHuskyHook writes with mode 0755 via pathguard.GuardedWrite (fd.Chmod
+// before rename), replacing a pre-existing 0644 file atomically.
 func TestGenerateHuskyHook_ExecBitPromotedWhenFileExistsWith0644(t *testing.T) {
 	dir := t.TempDir()
 	orig, _ := os.Getwd()
@@ -923,5 +925,191 @@ func TestGenerateHuskyHook_ExecBitPromotedWhenFileExistsWith0644(t *testing.T) {
 		}
 	} else {
 		execBitNaoExercitado(t, hookPath)
+	}
+}
+
+// TestGenerateCommitMsgHook_HuskySymlinkAtLeafRefused asserts R-4
+// (REQ-2026-08-30): a symlink planted at .husky/commit-msg pointing outside
+// the project root is refused by pathguard.GuardedWrite, and the target file
+// remains unchanged.
+//
+// Affirmation (R-4 symlink, commit-msg): GuardedWrite's RejectAndReport
+// catches the symlink before any write occurs. This would PASS with
+// os.WriteFile+Chmod (which follows the symlink) and FAILS only with GuardedWrite.
+func TestGenerateCommitMsgHook_HuskySymlinkAtLeafRefused(t *testing.T) {
+	outside := t.TempDir()
+	victim := filepath.Join(outside, "victim.txt")
+	originalContent := "must not be overwritten\n"
+	if err := os.WriteFile(victim, []byte(originalContent), 0644); err != nil {
+		t.Fatalf("WriteFile victim: %v", err)
+	}
+
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	huskyDir := filepath.Join(dir, ".husky")
+	if err := os.MkdirAll(huskyDir, 0755); err != nil {
+		t.Fatalf("MkdirAll .husky: %v", err)
+	}
+	hookPath := filepath.Join(huskyDir, "commit-msg")
+	symlinkOrSkip(t, victim, hookPath)
+
+	cfg := Config{Hooks: "husky", RequireReqInCommit: true}
+	err := generateCommitMsgHook(cfg)
+	if err == nil {
+		t.Fatal("generateCommitMsgHook should refuse when .husky/commit-msg is a symlink, got nil")
+	}
+
+	got, readErr := os.ReadFile(victim)
+	if readErr != nil {
+		t.Fatalf("ReadFile victim: %v", readErr)
+	}
+	if string(got) != originalContent {
+		t.Errorf("symlink-follow: victim was overwritten\nwant: %q\ngot:  %q", originalContent, string(got))
+	}
+}
+
+// TestGenerateHuskyHook_SymlinkAtLeafRefused asserts R-4
+// (REQ-2026-08-30): a symlink planted at .husky/pre-commit pointing outside
+// the project root is refused by pathguard.GuardedWrite, and the target file
+// remains unchanged.
+//
+// Affirmation (R-4 symlink, pre-commit): GuardedWrite's RejectAndReport
+// catches the symlink before any write occurs. This would PASS with
+// os.WriteFile+Chmod (which follows the symlink) and FAILS only with GuardedWrite.
+func TestGenerateHuskyHook_SymlinkAtLeafRefused(t *testing.T) {
+	outside := t.TempDir()
+	victim := filepath.Join(outside, "victim.txt")
+	originalContent := "must not be overwritten\n"
+	if err := os.WriteFile(victim, []byte(originalContent), 0644); err != nil {
+		t.Fatalf("WriteFile victim: %v", err)
+	}
+
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	huskyDir := filepath.Join(dir, ".husky")
+	if err := os.MkdirAll(huskyDir, 0755); err != nil {
+		t.Fatalf("MkdirAll .husky: %v", err)
+	}
+	hookPath := filepath.Join(huskyDir, "pre-commit")
+	symlinkOrSkip(t, victim, hookPath)
+
+	err := generateHuskyHook()
+	if err == nil {
+		t.Fatal("generateHuskyHook should refuse when .husky/pre-commit is a symlink, got nil")
+	}
+
+	got, readErr := os.ReadFile(victim)
+	if readErr != nil {
+		t.Fatalf("ReadFile victim: %v", readErr)
+	}
+	if string(got) != originalContent {
+		t.Errorf("symlink-follow: victim was overwritten\nwant: %q\ngot:  %q", originalContent, string(got))
+	}
+}
+
+// TestGenerateCommitMsgHook_HuskyHardlinkNotFollowed asserts R-4
+// (REQ-2026-08-30): a hardlink to an outside file at .husky/commit-msg is
+// NOT followed by pathguard.GuardedWrite — GuardedWrite renames a new inode,
+// breaking the hardlink so the outside file's inode is unchanged.
+//
+// Affirmation (R-4 hardlink, commit-msg): rename-to-new-inode breaks the
+// shared inode. With old os.WriteFile+Chmod, both share an inode and
+// os.WriteFile overwrites shared content — this test fails with that pattern.
+func TestGenerateCommitMsgHook_HuskyHardlinkNotFollowed(t *testing.T) {
+	if os.Getenv("GOOS") == "windows" {
+		t.Skip("hardlink semantics differ on Windows")
+	}
+	outside := t.TempDir()
+	outsideFile := filepath.Join(outside, "shared.txt")
+	originalContent := "shared inode — must not be overwritten\n"
+	if err := os.WriteFile(outsideFile, []byte(originalContent), 0644); err != nil {
+		t.Fatalf("WriteFile outsideFile: %v", err)
+	}
+
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	huskyDir := filepath.Join(dir, ".husky")
+	if err := os.MkdirAll(huskyDir, 0755); err != nil {
+		t.Fatalf("MkdirAll .husky: %v", err)
+	}
+	hookPath := filepath.Join(huskyDir, "commit-msg")
+	if err := os.Link(outsideFile, hookPath); err != nil {
+		t.Skipf("os.Link not supported: %v", err)
+	}
+
+	cfg := Config{Hooks: "husky", RequireReqInCommit: true}
+	if err := generateCommitMsgHook(cfg); err != nil {
+		t.Fatalf("generateCommitMsgHook: %v", err)
+	}
+
+	got, readErr := os.ReadFile(outsideFile)
+	if readErr != nil {
+		t.Fatalf("ReadFile outsideFile: %v", readErr)
+	}
+	if string(got) != originalContent {
+		t.Errorf("hardlink shared inode was overwritten\nwant: %q\ngot:  %q", originalContent, string(got))
+	}
+}
+
+// TestGenerateHuskyHook_HardlinkNotFollowed asserts R-4
+// (REQ-2026-08-30): a hardlink to an outside file at .husky/pre-commit is
+// NOT followed by pathguard.GuardedWrite — GuardedWrite renames a new inode,
+// breaking the hardlink so the outside file's inode is unchanged.
+//
+// Affirmation (R-4 hardlink, pre-commit): rename-to-new-inode breaks the
+// shared inode. With old os.WriteFile+Chmod, both share an inode and
+// os.WriteFile overwrites shared content — this test fails with that pattern.
+func TestGenerateHuskyHook_HardlinkNotFollowed(t *testing.T) {
+	if os.Getenv("GOOS") == "windows" {
+		t.Skip("hardlink semantics differ on Windows")
+	}
+	outside := t.TempDir()
+	outsideFile := filepath.Join(outside, "shared.txt")
+	originalContent := "shared inode — must not be overwritten\n"
+	if err := os.WriteFile(outsideFile, []byte(originalContent), 0644); err != nil {
+		t.Fatalf("WriteFile outsideFile: %v", err)
+	}
+
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	huskyDir := filepath.Join(dir, ".husky")
+	if err := os.MkdirAll(huskyDir, 0755); err != nil {
+		t.Fatalf("MkdirAll .husky: %v", err)
+	}
+	hookPath := filepath.Join(huskyDir, "pre-commit")
+	if err := os.Link(outsideFile, hookPath); err != nil {
+		t.Skipf("os.Link not supported: %v", err)
+	}
+
+	if err := generateHuskyHook(); err != nil {
+		t.Fatalf("generateHuskyHook: %v", err)
+	}
+
+	got, readErr := os.ReadFile(outsideFile)
+	if readErr != nil {
+		t.Fatalf("ReadFile outsideFile: %v", readErr)
+	}
+	if string(got) != originalContent {
+		t.Errorf("hardlink shared inode was overwritten\nwant: %q\ngot:  %q", originalContent, string(got))
 	}
 }

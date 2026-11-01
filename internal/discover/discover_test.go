@@ -315,9 +315,9 @@ func TestInstallGates_Idempotente(t *testing.T) {
 
 // TestInstallGates_ValidateScript_ExecBitPromotedWhenFileExistsWith0644 asserts AC2
 // (REQ-2026-08-30): when scripts/trackfw-validate.sh already exists with mode 0644,
-// InstallGates must promote it to 0755 (os.WriteFile applies perm only on O_CREATE;
-// os.Chmod is needed to fix pre-existing files). Affirmation: this test asserts that
-// InstallGates calls os.Chmod after os.WriteFile for writeValidateScript.
+// InstallGates must promote it to 0755. Affirmation: this test asserts that
+// writeValidateScript atomically creates with mode 0755 via pathguard.GuardedWrite
+// (fd.Chmod before rename), so an existing 0644 file is replaced with 0755.
 func TestInstallGates_ValidateScript_ExecBitPromotedWhenFileExistsWith0644(t *testing.T) {
 	dir := t.TempDir()
 	// Pre-create the scripts dir and the validate script at mode 0644.
@@ -1269,6 +1269,97 @@ func TestInstallGates_SymlinkScriptsDirRefused(t *testing.T) {
 	}
 	if _, statErr := os.Stat(filepath.Join(outside, "trackfw-validate.sh")); statErr == nil {
 		t.Error("containment violated: trackfw-validate.sh was written outside the project")
+	}
+}
+
+// TestInstallGates_ValidateScript_SymlinkAtLeafRefused asserts R-4
+// (REQ-2026-08-30): a symlink planted at scripts/trackfw-validate.sh pointing
+// outside the project root is refused by pathguard.GuardedWrite — the file
+// the symlink points to must remain unchanged.
+//
+// Affirmation (R-4 symlink): asserts that GuardedWrite refuses symlink-at-leaf
+// (via RejectAndReport), so arbitrary-write through a planted symlink is closed.
+// This test would PASS with os.WriteFile+Chmod (which follows the symlink and
+// overwrites the target) and FAILS only with GuardedWrite.
+func TestInstallGates_ValidateScript_SymlinkAtLeafRefused(t *testing.T) {
+	outside := t.TempDir()
+	victim := filepath.Join(outside, "victim.txt")
+	originalContent := "original content — must not be overwritten\n"
+	if err := os.WriteFile(victim, []byte(originalContent), 0644); err != nil {
+		t.Fatalf("WriteFile victim: %v", err)
+	}
+
+	dir := t.TempDir()
+	scriptsDir := filepath.Join(dir, "scripts")
+	if err := os.MkdirAll(scriptsDir, 0755); err != nil {
+		t.Fatalf("MkdirAll scripts: %v", err)
+	}
+	leafLink := filepath.Join(scriptsDir, "trackfw-validate.sh")
+	if !symlinkOrSkip(t, victim, leafLink) {
+		return // symlinks not supported on this filesystem — skip
+	}
+
+	r := DiscoveryResult{}
+	err := InstallGates(r, dir, io.Discard)
+	if err == nil {
+		t.Fatal("InstallGates() should refuse when scripts/trackfw-validate.sh is a symlink, got nil")
+	}
+
+	// The victim outside the project must be untouched.
+	got, readErr := os.ReadFile(victim)
+	if readErr != nil {
+		t.Fatalf("ReadFile victim after InstallGates: %v", readErr)
+	}
+	if string(got) != originalContent {
+		t.Errorf("symlink-follow arbitrary write: victim was overwritten\nwant: %q\ngot:  %q", originalContent, string(got))
+	}
+}
+
+// TestInstallGates_ValidateScript_HardlinkNotFollowed asserts R-4
+// (REQ-2026-08-30): a hardlink to an outside file at the destination
+// scripts/trackfw-validate.sh is NOT followed by pathguard.GuardedWrite —
+// the outside file's inode must remain unchanged after InstallGates writes
+// the validate script.
+//
+// Affirmation (R-4 hardlink): asserts that GuardedWrite's rename-to-new-inode
+// breaks the hardlink, so the outside file is not affected. With the old
+// os.WriteFile+Chmod, both the destination and the outside file share an inode
+// and os.WriteFile overwrites the shared inode's content — this test fails
+// with that pattern.
+func TestInstallGates_ValidateScript_HardlinkNotFollowed(t *testing.T) {
+	if os.Getenv("GOOS") == "windows" {
+		t.Skip("hardlink semantics differ on Windows")
+	}
+	outside := t.TempDir()
+	outsideFile := filepath.Join(outside, "shared.txt")
+	originalContent := "shared inode content — must not be overwritten\n"
+	if err := os.WriteFile(outsideFile, []byte(originalContent), 0644); err != nil {
+		t.Fatalf("WriteFile outsideFile: %v", err)
+	}
+
+	dir := t.TempDir()
+	scriptsDir := filepath.Join(dir, "scripts")
+	if err := os.MkdirAll(scriptsDir, 0755); err != nil {
+		t.Fatalf("MkdirAll scripts: %v", err)
+	}
+	hardlinkDest := filepath.Join(scriptsDir, "trackfw-validate.sh")
+	if err := os.Link(outsideFile, hardlinkDest); err != nil {
+		t.Skipf("os.Link not supported: %v", err)
+	}
+
+	r := DiscoveryResult{}
+	if err := InstallGates(r, dir, io.Discard); err != nil {
+		t.Fatalf("InstallGates error: %v", err)
+	}
+
+	// The outside file (shared inode) must be unchanged — GuardedWrite
+	// renames a new inode to the destination, breaking the hardlink.
+	got, readErr := os.ReadFile(outsideFile)
+	if readErr != nil {
+		t.Fatalf("ReadFile outsideFile after InstallGates: %v", readErr)
+	}
+	if string(got) != originalContent {
+		t.Errorf("hardlink shared inode was overwritten\nwant: %q\ngot:  %q", originalContent, string(got))
 	}
 }
 

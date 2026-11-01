@@ -794,3 +794,48 @@ func TestReleaseTag_TagMessageFromCommit_NotFromHypotheticalLocal(t *testing.T) 
 	}
 	_ = localOnlyBody // documented here as the "not this" counterpart
 }
+
+// TestReleaseExtractors_CaseSensitiveVersionKey asserts A-2 (REQ-2026-08-30): the three JSON
+// version extractors read the exact key "version" (lower-case) and must NOT be affected by a
+// sibling key "Version" (upper-case). Go's encoding/json struct tags are case-insensitive and
+// would otherwise return the value from "Version" when it appears after "version" in the JSON.
+//
+// Affirmation (per extractor): the extractor reads the value of the lower-case "version" key
+// ("correct"), ignoring "Version":"wrong", matching npm JSON.parse case-sensitive behavior.
+func TestReleaseExtractors_CaseSensitiveVersionKey(t *testing.T) {
+	// JSON with both "version" (lowercase, correct) and "Version" (uppercase, wrong).
+	// "version" appears FIRST so that the old case-insensitive struct decoder (last-match-wins)
+	// would return "wrong"; the new map-based decoder returns "correct".
+	cases := []struct {
+		name    string
+		extract func(string) (string, error)
+		input   string
+	}{
+		{
+			name:    "npm/package.json",
+			extract: extractNpmVersion,
+			input:   `{"version":"correct","Version":"wrong"}`,
+		},
+		{
+			name:    "package-lock.json root",
+			extract: extractPackageLockRootVersion,
+			input:   `{"version":"correct","Version":"wrong","lockfileVersion":3,"packages":{"":{"version":"1.0.0"}}}`,
+		},
+		{
+			name:    "package-lock.json packages[\"\"]",
+			extract: extractPackageLockPackagesVersion,
+			input:   `{"lockfileVersion":3,"packages":{"":{"version":"correct","Version":"wrong"}}}`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := tc.extract(tc.input)
+			if err != nil {
+				t.Fatalf("extractor returned error: %v", err)
+			}
+			if got != "correct" {
+				t.Errorf("extractor returned %q, want %q (case-insensitive struct tag accepted %q)", got, "correct", "wrong")
+			}
+		})
+	}
+}
