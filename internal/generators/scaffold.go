@@ -73,8 +73,8 @@ type Config struct {
 	// Accepted values: "pull_request" (default, absent = pull_request) and "manual".
 	// CITriggerInvalid mirrors config.UpdateConfig.CITriggerInvalid: when true, callers
 	// must refuse to generate CI workflows and return an error.
-	CITrigger        string // ci_trigger: "pull_request" | "manual" (default: "" = pull_request)
-	CITriggerInvalid bool   // true when config had an invalid ci_trigger value
+	CITrigger         string // ci_trigger: "pull_request" | "manual" (default: "" = pull_request)
+	CITriggerInvalid  bool   // true when config had an invalid ci_trigger value
 	CITriggerRawValue string // raw value for error messages when CITriggerInvalid
 }
 
@@ -1814,7 +1814,8 @@ jobs:
 // switch selects between two pre-written fixed blocks.
 //
 // Accepted values: "pull_request" | "" → pull_request template (default)
-//                  "manual"            → workflow_dispatch template
+//
+//	"manual"            → workflow_dispatch template
 //
 // Callers must validate ciTrigger before calling (CITriggerInvalid=true → return error
 // before any write, never call this function with an invalid value).
@@ -2280,12 +2281,94 @@ func hasGitIgnoreRule(content string) bool {
 	return false
 }
 
-// generateGitIgnore garante que `<roadmap_dir>/.trackfw-branch-links.json` e `.trackfw/leases/`
-// estejam ignorados no `.gitignore` da raiz do projeto. Cada regra é gerenciada independentemente
-// para que projetos que já têm a regra do branch-links recebam a do leases sem duplicação.
+// gitIgnoreAgentMemoryEntry is the exact pattern emitted to ignore .claude/agent-memory/
+// directories created in subdirectories when Claude Code is dispatched with a cwd other
+// than the repository root (issue #646). The */**/ prefix requires at least one path
+// component before .claude/, so the legitimate root .claude/agent-memory/ is not matched.
+const gitIgnoreAgentMemoryEntry = "*/**/.claude/agent-memory/"
+
+// gitIgnoreAgentMemoryBlock returns the block emitted to guard against stray agent-memory
+// directories created by the Claude Code harness when the dispatch cwd is not the repo root.
+// The pattern line is derived from gitIgnoreAgentMemoryEntry so that detection and emission
+// never diverge.
+func gitIgnoreAgentMemoryBlock() string {
+	return fmt.Sprintf(`# trackfw: agent-memory directories created in subdirectories when Claude Code is
+# dispatched from a cwd other than the repository root (issue #646). These are
+# harness residue or lost memory — never version-controlled. The root
+# .claude/agent-memory/ (legitimate, versioned) is NOT matched by this pattern.
+%s
+`, gitIgnoreAgentMemoryEntry)
+}
+
+// hasGitIgnoreAgentMemoryRule reports whether content already contains the exact
+// pattern */**/.claude/agent-memory/ on a non-comment, non-negated, non-empty line.
+//
+// Exact-line match only: basename checks, Contains, and broader patterns such as
+// **/.claude/agent-memory/ produce different ignore semantics and are intentionally
+// not treated as present — they must not silently suppress the correct, narrower rule.
+// Lines starting with ! (explicit project negation) are skipped: the caller (generateGitIgnore)
+// is responsible for detecting negation lines and printing a warning instead of appending.
+func hasGitIgnoreAgentMemoryRule(content string) bool {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "!") {
+			continue
+		}
+		if trimmed == gitIgnoreAgentMemoryEntry {
+			return true
+		}
+	}
+	return false
+}
+
+// gitIgnoreAgentMemoryNegationLine returns the first negation line (starting with !)
+// whose pattern — with the leading ! and any trailing / stripped — ends with
+// .claude/agent-memory AND is not anchored to the repository root. Returns "" if none
+// is found or only root-anchored negations are present.
+//
+// Root-anchored forms (.claude/agent-memory and /.claude/agent-memory) only un-ignore
+// the top-level directory and do NOT conflict with */**/.claude/agent-memory/, which
+// targets subdirectories. Treating them as opt-outs would silently skip the rule in
+// projects that version their root-level memory while wanting subdirectory instances
+// ignored (issue #646, A-1).
+//
+// Non-root forms such as lib/.claude/agent-memory, **/.claude/agent-memory, or
+// */.claude/agent-memory can match subdirectories and therefore do represent an
+// explicit consumer opt-out. Appending */**/.claude/agent-memory/ after any such
+// negation would override it under gitignore's last-match-wins rule (vault note:
+// gitignore-negation-override-by-append-2026-11-01.md). generateGitIgnore calls this
+// function to detect the opt-out, skip the append, and warn the user.
+func gitIgnoreAgentMemoryNegationLine(content string) string {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "!") {
+			continue
+		}
+		// Strip leading ! and trailing /.
+		pattern := strings.TrimPrefix(trimmed, "!")
+		pattern = strings.TrimSuffix(pattern, "/")
+		if !strings.HasSuffix(pattern, ".claude/agent-memory") {
+			continue
+		}
+		// Skip root-anchored forms: bare ".claude/agent-memory" (no path separator
+		// before the pattern) and "/.claude/agent-memory" (explicit root anchor).
+		// These only un-ignore the top-level directory and are compatible with
+		// */**/.claude/agent-memory/.
+		if pattern == ".claude/agent-memory" || pattern == "/.claude/agent-memory" {
+			continue
+		}
+		return trimmed
+	}
+	return ""
+}
+
+// generateGitIgnore garante que `<roadmap_dir>/.trackfw-branch-links.json`, `.trackfw/leases/`
+// e `*/**/.claude/agent-memory/` estejam ignorados no `.gitignore` da raiz do projeto. Cada
+// regra é gerenciada independentemente para que projetos que já têm algumas regras recebam
+// as demais sem duplicação.
 //
 // Três ramos por regra, todos idempotentes — mesmo desenho de generateGitAttributes:
-//   - arquivo ausente  → cria com o bloco completo (branch-links + leases)
+//   - arquivo ausente  → cria com o bloco completo (branch-links + leases + agent-memory)
 //   - existe sem regra → APPEND do bloco correspondente (nunca sobrescreve o arquivo do projeto)
 //   - existe com regra → no-op para aquela regra específica
 func generateGitIgnore() error {
@@ -2300,15 +2383,16 @@ func generateGitIgnore() error {
 	const gitIgnorePath = ".gitignore"
 	branchLinksBlock := gitIgnoreBlock(effectiveRoadmapDir())
 	leasesBlock := gitIgnoreLeasesBlock()
+	agentMemoryBlock := gitIgnoreAgentMemoryBlock()
 
 	existing, err := os.ReadFile(gitIgnorePath)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return fmt.Errorf("reading .gitignore: %w", err)
 		}
-		// File absent: create with both blocks.
+		// File absent: create with all three blocks.
 		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
-		if err := os.WriteFile(gitIgnorePath, []byte(branchLinksBlock+leasesBlock), 0644); err != nil {
+		if err := os.WriteFile(gitIgnorePath, []byte(branchLinksBlock+leasesBlock+agentMemoryBlock), 0644); err != nil {
 			return fmt.Errorf("writing .gitignore: %w", err)
 		}
 		fmt.Println("  ✓ .gitignore")
@@ -2319,8 +2403,15 @@ func generateGitIgnore() error {
 	content := string(existing)
 	needsBranchLinks := !hasGitIgnoreRule(content)
 	needsLeases := !hasGitIgnoreLeasesRule(content)
+	needsAgentMemory := !hasGitIgnoreAgentMemoryRule(content)
+	if needsAgentMemory {
+		if negLine := gitIgnoreAgentMemoryNegationLine(content); negLine != "" {
+			fmt.Printf("  ⚠ .gitignore: negation %q respected — */**/.claude/agent-memory/ rule not added\n", negLine)
+			needsAgentMemory = false
+		}
+	}
 
-	if !needsBranchLinks && !needsLeases {
+	if !needsBranchLinks && !needsLeases && !needsAgentMemory {
 		return nil
 	}
 
@@ -2336,6 +2427,9 @@ func generateGitIgnore() error {
 	}
 	if needsLeases {
 		out += leasesBlock
+	}
+	if needsAgentMemory {
+		out += agentMemoryBlock
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.WriteFile(gitIgnorePath, []byte(out), 0644); err != nil {

@@ -121,6 +121,14 @@ const (
 	// Advisory only — never blocking; remedy is informational and never suggests removal
 	// without the required-check prerequisite.
 	DoctorScaffoldWorkflowDuplicated DoctorFindingKind = "scaffold-workflow-duplicated"
+
+	// DoctorStrayAgentMemory: a .claude/agent-memory/ directory was found outside the
+	// repository root. This is created by the Claude Code harness when an agent is
+	// dispatched from a subdirectory (the harness resolves the memory path from the
+	// dispatch cwd). An empty directory is harness residue; one with files is lost
+	// agent memory that was never loaded. The doctor never removes anything; the remedy
+	// names the directory and how to handle it. (REQ-2026-11-01, issue #646.)
+	DoctorStrayAgentMemory DoctorFindingKind = "stray-agent-memory"
 )
 
 // DoctorFinding is one artifact requiring the user's attention, plus a

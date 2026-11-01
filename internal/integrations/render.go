@@ -451,6 +451,13 @@ func Render(item Item, kind ItemKind, capability Capability, source []byte, cfg 
 				}
 			}
 		}
+		// AC1 — inject memory-location instruction for Claude Code only.
+		// Only the "claude" target interprets "memory: project"; every other
+		// destination receives the body unchanged so prose never leaks into
+		// codex, opencode or antigravity outputs (REQ-2026-11-01, P-1/P-2).
+		if kind == KindAgents && targetID == "claude" {
+			source = appendBodySuffix(source, claudeMemoryRootAnchor)
+		}
 		if !hasIdentity {
 			return normalizeMarkdown(source), nil
 		}
@@ -460,6 +467,26 @@ func Render(item Item, kind ItemKind, capability Capability, source []byte, cfg 
 		return normalizeMarkdown(withSignature), nil
 	}
 }
+
+// claudeMemoryRootAnchor is the memory-location section appended to every
+// agent rendered for the "claude" target (REQ-2026-11-01 AC1, P-1/P-2).
+// It is intentionally absent from all other destinations because they do not
+// interpret "memory: project" and the extra prose would be unsolicited.
+const claudeMemoryRootAnchor = "## Memory location\n\n" +
+	"Your persistent memory always lives under " +
+	"`<repo root>/.claude/agent-memory/<your name>/`, " +
+	"where `<repo root>` is `git rev-parse --show-toplevel` and `<your name>` " +
+	"is the directory name the harness used in the memory path it injected.\n\n" +
+	"**Write side:** if the memory path the harness injected is not under the " +
+	"repo root (this happens when the dispatch cwd was a subdirectory), do not " +
+	"write there. Write to `<repo root>/.claude/agent-memory/<your name>/` " +
+	"instead. Never create or write into a `.claude/` directory inside any " +
+	"subdirectory.\n\n" +
+	"**Read side:** the harness loads `MEMORY.md` from the injected path " +
+	"automatically. When the injected path is not under the repo root, that " +
+	"file may be empty or missing. In that case, read " +
+	"`<repo root>/.claude/agent-memory/<your name>/MEMORY.md` explicitly at " +
+	"the start of the session using the Read tool."
 
 // greetingLine builds the first line injected into the agent body when an
 // identity is configured for the agent. With no nickname configured, only
@@ -495,6 +522,17 @@ func insertBodyPrefix(source []byte, prefix string) []byte {
 		return []byte(head + "\n\n" + prefix)
 	}
 	return []byte(head + "\n\n" + prefix + "\n\n" + rest)
+}
+
+// appendBodySuffix appends suffix to the end of the body section of a raw
+// markdown source (frontmatter + body), preceded by a blank line.
+// Mirrors insertBodyPrefix: normalizeMarkdown handles the final trailing newline.
+func appendBodySuffix(source []byte, suffix string) []byte {
+	trimmed := strings.TrimSpace(string(NormalizeCRLF(source)))
+	if suffix == "" {
+		return []byte(trimmed)
+	}
+	return []byte(trimmed + "\n\n" + suffix)
 }
 
 // rewriteSignatureLine rewrites the last line in the body section of a raw
