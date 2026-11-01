@@ -7,6 +7,30 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [11.2.5] - 2026-11-01
+
+### Breaking Changes
+
+Nenhum.
+
+### Fixed
+
+- **`trackfw validate` não libera mais em silêncio quando o `powershell.exe` demora a responder** (#649, #652).
+  No Windows, com o `trackfw` resolvendo para o shim `.ps1`, a sonda de execution policy usava o prazo de
+  5 s das outras sondas. O início a frio do PowerShell 5.1 chega a 15 s, e o prazo estourado era lido como
+  "não é Restricted", sem aviso. A sonda passa a ter prazo próprio de 20 s.
+  - Se a política continuar ilegível, o `validate` emite um **aviso**, que não bloqueia, com
+    `Get-ExecutionPolicy` para conferir.
+  - A política Restricted continua sendo violação.
+  - O aviso não impede mais a sonda do Git Bash, que detecta um binário sem `guard` à frente no PATH.
+  - A sonda roda uma vez por validação, em vez de uma por chamador.
+
+### Internal
+
+- A matriz de guard sob PowerShell aquece cada binário antes dos casos afirmados e reporta timeout como
+  timeout. Isso fecha a reprovação intermitente do `windows-full-suites` em
+  `TestGuardLineShellMatrix/git-branch/powershell/RC0-allow` (#649).
+
 ## [11.2.4] - 2026-11-01
 
 ### Breaking Changes
