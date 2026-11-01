@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-22
 req: "docs/req/REQ-2026-08-30-debitos-de-higiene-package-lock-desatualizado-arvore-de-build-poluindo-grep-e-validate-script-sem-bit-de-execucao.md"
 squad: "hades-tf, apolo-tf, zeus-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, zeus-tf"
 
 # Roadmap: Débitos de higiene — `package-lock` desatualizado, árvore de build poluindo `grep`, e validate script sem bit de execução
 
-> Created: 2026-09-22 | Status: wip
+> Created: 2026-09-22 | Status: done
 
 ## Context
 
