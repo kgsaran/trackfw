@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-11-01
 req: "docs/req/REQ-2026-11-01-memoria-de-agente-cai-em-subpastas-quando-o-cwd-do-despacho-nao-e-a-raiz-do-repositorio.md"
 squad: "hades-tf, apolo-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf"
 
 # Roadmap: Memória de agente cai em subpastas quando o cwd do despacho não é a raiz do repositório
 
-> Created: 2026-11-01 | Status: wip
+> Created: 2026-11-01 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-11-01-memoria-de-agente-cai-em-subpastas-quando-o-cwd-do-despacho-nao-e-a-raiz-do-repositorio.md
@@ -20,7 +20,7 @@ no prompt do agente; a sessão principal segue o mesmo cwd. O `cd` do agente nã
 Varredura de issues (2026-11-01): abertos #646 e #649; só o #646 trata do mecanismo.
 
 ## Acceptance Criteria
-- [ ] AC1–AC7 da REQ
+- [x] AC1–AC7 da REQ
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado

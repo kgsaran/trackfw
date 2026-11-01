@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-11-01
 author: "trackfw_architect (Zeus)"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-11-01-memoria-de-agente-cai-em-subpastas-quando-o-cwd-do-despacho-nao-e-a-raiz-do-repositorio.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-11-01-memoria-de-agente-cai-em-subpastas-quando-o-cwd-do-despacho-nao-e-a-raiz-do-repositorio.md"
 ---
 
 # REQ: Memória de agente cai em subpastas quando o cwd do despacho não é a raiz do repositório
 
-> Date: 2026-11-01 | Status: Open
+> Date: 2026-11-01 | Status: Done
 
 Issue: #646
 
@@ -67,7 +67,7 @@ mitiga no que gera.
       absoluto entre aspas (A-2); (c) conteúdo ilegível num diretório fora da raiz nunca é declarado vazio
       nem recebe sugestão de apagar (A-3); (d) `## Dispatch cwd` diz que o comportamento é do Claude Code
       (A-4).
-- [ ] **AC6** — `make quality` exit 0 e CI verde.
+- [x] **AC6** — `make quality` exit 0 e CI verde.
 
 ## Negative Scope
 
@@ -84,4 +84,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-11-01-memoria-de-agente-cai-em-subpastas-quando-o-cwd-do-despacho-nao-e-a-raiz-do-repositorio.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-11-01-memoria-de-agente-cai-em-subpastas-quando-o-cwd-do-despacho-nao-e-a-raiz-do-repositorio.md`

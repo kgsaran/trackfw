@@ -7,6 +7,29 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [11.2.4] - 2026-11-01
+
+### Breaking Changes
+
+Nenhum.
+
+### Fixed
+
+- **A memória dos agentes gerados volta para a raiz do repositório** (#646, #650). O Claude Code cria
+  `<cwd de quem despacha>/.claude/agent-memory/<agente>/` no momento do despacho. Os agentes gerados para o
+  Claude Code passam a gravar e ler a memória em `<raiz>/.claude/agent-memory/<agente>/`, e o arquiteto gerado
+  instrui a despachar com o cwd na raiz. `init` e `update` acrescentam `*/**/.claude/agent-memory/` ao
+  `.gitignore`, sem ignorar a memória da raiz e respeitando uma negação do consumidor que alcance subpastas.
+  O `trackfw doctor` ganha o achado `stray-agent-memory`, que lista as pastas de memória fora da raiz. O comando
+  de remoção sugerido usa o caminho absoluto entre aspas, e uma pasta com conteúdo ilegível nunca é declarada
+  vazia. O exit code do `doctor` não muda.
+- **`trackfw release tag` confere o `npm/package-lock.json`** (#647), nos dois campos de versão (o da raiz e o
+  de `packages[""]`), lendo a chave `version` exata. São 4 arquivos e 5 conferências.
+- **`scripts/trackfw-validate.sh` e os hooks do husky ficam executáveis mesmo quando já existiam sem o bit de
+  execução** (#647). A gravação é atômica e não segue symlink nem hardlink.
+- **`trackfw update harness` emite o aviso de `agent_models` global ausente uma vez por execução** (#647). Antes,
+  saía uma vez por destino do catálogo.
+
 ## [11.2.3] - 2026-10-31
 
 ### Breaking Changes
