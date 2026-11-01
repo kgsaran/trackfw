@@ -24,7 +24,13 @@ func validReleaseVersionFiles(version string) map[string]string {
 		"internal/version/version.go": fmt.Sprintf("package version\n\nvar Version = %q\n", version),
 		"npm/package.json":            fmt.Sprintf(`{"name":"trackfw","version":%q}`, version),
 		"pypi/pyproject.toml":         fmt.Sprintf("[project]\nname = \"trackfw\"\nversion = %q\n", version),
-		"CHANGELOG.md":                fmt.Sprintf("# Changelog\n\n## [%s] - 2026-08-19\n\n### Added\n- x\n", version),
+		// AC1 (REQ-2026-08-30): package-lock.json is checked for both root version and
+		// packages[""].version. Both fields are updated by `npm version` in the workflow.
+		"npm/package-lock.json": fmt.Sprintf(
+			`{"name":"trackfw","version":%q,"lockfileVersion":3,"packages":{"":{"name":"trackfw","version":%q}}}`,
+			version, version,
+		),
+		"CHANGELOG.md": fmt.Sprintf("# Changelog\n\n## [%s] - 2026-08-19\n\n### Added\n- x\n", version),
 	}
 }
 
@@ -189,29 +195,75 @@ func TestReleaseTag_NoLocalMain_NotBlocked(t *testing.T) {
 // ────────────────────────────────────────────────────────────────────────────
 
 func TestReleaseTag_VersionFileMismatch_NamesWhichFile(t *testing.T) {
+	// content is the override content for tc.path; it must carry the diverging version "0.0.1".
+	// The lockfile cases use explicit content per-case (not a switch on path) so that a
+	// single-field extractor that only checks the root cannot silently pass the packages case
+	// (threat 2a, Wave 0 parecer §2).
 	cases := []struct {
-		name  string
-		path  string
-		label string
+		name     string
+		path     string
+		label    string
+		notLabel string // must NOT appear in the error — negative assertion
+		content  string
 	}{
-		{"go", "internal/version/version.go", "internal/version/version.go"},
-		{"npm", "npm/package.json", "npm/package.json"},
-		{"pyproject", "pypi/pyproject.toml", "pypi/pyproject.toml"},
+		{
+			name:    "go",
+			path:    "internal/version/version.go",
+			label:   "internal/version/version.go",
+			content: "package version\n\nvar Version = \"0.0.1\"\n",
+		},
+		{
+			name:    "npm",
+			path:    "npm/package.json",
+			label:   "npm/package.json",
+			content: `{"name":"trackfw","version":"0.0.1"}`,
+		},
+		{
+			name:    "pyproject",
+			path:    "pypi/pyproject.toml",
+			label:   "pypi/pyproject.toml",
+			content: "[project]\nversion = \"0.0.1\"\n",
+		},
+		// AC1 (REQ-2026-08-30): lockfile root version diverges; packages[""] is correct.
+		// Must name the root label, must NOT name the packages label.
+		{
+			name:     "lockfile-root",
+			path:     "npm/package-lock.json",
+			label:    "npm/package-lock.json (root version)",
+			notLabel: "npm/package-lock.json (packages",
+			content: fmt.Sprintf(
+				`{"name":"trackfw","version":"0.0.1","lockfileVersion":3,"packages":{"":{"name":"trackfw","version":%q}}}`,
+				releaseTestVersion,
+			),
+		},
+		// AC1 (REQ-2026-08-30): lockfile root version is correct; packages[""] diverges.
+		// Must name the packages label, must NOT name the root label.
+		{
+			name:     "lockfile-packages",
+			path:     "npm/package-lock.json",
+			label:    "npm/package-lock.json (packages[\"\"].version)",
+			notLabel: "npm/package-lock.json (root version)",
+			content: fmt.Sprintf(
+				`{"name":"trackfw","version":%q,"lockfileVersion":3,"packages":{"":{"name":"trackfw","version":"0.0.1"}}}`,
+				releaseTestVersion,
+			),
+		},
+		// AC1 (REQ-2026-08-30): packages[""] entry absent (v1 lockfile or corrupted).
+		// Must name the packages label (extraction error).
+		{
+			name:  "lockfile-no-packages-entry",
+			path:  "npm/package-lock.json",
+			label: "npm/package-lock.json (packages[\"\"].version)",
+			content: fmt.Sprintf(
+				`{"name":"trackfw","version":%q,"lockfileVersion":3,"packages":{}}`,
+				releaseTestVersion,
+			),
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			files := validReleaseVersionFiles(releaseTestVersion)
-			switch tc.path {
-			case "internal/version/version.go":
-				files[tc.path] = `package version
-
-var Version = "0.0.1"
-`
-			case "npm/package.json":
-				files[tc.path] = `{"name":"trackfw","version":"0.0.1"}`
-			case "pypi/pyproject.toml":
-				files[tc.path] = "[project]\nversion = \"0.0.1\"\n"
-			}
+			files[tc.path] = tc.content
 			d, _ := makeReleaseDeps(t, files)
 			err := runReleaseTag(releaseTestVersion, d)
 			if err == nil {
@@ -220,8 +272,15 @@ var Version = "0.0.1"
 			if !strings.Contains(err.Error(), tc.label) {
 				t.Errorf("error = %q, want it to name %q", err.Error(), tc.label)
 			}
-			if !strings.Contains(err.Error(), "0.0.1") || !strings.Contains(err.Error(), releaseTestVersion) {
-				t.Errorf("error = %q, want both the found and expected versions", err.Error())
+			if tc.notLabel != "" && strings.Contains(err.Error(), tc.notLabel) {
+				t.Errorf("error = %q, must NOT name %q (wrong field reported)", err.Error(), tc.notLabel)
+			}
+			// Mismatch errors must carry both the found version and the expected version.
+			// Extraction errors (e.g. missing packages[""] entry) carry only the file label.
+			if tc.name != "lockfile-no-packages-entry" {
+				if !strings.Contains(err.Error(), "0.0.1") || !strings.Contains(err.Error(), releaseTestVersion) {
+					t.Errorf("error = %q, want both the found and expected versions", err.Error())
+				}
 			}
 		})
 	}
@@ -734,4 +793,49 @@ func TestReleaseTag_TagMessageFromCommit_NotFromHypotheticalLocal(t *testing.T) 
 		t.Errorf("tag payload = %q, must NOT contain the local-only body line (anchoring failure)", tagPayloadBody)
 	}
 	_ = localOnlyBody // documented here as the "not this" counterpart
+}
+
+// TestReleaseExtractors_CaseSensitiveVersionKey asserts A-2 (REQ-2026-08-30): the three JSON
+// version extractors read the exact key "version" (lower-case) and must NOT be affected by a
+// sibling key "Version" (upper-case). Go's encoding/json struct tags are case-insensitive and
+// would otherwise return the value from "Version" when it appears after "version" in the JSON.
+//
+// Affirmation (per extractor): the extractor reads the value of the lower-case "version" key
+// ("correct"), ignoring "Version":"wrong", matching npm JSON.parse case-sensitive behavior.
+func TestReleaseExtractors_CaseSensitiveVersionKey(t *testing.T) {
+	// JSON with both "version" (lowercase, correct) and "Version" (uppercase, wrong).
+	// "version" appears FIRST so that the old case-insensitive struct decoder (last-match-wins)
+	// would return "wrong"; the new map-based decoder returns "correct".
+	cases := []struct {
+		name    string
+		extract func(string) (string, error)
+		input   string
+	}{
+		{
+			name:    "npm/package.json",
+			extract: extractNpmVersion,
+			input:   `{"version":"correct","Version":"wrong"}`,
+		},
+		{
+			name:    "package-lock.json root",
+			extract: extractPackageLockRootVersion,
+			input:   `{"version":"correct","Version":"wrong","lockfileVersion":3,"packages":{"":{"version":"1.0.0"}}}`,
+		},
+		{
+			name:    "package-lock.json packages[\"\"]",
+			extract: extractPackageLockPackagesVersion,
+			input:   `{"lockfileVersion":3,"packages":{"":{"version":"correct","Version":"wrong"}}}`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := tc.extract(tc.input)
+			if err != nil {
+				t.Fatalf("extractor returned error: %v", err)
+			}
+			if got != "correct" {
+				t.Errorf("extractor returned %q, want %q (case-insensitive struct tag accepted %q)", got, "correct", "wrong")
+			}
+		})
+	}
 }

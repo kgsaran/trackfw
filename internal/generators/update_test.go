@@ -2865,3 +2865,173 @@ func TestUpdateHarnessLeafSymlinkRefusesWrite(t *testing.T) {
 		t.Errorf("expected 'refusing write' on stderr, got: %q", stderrBuf.String())
 	}
 }
+
+// ---------------------------------------------------------------------------
+// AC3 (REQ-2026-08-30): agent_models advisory deduplication
+// ---------------------------------------------------------------------------
+
+// TestUpdateHarness_AgentModelsAdvisory_EmittedOnceForMultipleCatalogTargets
+// asserts that when N catalog targets (codex-agents + codex-skills) are
+// selected and the HOME has no global agent_models config, the advisory
+// message appears exactly once in ErrWriter — not once per catalog target.
+//
+// Affirmation: asserts UpdateHarness pre-scans selected and emits the
+// advisory at most once per call, regardless of how many catalog targets are
+// present.
+func TestUpdateHarness_AgentModelsAdvisory_EmittedOnceForMultipleCatalogTargets(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // Windows isolation
+
+	var errBuf strings.Builder
+	opts := UpdateOptions{
+		Targets:   []string{"codex-agents", "codex-skills"},
+		ErrWriter: &errBuf,
+	}
+	_, err := UpdateHarness(opts)
+	if err != nil {
+		t.Fatalf("UpdateHarness failed: %v", err)
+	}
+
+	got := errBuf.String()
+	want := config.GlobalAgentModelsNoneMessage
+	count := strings.Count(got, want)
+	if count != 1 {
+		t.Errorf("advisory message count = %d, want exactly 1\nfull output:\n%s", count, got)
+	}
+}
+
+// TestUpdateHarness_AgentModelsAdvisory_NotEmittedForNonCatalogTargets
+// asserts that when only non-catalog targets (credential-guard-script) are
+// selected, the agent_models advisory is never emitted — even though HOME has
+// no global agent_models config.
+//
+// Affirmation (non-catalog arm): asserts the pre-scan correctly skips
+// ResolveAgentModels when no catalog targets are present — errBuf must be
+// completely empty, not merely free of one specific message string.
+//
+// Affirmation (project-only arm): asserts that when a project trackfw.yaml
+// has agent_models but the global config does not, the ProjectOnly advisory
+// is emitted exactly once when a catalog target is selected.
+func TestUpdateHarness_AgentModelsAdvisory_NotEmittedForNonCatalogTargets(t *testing.T) {
+	t.Run("non-catalog target produces empty stderr", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("USERPROFILE", home) // Windows isolation
+
+		var errBuf strings.Builder
+		opts := UpdateOptions{
+			Targets:   []string{"credential-guard-script"},
+			ErrWriter: &errBuf,
+		}
+		_, err := UpdateHarness(opts)
+		if err != nil {
+			t.Fatalf("UpdateHarness failed: %v", err)
+		}
+
+		// A-3 (REQ-2026-08-30): check errBuf is fully empty, not just free of
+		// GlobalAgentModelsNoneMessage — catches any advisory regardless of message type.
+		if errBuf.Len() != 0 {
+			t.Errorf("advisory must not be emitted for non-catalog targets, but got:\n%s", errBuf.String())
+		}
+	})
+
+	t.Run("project-only agent_models emits ProjectOnly advisory once for catalog target", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("USERPROFILE", home) // Windows isolation
+
+		// Write trackfw.yaml with agent_models in cwd (project scope only, not global).
+		projDir := t.TempDir()
+		projYAML := "agent_models:\n  sonnet: \"4.6\"\n"
+		if err := os.WriteFile(filepath.Join(projDir, "trackfw.yaml"), []byte(projYAML), 0644); err != nil {
+			t.Fatalf("WriteFile trackfw.yaml: %v", err)
+		}
+		orig, _ := os.Getwd()
+		if err := os.Chdir(projDir); err != nil {
+			t.Fatalf("Chdir: %v", err)
+		}
+		t.Cleanup(func() { _ = os.Chdir(orig) })
+
+		var errBuf strings.Builder
+		opts := UpdateOptions{
+			Targets:   []string{"codex-agents"},
+			ErrWriter: &errBuf,
+		}
+		_, err := UpdateHarness(opts)
+		if err != nil {
+			t.Fatalf("UpdateHarness failed: %v", err)
+		}
+
+		got := errBuf.String()
+		want := config.GlobalAgentModelsProjectOnlyMessage
+		count := strings.Count(got, want)
+		if count != 1 {
+			t.Errorf("project-only advisory count = %d, want exactly 1\nfull stderr:\n%s", count, got)
+		}
+	})
+}
+
+// TestUpdateHarness_AgentModelsAdvisory_ModelPinsReachGeneratedAgents
+// asserts that agent_models configured in the global ~/.trackfw/trackfw.yaml
+// actually reaches the rendered claude agent files on disk.
+//
+// Affirmation (A-4, REQ-2026-08-30): asserts that agentModels is propagated
+// from ResolveAgentModels through harnessCatalogTarget into BuildPlans/Render —
+// at least one installed agent file must contain the composed model ID
+// "claude-sonnet-9-8". Fails when harnessCatalogTarget receives nil (mutation
+// M-8b: harnessCatalogTarget(…, nil, opts) suppresses model substitution even
+// though the advisory was resolved).
+func TestUpdateHarness_AgentModelsAdvisory_ModelPinsReachGeneratedAgents(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)      // Windows isolation
+	t.Setenv("CLAUDE_CONFIG_DIR", "") // ML-2B B2: HOME/.claude is claudeDir
+
+	// Write global ~/.trackfw/trackfw.yaml with agent_models.
+	globalCfgDir := filepath.Join(home, ".trackfw")
+	if err := os.MkdirAll(globalCfgDir, 0755); err != nil {
+		t.Fatalf("MkdirAll ~/.trackfw: %v", err)
+	}
+	globalYAML := "agent_models:\n  sonnet: \"9.8\"\n"
+	if err := os.WriteFile(filepath.Join(globalCfgDir, "trackfw.yaml"), []byte(globalYAML), 0644); err != nil {
+		t.Fatalf("WriteFile ~/.trackfw/trackfw.yaml: %v", err)
+	}
+
+	_, err := UpdateHarness(UpdateOptions{
+		Targets:      []string{"claude-agents"},
+		InstallMissing: true,
+	})
+	if err != nil {
+		t.Fatalf("UpdateHarness failed: %v", err)
+	}
+
+	// Enumerate all installed claude agent files and verify the composed model ID.
+	agentsDir := filepath.Join(home, ".claude", "agents")
+	entries, err := os.ReadDir(agentsDir)
+	if err != nil {
+		t.Fatalf("ReadDir %s: %v (no agents installed?)", agentsDir, err)
+	}
+	if len(entries) == 0 {
+		t.Fatalf("no agent files installed under %s", agentsDir)
+	}
+
+	const wantModel = "claude-sonnet-9-8"
+	found := false
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		data, readErr := os.ReadFile(filepath.Join(agentsDir, e.Name()))
+		if readErr != nil {
+			t.Fatalf("ReadFile %s: %v", e.Name(), readErr)
+		}
+		if strings.Contains(string(data), wantModel) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("no installed agent file contains %q — agentModels not threaded to harnessCatalogTarget", wantModel)
+	}
+}

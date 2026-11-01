@@ -1966,12 +1966,11 @@ func generateCommitMsgHook(cfg Config) error {
 			return fmt.Errorf("creating .husky: %w", err)
 		}
 		path := ".husky/commit-msg"
-		// Guard the leaf file — directory guard above does not detect a symlinked hook file.
-		if err := rejectScaffoldPath(cmhRoot, filepath.Join(cmhRoot, path)); err != nil {
-			return err
-		}
-		// write-containment-allowed: guarded by pathguard.RejectSymlinks via rejectScaffoldPath above
-		if err := os.WriteFile(path, []byte(script), 0755); err != nil {
+		// R-4 (REQ-2026-08-30): replace WriteFile+Chmod with pathguard.GuardedWrite.
+		// GuardedWrite calls RejectAndReport internally — the redundant leaf guard
+		// (rejectScaffoldPath on ".husky/commit-msg") is removed. Mode is set via
+		// fd.Chmod (not path-based), eliminating the TOCTOU window and hardlink sharing.
+		if err := pathguard.GuardedWrite(cmhRoot, filepath.Join(cmhRoot, path), []byte(script), 0755); err != nil {
 			return fmt.Errorf("writing husky commit-msg hook: %w", err)
 		}
 		fmt.Printf("  ✓ %s\n", path)
@@ -2034,12 +2033,11 @@ func generateHuskyHook() error {
 	}
 	content := "#!/usr/bin/env sh\n. \"$(dirname -- \"$0\")/_/husky.sh\"\n\ntrackfw validate\n"
 	path := ".husky/pre-commit"
-	// Guard the leaf file — directory guard above does not detect a symlinked hook file.
-	if err := rejectScaffoldPath(hhRoot, filepath.Join(hhRoot, path)); err != nil {
-		return err
-	}
-	// write-containment-allowed: guarded by pathguard.RejectSymlinks via rejectScaffoldPath above
-	if err := os.WriteFile(path, []byte(content), 0755); err != nil {
+	// R-4 (REQ-2026-08-30): replace WriteFile+Chmod with pathguard.GuardedWrite.
+	// GuardedWrite calls RejectAndReport internally — the redundant leaf guard
+	// (rejectScaffoldPath on ".husky/pre-commit") is removed. Mode is set via
+	// fd.Chmod (not path-based), eliminating the TOCTOU window and hardlink sharing.
+	if err := pathguard.GuardedWrite(hhRoot, filepath.Join(hhRoot, path), []byte(content), 0755); err != nil {
 		return fmt.Errorf("writing husky hook: %w", err)
 	}
 	fmt.Printf("  ✓ %s\n", path)

@@ -493,8 +493,10 @@ RELEASE_TAG="v9.9.9"
 FAKE_TAG_OBJECT_SHA="deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
 
 # ---------------------------------------------------------------------------
-# write_version_files DIR VERSION — writes the 5 files release tag reads, all agreeing with
+# write_version_files DIR VERSION — writes the files release tag reads, all agreeing with
 # VERSION. Mirrors internal/commands/release_test.go's validReleaseVersionFiles.
+# AC1 (REQ-2026-08-30): npm/package-lock.json added with both root version and
+# packages[""].version fields, matching the two extractors in releaseVersionFiles.
 # ---------------------------------------------------------------------------
 write_version_files() {
   local dir=$1 version=$2
@@ -506,6 +508,9 @@ var Version = "$version"
 EOF
   cat >"$dir/npm/package.json" <<EOF
 {"name":"trackfw","version":"$version"}
+EOF
+  cat >"$dir/npm/package-lock.json" <<EOF
+{"name":"trackfw","version":"$version","lockfileVersion":3,"packages":{"":{"name":"trackfw","version":"$version"}}}
 EOF
   cat >"$dir/pypi/pyproject.toml" <<EOF
 [project]
@@ -619,8 +624,10 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
-# build_fixture DEST FORGE SET_IDENTITY — real bare "origin" + a clone on "main" carrying the 5
-# version files (all at RELEASE_VERSION) + CHANGELOG.md with the matching section, committed and
+# build_fixture DEST FORGE SET_IDENTITY — real bare "origin" + a clone on "main" carrying the 4
+# version files release tag reads (5 checks; pypi/trackfw/__init__.py still written by
+# write_version_files but NOT read by release tag since ML-1A REQ-2026-08-30) all at
+# RELEASE_VERSION, plus CHANGELOG.md with the matching section, committed and
 # pushed so local main == origin/main (precondition 2 satisfied by construction). FORGE="github"
 # writes trackfw.yaml with `forge: github`; FORGE="" writes no trackfw.yaml (forge resolves to
 # "manual" against this fixture — no known host, no CI files). SET_IDENTITY=1 sets LOCAL
@@ -1503,9 +1510,9 @@ assert_three_way "$RT_LABEL"
 # PR-bump flow (case 2) and content provenance proof (case 3).
 #
 # Two-axis fixture (advisor recommendation — both anchored reads discriminated):
-#   HEAD (local main): version 9.9.7 in all 5 version files; CHANGELOG has
-#     ## [9.9.9] section with "- head-only" (pre-merge state).
-#   Decoy commit (objectSHA / forge): version 9.9.9 in all 5 version files;
+#   HEAD (local main): version 9.9.7 in all 4 version files release tag reads;
+#     CHANGELOG has ## [9.9.9] section with "- head-only" (pre-merge state).
+#   Decoy commit (objectSHA / forge): version 9.9.9 in all 4 version files release tag reads;
 #     CHANGELOG has ## [9.9.9] section with "- forge-only" (post-merge state).
 #
 # Real binary reads everything from objectSHA (decoy):

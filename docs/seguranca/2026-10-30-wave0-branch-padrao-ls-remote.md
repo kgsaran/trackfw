@@ -449,3 +449,15 @@ mecanismo.
 **P-5: `GIT_TERMINAL_PROMPT=0` — não exigido neste ML**
 
 Pré-existente. Abrir issue separada. E2E contra fixture local não são afetados.
+
+---
+
+## Nota do arquiteto (2026-10-31)
+
+- **R-5:** o texto acima diz "Fecha por REQ própria; não é escopo do ML-1A". A decisão final foi a
+  contrária: o R-5 entrou no ML-1A do roadmap do #633 (defeito conhecido se corrige no mesmo PR), e
+  `gitCommitsSince` passou a usar `refs/remotes/origin/<base>` com fallback para `refs/heads/<base>`,
+  por refname completo (achado A-3 do red team, PR #640).
+- **P-5 (`GIT_TERMINAL_PROMPT`):** não virou issue. Medido em 2026-10-31: sem terminal de controle, o
+  git falha na hora ao pedir credencial (`Device not configured`), então não há travamento a corrigir
+  no caso de agente ou CI. Ver `vault/notes/git-terminal-prompt-sem-terminal-falha-na-hora-2026-10-31.md`.

@@ -110,14 +110,14 @@ func writeValidateScript(rootDir string) error {
 	}
 	content := "#!/usr/bin/env bash\nset -euo pipefail\ntrackfw validate\n"
 	dest := filepath.Join(scriptsDir, "trackfw-validate.sh")
-	// Guard the leaf file: the directory guard above (RejectSymlinks on "scripts/") does not
-	// walk below the directory; a symlink placed at the leaf path is caught here.
-	leafDest := filepath.Join(root, "scripts", "trackfw-validate.sh")
-	if guardErr := pathguard.RejectAndReport(root, leafDest); guardErr != nil {
-		return guardErr
-	}
-	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
-	if err := os.WriteFile(dest, []byte(content), 0755); err != nil {
+	// R-4 (REQ-2026-08-30): replace WriteFile+Chmod with pathguard.GuardedWrite.
+	// GuardedWrite calls RejectAndReport internally (no separate leaf guard needed),
+	// sets mode via fd.Chmod (not path-based, eliminating the TOCTOU window), writes
+	// content to a temp file in the same directory, and renames atomically — rename
+	// does not follow a symlink-leaf on the destination, so hardlink sharing is also
+	// closed. The redundant leaf guard (RejectAndReport on "scripts/trackfw-validate.sh")
+	// is removed: GuardedWrite covers it.
+	if err := pathguard.GuardedWrite(root, dest, []byte(content), 0755); err != nil {
 		return fmt.Errorf("writing validate script: %w", err)
 	}
 	return nil
