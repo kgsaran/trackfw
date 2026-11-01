@@ -97,3 +97,18 @@ make quality
 
 ## Wave 2 — Red team (hades-tf)
 > Dependencies: Wave 1 auditada.
+
+### ML-2A — Red team da Wave 1 (hades-tf)
+**Status:** ⬜ Pendente
+**Files affected:** `docs/seguranca/2026-11-01-redteam-memoria-de-agente-em-subpasta.md`, `vault/notes/`
+**Actions:**
+1. Reimplementar a partir da leitura, não do diff: cada prescrição P-1 a P-7 com veredito e evidência.
+2. Atacar o renderizador (vazamento do texto para outro destino, efeito na assinatura e na identidade), a regra de `.gitignore` (padrões preexistentes do consumidor, negações, CRLF) e o `doctor` (custo em árvore grande, `rm -rf` sugerido com caminho que contém espaço ou metacaractere, repositório aninhado, symlink).
+**Acceptance criteria:**
+- [ ] cada prescrição com veredito e evidência
+- [ ] residual declarado
+
+**Gates da wave:**
+```bash
+test -f docs/seguranca/2026-11-01-redteam-memoria-de-agente-em-subpasta.md
+```
