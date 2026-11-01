@@ -52,30 +52,30 @@ o custo a frio da janela que o teste afirma.
 
 ## Acceptance Criteria
 
-- [ ] **AC1 — Aquecimento por binário:** antes do primeiro caso afirmado de cada braço PS (`pwsh` e
+- [x] **AC1 — Aquecimento por binário:** antes do primeiro caso afirmado de cada braço PS (`pwsh` e
   `powershell`), o teste executa uma vez por processo `<psBin> -NoProfile -NonInteractive -Command
   "exit 0"`.
   - O aquecimento tem prazo próprio de 60 s e registra a duração com `t.Logf`.
   - Se o prazo estourar ou o código de saída não for 0, ele falha com mensagem própria, distinta da
     falha de asserção.
   - O prazo de 15 s das chamadas afirmadas não muda.
-- [ ] **AC2 — Timeout distinguível:** quando o prazo de uma chamada afirmada estoura, o teste falha com
+- [x] **AC2 — Timeout distinguível:** quando o prazo de uma chamada afirmada estoura, o teste falha com
   mensagem que diz "timeout", o binário e o prazo. Ele nunca deixa a falha aparecer como `esperado
   exit N, obteve 1`.
   - O discriminante é `ctx.Err() == context.DeadlineExceeded`, não o código de saída: o kill sai com
     1 no Windows e com -1 no macOS.
-- [ ] **AC3 — Teste do discriminante com contra-braço:**
+- [x] **AC3 — Teste do discriminante com contra-braço:**
   - um teste novo chama a execução com prazo de poucos milissegundos sobre um PS disponível
     (`pwsh` no macOS) e afirma que o timeout foi detectado;
   - com o prazo normal, ele afirma que não foi;
   - sem a checagem de `ctx.Err()`, o teste reprova (contra-braço medido e restaurado).
-- [ ] **AC4 — Matriz inalterada:** os 16 casos PS da matriz (4 formas × 4 cenários) e as asserções
+- [x] **AC4 — Matriz inalterada:** os 16 casos PS da matriz (4 formas × 4 cenários) e as asserções
   deles continuam os mesmos. `go test ./internal/generators/ -run 'TestGuardLineShellMatrix' -count=1
   -v` passa no macOS.
-- [ ] **AC5 — Evidência no CI de Windows:** no `windows-full-suites` do PR, o log mostra a linha do
+- [x] **AC5 — Evidência no CI de Windows:** no `windows-full-suites` do PR, o log mostra a linha do
   `t.Logf` do aquecimento do `powershell`. O `git-branch/powershell/RC0-allow` fica abaixo de 3 s,
   na faixa das chamadas aquecidas.
-- [ ] **AC6 — Sonda de política do PowerShell sem fail-open no início a frio** (achado P-1 da Wave 0,
+- [x] **AC6 — Sonda de política do PowerShell sem fail-open no início a frio** (achado P-1 da Wave 0,
   mesma causa):
   - em `internal/validator/validator_guard_binary_probe.go`, o `guardGetPSPolicy` chama o `powershell`
     com o prazo de 5 s do `guardProbeTimeout` e devolve `""` quando o prazo estoura;

@@ -21,7 +21,7 @@ Sítio único: `internal/generators/guard_line_shell_test.go`. A varredura de is
 #649.
 
 ## Acceptance Criteria
-- [ ] AC1–AC6 da REQ
+- [x] AC1–AC6 da REQ
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -100,7 +100,7 @@ go test ./internal/validator/ -count=1
 - [x] nenhum arquivo fora dos três listados alterado
 
 ### ML-1C — Aviso de política ilegível roteado como warning; sonda uma vez por validação (apolo-tf) — AC6 (achado MEDIUM-1 do red team)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-11-01. `guardBinaryProbeOnce` devolve `(violations, warnings)`. `guardBinaryProbeCached` guarda um resultado por valor de `hasPSPosixEntry` em `currentGuardProbeRun`, zerado em `ValidateUnfiltered` e em `validateUnfilteredTagged`. Os warnings saem por `applyRuleWarnOnly`/`applyRuleWarnOnlyTagged` via `guardBinaryProbeFlushWarnings`. A auditoria achou o `ValidateUnfiltered`, caminho de produção do `trackfw baseline`, sem teste, e o artemis-tf acrescentou `TestML1C_ValidateUnfiltered_...`. Contra-braços medidos: rotear por `applyRule` e remover o flush reprovam os dois caminhos; desligar o cache dá `callCount = 2`. Residual aceito: fora de uma validação (`currentGuardProbeRun == nil`), o aviso incerto é descartado; hoje todos os chamadores estão dentro de `Validate`, `ValidateTagged` ou `ValidateUnfiltered`.
 **Origem:** MEDIUM-1 e LOW do parecer `docs/seguranca/2026-11-01-redteam-powershell-inicio-a-frio.md`, conferidos pelo arquiteto em `internal/validator/validator.go:559` (`applyRule`) e `:1059`. O aviso volta pelo mesmo `[]string` das violações, entra em `applyRule("credential_guard_hook_resolvable")`, cuja severidade padrão é `error`, e bloqueia o `validate`. O AC6 pede aviso. A sonda tem dois chamadores por validação (`validator_credential_guard.go:730` e `validator_git_branch_guard.go:418`), o que pode somar 2 × 20 s e duplicar a mensagem.
 **Files affected:** `internal/validator/validator_guard_binary_probe.go`, `internal/validator/validator_credential_guard.go`, `internal/validator/validator_git_branch_guard.go`, `internal/validator/validator.go`, testes do pacote `internal/validator`, `docs/cli-parity.md`
 **Actions:**
@@ -108,23 +108,23 @@ go test ./internal/validator/ -count=1
 2. A sonda roda no máximo uma vez por validação para cada valor de `hasPSPosixEntry`, com o cache zerado no início de cada validação. Isso evita somar 20 s por chamador e duplicar a mensagem.
 3. Teste de ponta a ponta por `Validate` e `ValidateTagged`: com `.ps1` e `policy == ""`, "could not be read" fica em `warnings` e fora de `violations`; com Restricted, a violação continua.
 **Acceptance criteria:**
-- [ ] `go vet ./internal/validator/` limpo
-- [ ] `go test ./internal/validator/ -count=1` verde
-- [ ] contra-braço: rotear o aviso por `applyRule` faz o teste de ponta a ponta reprovar
-- [ ] contra-braço do cache: sem o cache, um contador de chamadas a `guardGetPSPolicy` passa de 1 por validação
+- [x] `go vet ./internal/validator/` limpo
+- [x] `go test ./internal/validator/ -count=1` verde
+- [x] contra-braço: rotear o aviso por `applyRule` faz o teste de ponta a ponta reprovar
+- [x] contra-braço do cache: sem o cache, um contador de chamadas a `guardGetPSPolicy` passa de 1 por validação
 
 ## Wave 2 — Red team e evidência no CI (hades-tf)
 > Dependencies: Wave 1 auditada e o PR com o `windows-full-suites` verde.
 
 ### ML-2A — Red team do ML-1A e do log do CI de Windows (hades-tf) — AC5
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-11-01. As prescrições P-1 a P-9 foram atendidas; o P-7 não foi acionado. AC5 medido no job 124955795693: aquecimento do `powershell.exe` em 1,69 s e `git-branch/powershell/RC0-allow` em 1,37 s, abaixo de 3 s. É uma amostra só, e o residual está declarado no parecer. O MEDIUM-1 (aviso incerto virando violação) e o LOW (sonda repetida) foram corrigidos no ML-1C. INFO-2 e INFO-3 ficam como residual aceito.
 **Files affected:** `docs/seguranca/2026-11-01-redteam-powershell-inicio-a-frio.md`
 **Actions:**
 1. Reimplementar, a partir da leitura, os alvos de falsificação do ML-0A contra os diffs do ML-1A e do ML-1B.
 2. Ler o log do `windows-full-suites` do PR. Registrar a duração do aquecimento do `powershell` e a do `git-branch/powershell/RC0-allow` (AC5).
 **Acceptance criteria:**
-- [ ] Parecer com achados classificados e evidência
-- [ ] AC5 com os números do log citados
+- [x] Parecer com achados classificados e evidência
+- [x] AC5 com os números do log citados
 
 **Gates da wave:**
 ```bash
