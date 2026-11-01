@@ -129,7 +129,7 @@ test -f docs/seguranca/2026-10-31-redteam-debitos-de-higiene.md
 > Dependencies: Wave 2 auditada.
 
 ### ML-3A — Achados A-1 a A-4 e R-4 do red team (apolo-tf) — AC6
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-31. A-1: `cli-parity.md` e comentários do script com 4 arquivos e 5 conferências. A-2: extratores JSON por `map[string]json.RawMessage` e chave exata. A-3: stderr vazio exigido, e o cenário de configuração só do projeto emite uma mensagem. A-4: teste prova que o `model:` resolvido chega ao agente gerado (com `nil`, reprova). R-4: os três pontos de escrita usam `pathguard.GuardedWrite`; contra-braço medido pelo arquiteto: com `os.WriteFile` de volta em `discover.go`, os testes de symlink e de hardlink reprovam. 9 testes novos conferidos pelo nome em `-v`; `check-release-tag-parity.sh` e `check-write-containment.sh` verdes (executor).
 **Files affected:** `docs/cli-parity.md`, `scripts/check-release-tag-parity.sh`, `internal/commands/release.go`, `internal/commands/release_test.go`, `internal/generators/update_test.go`, `internal/discover/discover.go`, `internal/discover/discover_test.go`, `internal/generators/scaffold.go`, `internal/generators/scaffold_test.go`
 **Actions:**
 1. A-1: `cli-parity.md` (pré-condição 3 do `release tag`) e comentários do script descrevem 4 arquivos e 5 conferências.
@@ -138,8 +138,8 @@ test -f docs/seguranca/2026-10-31-redteam-debitos-de-higiene.md
 4. A-4: teste que prova que os modelos resolvidos chegam aos agentes gerados.
 5. R-4: os três pontos de escrita do AC2/AC2b passam a `pathguard.GuardedWrite`, mantendo os testes do bit de execução.
 **Acceptance criteria:**
-- [ ] AC6 da REQ; contra-braço por item (A-2 com chave `Version` diferente; A-3 com a mensagem de configuração só do projeto; A-4 com `nil`; R-4 com symlink plantado no lugar do arquivo)
-- [ ] pacotes `internal/commands`, `internal/discover`, `internal/generators` e `internal/pathguard` verdes
+- [x] AC6 da REQ; contra-braço por item (A-2 com chave `Version` diferente; A-3 com a mensagem de configuração só do projeto; A-4 com `nil`; R-4 com symlink plantado no lugar do arquivo)
+- [x] pacotes `internal/commands`, `internal/discover`, `internal/generators` e `internal/pathguard` verdes
 
 **Gates da wave:**
 ```bash
