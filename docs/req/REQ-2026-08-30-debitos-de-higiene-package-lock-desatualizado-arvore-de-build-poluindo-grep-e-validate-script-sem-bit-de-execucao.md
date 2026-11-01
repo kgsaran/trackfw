@@ -48,25 +48,25 @@ Resíduos que não quebram nada até quebrarem uma investigação ou uma release
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — `trackfw release tag` recusa quando a versão de `npm/package-lock.json` (o campo
+- [x] **AC1** — `trackfw release tag` recusa quando a versão de `npm/package-lock.json` (o campo
       `version` da raiz e o de `packages[""]`) diverge da pedida, com mensagem que nomeia o arquivo; a
       ajuda do comando diz o número real de arquivos conferidos.
-- [ ] **AC2** — `InstallGates` deixa `scripts/trackfw-validate.sh` com bit de execução também quando o
+- [x] **AC2** — `InstallGates` deixa `scripts/trackfw-validate.sh` com bit de execução também quando o
       arquivo já existia com `0644`. No Windows, onde o bit não existe, nada muda.
-- [ ] **AC2b** (mesma causa, enumerada na Wave 0, `docs/seguranca/2026-10-31-wave0-debitos-de-higiene.md`) — os hooks do husky gravados por
+- [x] **AC2b** (mesma causa, enumerada na Wave 0, `docs/seguranca/2026-10-31-wave0-debitos-de-higiene.md`) — os hooks do husky gravados por
       `internal/generators/scaffold.go` (`.husky/commit-msg` e o hook de pre-commit), que o git só
       executa com bit de execução, recebem o mesmo tratamento.
-- [ ] **AC3** — `agent_models`: a Wave 0 reproduziu as 20 linhas de 2026-10-30. Não são o `WARN:` de
+- [x] **AC3** — `agent_models`: a Wave 0 reproduziu as 20 linhas de 2026-10-30. Não são o `WARN:` de
       `agents_models.go`: é a mensagem de configuração global de `agent_models` ausente ou parcial,
       emitida por `harnessCatalogTarget` (`internal/generators/update.go`) uma vez por destino do
       catálogo. Passa a ser emitida **uma vez por execução**, e só quando há pelo menos um destino do
       catálogo na execução (sem destino do catálogo continua sem a mensagem, como hoje). O stderr fica
       capturável em teste (`UpdateOptions` com escritor de erro), para o teste não ser vacuoso. O
       relatório em texto já vai para o stdout (medido na Wave 0; o "stderr" anotado era a mensagem).
-- [ ] **AC4** — parecer do #633 corrigido quanto ao R-5 (nota do arquiteto, sem reescrever o
+- [x] **AC4** — parecer do #633 corrigido quanto ao R-5 (nota do arquiteto, sem reescrever o
       parecer) e as duas notas de vault escritas (fixture `followRemoteHEAD never`;
       `GIT_TERMINAL_PROMPT` sem terminal), linkadas no `vault/notes/index.md`.
-- [ ] **AC6** (red team, `docs/seguranca/2026-10-31-redteam-debitos-de-higiene.md`; defeito conhecido se corrige neste PR) — (a) `docs/cli-parity.md` e
+- [x] **AC6** (red team, `docs/seguranca/2026-10-31-redteam-debitos-de-higiene.md`; defeito conhecido se corrige neste PR) — (a) `docs/cli-parity.md` e
       os comentários de `scripts/check-release-tag-parity.sh` descrevem 4 arquivos e 5 conferências, sem
       o `pypi/trackfw/__init__.py` (A-1); (b) os extratores de versão de JSON leem a chave exata
       (`version`), não a correspondência sem caixa do `encoding/json` (A-2); (c) o teste de "nenhuma
@@ -74,7 +74,7 @@ Resíduos que não quebram nada até quebrarem uma investigação ou uma release
       resolvidos chegam aos agentes gerados (A-4); (e) os três pontos de escrita do AC2/AC2b gravam com
       `pathguard.GuardedWrite` (arquivo temporário, `Chmod` no descritor, `rename`), fechando a corrida
       entre a checagem e a escrita e o caminho por hardlink (R-4).
-- [ ] **AC5** — `make quality` exit 0 e CI verde.
+- [x] **AC5** — `make quality` exit 0 e CI verde.
 
 ## Negative Scope
 

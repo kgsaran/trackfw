@@ -19,7 +19,7 @@ vivos: `release tag` não confere o `package-lock` (AC1); `InstallGates` sem `os
 (AC4). `GIT_TERMINAL_PROMPT` sai do escopo pela medição (REQ, Motivation).
 
 ## Acceptance Criteria
-- [ ] AC1–AC6 da REQ
+- [x] AC1–AC6 da REQ
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
