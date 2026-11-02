@@ -24,7 +24,7 @@ Os defeitos estão medidos na REQ. Varredura de issues abertos em 2026-11-02: ne
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model (hades-tf)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-11-02. As prescrições P1 a P8 foram aceitas. O T6 (`req new` sobrescreve uma REQ existente sem aviso) foi medido pelo arquiteto com o binário 11.2.5: a marca acrescentada à REQ sumiu depois de um segundo `req new "Login"`, com saída 0. É perda de dado no mesmo comando, então entra no ML-1B, sem reabrir a REQ-2026-09-09. O R1–R3 (português em cerca de 30 arquivos fora dos guards, parte deles contrato parseado, como a legenda de status do roadmap) foi levado ao KG como decisão de escopo.
 **Files affected:** `docs/seguranca/2026-11-02-wave0-primeira-experiencia.md`
 **Actions:**
 1. Completude da enumeração:
@@ -37,9 +37,9 @@ Os defeitos estão medidos na REQ. Varredura de issues abertos em 2026-11-02: ne
 3. Alvos de falsificação nos dois sentidos para o AC1 a AC4.
 4. Residual declarado.
 **Acceptance criteria:**
-- [ ] As quatro seções respondidas com evidência (comando e resultado)
-- [ ] Prescrições em seção intitulada `Prescrições`
-- [ ] Nenhuma linha de implementação escrita
+- [x] As quatro seções respondidas com evidência (comando e resultado)
+- [x] Prescrições em seção intitulada `Prescrições`
+- [x] Nenhuma linha de implementação escrita
 
 **Gates da wave:**
 ```bash
@@ -47,12 +47,12 @@ test -f docs/seguranca/2026-11-02-wave0-primeira-experiencia.md
 grep -q '^## Prescrições' docs/seguranca/2026-11-02-wave0-primeira-experiencia.md
 ```
 
-## Wave 1 — Implementação (2 executores em paralelo, arquivos disjuntos)
-> Dependencies: Wave 0 auditada. O ML-1A fica em `internal/guard/` e nos testes e fixtures do texto do guard; o ML-1B fica em `internal/commands/req*.go` e em `docs/cli-parity.md`.
+## Wave 1 — Implementação (sequencial: ML-1A, depois ML-1B)
+> Dependencies: Wave 0 auditada. Os dois MLs editam arquivos diferentes do pacote `internal/commands`. Em paralelo, um quebraria a compilação do teste do outro no meio da edição, então rodam em sequência.
 
 ### ML-1A — Mensagens do guard em inglês, sem referência privada (apolo-tf) — AC1, AC2
 **Status:** ⬜ Pendente
-**Files affected:** definidos pela Wave 0; o núcleo é `internal/guard/gitbranch.go`.
+**Files affected:** `internal/guard/gitbranch.go`, `internal/guard/payload.go`, teste novo `internal/guard/messages_test.go`, `internal/commands/commit.go`, `internal/commands/commit_test.go`, `internal/commands/branch_prune.go`, `internal/commands/agents_models.go`, teste novo `internal/commands/no_private_reference_test.go`, `internal/generators/testdata/guard-sh-reference/git-branch-guard.sh` (só linhas `REASON=`, P8), `internal/generators/git_branch_guard_dedup_test.go`
 **Actions:**
 1. Traduzir as constantes `reason*` e todas as demais mensagens emitidas listadas pela Wave 0, mantendo a orientação.
 2. Remover `Ver CLAUDE.md §1`.
@@ -63,10 +63,11 @@ grep -q '^## Prescrições' docs/seguranca/2026-11-02-wave0-primeira-experiencia
 
 ### ML-1B — `req new --adr` e Quick start de ponta a ponta (apolo-tf) — AC3, AC4
 **Status:** ⬜ Pendente
-**Files affected:** `internal/commands/req.go`, `internal/commands/req_test.go`, um teste novo `internal/commands/quickstart_e2e_test.go`, `docs/cli-parity.md`
+**Files affected:** `internal/commands/req.go`, `internal/commands/req_test.go`, `internal/generators/req.go`, os testes de `internal/generators/` para `req.go`, teste novo `internal/commands/quickstart_e2e_test.go`, `docs/cli-parity.md`
 **Actions:**
 1. Flag `--adr`, resolvido por `ResolveADRFiles`. Grava o `adr:` do frontmatter e a linha `ADR:`; ADR inexistente ou ambíguo dá erro sem criar arquivo.
 2. Teste de ponta a ponta do Quick start em `t.TempDir()`, com `validate` terminando em 0 violações.
+3. T6 da Wave 0: `req new` com REQ de mesmo nome já existente recusa, com saída diferente de zero e o arquivo intacto. Hoje ele sobrescreve sem aviso.
 **Acceptance criteria:**
 - [ ] `go test ./internal/commands/ -count=1` verde
 - [ ] contra-braço: sem o vínculo, o teste de ponta a ponta reprova
