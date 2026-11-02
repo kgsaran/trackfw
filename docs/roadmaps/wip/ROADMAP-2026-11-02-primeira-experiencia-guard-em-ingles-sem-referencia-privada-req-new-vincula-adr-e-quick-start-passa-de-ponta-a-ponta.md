@@ -51,15 +51,15 @@ grep -q '^## Prescrições' docs/seguranca/2026-11-02-wave0-primeira-experiencia
 > Dependencies: Wave 0 auditada. Os dois MLs editam arquivos diferentes do pacote `internal/commands`. Em paralelo, um quebraria a compilação do teste do outro no meio da edição, então rodam em sequência.
 
 ### ML-1A — Mensagens do guard em inglês, sem referência privada (apolo-tf) — AC1, AC2
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-11-02. As 20 constantes `reason*` e as 3 sentinelas do fixture estão em inglês, em paridade exata e sem `§`; os `Long` de `branch prune` e `agents models` e o erro do `commit` estão limpos. Testes novos: `TestReasonOrientationSubstrings` (A), `TestNoPrivateSectionReferenceInternal` (B), `TestReasonNoPortugueseStopwords` (C-guard) e `TestBranchPruneLong_`/`TestAgentModelsLong_NoPrivateSectionReference` (C-commands). Os quatro contra-braços reprovam, e os textos foram restaurados com `cmp`. Precisou de dois despachos, porque a lista da Wave 0 omitia três testes, as sentinelas e o pin SHA-256. Fica como residual o `§` em comentários Go, que não são emitidos ao usuário.
 **Files affected:** `internal/guard/gitbranch.go`, `internal/guard/payload.go`, teste novo `internal/guard/messages_test.go`, `internal/commands/commit.go`, `internal/commands/commit_test.go`, `internal/commands/branch_prune.go`, `internal/commands/agents_models.go`, teste novo `internal/commands/no_private_reference_test.go`, `internal/generators/testdata/guard-sh-reference/git-branch-guard.sh` (só linhas `REASON=` e as sentinelas `_TRACKFW_(TRUNC|NUL|AWK)_REASON=`; P8 ampliado), `internal/generators/git_branch_guard_dedup_test.go`, `internal/generators/guard_parity_helper_test.go` (cópias `c22*Reason` e pin SHA-256 do fixture), `internal/generators/git_branch_guard_stdin_drain_test.go`, `internal/generators/git_branch_guard_test.go`. A Wave 0 não listou esses três testes nem as sentinelas; o primeiro despacho deixou 5 testes de `internal/generators` reprovando e foi completado num segundo.
 **Actions:**
 1. Traduzir as constantes `reason*` e todas as demais mensagens emitidas listadas pela Wave 0, mantendo a orientação.
 2. Remover `Ver CLAUDE.md §1`.
 3. Teste que varre as mensagens e reprova com `§` ou texto em português (AC2), com contra-braço.
 **Acceptance criteria:**
-- [ ] `go test ./internal/guard/ -count=1` e os pacotes dos fixtures tocados verdes
-- [ ] contra-braço do AC2 medido, restaurado e conferido com `cmp`
+- [x] `go test ./internal/guard/ -count=1` e os pacotes dos fixtures tocados verdes
+- [x] contra-braço do AC2 medido, restaurado e conferido com `cmp`
 
 ### ML-1B — `req new --adr` e Quick start de ponta a ponta (apolo-tf) — AC3, AC4
 **Status:** ⬜ Pendente
