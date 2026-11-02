@@ -51,6 +51,15 @@ func quickstartSetup(t *testing.T) (projectDir, homeDir string) {
 	if runtime.GOOS == "windows" {
 		t.Setenv("USERPROFILE", homeDir)
 	}
+
+	// Ensure the trackfw binary is on PATH so that the validator's guardLookupBinary
+	// probe (guardBinaryProbeOnce) succeeds in CI environments where trackfw is not
+	// installed. guardBinary compiles ./cmd/trackfw once per test run; the resulting
+	// binary supports `trackfw guard --help` (exit 0), which is exactly what the probe
+	// needs. We prepend the binary's directory so it is found before any system PATH.
+	bin := guardBinary(t)
+	t.Setenv("PATH", filepath.Dir(bin)+string(os.PathListSeparator)+os.Getenv("PATH"))
+
 	config.Reset()
 
 	t.Cleanup(func() {
