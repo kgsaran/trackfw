@@ -7,6 +7,36 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [11.3.0] - 2026-11-02
+
+### Breaking Changes
+
+Nenhum.
+
+### Added
+
+- **`trackfw req new --adr <ADR>`** vincula a REQ a um ADR existente, gravando o `adr:` do frontmatter e a
+  linha `ADR:`. O nome é validado antes de qualquer escrita e resolvido por nome exato entre os ADRs do
+  projeto. ADR inexistente ou ambíguo dá erro sem criar arquivo. Com isso, o Quick start do README passa de
+  ponta a ponta, e um teste fixa a sequência.
+
+### Fixed
+
+- **`trackfw req new` não reescreve mais uma REQ existente.** Antes, rodar o comando de novo com o mesmo
+  título reescrevia a REQ do zero e apagava as edições, saindo 0. Agora o arquivo fica intacto, o vínculo
+  com o roadmap é reparado linha a linha e o comando sai 0 com aviso. Com `--adr` diferente do vinculado,
+  ele recusa.
+- **As mensagens de bloqueio do guard `git-branch` saem em inglês** e não citam mais `CLAUDE.md §1`, uma
+  seção que o `trackfw init` não gera. A orientação continua a mesma: qual comando do trackfw usar e que
+  nada antes do comando foi executado. As citações a `§` na ajuda de `branch prune` e de `agents models`
+  também saíram.
+- **O assistente de identidade do `trackfw init` abre no padrão anunciado** ("neutral"). Antes, o cursor
+  abria no preset grego, e um Enter o aplicava.
+
+### Changed
+
+- **README:** primeira tela nova, Quick start verificado por teste e GIF regravado (`demo.tape`).
+
 ## [11.2.5] - 2026-11-01
 
 ### Breaking Changes
