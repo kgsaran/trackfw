@@ -151,3 +151,12 @@ go build ./...
 go test ./internal/commands/ -count=1
 go test ./internal/guard/ -count=1
 ```
+
+### ML-3C — Release 11.3.0 no mesmo PR (trackfw_architect)
+**Status:** ✅ Concluído — 2026-11-02. Atende o MEDIUM do red team: o README novo ensina o `--adr`, então o binário publicado precisa trazê-lo junto. A tag sai logo depois do merge. `make check-required-full`: D\R, R\W e D\W vazios.
+**Files affected:** `CHANGELOG.md`, `docs/visao-projeto/VISION.md`, `internal/version/version.go`, `npm/package-lock.json`, `npm/package.json`, `pypi/pyproject.toml`
+**Actions:**
+1. Bump para 11.3.0 nos arquivos de versão e seção `[11.3.0]` no CHANGELOG.
+**Acceptance criteria:**
+- [x] `go run ./cmd/trackfw --version` responde `trackfw 11.3.0`
+- [x] `make check-required-full` sem divergência
