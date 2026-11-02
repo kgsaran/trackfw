@@ -10,6 +10,7 @@ import (
 	cbterm "github.com/charmbracelet/x/term"
 	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/generators"
+	"github.com/kgsaran/trackfw/internal/homedir"
 	"github.com/kgsaran/trackfw/internal/validator"
 	"github.com/spf13/cobra"
 )
@@ -365,7 +366,7 @@ func adrPortablePath(hit string) (string, error) {
 	}
 
 	// Fallback: HOME-relative path (for global ADRs in ~/.trackfw/adr).
-	home, _ := os.UserHomeDir()
+	home, _ := homedir.Dir()
 	canonHome, homeErr := filepath.EvalSymlinks(home)
 	if homeErr != nil || canonHome == "" {
 		canonHome = home

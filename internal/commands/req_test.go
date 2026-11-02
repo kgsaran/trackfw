@@ -499,6 +499,14 @@ func TestReqNew_AC3b_ExistingREQ_ConflictingADR_Refuses(t *testing.T) {
 		if !strings.Contains(err.Error(), "already exists") {
 			t.Errorf("error should mention 'already exists', got: %v", err)
 		}
+		// Item 5 (ML-3B): the guidance must not teach data loss (no "remove") and must
+		// orient the user to edit the existing file instead.
+		if strings.Contains(err.Error(), "remove") {
+			t.Errorf("error message must not mention 'remove' (data-loss guidance): got: %v", err)
+		}
+		if !strings.Contains(err.Error(), "edit the") {
+			t.Errorf("error message must orient user to edit the existing file: got: %v", err)
+		}
 
 		after, err := os.ReadFile(reqMatches[0])
 		if err != nil {
@@ -534,6 +542,14 @@ func TestReqNew_AC3b_ExistingREQ_ConflictingADR_Refuses(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "already exists") {
 			t.Errorf("error should mention 'already exists', got: %v", err)
+		}
+		// Item 5 (ML-3B): the guidance must not teach data loss (no "remove") and must
+		// orient the user to edit the existing file instead.
+		if strings.Contains(err.Error(), "remove") {
+			t.Errorf("error message must not mention 'remove' (data-loss guidance): got: %v", err)
+		}
+		if !strings.Contains(err.Error(), "edit the") {
+			t.Errorf("error message must orient user to edit the existing file: got: %v", err)
 		}
 		after, _ := os.ReadFile(reqMatches[0])
 		if !bytes.Equal(before, after) {
@@ -581,5 +597,76 @@ func TestReqNew_AC3b_ExistingREQ_SameADR_Succeeds(t *testing.T) {
 	if !bytes.Equal(before, after) {
 		t.Errorf("REQ was modified by 2nd run with same --adr (must be byte-identical):\nbefore=%q\nafter=%q",
 			before, after)
+	}
+}
+
+// TestADRPortablePath_GlobalADR_UsesHOMEFirstResolution — Item 8 (ML-3B): adrPortablePath calls
+// homedir.Dir() (HOME-first) rather than os.UserHomeDir() for the HOME-relative fallback.
+//
+// On macOS/Linux, os.UserHomeDir() and homedir.Dir() both read $HOME when it is set, so this
+// test cannot discriminate between the two on those platforms — the counter-arm stays green on
+// macOS. The fix has observable effect on Windows, where os.UserHomeDir() reads %USERPROFILE%
+// and homedir.Dir() reads $HOME first.
+//
+// Reconciliation: this test asserts that the HOME-relative fallback in adrPortablePath correctly
+// produces a ~/... path for a global ADR when $HOME is set; it validates HOME-first resolution
+// functionally but discriminates between homedir.Dir() and os.UserHomeDir() on Windows only.
+func TestADRPortablePath_GlobalADR_UsesHOMEFirstResolution(t *testing.T) {
+	projectDir := t.TempDir()
+	homeDir := t.TempDir()
+
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(projectDir); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(orig)
+		config.Reset()
+	})
+	t.Setenv("HOME", homeDir)
+	config.Reset()
+
+	// Create the global ADR directory and an ADR file.
+	globalADRDir := filepath.Join(homeDir, ".trackfw", "adr")
+	if err := os.MkdirAll(globalADRDir, 0755); err != nil {
+		t.Fatalf("MkdirAll global adr dir: %v", err)
+	}
+	date := time.Now().Format("2006-01-02")
+	adrBasename := "ADR-" + date + "-global-auth-strategy.md"
+	adrContent := "---\nstatus: Accepted\ndate: " + date + "\n---\n\n# ADR: Global Auth Strategy\n"
+	if err := os.WriteFile(filepath.Join(globalADRDir, adrBasename), []byte(adrContent), 0644); err != nil {
+		t.Fatalf("WriteFile global ADR: %v", err)
+	}
+
+	// Write a trackfw.yaml that includes the global ADR dir.
+	trackfwYAML := "adr_dirs:\n  - ~/.trackfw/adr\n  - docs/adr\n"
+	if err := os.WriteFile("trackfw.yaml", []byte(trackfwYAML), 0644); err != nil {
+		t.Fatalf("WriteFile trackfw.yaml: %v", err)
+	}
+	config.Reset() // pick up the just-written trackfw.yaml
+
+	// req new --adr <global ADR basename> with --no-roadmap for fixture simplicity.
+	if err := runReqNewFull(nil, []string{"Global Auth REQ"}, "", true, adrBasename); err != nil {
+		t.Fatalf("runReqNewFull with global ADR: %v", err)
+	}
+
+	reqMatches, _ := filepath.Glob(filepath.Join("docs", "req", "REQ-*.md"))
+	if len(reqMatches) == 0 {
+		t.Fatal("no REQ created")
+	}
+	data, err := os.ReadFile(reqMatches[0])
+	if err != nil {
+		t.Fatalf("ReadFile REQ: %v", err)
+	}
+	body := string(data)
+
+	// The portable path must be HOME-relative.
+	wantADRPath := "~/.trackfw/adr/" + adrBasename
+	wantFrontmatter := `adr: "` + wantADRPath + `"`
+	if !strings.Contains(body, wantFrontmatter) {
+		t.Errorf("REQ frontmatter should contain %q (HOME-relative portable path)\ngot:\n%s", wantFrontmatter, body)
 	}
 }

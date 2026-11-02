@@ -192,7 +192,7 @@ Roadmap: %s
 				existingADR := extractFrontmatterADR(string(existingBytes))
 				if existingADR != content.FrontmatterADR {
 					return REQResult{}, fmt.Errorf(
-						"REQ %s already exists and the --adr link was not applied (existing adr: %q, requested: %q — use a different title or remove the existing file)",
+						"REQ %s already exists and the --adr link was not applied (existing adr: %q, requested: %q — edit the `adr:` frontmatter field and the `ADR:` body line in the existing file and rerun, or use a different title)",
 						filename, existingADR, content.FrontmatterADR)
 				}
 			}

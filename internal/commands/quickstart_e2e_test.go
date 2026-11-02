@@ -22,8 +22,10 @@ package commands
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/validator"
@@ -46,6 +48,9 @@ func quickstartSetup(t *testing.T) (projectDir, homeDir string) {
 	}
 	t.Setenv("HOME", homeDir)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(homeDir, ".config"))
+	if runtime.GOOS == "windows" {
+		t.Setenv("USERPROFILE", homeDir)
+	}
 	config.Reset()
 
 	t.Cleanup(func() {
@@ -77,17 +82,17 @@ func TestQuickStartEndToEnd(t *testing.T) {
 	// config.Reset() after init so subsequent commands read the just-created trackfw.yaml.
 	config.Reset()
 
-	// Step 2: adr new
+	// Step 2: adr new — record date before the call so the expected filename uses the same day.
+	adrDate := time.Now().Format("2006-01-02")
 	if err := runCmd(t, "adr", "new", "User Authentication Strategy"); err != nil {
 		t.Fatalf("adr new: %v", err)
 	}
 
-	// Discover the ADR basename created in this test run.
-	adrMatches, err := filepath.Glob(filepath.Join("docs", "adr", "ADR-*.md"))
-	if err != nil || len(adrMatches) == 0 {
-		t.Fatalf("expected ADR file after adr new, found %d (err=%v)", len(adrMatches), err)
+	// Verify the expected ADR basename matches the README's `ADR-$(date +%F)-user-authentication-strategy.md`.
+	adrBasename := "ADR-" + adrDate + "-user-authentication-strategy.md"
+	if _, err := os.Stat(filepath.Join("docs", "adr", adrBasename)); err != nil {
+		t.Fatalf("expected ADR file %s to exist after adr new: %v", adrBasename, err)
 	}
-	adrBasename := filepath.Base(adrMatches[0])
 
 	// Step 3: req new --adr
 	if err := runCmd(t, "req", "new", "User Authentication", "--adr", adrBasename); err != nil {
@@ -106,8 +111,8 @@ func TestQuickStartEndToEnd(t *testing.T) {
 		t.Fatalf("roadmap move wip: %v", err)
 	}
 
-	// Step 5: validate — must pass with 0 violations.
-	violations, _, err := validator.ValidateTagged()
+	// Step 5: validate — must pass with 0 violations and 0 warnings.
+	violations, warnings, err := validator.ValidateTagged()
 	if err != nil {
 		t.Fatalf("ValidateTagged error: %v", err)
 	}
@@ -118,6 +123,14 @@ func TestQuickStartEndToEnd(t *testing.T) {
 		}
 		t.Errorf("expected 0 violations after quick start with --adr, got %d:\n  %s",
 			len(violations), strings.Join(msgs, "\n  "))
+	}
+	if len(warnings) != 0 {
+		wmsgs := make([]string, len(warnings))
+		for i, w := range warnings {
+			wmsgs[i] = w.Rule + ": " + w.Msg
+		}
+		t.Errorf("expected 0 warnings after quick start with --adr, got %d:\n  %s",
+			len(warnings), strings.Join(wmsgs, "\n  "))
 	}
 }
 

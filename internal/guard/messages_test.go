@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -249,5 +250,112 @@ func TestReasonNoPortugueseStopwords(t *testing.T) {
 		if strings.Contains(tc.c, "§") {
 			t.Errorf("reason constant %s contains § symbol\ngot: %q", tc.name, tc.c)
 		}
+	}
+}
+
+// ---------- Camada C-credential/writescope ----------------------------------
+
+// TestCredentialAndWriteScopeNoPortugueseStopwords (Item 7, ML-3B) extends the
+// AC2 regression gate to user-facing string literals in credential.go and
+// writescope.go. Layer C-guard covers only the 20 reason* constants in gitbranch.go;
+// this test closes the gap for the other two guard files.
+//
+// Implementation: go/ast BasicLit scan of each source file. Literal values are
+// unquoted via strconv.Unquote so Unicode escapes (ç etc.) are decoded before
+// the stopword check. Comments are excluded by design (BasicLit never visits them).
+//
+// Non-vacuity: each file must contain at least one known literal that the scan sees,
+// proving the file was actually parsed and visited.
+//
+// Allowlist: no entries. Point-in-time grep of both files confirms that all
+// Portuguese text is in comments, not string literals (credential.go:32,
+// writescope.go:523/548/605/614). An allowlist entry would be added here if a
+// JSON field name or technical term required it, with an explicit justification.
+//
+// Reconciliation: this test asserts that no string literal in credential.go or
+// writescope.go contains Portuguese stopwords or § after ML-1A's translation.
+// A future edit that adds Portuguese wording to a user-facing string in either
+// file (without §) now fails immediately.
+func TestCredentialAndWriteScopeNoPortugueseStopwords(t *testing.T) {
+	root := filepath.Join(moduleRoot(), "internal", "guard")
+
+	stopwords := []string{
+		"recusado",
+		"nao ",
+		"bloquead",
+		"implicito",
+		"mensagem",
+	}
+	ptAccented := "áàâãéêíóôõúçÁÉÍÓÚÇÃÕ"
+
+	type fileSpec struct {
+		name         string
+		knownLiteral string // non-vacuity anchor: must appear in at least one literal
+	}
+	files := []fileSpec{
+		{
+			name:         "credential.go",
+			knownLiteral: "trackfw-credential-guard: warning",
+		},
+		{
+			name:         "writescope.go",
+			knownLiteral: "trackfw guard write-scope: denied",
+		},
+	}
+
+	for _, fs := range files {
+		fs := fs
+		t.Run(fs.name, func(t *testing.T) {
+			fpath := filepath.Join(root, fs.name)
+			fset := token.NewFileSet()
+			f, err := parser.ParseFile(fset, fpath, nil, 0)
+			if err != nil {
+				t.Fatalf("parse %s: %v", fs.name, err)
+			}
+
+			var seenAnchor bool
+			ast.Inspect(f, func(n ast.Node) bool {
+				lit, ok := n.(*ast.BasicLit)
+				if !ok || lit.Kind != token.STRING {
+					return true
+				}
+				// Decode the source literal (handles escape sequences).
+				decoded, unquoteErr := strconv.Unquote(lit.Value)
+				if unquoteErr != nil {
+					// Raw string literal (backtick); use as-is.
+					decoded = strings.Trim(lit.Value, "`")
+				}
+				lower := strings.ToLower(decoded)
+
+				if strings.Contains(lower, fs.knownLiteral) {
+					seenAnchor = true
+				}
+
+				for _, sw := range stopwords {
+					if strings.Contains(lower, sw) {
+						pos := fset.Position(lit.Pos())
+						t.Errorf("%s: string literal at %s contains Portuguese stopword %q: %s",
+							fs.name, pos, sw, lit.Value)
+					}
+				}
+				for _, r := range ptAccented {
+					if strings.ContainsRune(decoded, r) {
+						pos := fset.Position(lit.Pos())
+						t.Errorf("%s: string literal at %s contains accented Portuguese character %q: %s",
+							fs.name, pos, string(r), lit.Value)
+					}
+				}
+				if strings.Contains(decoded, "§") {
+					pos := fset.Position(lit.Pos())
+					t.Errorf("%s: string literal at %s contains § symbol: %s",
+						fs.name, pos, lit.Value)
+				}
+				return true
+			})
+
+			if !seenAnchor {
+				t.Errorf("%s: non-vacuity check failed — known literal %q was not found in any string literal; the file may not have been scanned", fs.name, fs.knownLiteral)
+			}
+		})
 	}
 }
