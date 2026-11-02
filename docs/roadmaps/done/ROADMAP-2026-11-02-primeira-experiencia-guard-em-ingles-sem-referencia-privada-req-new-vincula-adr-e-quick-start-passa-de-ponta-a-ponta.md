@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-11-02
 req: "docs/req/REQ-2026-11-02-primeira-experiencia-guard-em-ingles-sem-referencia-privada-req-new-vincula-adr-e-quick-start-passa-de-ponta-a-ponta.md"
 squad: "hades-tf, apolo-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf"
 
 # Roadmap: Primeira experiência: guard em inglês sem referência privada, req new vincula ADR e Quick start passa de ponta a ponta
 
-> Created: 2026-11-02 | Status: wip
+> Created: 2026-11-02 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-11-02-primeira-experiencia-guard-em-ingles-sem-referencia-privada-req-new-vincula-adr-e-quick-start-passa-de-ponta-a-ponta.md

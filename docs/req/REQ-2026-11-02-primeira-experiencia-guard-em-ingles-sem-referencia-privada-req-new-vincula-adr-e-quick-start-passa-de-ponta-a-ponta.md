@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-11-02
 author: "Zeus (trackfw_architect)"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-11-02-primeira-experiencia-guard-em-ingles-sem-referencia-privada-req-new-vincula-adr-e-quick-start-passa-de-ponta-a-ponta.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-11-02-primeira-experiencia-guard-em-ingles-sem-referencia-privada-req-new-vincula-adr-e-quick-start-passa-de-ponta-a-ponta.md"
 ---
 
 # REQ: Primeira experiência: guard em inglês sem referência privada, req new vincula ADR e Quick start passa de ponta a ponta
 
-> Date: 2026-11-02 | Status: Open
+> Date: 2026-11-02 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -116,4 +116,4 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-11-02-primeira-experiencia-guard-em-ingles-sem-referencia-privada-req-new-vincula-adr-e-quick-start-passa-de-ponta-a-ponta.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-11-02-primeira-experiencia-guard-em-ingles-sem-referencia-privada-req-new-vincula-adr-e-quick-start-passa-de-ponta-a-ponta.md
