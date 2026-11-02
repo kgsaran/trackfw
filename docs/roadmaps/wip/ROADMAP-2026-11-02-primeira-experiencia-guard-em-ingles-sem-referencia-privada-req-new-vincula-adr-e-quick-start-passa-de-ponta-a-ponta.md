@@ -119,15 +119,35 @@ grep -q 'req new' README.md
 > Dependencies: Wave 2 concluída.
 
 ### ML-3A — Red team (hades-tf)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-11-02. T1–T10 fechados; T11 e P7 parciais no Windows. Nenhum CRITICAL ou HIGH. O MEDIUM (o README na `main` descreve o `--adr` antes de ele estar no binário publicado) se resolve com o bump para 11.3.0 neste PR e a tag logo depois do merge. Os LOW 2, 5, 6, 7 e 8 viram o ML-3B. Ficam como residual R4, o espaço no nome do ADR, o CRLF, o modo warn do credential e o write-scope sem lease, todos já documentados.
 **Files affected:** `docs/seguranca/2026-11-02-redteam-primeira-experiencia.md`
 **Actions:**
 1. Reimplementar, a partir da leitura, os alvos de falsificação da Wave 0 contra o diff.
 2. Seguir o README novo num repositório limpo, como usuário novo.
 **Acceptance criteria:**
-- [ ] Parecer com achados classificados e evidência
+- [x] Parecer com achados classificados e evidência
 
 **Gates da wave:**
 ```bash
 test -f docs/seguranca/2026-11-02-redteam-primeira-experiencia.md
+```
+
+### ML-3B — Correções do red team (apolo-tf)
+**Status:** ⬜ Pendente
+**Files affected:** `internal/generators/req.go`, `internal/commands/req.go`, `internal/commands/req_test.go`, `internal/commands/quickstart_e2e_test.go`, `internal/guard/messages_test.go`
+**Actions:**
+1. Item 5: a mensagem do AC3b com `--adr` conflitante não manda remover o arquivo; orienta a editar o `adr:` e a linha `ADR:` da REQ existente. Teste fixa o texto.
+2. Item 8: `adrPortablePath` usa `homedir.Dir()` em vez de `os.UserHomeDir()`, com teste próprio de HOME divergente.
+3. Item 6: `quickstartSetup` isola também o `USERPROFILE` no Windows.
+4. Item 2: o teste do Quick start calcula o nome do ADR pela data e afirma 0 warnings.
+5. Item 7: o teste de stopwords em português cobre os literais emitidos por `credential.go` e `writescope.go`.
+**Acceptance criteria:**
+- [ ] `go test ./internal/commands/ ./internal/generators/ ./internal/guard/ -count=1` verde
+- [ ] contra-braço por item, medido e restaurado
+
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/commands/ -count=1
+go test ./internal/guard/ -count=1
 ```
