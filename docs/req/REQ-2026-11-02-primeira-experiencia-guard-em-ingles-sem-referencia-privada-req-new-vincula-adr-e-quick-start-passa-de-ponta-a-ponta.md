@@ -52,22 +52,22 @@ O `req new` não vincula o ADR recém-criado e não tem um flag para isso
 
 ## Acceptance Criteria
 
-- [ ] **AC1 — Guard em inglês.** Todas as mensagens de bloqueio emitidas pelos guards (`git-branch`,
+- [x] **AC1 — Guard em inglês.** Todas as mensagens de bloqueio emitidas pelos guards (`git-branch`,
   `credential` e `write-scope`), no stderr e no `permissionDecisionReason`, saem em inglês.
   - Elas mantêm a mesma orientação: qual comando do trackfw usar e que nada antes do comando foi
     executado.
   - A lista completa de constantes e de sítios é entregável da Wave 0, por grep de mecanismo.
-- [ ] **AC2 — Nenhuma referência privada.** Nenhuma mensagem emitida pelo binário cita `CLAUDE.md §1`
+- [x] **AC2 — Nenhuma referência privada.** Nenhuma mensagem emitida pelo binário cita `CLAUDE.md §1`
   ou outra seção que o `trackfw init` não gera. Um teste varre as constantes e reprova se reaparecer
   `§` ou texto em português.
-- [ ] **AC3 — `req new --adr <ADR>`.**
+- [x] **AC3 — `req new --adr <ADR>`.**
   - O flag aceita o nome do arquivo do ADR, com ou sem `.md`, e o resolve pelo ponto único de
     enumeração (`ResolveADRFiles`).
   - Ele grava o vínculo nos dois lugares que a regra `req_has_adr` lê: o `adr:` do frontmatter e a
     linha `ADR:`.
   - ADR inexistente ou ambíguo dá erro, com saída diferente de zero e sem arquivo criado.
   - Sem o flag, o comportamento atual não muda.
-- [ ] **AC3b — `req new` não reescreve uma REQ existente** (T6 da Wave 0, medido em 2026-11-02: hoje a
+- [x] **AC3b — `req new` não reescreve uma REQ existente** (T6 da Wave 0, medido em 2026-11-02: hoje a
   segunda execução com o mesmo título reescreve a REQ do zero, apaga as edições e sai 0).
   - Com a REQ já existente, o arquivo fica intacto byte a byte. O comando avisa que a REQ foi mantida e
     **continua** o reparo idempotente do vínculo com o roadmap (contrato do ML-4A,
@@ -77,18 +77,18 @@ O `req new` não vincula o ADR recém-criado e não tem um flag para isso
   - Decisão do arquiteto em 2026-11-02, na auditoria do ML-1B. As alternativas eram exigir a remoção
     da REQ antes de rodar de novo, o que ensina a perder dado, ou recusar só no CLI, o que deixa a API
     com o defeito.
-- [ ] **AC4 — Quick start de ponta a ponta.** Um teste Go num `t.TempDir()` roda a sequência do Quick
+- [x] **AC4 — Quick start de ponta a ponta.** Um teste Go num `t.TempDir()` roda a sequência do Quick
   start do README, já com `--adr`, e o `trackfw validate` termina com **0 violações**. O Quick start do
   README e esse teste trazem a mesma sequência de comandos.
-- [ ] **AC4b — O padrão do assistente de identidade é o anunciado.** Achado pelo arquiteto ao gravar o GIF,
+- [x] **AC4b — O padrão do assistente de identidade é o anunciado.** Achado pelo arquiteto ao gravar o GIF,
   em 2026-11-02, num terminal real. O `trackfw init` interativo abre o seletor de identidade com o cursor em
   "Panteão grego", embora a opção rotulada "(padrão)" seja "Nomes neutros". Isso acontece porque
   `identitySelect` começa vazio em `internal/commands/identity_wizard.go` e o `huh` cai na primeira opção.
   Um Enter aceita o preset grego e abre a pergunta de apelido. O cursor deve abrir em `neutral`, com teste.
-- [ ] **AC5 — Primeira tela do README.** Três frases do que o produto faz, o Quick start que passa
+- [x] **AC5 — Primeira tela do README.** Três frases do que o produto faz, o Quick start que passa
   pelo AC4 e o GIF novo logo abaixo. A ressalva do Windows vira uma linha com link para a seção
   completa.
-- [ ] **AC6 — GIF novo.**
+- [x] **AC6 — GIF novo.**
   - `demo.tape` é reescrito para o fluxo do AC4 e mostra o guard barrando um `git push` na `main`, com
     a mensagem do AC1.
   - A fonte é instalada e nomeada corretamente (`JetBrainsMono Nerd Font`), sem o espaçamento quebrado

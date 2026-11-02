@@ -15,7 +15,7 @@ REQ: docs/req/REQ-2026-11-02-primeira-experiencia-guard-em-ingles-sem-referencia
 Os defeitos estão medidos na REQ. Varredura de issues abertos em 2026-11-02: nenhum aberto.
 
 ## Acceptance Criteria
-- [ ] AC1–AC6 da REQ
+- [x] AC1–AC6 da REQ (com AC3b e AC4b)
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -133,7 +133,7 @@ test -f docs/seguranca/2026-11-02-redteam-primeira-experiencia.md
 ```
 
 ### ML-3B — Correções do red team (apolo-tf)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-11-02. Item 5: a mensagem passa a orientar a edição do vínculo, sem mencionar remoção; as duas asserções reprovam no contra-braço. Item 8: `homedir.Dir()`, com o teste `TestADRPortablePath_GlobalADR_UsesHOMEFirstResolution`, que no macOS não discrimina (os dois leem `$HOME`); residual declarado, porque a diferença só aparece no Windows. Item 6: `USERPROFILE` isolado no Windows, sem contra-braço possível no macOS. Item 2: nome do ADR pela data e 0 warnings; data trocada reprova. Item 7: `TestCredentialAndWriteScopeNoPortugueseStopwords` por `go/ast`; "bloqueado" num literal reprova. O roadmap do teste do Quick start ainda é localizado por glob (residual menor).
 **Files affected:** `internal/generators/req.go`, `internal/commands/req.go`, `internal/commands/req_test.go`, `internal/commands/quickstart_e2e_test.go`, `internal/guard/messages_test.go`
 **Actions:**
 1. Item 5: a mensagem do AC3b com `--adr` conflitante não manda remover o arquivo; orienta a editar o `adr:` e a linha `ADR:` da REQ existente. Teste fixa o texto.
@@ -142,8 +142,8 @@ test -f docs/seguranca/2026-11-02-redteam-primeira-experiencia.md
 4. Item 2: o teste do Quick start calcula o nome do ADR pela data e afirma 0 warnings.
 5. Item 7: o teste de stopwords em português cobre os literais emitidos por `credential.go` e `writescope.go`.
 **Acceptance criteria:**
-- [ ] `go test ./internal/commands/ ./internal/generators/ ./internal/guard/ -count=1` verde
-- [ ] contra-braço por item, medido e restaurado
+- [x] `go test ./internal/commands/ ./internal/generators/ ./internal/guard/ -count=1` verde
+- [x] contra-braço por item, medido e restaurado
 
 **Gates da wave:**
 ```bash
