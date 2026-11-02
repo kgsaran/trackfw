@@ -80,6 +80,11 @@ O `req new` não vincula o ADR recém-criado e não tem um flag para isso
 - [ ] **AC4 — Quick start de ponta a ponta.** Um teste Go num `t.TempDir()` roda a sequência do Quick
   start do README, já com `--adr`, e o `trackfw validate` termina com **0 violações**. O Quick start do
   README e esse teste trazem a mesma sequência de comandos.
+- [ ] **AC4b — O padrão do assistente de identidade é o anunciado.** Achado pelo arquiteto ao gravar o GIF,
+  em 2026-11-02, num terminal real. O `trackfw init` interativo abre o seletor de identidade com o cursor em
+  "Panteão grego", embora a opção rotulada "(padrão)" seja "Nomes neutros". Isso acontece porque
+  `identitySelect` começa vazio em `internal/commands/identity_wizard.go` e o `huh` cai na primeira opção.
+  Um Enter aceita o preset grego e abre a pergunta de apelido. O cursor deve abrir em `neutral`, com teste.
 - [ ] **AC5 — Primeira tela do README.** Três frases do que o produto faz, o Quick start que passa
   pelo AC4 e o GIF novo logo abaixo. A ressalva do Windows vira uma linha com link para a seção
   completa.

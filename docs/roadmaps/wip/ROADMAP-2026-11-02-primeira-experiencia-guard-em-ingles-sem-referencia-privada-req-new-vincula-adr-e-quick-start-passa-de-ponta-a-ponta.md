@@ -80,6 +80,16 @@ go test ./internal/guard/ -count=1
 go test ./internal/commands/ -count=1
 ```
 
+### ML-1C — Padrão do assistente de identidade (apolo-tf) — AC4b
+**Status:** ✅ Concluído — auditado em 2026-11-02. `identitySelect` passa a começar em `defaultIdentitySelection()` = `neutral`; o `huh` posiciona o cursor por `selectValue` em `Accessor` (`field_select.go` do huh v1.0.0). Testes: `TestDefaultIdentitySelectionIsNeutral` e `TestIdentitySelectDefaultCursorIsNeutral` (cursor lido por `Hovered()`, sem TTY). Contra-braço com o valor inicial vazio: o cursor fica em "greek" e os dois reprovam. O defeito foi achado pelo arquiteto ao gravar o GIF num terminal real; os textos em português do assistente ficam com a REQ de idioma.
+**Files affected:** `internal/commands/identity_wizard.go` e o teste dele em `internal/commands/`
+**Actions:**
+1. O seletor abre em `neutral`.
+2. Teste que afirma o valor inicial, com contra-braço.
+**Acceptance criteria:**
+- [x] `go test ./internal/commands/ -count=1` verde
+- [x] contra-braço: com o valor inicial vazio, o teste reprova
+
 ## Wave 2 — README e GIF (arquiteto)
 > Dependencies: Wave 1 auditada. O GIF precisa do binário com o AC1 e o AC3.
 
