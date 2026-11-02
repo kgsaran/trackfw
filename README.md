@@ -8,35 +8,32 @@
 [![PyPI](https://img.shields.io/pypi/v/trackfw?logo=python&color=3776AB)](https://pypi.org/project/trackfw/)
 [![License](https://img.shields.io/github/license/kgsaran/trackfw)](LICENSE)
 
-**trackfw** is an open-source governance CLI for AI-native software delivery. It enforces a traceable chain from architectural decision to shipped code — without SaaS, accounts, or databases. Markdown files are state.
+**Your AI coding agent ships fast. trackfw makes it ship traceably.**
 
-It is designed for teams looking for an ADR / REQ / ROADMAP governance framework with native support for AI coding assistants such as Codex, Claude Code, Gemini CLI, Antigravity, OpenCode, Cursor, GitHub Copilot, Windsurf, Amazon Q, and Kiro.
+- Every change traces back to a decision: **ADR → REQ → ROADMAP**, kept as plain Markdown in your repo. No SaaS, no accounts, no database.
+- `trackfw validate` checks that chain in pre-commit and CI. Guard hooks for your AI agents (Claude Code, Codex, Gemini CLI, Cursor, Copilot, Windsurf, Amazon Q, Kiro and more) block raw `git commit` / `git push` / branch creation in favor of governed `trackfw` commands, and flag credentials in tool payloads.
+- One Go binary, installed the way your company already allows: npm, pip, Homebrew or curl.
 
+![trackfw demo: an ADR, a requirement linked to it, a clean validate, and the guard stopping an agent's git push](https://raw.githubusercontent.com/kgsaran/trackfw/main/docs/demo.gif)
+
+## Quick start
+
+```bash
+npm install -g trackfw            # or: pip install trackfw · brew install kgsaran/trackfw/trackfw
+
+trackfw init --ai-tools claude --forge github
+trackfw adr new "User Authentication Strategy"
+trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md
+trackfw roadmap move ROADMAP-$(date +%F)-user-authentication.md wip
+trackfw validate                  # ✓ No violations found.
 ```
-ADR → REQ → ROADMAP → backlog / wip / blocked / done / abandoned
-```
 
-Every piece of work traces back to a decision. Every decision links to a requirement. Every requirement lands in a roadmap. No orphan work, no undocumented choices.
+In a terminal, `init`, `adr new` and `req new` open short wizards. The
+sequence above is pinned by a test (`internal/commands/quickstart_e2e_test.go`), so it keeps working
+as the product changes. Next: [Quick start, continued](#quick-start-continued).
 
-> 🚧 **Platform support: Linux and macOS are supported. Windows support is partial.**
-> The binary installs on Windows and core governance commands run. Since v9.3.0, guard
-> hooks call `trackfw guard <name>` (the Go binary) instead of a POSIX shell script —
-> measured blocking and allowing correctly in PowerShell 5, cmd.exe, and Git Bash on
-> Windows; Claude Code and Codex CLI proven end-to-end. Guard and attention
-> (`trackfw guard <name>`, `trackfw attention signal|cleanup`) are Go subcommands — no
-> POSIX shell, `jq`, or `python3` required; native attention is available since v10.1.0.
-> **Caveat:** Claude Code on Windows executes hooks through Git Bash (if installed) or
-> PowerShell, locating bash at the hardcoded path `C:\Program Files\Git\bin\bash.exe`
-> (overridable via `CLAUDE_CODE_GIT_BASH_PATH`). Git Bash path: measured on ARM64 VM
-> (`docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md:810`;
-> `docs/portabilidade/2026-10-20-jornadas-agentes-windows.md` A7). PowerShell fallback:
-> vendor docs only (`docs/portabilidade/2026-09-05-contrato-de-execucao-de-hook-por-cli-de-agente-no-windows.md`);
-> a machine without Git installed has not been measured. **Measured 2026-10-21 (Windows ARM64, Claude Code
-> 2.1.304):** guard allowed and denied by real PreToolUse events on Bash and PowerShell
-> tools; attention appeared with the question and cleared after the response in an
-> interactive session — only Claude Code was measured end-to-end in this round. Windows
-> CI still reports known test failures. There are limits worth knowing; **read
-> [Windows support (partial)](#windows-support-partial) before adopting on Windows.**
+> **Platforms:** Linux and macOS are fully supported. Windows support is partial; read
+> [Windows support (partial)](#windows-support-partial) before adopting on Windows.
 
 ---
 
@@ -52,37 +49,6 @@ Most teams accumulate technical debt not because they lack tools, but because th
 trackfw adds the governance layer that makes AI-assisted delivery auditable.
 
 trackfw closes the loop — connective tissue between *why*, *what*, and *when*.
-
----
-
-## Demo
-
-![trackfw demo](docs/demo.gif)
-
-```bash
-$ trackfw req new "Login screen"
-
-  ? Describe what you want to build  Login screen for the application
-  ? Motivation                       Users need to authenticate to access the system
-
-  Detected domains: authentication, ui
-
-  ? How will users authenticate?
-  > Local login (email + password)
-    SSO (Google, Azure AD, Okta...)
-    Not decided yet  ← generates ADR draft
-
-  ? Is there an existing UI framework or design system?
-    Yes, already chosen
-  > No, need to choose a UI framework  ← generates ADR draft
-
-ADR drafts created:
-  → ADR-2026-06-12-authentication-strategy.md
-  → ADR-2026-06-12-ui-framework.md
-
-Resolve these ADRs (set Status: Accepted) before creating a roadmap.
-created docs/req/REQ-2026-06-12-login-screen.md
-```
 
 ---
 
@@ -426,30 +392,20 @@ Shared behavior follows the [command contract](docs/cli-parity.md).
 
 ---
 
-## Quick start
+## Quick start, continued
+
+The [Quick start](#quick-start) gets the chain in place. Day to day:
 
 ```bash
-# 1. Set up governance in your project (interactive wizard)
-trackfw init
-
-# 2. Document an architectural decision
-trackfw adr new "Use PostgreSQL as primary database"
-
-# 3. Create a requirement with linked roadmap — wizard detects domains and proposes ADR drafts
-trackfw req new "User authentication"
-
-# 4. Move the roadmap to work-in-progress
-trackfw roadmap move user-authentication wip
-
-# 5. Check governance health
-trackfw validate
-
-# 6. See what is in flight
+# See what is in flight
 trackfw status
 
-# 7. Governed commit + push + open PR/MR (feat/fix/refactor branches only)
+# Governed commit + push + open PR/MR (feat/fix/refactor branches only)
 git add -p                        # stage your changes explicitly
 trackfw ship -m "feat(auth): add login flow"
+
+# Live Kanban board at http://localhost:4080
+trackfw serve
 ```
 
 ---

@@ -53,7 +53,7 @@ Configure model versions via agent_models in trackfw.yaml:
 
 The claude target is the only one where agent_models takes effect; all other
 targets (codex, cursor, antigravity, gemini, kiro, etc.) use their own fixed
-mapping regardless of agent_models (ADR-2026-08-21 §4).`,
+mapping regardless of agent_models.`,
 		Args: cobra.NoArgs,
 		RunE: executeAgentModels,
 	}

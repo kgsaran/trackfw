@@ -172,9 +172,9 @@ func extractFrontmatterReq(content string) string {
 // ML-1B (linkREQToRoadmap) reexposto, não uma segunda escrita: preenche placeholder, não sequestra
 // vínculo diferente, é idempotente e nunca é fatal.
 //
-// Necessária porque `req new` reescreve o arquivo da REQ do zero (comportamento anterior a este ML):
-// numa reexecução no mesmo dia, a REQ volta a `roadmap: ""` enquanto o roadmap já existe. Sem esta
-// chamada, o guard de idempotência acima deixaria a REQ órfã justamente na segunda rodada.
+// Necessária para o reparo idempotente: desde o AC3b da REQ-2026-11-02 (primeira experiência), `req new`
+// mantém intacta uma REQ existente em vez de reescrevê-la. Se ela tiver ficado com `roadmap: ""` (por
+// exemplo, criada com --no-roadmap), esta chamada preenche só o marcador de vínculo, linha a linha.
 func RelinkREQToRoadmap(reqPath, roadmapPath string) {
 	linkREQToRoadmap(reqPath, normalizeRefSeparator(roadmapPath))
 }

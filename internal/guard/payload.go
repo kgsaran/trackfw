@@ -158,7 +158,7 @@ func ExtractCommand(data []byte) (string, error) {
 	// Parse root level into a case-sensitive map.
 	var root map[string]json.RawMessage
 	if err := json.Unmarshal(data, &root); err != nil {
-		return "", fmt.Errorf("payload JSON inválido: %w", err)
+		return "", fmt.Errorf("invalid JSON payload: %w", err)
 	}
 
 	// Priority 1: tool_input.command

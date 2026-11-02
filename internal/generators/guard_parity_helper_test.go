@@ -323,12 +323,12 @@ const c22AwkNulSentinel = "trackfw git-branch-guard: extrator JSON (sem jq): nul
 
 // c22IndecodeableReason is the REASON text the bash awk path emits for C22.
 // Mirrors internal/guard/gitbranch.go:reasonIndecodeable (unexported).
-const c22IndecodeableReason = "trackfw git-branch-guard: RECUSADO — o extrator JSON (sem jq) encontrou erro ao decodificar o campo de comando: string nao terminada, escape invalido ou NUL. O guard recusa em vez de aprovar um payload que nao pode ser lido com seguranca."
+const c22IndecodeableReason = "trackfw git-branch-guard: JSON decode error — the JSON extractor (without jq) failed to decode the command field: unterminated string, invalid escape or NUL. The guard denies rather than approve a payload it cannot safely read."
 
 // c22NULReason is the REASON text the Go path (and the bash jq path) emits for C22.
 // Mirrors internal/guard/gitbranch.go:reasonNUL (unexported).
 // Note: \\u0000 in this Go source is the 6-byte literal sequence \u0000 in the output.
-const c22NULReason = "trackfw git-branch-guard: RECUSADO — o comando contem NUL (\\u0000) e nao pode ser interpretado com seguranca pelo shell. O guard recusa em vez de executar um comando corrompido."
+const c22NULReason = "trackfw git-branch-guard: NUL byte detected — the command contains NUL (\\u0000) and cannot be safely interpreted by the shell. The guard denies rather than execute a corrupted command."
 
 
 // assertGuardParity compara os resultados bash e Go e reporta divergência.
@@ -421,7 +421,7 @@ func TestGuardShReferenceFixtures_Sha256(t *testing.T) {
 	// The live scripts/trackfw-*.sh are now thin wrappers (ML-2A); the fixtures remain
 	// the original full scripts so the parity comparison stays meaningful.
 	expected := map[string]string{
-		"git-branch-guard.sh":         "71445ebf0a71e1db4eab8af9c6fe2a6b828a5d00e17ad39a5458d57d294c9245",
+		"git-branch-guard.sh":         "75b71725732b504cf58b1e9317cfe158b9d1a82ab9c281551ecf7ab6b057c78a",
 		"credential-guard-project.sh": "e73d6502f851fee4ca304c1e8e8a60485f1339714734fb09d89a514dea65a4f7",
 		"credential-guard-global.sh":  "af21a5772a2edeba738db454771e8347b6300b4272a17c447f68a921b9c3cc43",
 	}

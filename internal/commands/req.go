@@ -4,10 +4,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/charmbracelet/huh"
 	cbterm "github.com/charmbracelet/x/term"
+	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/generators"
+	"github.com/kgsaran/trackfw/internal/homedir"
+	"github.com/kgsaran/trackfw/internal/validator"
 	"github.com/spf13/cobra"
 )
 
@@ -25,12 +29,13 @@ func newReqCmd() *cobra.Command {
 func newReqNewCmd() *cobra.Command {
 	var agentFlag string
 	var noRoadmap bool
+	var adrFlag string
 	cmd := &cobra.Command{
 		Use:   "new <title>",
 		Short: "Create a new REQ (and its roadmap, unless --no-roadmap)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runReqNew(cmd, args, agentFlag, noRoadmap)
+			return runReqNewFull(cmd, args, agentFlag, noRoadmap, adrFlag)
 		},
 	}
 	cmd.Flags().StringVar(&agentFlag, "agent", "", "Agent namespace in by_agent projects")
@@ -39,10 +44,26 @@ func newReqNewCmd() *cobra.Command {
 	// declara a decisão. Ver a comparação das três formas em runReqNew.
 	cmd.Flags().BoolVar(&noRoadmap, "no-roadmap", false,
 		"Create the REQ only, without a roadmap (deliberate: leaves the REQ unlinked)")
+	cmd.Flags().StringVar(&adrFlag, "adr", "",
+		"Link an existing ADR by filename (with or without .md extension); resolves via adr_dirs")
 	return cmd
 }
 
-// runReqNew cria a REQ e, por padrão, o roadmap que a implementa — um comando, não dois.
+// runReqNew is the backward-compatible entry point for tests that call it directly.
+// It delegates to runReqNewFull with an empty adrFlag (no --adr).
+//
+// 🔴 Do NOT change this signature: req_chain_ml4a_test.go calls runReqNew directly
+// and is outside the editable-file list for ML-1B.
+func runReqNew(_ *cobra.Command, args []string, agentFlag string, noRoadmap bool) error {
+	return runReqNewFull(nil, args, agentFlag, noRoadmap, "")
+}
+
+// runReqNewFull cria a REQ e, por padrão, o roadmap que a implementa — um comando, não dois.
+// It is the full implementation; runReqNew and cobra RunE both delegate here.
+//
+// adrFlag, when non-empty, is the --adr value: validated (P5), resolved (P6), and
+// written as the portably-relative ADR link in both the frontmatter adr: field and the
+// body ADR: line so that req_has_adr passes without manual editing.
 //
 // 🔴 ML-4A — por que o encadeamento é PADRÃO e não flag de adesão. O defeito que a REQ-2026-09-09
 // nomeia é de esquecimento: o protocolo tem três passos e o segundo (`roadmap new`) cai. Três formas
@@ -61,8 +82,27 @@ func newReqNewCmd() *cobra.Command {
 // não afeta nenhuma regra de `validate` (medido) e é removível com `roadmap move <nome> abandoned`.
 // Já a REQ órfã é IRREVERSÍVEL no sentido que importa: ninguém volta para consertá-la, que é
 // justamente o achado desta REQ.
-func runReqNew(_ *cobra.Command, args []string, agentFlag string, noRoadmap bool) error {
+func runReqNewFull(_ *cobra.Command, args []string, agentFlag string, noRoadmap bool, adrFlag string) error {
 	content := generators.REQContent{Title: args[0], Agent: agentFlag}
+
+	// Resolve --adr BEFORE the TTY branch so both the wizard and non-TTY paths get the link.
+	// Order: P5 validation → P6 resolution → P4 portable path → set on content.
+	// Any error here is fatal: the ADR must be resolved before any file is created (P3).
+	if adrFlag != "" {
+		if err := validateADRFlagValue(adrFlag); err != nil {
+			return err
+		}
+		cfg := config.Load()
+		hit, err := resolveADRByArg(adrFlag, cfg)
+		if err != nil {
+			return err
+		}
+		portablePath, err := adrPortablePath(hit)
+		if err != nil {
+			return err
+		}
+		content.FrontmatterADR = portablePath
+	}
 
 	// Detectar se stdin é TTY — wizard interativo somente em TTY
 	if !cbterm.IsTerminal(uintptr(os.Stdin.Fd())) {
@@ -204,7 +244,7 @@ func runReqNew(_ *cobra.Command, args []string, agentFlag string, noRoadmap bool
 //  1. `--no-roadmap` — caminho deliberado. Não cria nada e DIZ o que ficou faltando, com o comando
 //     exato. Silêncio aqui seria o defeito original com outro nome.
 //  2. Roadmap já existente que aponta para esta REQ — não cria um segundo (idempotência), e regrava
-//     o ponteiro na REQ, que `req new` acabou de reescrever do zero.
+//     o ponteiro na REQ quando o campo roadmap: ainda estiver vazio (a REQ é mantida intacta — AC3b).
 //  3. Caso comum — `NewRoadmapFromREQ`, o MESMO caminho que `roadmap new --from-req` usa: MLs
 //     rascunho a partir dos ACs, `req:` no frontmatter do roadmap e backlink na REQ (ML-1B).
 //
@@ -247,6 +287,96 @@ func uniqueStrings(ss []string) []string {
 		}
 	}
 	return result
+}
+
+// validateADRFlagValue validates the value of --adr per P5 (Wave 0 prescription).
+// Rejected characters: /, \, .. (traversal), NUL, \n, \r, ", backtick.
+// Space is accepted (P5 explicitly allows it).
+func validateADRFlagValue(v string) error {
+	if v == "" {
+		return fmt.Errorf("--adr: ADR name must not be empty")
+	}
+	for i, r := range v {
+		switch r {
+		case '/', '\\', '\x00', '\n', '\r', '"', '`':
+			return fmt.Errorf("--adr: invalid character %q at position %d in %q (path separators, control characters, quotes and backticks are not allowed)", r, i, v)
+		}
+	}
+	// Reject ".." (traversal component — slashes already blocked above, so ".." alone is the remaining risk).
+	if v == ".." {
+		return fmt.Errorf("--adr: path traversal not allowed: %q", v)
+	}
+	return nil
+}
+
+// resolveADRByArg finds the single ADR file matching arg using exact basename comparison (P6).
+// Match condition: base == arg OR base == arg+".md" (string-exact, not case-folded).
+// Returns error when zero or more than one file matches.
+func resolveADRByArg(arg string, cfg config.ProjectConfig) (string, error) {
+	var matches []string
+	for _, path := range validator.ResolveADRFiles(cfg) {
+		base := filepath.Base(path)
+		if base == arg || base == arg+".md" {
+			matches = append(matches, path)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return "", fmt.Errorf("--adr: ADR not found: %q (checked adr_dirs: %v)", arg, cfg.ADRDirs)
+	case 1:
+		return matches[0], nil
+	default:
+		return "", fmt.Errorf("--adr: ADR %q is ambiguous — found in multiple locations: %v", arg, matches)
+	}
+}
+
+// adrPortablePath converts an ADR file path returned by ResolveADRFiles to a portable
+// project-relative or HOME-relative path suitable for storage in REQ frontmatter (P4).
+// Always uses forward slashes (filepath.ToSlash).
+func adrPortablePath(hit string) (string, error) {
+	// Canonicalize project root (handles /var → /private/var on macOS).
+	absRoot, err := filepath.EvalSymlinks(".")
+	if err != nil {
+		absRoot = filepath.Clean(".")
+	}
+
+	// Make hit absolute relative to project root if it isn't already.
+	absHit := hit
+	if !filepath.IsAbs(absHit) {
+		absHit = filepath.Join(absRoot, absHit)
+	}
+
+	// EvalSymlinks on the parent directory only (preserves the logical filename of a symlink-file).
+	hitDir, hitBase := filepath.Split(absHit)
+	canonDir, err := filepath.EvalSymlinks(hitDir)
+	if err != nil {
+		canonDir = filepath.Clean(hitDir)
+	}
+	absHitCanon := filepath.Join(canonDir, hitBase)
+
+	canonRoot, err := filepath.EvalSymlinks(absRoot)
+	if err != nil {
+		canonRoot = filepath.Clean(absRoot)
+	}
+
+	sep := string(os.PathSeparator)
+	rel, relErr := filepath.Rel(canonRoot, absHitCanon)
+	if relErr == nil && rel != ".." && !strings.HasPrefix(rel, ".."+sep) {
+		return filepath.ToSlash(rel), nil
+	}
+
+	// Fallback: HOME-relative path (for global ADRs in ~/.trackfw/adr).
+	home, _ := homedir.Dir()
+	canonHome, homeErr := filepath.EvalSymlinks(home)
+	if homeErr != nil || canonHome == "" {
+		canonHome = home
+	}
+	relHome, homeRelErr := filepath.Rel(canonHome, absHitCanon)
+	if homeRelErr == nil && relHome != ".." && !strings.HasPrefix(relHome, ".."+sep) {
+		return "~/" + filepath.ToSlash(relHome), nil
+	}
+
+	return "", fmt.Errorf("--adr: ADR %q is outside both the project root and HOME; use a project-local ADR", hit)
 }
 
 func newReqListCmd() *cobra.Command {

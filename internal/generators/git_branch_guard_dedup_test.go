@@ -318,7 +318,7 @@ func runGitBranchGuardEntries(t *testing.T, projectDir string, scriptPaths []str
 		cmd.Stderr = &stderr
 		err := cmd.Run()
 		exitErr, isExitErr := err.(*exec.ExitError)
-		blocked := isExitErr && exitErr.ExitCode() == 2 && strings.Contains(stderr.String(), "git push bruto bloqueado")
+		blocked := isExitErr && exitErr.ExitCode() == 2 && strings.Contains(stderr.String(), "raw git push blocked")
 		if err == nil && !blocked {
 			// exited 0: allow, not a failure of the harness.
 			continue

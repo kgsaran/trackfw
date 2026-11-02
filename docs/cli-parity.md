@@ -4996,10 +4996,12 @@ para a mesma entrada. Isso inclui conteúdo e nome de arquivo.
 
 #### `req new <title>`
 
-<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
+<!-- trackfw-contract: gate=internal/commands/req_test.go,internal/commands/quickstart_e2e_test.go partial=os gates cobrem o caminho não-interativo (sem TTY): flag --adr, guarda AC3b (keep-intact + relink) e E2E do Quick Start; NÃO cobrem o wizard interativo (TTY) nem a escolha de escopo local/global de ADR drafts -->
 
 
 Arquivo: `docs/req/REQ-YYYY-MM-DD-<slug>.md`
+
+Without `--adr` (template unchanged from pre-ML-1B):
 
 ```
 ---
@@ -5035,6 +5037,55 @@ ADR:
 Roadmap: 
 ```
 
+**`--adr <basename>`** (ML-1B, REQ-2026-11-02): links an existing ADR at creation time.
+Accepts the ADR filename with or without `.md` extension; resolves via `ResolveADRFiles`
+(the same enumeration consumed by `req_has_adr`). Validation (P5) rejects `/`, `\`, `..`
+(exact), NUL, `\n`, `\r`, `"`, and backticks before resolution — spaces are allowed.
+Resolution (P6) is string-exact on the basename: `base == arg || base == arg+".md"`.
+ADR not found or ambiguous → non-zero exit, no file created.
+
+When `--adr` is provided, the generated REQ replaces both ADR placeholders with
+the portable relative path so that `req_has_adr` passes immediately:
+
+```
+---
+...
+adr: "docs/adr/ADR-YYYY-MM-DD-<slug>.md"
+...
+---
+...
+## Linked ADR
+ADR: docs/adr/ADR-YYYY-MM-DD-<slug>.md
+```
+
+**Known P5/reader conflict (reported, not fixed here):** ADR filenames containing spaces
+are accepted by P5 and correctly written to both `adr:` and `ADR:`, but `extractRefPath`
+in the validator splits on whitespace and reads only the first token; `req_has_adr` then
+sees a path that does not end in `.md` and fires. Workaround: use hyphens in ADR names.
+
+**No-overwrite guard (AC3b, ML-1B):** if a REQ file with the same title already exists,
+`req new` keeps the file byte-for-byte intact, prints a warning to stderr (e.g.
+`REQ docs/req/X.md already exists — kept as is (not rewritten)`), continues with the
+idempotent roadmap-link repair (`chainRoadmapForREQ`), and exits 0. This replaces both
+the previous silent overwrite (Wave 0 T6) and the earlier "refuse with error" draft.
+
+Two sub-cases governed by `--adr`:
+
+| Condition | Result |
+|---|---|
+| No `--adr`; or `--adr` matches the existing `adr:` value | Stderr warning; roadmap link repaired; exit 0; file untouched |
+| `--adr` differs from the existing `adr:` value (including empty) | Non-zero exit; no file change; error names both values |
+
+The roadmap-link repair (`RelinkREQToRoadmap`) is surgical: it rewrites only the
+`roadmap:` frontmatter field and the `Roadmap:` body line via `rewriteREQRoadmapRefWith`.
+All other content — including text appended after the first run — is preserved.
+
+**Known CRLF residual (not fixed here):** `rewriteREQRoadmapRefWith` calls `NormalizeCRLF`
+on the whole file. A CRLF-encoded REQ that triggers a relink write will have its line
+endings changed from `\r\n` to `\n`. The "byte-for-byte intact" guarantee applies only
+to LF-encoded REQs. CRLF REQs on a system that produces them are not a target platform
+for this project at this time.
+
 **Escopo local/global dos ADR drafts gerados por probe (Go+Node.js apenas):** no fluxo
 interativo (TTY) que detecta domínios e gera ADR drafts a partir de probes, um único prompt
 ("Escopo dos ADRs desta REQ": Local, padrão, ou Global) é exibido antes do loop de probes —
@@ -5042,12 +5093,6 @@ a escolha vale para todos os ADR drafts gerados naquela sessão de `req new`, n�
 por probe. `global` escreve os drafts em `~/.trackfw/adr/`; `local` (default) preserva o
 comportamento anterior a esta feature. Sem TTY, nenhum prompt é exibido e o comportamento é
 idêntico ao anterior (sempre `local`).
-
-**Exceção Python-only, pré-existente e sem relação com o prompt acima:** `pypi` não implementa
-o fluxo de detecção de domínios/probes/ADR-draft de `req new` — `req new` em Python só pede o
-título (prompt simples se omitido) e nunca gera ADR drafts. Gap de paridade documentado, não
-introduzido por esta feature; corrigi-lo exigiria portar o sistema de probes inteiro para
-Python, fora do escopo desta REQ.
 
 #### `adr new <title>`
 

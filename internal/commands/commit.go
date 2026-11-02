@@ -343,7 +343,7 @@ func runCommit(message string, deps commitDeps) error {
 	// (a) main/master: always blocked.
 	if commitProtectedBranches[branch] {
 		msg := fmt.Sprintf(
-			"trackfw commit: commit direto em %q não é permitido. Use 'trackfw branch new <type>/<slug>' primeiro. Ver CLAUDE.md §1.",
+			"trackfw commit: direct commit on %q is not permitted. Use 'trackfw branch new <type>/<slug>' first.",
 			branch,
 		)
 		fmt.Fprintln(deps.out, msg)
