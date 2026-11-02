@@ -52,7 +52,7 @@ grep -q '^## Prescrições' docs/seguranca/2026-11-02-wave0-primeira-experiencia
 
 ### ML-1A — Mensagens do guard em inglês, sem referência privada (apolo-tf) — AC1, AC2
 **Status:** ⬜ Pendente
-**Files affected:** `internal/guard/gitbranch.go`, `internal/guard/payload.go`, teste novo `internal/guard/messages_test.go`, `internal/commands/commit.go`, `internal/commands/commit_test.go`, `internal/commands/branch_prune.go`, `internal/commands/agents_models.go`, teste novo `internal/commands/no_private_reference_test.go`, `internal/generators/testdata/guard-sh-reference/git-branch-guard.sh` (só linhas `REASON=`, P8), `internal/generators/git_branch_guard_dedup_test.go`
+**Files affected:** `internal/guard/gitbranch.go`, `internal/guard/payload.go`, teste novo `internal/guard/messages_test.go`, `internal/commands/commit.go`, `internal/commands/commit_test.go`, `internal/commands/branch_prune.go`, `internal/commands/agents_models.go`, teste novo `internal/commands/no_private_reference_test.go`, `internal/generators/testdata/guard-sh-reference/git-branch-guard.sh` (só linhas `REASON=` e as sentinelas `_TRACKFW_(TRUNC|NUL|AWK)_REASON=`; P8 ampliado), `internal/generators/git_branch_guard_dedup_test.go`, `internal/generators/guard_parity_helper_test.go` (cópias `c22*Reason` e pin SHA-256 do fixture), `internal/generators/git_branch_guard_stdin_drain_test.go`, `internal/generators/git_branch_guard_test.go`. A Wave 0 não listou esses três testes nem as sentinelas; o primeiro despacho deixou 5 testes de `internal/generators` reprovando e foi completado num segundo.
 **Actions:**
 1. Traduzir as constantes `reason*` e todas as demais mensagens emitidas listadas pela Wave 0, mantendo a orientação.
 2. Remover `Ver CLAUDE.md §1`.
