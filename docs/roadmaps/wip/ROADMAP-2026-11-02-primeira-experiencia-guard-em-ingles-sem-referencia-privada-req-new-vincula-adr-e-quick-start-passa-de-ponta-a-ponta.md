@@ -94,15 +94,20 @@ go test ./internal/commands/ -count=1
 > Dependencies: Wave 1 auditada. O GIF precisa do binário com o AC1 e o AC3.
 
 ### ML-2A — Primeira tela do README, Quick start e `demo.tape` (trackfw_architect) — AC5, AC6
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — 2026-11-02, pelo arquiteto.
+- **README:** a primeira tela tem três pontos, o GIF e o Quick start com a mesma sequência de `TestQuickStartEndToEnd`; a ressalva do Windows virou uma linha com link. O antigo Quick start virou "Quick start, continued" (`status`, `ship`, `serve`). A seção "Demo" antiga, com a transcrição de um assistente de junho, foi removida.
+- **Afirmações ajustadas ao produto:** o guard bloqueia `git commit`/`git push`/criação de branch brutos e **sinaliza** credenciais (o README diz "detection, not prevention"); nada de "stop leaking".
+- **GIF:** a URL é absoluta (`raw.githubusercontent.com`), para renderizar no PyPI e no npm, que usam o README. O `demo.tape` é portátil (sem caminho da máquina, `HOME` isolado em `mktemp -d`) e o `init` roda fora de câmera. Os assistentes de `adr new` e `req new` são respondidos em cena.
+- **Auditoria visual em quadros extraídos com `ffmpeg`:** REQ criada com `--adr`, `✓ No violations found.`, guard com `exit=2` e mensagem em inglês, e `status` com 1 ADR, 1 REQ e 1 roadmap em `wip`.
+- **Achados ao gravar num terminal real:** AC4b (cursor de identidade em "greek"), corrigido no ML-1C; os textos em português do assistente do `init` e do `req new` ("Escopo dos ADRs desta REQ", "Próximo passo") ficam com a REQ de idioma.
 **Files affected:** `README.md`, `demo.tape`, `docs/demo.gif`
 **Actions:**
 1. Reescrever a primeira tela e o Quick start do README; o Quick start traz a mesma sequência do teste do ML-1B.
 2. Reescrever o `demo.tape` e gerar o `docs/demo.gif` com `vhs` e o binário da branch.
 3. Auditoria visual em quadros extraídos com `ffmpeg`.
 **Acceptance criteria:**
-- [ ] quadros conferidos: guard barrando `git push` com a mensagem em inglês; `validate` sem violação; nenhum `Usage:` e nenhum caminho absoluto
-- [ ] Quick start do README idêntico à sequência do teste
+- [x] quadros conferidos: guard barrando `git push` com a mensagem em inglês; `validate` sem violação; nenhum `Usage:` e nenhum caminho absoluto
+- [x] Quick start do README idêntico à sequência do teste
 
 **Gates da wave:**
 ```bash
