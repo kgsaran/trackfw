@@ -40,7 +40,7 @@ func runIdentityWizard(catalog *integrations.Catalog, home string) (identity.Con
 
 	for {
 		var (
-			identitySelect string
+			identitySelect = defaultIdentitySelection()
 			userNickname   string
 		)
 		customDisplayNames := make([]string, len(knownAgentIDs))
@@ -186,6 +186,15 @@ func identityPresetOptions() []huh.Option[string] {
 		huh.NewOption("Personalizar um a um", "custom"),
 		huh.NewOption("Nomes neutros (padrão)", "neutral"),
 	}
+}
+
+// defaultIdentitySelection returns the initial value for identitySelect inside
+// the wizard loop. Returning "neutral" pre-positions the huh cursor on the
+// "(padrão)" option so pressing Enter once does not silently apply a named
+// preset (AC4b). Extracted to a function so tests can assert the value without
+// driving a real terminal form.
+func defaultIdentitySelection() string {
+	return "neutral"
 }
 
 // buildCustomIdentityGroup builds the huh group for the "Personalizar um a
