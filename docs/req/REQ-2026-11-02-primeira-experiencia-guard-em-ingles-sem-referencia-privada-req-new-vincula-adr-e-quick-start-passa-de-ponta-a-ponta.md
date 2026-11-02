@@ -67,9 +67,16 @@ O `req new` não vincula o ADR recém-criado e não tem um flag para isso
     linha `ADR:`.
   - ADR inexistente ou ambíguo dá erro, com saída diferente de zero e sem arquivo criado.
   - Sem o flag, o comportamento atual não muda.
-- [ ] **AC3b — `req new` não sobrescreve** (T6 da Wave 0, medido em 2026-11-02). Com uma REQ de mesmo
-  nome já existente, o comando recusa, com saída diferente de zero e o arquivo intacto byte a byte.
-  Hoje ele sobrescreve sem aviso e sai 0.
+- [ ] **AC3b — `req new` não reescreve uma REQ existente** (T6 da Wave 0, medido em 2026-11-02: hoje a
+  segunda execução com o mesmo título reescreve a REQ do zero, apaga as edições e sai 0).
+  - Com a REQ já existente, o arquivo fica intacto byte a byte. O comando avisa que a REQ foi mantida e
+    **continua** o reparo idempotente do vínculo com o roadmap (contrato do ML-4A,
+    `req_chain_ml4a_test.go`), saindo 0.
+  - Se vier `--adr` e a REQ existente não tiver esse ADR vinculado, o comando recusa, sai diferente de
+    zero e não altera nada: vincular exigiria editar o arquivo.
+  - Decisão do arquiteto em 2026-11-02, na auditoria do ML-1B. As alternativas eram exigir a remoção
+    da REQ antes de rodar de novo, o que ensina a perder dado, ou recusar só no CLI, o que deixa a API
+    com o defeito.
 - [ ] **AC4 — Quick start de ponta a ponta.** Um teste Go num `t.TempDir()` roda a sequência do Quick
   start do README, já com `--adr`, e o `trackfw validate` termina com **0 violações**. O Quick start do
   README e esse teste trazem a mesma sequência de comandos.

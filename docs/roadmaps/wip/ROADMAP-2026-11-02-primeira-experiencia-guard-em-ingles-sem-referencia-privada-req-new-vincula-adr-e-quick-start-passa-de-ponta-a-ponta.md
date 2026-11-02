@@ -62,15 +62,15 @@ grep -q '^## Prescrições' docs/seguranca/2026-11-02-wave0-primeira-experiencia
 - [x] contra-braço do AC2 medido, restaurado e conferido com `cmp`
 
 ### ML-1B — `req new --adr` e Quick start de ponta a ponta (apolo-tf) — AC3, AC4
-**Status:** ⬜ Pendente
-**Files affected:** `internal/commands/req.go`, `internal/commands/req_test.go`, `internal/generators/req.go`, os testes de `internal/generators/` para `req.go`, teste novo `internal/commands/quickstart_e2e_test.go`, `docs/cli-parity.md`
+**Status:** ✅ Concluído — auditado em 2026-11-02. O `--adr` valida antes de qualquer escrita (P5), resolve por nome exato via `ResolveADRFiles` (P6) e grava no `adr:` e no `ADR:`. Na auditoria, o primeiro guard de sobrescrita (recusar com erro) quebrou o contrato de idempotência do ML-4A. O arquiteto decidiu: REQ existente fica intacta, o vínculo é reparado linha a linha e o comando sai 0; com `--adr` diferente, recusa. O AC3b foi reescrito com essa decisão. Os testes foram conferidos por nome em `-v`: 19 PASS, incluindo os dois do ML-4A sem mudança de asserção. Contra-braços: voltar à reescrita do template reprova 5 braços; sem `--adr`, o Quick start reprova pela `req_has_adr`. O comentário desatualizado em `req_chain_ml4a.go` foi corrigido pelo arquiteto (só comentário). Residuais: CRLF normalizado quando o reparo escreve; o assistente interativo só descobre a REQ existente depois dos formulários; nome de ADR com espaço passa no `--adr`, mas a regra lê só o primeiro token.
+**Files affected:** `internal/commands/req.go`, `internal/commands/req_test.go`, `internal/generators/req.go`, `internal/generators/req_chain_ml4a.go` (comentário), `internal/commands/req_chain_ml4a_test.go` (comentário), teste novo `internal/commands/quickstart_e2e_test.go`, `docs/cli-parity.md`
 **Actions:**
 1. Flag `--adr`, resolvido por `ResolveADRFiles`. Grava o `adr:` do frontmatter e a linha `ADR:`; ADR inexistente ou ambíguo dá erro sem criar arquivo.
 2. Teste de ponta a ponta do Quick start em `t.TempDir()`, com `validate` terminando em 0 violações.
 3. T6 da Wave 0: `req new` com REQ de mesmo nome já existente recusa, com saída diferente de zero e o arquivo intacto. Hoje ele sobrescreve sem aviso.
 **Acceptance criteria:**
-- [ ] `go test ./internal/commands/ -count=1` verde
-- [ ] contra-braço: sem o vínculo, o teste de ponta a ponta reprova
+- [x] `go test ./internal/commands/ -count=1` verde
+- [x] contra-braço: sem o vínculo, o teste de ponta a ponta reprova
 
 **Gates da wave:**
 ```bash
