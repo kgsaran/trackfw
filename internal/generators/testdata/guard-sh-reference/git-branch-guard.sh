@@ -145,7 +145,7 @@ done
 #       NÃO-vazio e ERRADO (um prefixo que não casa com "git push") -- que é mais perigoso que o
 #       vazio, porque desliga a isenção sem completar a informação.
 if [ "$_TRACKFW_STDIN_TRUNCATED" -eq 1 ] && [ "$#" -eq 0 ]; then
-  _TRACKFW_TRUNC_REASON='trackfw git-branch-guard: RECUSADO — o comando nao pode ser lido por inteiro do stdin (nenhum byte chegou em 2s de espera ociosa) e nao ha comando em argv. O guard recusa em vez de aprovar um comando que nao conseguiu ler. Reenvie o comando, ou use trackfw ship / trackfw branch new.'
+  _TRACKFW_TRUNC_REASON='trackfw git-branch-guard: read timeout — the command could not be fully read from stdin (no byte arrived within the 2s idle window) and no --command flag was provided. The guard denies rather than approve a command it could not read. Resend the command, or use `trackfw ship` / `trackfw branch new`.'
   printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$_TRACKFW_TRUNC_REASON"
   printf '%s\n' "$_TRACKFW_TRUNC_REASON" >&2
   exit 2
@@ -164,7 +164,7 @@ else
         # D2-bis (jq): NUL em valor decodificado falha aberto via $(); verificar antes da extração
         _TRACKFW_JQ_NUL=$(printf '%s' "$INPUT" | jq -r '(.tool_input.command // .command // .tool_info.command_line // .hook_input.command // empty) | if type == "string" then (explode | any(. == 0) | if . then "nul" else "ok" end) else "ok" end' 2>/dev/null || echo ok)
         if [ "$_TRACKFW_JQ_NUL" = "nul" ]; then
-          _TRACKFW_NUL_REASON='trackfw git-branch-guard: RECUSADO — o comando contem NUL (\u0000) e nao pode ser interpretado com seguranca pelo shell. O guard recusa em vez de executar um comando corrompido.'
+          _TRACKFW_NUL_REASON='trackfw git-branch-guard: NUL byte detected — the command contains NUL (\u0000) and cannot be safely interpreted by the shell. The guard denies rather than execute a corrupted command.'
           printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$_TRACKFW_NUL_REASON"
           printf '%s\n' "$_TRACKFW_NUL_REASON" >&2
           exit 2
@@ -264,7 +264,7 @@ END{
 }
         ') || _TRACKFW_AWK_RC=$?
         if [ "$_TRACKFW_AWK_RC" -eq 2 ]; then
-          _TRACKFW_AWK_REASON='trackfw git-branch-guard: RECUSADO — o extrator JSON (sem jq) encontrou erro ao decodificar o campo de comando: string nao terminada, escape invalido ou NUL. O guard recusa em vez de aprovar um payload que nao pode ser lido com seguranca.'
+          _TRACKFW_AWK_REASON='trackfw git-branch-guard: JSON decode error — the JSON extractor (without jq) failed to decode the command field: unterminated string, invalid escape or NUL. The guard denies rather than approve a payload it cannot safely read.'
           printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$_TRACKFW_AWK_REASON"
           printf '%s\n' "$_TRACKFW_AWK_REASON" >&2
           exit 2
@@ -752,49 +752,49 @@ SUBCOMMAND=$(match_subcommand "$CMD_RAW") || exit 0
 
 case "$SUBCOMMAND" in
   checkout-b)
-    REASON="trackfw: git checkout -b bruto bloqueado. Use \`trackfw branch new <type>/<slug>\`. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+    REASON="trackfw: raw git checkout -b blocked. Use \`trackfw branch new <type>/<slug>\`. Nothing before this command was executed (a compound command is blocked as a whole)."
     ;;
   switch-c)
-    REASON="trackfw: git switch -c bruto bloqueado. Use \`trackfw branch new <type>/<slug>\`. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+    REASON="trackfw: raw git switch -c blocked. Use \`trackfw branch new <type>/<slug>\`. Nothing before this command was executed (a compound command is blocked as a whole)."
     ;;
   branch-create)
-    REASON="trackfw: git branch bruto bloqueado. Use \`trackfw branch new <type>/<slug>\`. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+    REASON="trackfw: raw git branch blocked. Use \`trackfw branch new <type>/<slug>\`. Nothing before this command was executed (a compound command is blocked as a whole)."
     ;;
   worktree-add-b)
-    REASON="trackfw: git worktree add -b bruto bloqueado. Use \`trackfw branch new <type>/<slug>\`. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+    REASON="trackfw: raw git worktree add -b blocked. Use \`trackfw branch new <type>/<slug>\`. Nothing before this command was executed (a compound command is blocked as a whole)."
     ;;
   commit)
-    REASON="trackfw: git commit bruto bloqueado. Use \`trackfw commit -m '<mensagem>'\`. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+    REASON="trackfw: raw git commit blocked. Use \`trackfw commit -m '<message>'\`. Nothing before this command was executed (a compound command is blocked as a whole)."
     ;;
   push-delete)
-    REASON="trackfw: git push bruto de remoção de branch bloqueado. Use \`trackfw branch prune --remote --apply\` para apagar no origin apenas a branch integrada por PR mergeado, condicionada ao tip avaliado. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+    REASON="trackfw: raw git push branch deletion blocked. Use \`trackfw branch prune --remote --apply\` to delete from origin only the branch integrated by merged PR, conditional on the evaluated tip. Nothing before this command was executed (a compound command is blocked as a whole)."
     ;;
   push)
-    REASON="trackfw: git push bruto bloqueado. Use \`trackfw push\` (para empurrar commits já criados), \`trackfw ship\` (para commit+push+PR em uma etapa) ou \`trackfw release tag\` (para publicar uma tag de release). Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+    REASON="trackfw: raw git push blocked. Use \`trackfw push\` (push existing commits), \`trackfw ship\` (commit + push + PR in one step) or \`trackfw release tag\` (publish a release tag). Nothing before this command was executed (a compound command is blocked as a whole)."
     ;;
   stash)
-    REASON="trackfw: git stash bruto bloqueado — worktree compartilhado entre subagentes, um stash remove as alterações não commitadas de todos os outros. \`git stash list\`/\`git stash show\` seguem liberados; para guardar trabalho em progresso, use uma branch própria via \`trackfw branch new\` e commit nela. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+    REASON="trackfw: raw git stash blocked — shared worktree across subagents: a stash removes uncommitted changes for everyone. \`git stash list\`/\`git stash show\` are still allowed; to save work in progress, use a dedicated branch via \`trackfw branch new\` and commit there. Nothing before this command was executed (a compound command is blocked as a whole)."
     ;;
   reset-hard)
-    REASON="trackfw: git reset --hard bruto bloqueado — descarta de forma irreversível as alterações não commitadas de todo o worktree compartilhado. \`git reset --soft\`/\`--mixed\` seguem liberados (ex.: \`git reset --soft HEAD~1\` é o caminho padrão; use \`trackfw ship -m "..."\` para commitar e empurrar). Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+    REASON="trackfw: raw git reset --hard blocked — irreversibly discards all uncommitted changes in the shared worktree. \`git reset --soft\`/\`--mixed\` are still allowed (e.g. \`git reset --soft HEAD~1\` is the standard path; use \`trackfw ship -m "..."\` to commit and push). Nothing before this command was executed (a compound command is blocked as a whole)."
     ;;
   clean-force)
-    REASON="trackfw: git clean -f/-x bruto bloqueado — apaga arquivos não rastreados do worktree compartilhado, de forma irreversível. \`git clean -n\`/\`--dry-run\` segue liberado para revisar antes o que seria apagado. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+    REASON="trackfw: raw git clean -f/-x blocked — irreversibly deletes untracked files from the shared worktree. \`git clean -n\`/\`--dry-run\` is still allowed to review what would be deleted first. Nothing before this command was executed (a compound command is blocked as a whole)."
     ;;
   restore-path)
-    REASON="trackfw: git restore <path> bruto bloqueado — descarta de forma irreversível as alterações não commitadas do caminho indicado. \`git restore --staged\` (não toca o working tree) segue liberado; para descartar de fato, confirme antes com o usuário. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+    REASON="trackfw: raw git restore <path> blocked — irreversibly discards uncommitted changes at the given path. \`git restore --staged\` (does not touch the working tree) is still allowed; to actually discard, confirm with the user first. Nothing before this command was executed (a compound command is blocked as a whole)."
     ;;
   checkout-path)
-    REASON="trackfw: git checkout -- <path>/git checkout . bruto bloqueado — descarta de forma irreversível as alterações não commitadas do caminho indicado. \`git checkout <branch>\`/\`git switch <branch>\` seguem liberados; para descartar de fato, confirme antes com o usuário. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+    REASON="trackfw: raw git checkout -- <path>/git checkout . blocked — irreversibly discards uncommitted changes at the given path. \`git checkout <branch>\`/\`git switch <branch>\` are still allowed; to actually discard, confirm with the user first. Nothing before this command was executed (a compound command is blocked as a whole)."
     ;;
   update-ref)
-    REASON="trackfw: git update-ref bruto bloqueado — reescreve um ref (inclusive refs/remotes/origin/*) sem tocar o objeto apontado nem exigir push, o que permite forjar o commit-alvo que \`trackfw release tag\` publicaria. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+    REASON="trackfw: raw git update-ref blocked — rewrites a ref (including refs/remotes/origin/*) without touching the pointed object or requiring a push, which allows forging the commit target that \`trackfw release tag\` would publish. Nothing before this command was executed (a compound command is blocked as a whole)."
     ;;
   worktree-remove-force)
-    REASON="trackfw: git worktree remove -f/--force bruto bloqueado — remove um worktree e descarta de forma irreversível qualquer alteração não commitada nele. \`git worktree remove\` sem force segue liberado (recusa sozinho quando há algo não commitado). Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+    REASON="trackfw: raw git worktree remove -f/--force blocked — removes a worktree and irreversibly discards any uncommitted changes in it. \`git worktree remove\` without force is still allowed (it refuses on its own when there are uncommitted changes). Nothing before this command was executed (a compound command is blocked as a whole)."
     ;;
   rm-force)
-    REASON="trackfw: git rm -f/--force bruto bloqueado — apaga arquivos do working tree e do index de forma irreversível, mesma classe de \`git clean -f\`/\`git reset --hard\` já bloqueados. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+    REASON="trackfw: raw git rm -f/--force blocked — irreversibly removes files from the working tree and index, same class as \`git clean -f\`/\`git reset --hard\` already blocked. Nothing before this command was executed (a compound command is blocked as a whole)."
     ;;
   *)
     exit 0

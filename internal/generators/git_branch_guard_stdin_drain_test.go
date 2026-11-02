@@ -195,7 +195,7 @@ func TestGitBranchGuard_StdinTruncatedInsideProject_RefusesVisibly(t *testing.T)
 	if !strings.Contains(stdout, `"permissionDecision":"deny"`) {
 		t.Fatalf("recusa não é visível no stdout (schema PreToolUse ausente): %s", stdout)
 	}
-	if !strings.Contains(stderr, "nao pode ser lido por inteiro") {
+	if !strings.Contains(stderr, "could not be fully read from stdin") {
 		t.Fatalf("stderr não nomeia o motivo da recusa: %s", stderr)
 	}
 }
@@ -272,7 +272,7 @@ func TestGitBranchGuard_StdinDrain_SlowTricklingWriter_IsReadInFull(t *testing.T
 	if rc != 2 {
 		t.Fatalf("guard rc=%d, esperava 2 (payload entregue em pedaços lentos deve ser lido inteiro); stdout=%q stderr=%q", rc, stdout, stderr)
 	}
-	if strings.Contains(stderr, "nao pode ser lido por inteiro") {
+	if strings.Contains(stderr, "could not be fully read from stdin") {
 		t.Fatalf("guard tratou escritor LENTO como truncado — o orçamento ainda é total: %s", stderr)
 	}
 }

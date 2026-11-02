@@ -273,8 +273,8 @@ func TestGitBranchGuard_Commit_StdinJSON_ToolInputCommand_Blocks(t *testing.T) {
 	if !strings.Contains(stdout, "trackfw commit") {
 		t.Errorf("mensagem deveria orientar para 'trackfw commit', got: %s", stdout)
 	}
-	if !strings.Contains(stderr, "CLAUDE.md") {
-		t.Errorf("mensagem deveria referenciar CLAUDE.md, got: %s", stderr)
+	if !strings.Contains(stderr, "trackfw commit -m") {
+		t.Errorf("mensagem deveria orientar para 'trackfw commit -m', got: %s", stderr)
 	}
 }
 

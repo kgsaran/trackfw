@@ -47,7 +47,7 @@ func TestCommit_Main_Blocks(t *testing.T) {
 	if len(*calls) != 0 {
 		t.Fatalf("git commit must not run on main, got calls: %v", *calls)
 	}
-	if !strings.Contains(out.String(), "commit direto em \"main\" não é permitido") {
+	if !strings.Contains(out.String(), "direct commit on \"main\" is not permitted") {
 		t.Fatalf("expected blocking message, got: %q", out.String())
 	}
 }
@@ -61,7 +61,7 @@ func TestCommit_Master_Blocks(t *testing.T) {
 	if len(*calls) != 0 {
 		t.Fatalf("git commit must not run on master, got calls: %v", *calls)
 	}
-	if !strings.Contains(out.String(), "commit direto em \"master\" não é permitido") {
+	if !strings.Contains(out.String(), "direct commit on \"master\" is not permitted") {
 		t.Fatalf("expected blocking message, got: %q", out.String())
 	}
 }

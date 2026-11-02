@@ -332,9 +332,9 @@ func newBranchPruneCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "prune",
 		Short: "Report (and, with --apply, delete) local branches already integrated into origin/main",
-		Long: `trackfw branch prune automates the "one active branch at a time" check documented in
-CLAUDE.md §1 — it does not remove human judgment from every case: a branch whose only remaining
-divergence is doc/config files is flagged for manual review, never deleted automatically.
+		Long: `trackfw branch prune automates the one-active-branch-at-a-time check — it does not
+remove human judgment from every case: a branch whose only remaining divergence is doc/config
+files is flagged for manual review, never deleted automatically.
 
 A best-effort 'git fetch origin --prune' runs first. Failure (offline, no remote) is non-blocking:
 a warning is printed and evaluation proceeds against the local origin/main ref, whatever its
