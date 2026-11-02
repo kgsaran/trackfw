@@ -1,12 +1,12 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-09-26
 author: "trackfw_architect"
 ---
 
 # ADR: precisão do vínculo branch↔roadmap — escrever em vez de inferir
 
-> Date: 2026-09-26 | Status: Proposed
+> Date: 2026-09-26 | Status: Accepted
 
 REQ: `docs/req/REQ-2026-09-09-req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos-e-o-segundo-se-esquece.md` (AC11)
 Origem: **#273** (consumidor externo, com medição) · REQ-2026-08-20, absorvida em 2026-09-12
@@ -237,3 +237,12 @@ de todo arquivo do acervo** — 175 de 201 crus contra **16** com o prefixo remo
 remoção **posicional** (prefixo + data ISO + extensão), **nunca lista negra**: o token `req` do mesmo
 par é **título** e tem de sobreviver.
 
+## Aceite — 2026-11-01
+
+**Quem aceita:** `trackfw_architect`, ao auditar a governança.
+
+- **Por que agora:** a REQ que exige este ADR (`REQ-2026-09-09-…`, AC11 a AC15) está `Done`, com todos os critérios marcados.
+- **O que está em vigor:**
+  - **Etapa 1 da D4, aditiva:** `MatchRoadmapsForBranchSlug` em `internal/validator/validator.go` aceita substring ou sobreposição de ≥2 tokens, e recusa o slug vazio.
+  - **D1:** vínculo escrito em `<roadmap_dir>/.trackfw-branch-links.json`.
+- **O que não está em vigor:** a **etapa 2 (restritiva) não foi executada**. O braço de substring continua aceitando, por exemplo, o `fix/roadmap` contra a maior parte do acervo. Executar a etapa 2 exige a calibração e o gate da D5, e é uma mudança de comportamento que precisa de REQ própria. Até lá, o aceite cobre a decisão e a etapa 1, não a 2.

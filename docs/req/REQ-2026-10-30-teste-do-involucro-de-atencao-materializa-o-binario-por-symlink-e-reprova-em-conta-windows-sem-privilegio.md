@@ -39,12 +39,12 @@ legitimamente sem privilégio.
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — o teste não usa symlink para pôr o binário no PATH do filho (diretório do binário
+- [x] **AC1** — o teste não usa symlink para pôr o binário no PATH do filho (diretório do binário
       compilado no PATH, ou cópia com `filepath.Base` do binário, que preserva o `.exe`).
-- [ ] **AC2** — o PATH do filho continua sem `jq` (o teste ainda afirma o modo sem jq).
-- [ ] **AC3** — falta do binário no PATH do filho reprova no setup com mensagem que nomeia a causa,
+- [x] **AC2** — o PATH do filho continua sem `jq` (o teste ainda afirma o modo sem jq).
+- [x] **AC3** — falta do binário no PATH do filho reprova no setup com mensagem que nomeia a causa,
       não duas asserções depois.
-- [ ] **AC4** — medido numa conta Windows sem privilégio de symlink (VM), antes e depois; se a conta
+- [x] **AC4** — medido numa conta Windows sem privilégio de symlink (VM), antes e depois; se a conta
       tiver o privilégio, isso fica escrito e a prova é o teste sem symlink mais o contra-braço.
 
 ## Negative Scope

@@ -1,3 +1,9 @@
+---
+status: Accepted
+date: 2026-06-13
+author: "Zeus (Principal Software Architect)"
+---
+
 # ADR-001 — trackfw como trilho de governança para desenvolvimento orquestrado por agentes de IA
 
 **Status:** Accepted  

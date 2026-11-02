@@ -44,16 +44,16 @@ ADR-2026-10-30: nova fonte `git ls-remote --symref origin HEAD` entre o symref l
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — `TestBranchNew_DryRunFetchesMasterDefault` reproduz o comportamento anterior à 2.48 em
+- [x] **AC1** — `TestBranchNew_DryRunFetchesMasterDefault` reproduz o comportamento anterior à 2.48 em
       qualquer git (`git config remote.origin.followRemoteHEAD never` no fixture) e passa; o comentário
       "after fetch, origin/HEAD is updated" deixa de afirmar a premissa.
-- [ ] **AC2** — contra-braço: com a fonte nova removida, o AC1 reprova no git 2.54 desta máquina.
-- [ ] **AC3** — teste equivalente para o `branch prune` num repositório `master` sem symref.
-- [ ] **AC4** — testes unitários do parse: aceita só `ref: refs/heads/<nome>\tHEAD`; saída vazia, erro
+- [x] **AC2** — contra-braço: com a fonte nova removida, o AC1 reprova no git 2.54 desta máquina.
+- [x] **AC3** — teste equivalente para o `branch prune` num repositório `master` sem symref.
+- [x] **AC4** — testes unitários do parse: aceita só `ref: refs/heads/<nome>\tHEAD`; saída vazia, erro
       e formato estranho caem no literal; a fonte nova devolve `fromForge=false`.
-- [ ] **AC5** — `ship` e `defaultBaseBranch` medidos num repositório `master` sem symref; se o resultado
+- [x] **AC5** — `ship` e `defaultBaseBranch` medidos num repositório `master` sem symref; se o resultado
       estiver errado, corrigidos pela mesma fonte (mesma causa); se não, a medição fica escrita aqui.
-- [ ] **AC6** — `go test ./internal/commands/ -count=1` verde (os fakes de `gitExec` dos testes
+- [x] **AC6** — `go test ./internal/commands/ -count=1` verde (os fakes de `gitExec` dos testes
       existentes não podem passar a resolver errado com a chamada nova).
 
 ## Negative Scope
