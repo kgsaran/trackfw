@@ -225,8 +225,8 @@ func TestRunReqNew_RerunAfterPromotionDoesNotDuplicateAndPreservesEdits(t *testi
 	if !strings.Contains(string(body), handWritten) {
 		t.Errorf("o ML escrito à mão foi destruído pela reexecução:\n%s", body)
 	}
-	// E a REQ, que `req new` reescreveu do zero na 2a rodada, volta a apontar para o roadmap
-	// promovido — o guard não pode trocar "roadmap duplicado" por "REQ órfã".
+	// E a REQ, que a 2a rodada manteve intacta (AC3b: sem reescrita de arquivo existente), continua
+	// apontando para o roadmap promovido — o guard não pode trocar "roadmap duplicado" por "REQ órfã".
 	reqPath := onlyREQML4A(t)
 	if reqHasRoadmapNames(t, filepath.Base(reqPath)) {
 		data, _ := os.ReadFile(reqPath)

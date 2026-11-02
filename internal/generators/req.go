@@ -22,6 +22,11 @@ type REQContent struct {
 	LinkedADR     string
 	LinkedRoadmap string
 	DependsOnADRs []string // basenames de ADRs Draft vinculados
+	// FrontmatterADR é o path portável do ADR a ser gravado em adr: do frontmatter E na linha
+	// ADR: do corpo. Quando vazio, o frontmatter grava adr: "" e o corpo grava ADR: (ambos vazios).
+	// Definido pelo flag --adr de `req new`, após resolução por ResolveADRFiles + P4.
+	// O campo LinkedADR é preservado para compatibilidade com o fluxo interativo (probe wizard).
+	FrontmatterADR string
 	// Agent é o namespace de agente em modo by_agent. Quando vazio, a resolução usa
 	// ResolveWriteAgent: um único namespace → usa aquele; vários → retorna erro.
 	Agent string
@@ -97,9 +102,21 @@ func NewREQWithResult(content REQContent) (REQResult, error) {
 		criteriaSection = content.Criteria
 	}
 
+	// FrontmatterADR takes precedence over LinkedADR for the frontmatter field.
+	// When FrontmatterADR is set (from --adr flag), it also populates the body ADR: line.
 	linkedADRSection := ""
-	if content.LinkedADR != "" {
+	if content.FrontmatterADR != "" {
+		linkedADRSection = content.FrontmatterADR
+	} else if content.LinkedADR != "" {
 		linkedADRSection = content.LinkedADR
+	}
+
+	// frontmatterADRValue is the quoted value for the adr: YAML field.
+	// Empty → adr: "" (two quotes, extractRefPath skips but does not early-return).
+	// Set   → adr: "<path>" so req_has_adr finds it on the first line it scans.
+	frontmatterADRValue := `""`
+	if content.FrontmatterADR != "" {
+		frontmatterADRValue = `"` + content.FrontmatterADR + `"`
 	}
 
 	linkedRoadmapSection := ""
@@ -132,7 +149,7 @@ func NewREQWithResult(content REQContent) (REQResult, error) {
 status: Open
 date: %s
 author: ""
-adr: ""
+adr: %s
 roadmap: ""
 ---
 
@@ -156,7 +173,33 @@ ADR: %s
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
 Roadmap: %s
-`, date, content.Title, statusLine, motivationSection, criteriaSection, linkedADRSection, blockedSection, linkedRoadmapSection)
+`, date, frontmatterADRValue, content.Title, statusLine, motivationSection, criteriaSection, linkedADRSection, blockedSection, linkedRoadmapSection)
+
+	// AC3b: if the REQ file already exists, keep it intact and continue with roadmap repair.
+	// Silent overwrite was the defect measured in Wave 0 T6 (binary 11.2.5). Contract:
+	//   (a) No --adr, or --adr matching existing adr: → stderr warning, return REQResult, exit 0.
+	//   (b) --adr that differs from existing adr: → refuse (editing an existing REQ is outside
+	//       the scope of req new; the link would require modifying the file).
+	if _, statErr := os.Stat(filename); statErr == nil {
+		// Leaf guard before reading the existing file (same containment guarantee as the write path).
+		absExisting := filepath.Join(reqRoot, filename)
+		if guardErr := pathguard.RejectAndReport(reqRoot, absExisting); guardErr != nil {
+			return REQResult{}, guardErr
+		}
+		if content.FrontmatterADR != "" {
+			existingBytes, readErr := os.ReadFile(filename)
+			if readErr == nil {
+				existingADR := extractFrontmatterADR(string(existingBytes))
+				if existingADR != content.FrontmatterADR {
+					return REQResult{}, fmt.Errorf(
+						"REQ %s already exists and the --adr link was not applied (existing adr: %q, requested: %q — use a different title or remove the existing file)",
+						filename, existingADR, content.FrontmatterADR)
+				}
+			}
+		}
+		fmt.Fprintf(os.Stderr, "REQ %s already exists — kept as is (not rewritten)\n", filename)
+		return REQResult{Path: filename, Agent: agent}, nil
+	}
 
 	// Leaf guard: the directory guard above covered the ancestor chain up to
 	// reqDir; now guard the exact file so a symlink leaf pointing outside root
@@ -509,6 +552,36 @@ func appendREQTransitionLog(basename, fromState, toState string) {
 	// `return pathguard.RefuseUnverifiableRoot(...)` instead of a discarded call
 	// whose error nothing consumes.
 	_ = appendREQTransitionLogEntry(basename, fromState, toState)
+}
+
+// extractFrontmatterADR extracts the value of the adr: field from a REQ's YAML frontmatter.
+// Returns an empty string when the field is absent, empty, or outside the frontmatter block.
+// Strips leading/trailing single and double quotes — same handling as extractFrontmatterRoadmap
+// in roadmap.go, which this function mirrors for the adr: key.
+func extractFrontmatterADR(content string) string {
+	lines := strings.Split(content, "\n")
+	inFM := false
+	fmCount := 0
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "---" {
+			fmCount++
+			if fmCount == 1 {
+				inFM = true
+				continue
+			}
+			break
+		}
+		if !inFM {
+			break
+		}
+		k, v, ok := strings.Cut(line, ":")
+		if ok && strings.EqualFold(strings.TrimSpace(k), "adr") {
+			val := strings.TrimSpace(v)
+			return strings.Trim(val, `"'`)
+		}
+	}
+	return ""
 }
 
 // appendREQTransitionLogEntry writes one transition line to cfg.REQDir/.trackfw-log-entries/,
