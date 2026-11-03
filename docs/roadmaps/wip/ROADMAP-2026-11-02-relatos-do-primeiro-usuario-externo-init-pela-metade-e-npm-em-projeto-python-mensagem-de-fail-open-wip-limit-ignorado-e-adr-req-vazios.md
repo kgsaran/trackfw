@@ -73,11 +73,17 @@ grep -q '^## Prescrições' docs/seguranca/2026-11-02-wave0-relatos-primeiro-usu
 - [x] contra-braço por AC
 
 ### ML-1B — Init: pré-checagem do destino, `--scope`, pkg_manager detectado (apolo-tf) — AC3, AC4
-**Status:** ⬜ Pendente
-**Files affected:** `internal/commands/init.go`, `internal/commands/init_test.go`, `internal/commands/quickstart_e2e_test.go` (conjunto exato de avisos `adr_req_has_content`), `scripts/check-validate-rule-pins.sh` (regra nova no pin de regras)
+**Status:** ✅ Concluído — auditado em 2026-11-02, em três despachos.
+- **Primeiro:** `init --scope`, pré-checagem dos destinos antes do `Scaffold` nos dois caminhos e `pkg_manager` por `package.json`. O `TestQuickStartEndToEnd` passou a exigir o conjunto exato de dois avisos `adr_req_has_content`, e o BLOCK 7 entrou no `check-validate-rule-pins.sh` (38 pins).
+- **Segundo, correção da auditoria:** a cópia `preCheckAgentFiles` foi trocada pelo acessor `generators.AgentFilePath`, e a dica `--scope project` passou a sair só na recusa.
+- **Terceiro:** `pathguard.IsRefusal` (tipo `refusalError` e `errors.As`) no lugar do prefixo da mensagem, com as mensagens idênticas byte a byte. Comentários com número de linha velho foram trocados pelo nome do fixture.
+- **Contra-braços:** `npm` fixo, chamada da pré-checagem removida, validação do escopo removida, dica sempre ligada e recusa sem o tipo. Todos reprovam.
+- **Testes com PATH sem trackfw:** `commands`, `validator`, `generators`, `integrations` e `pathguard` verdes.
+- **Desvio de processo:** o executor do primeiro despacho editou o status do roadmap, o que era proibido; o arquiteto sobrescreveu.
+**Files affected:** `internal/commands/init.go`, `internal/commands/init_test.go`, `internal/commands/quickstart_e2e_test.go` (conjunto exato de avisos `adr_req_has_content`), `scripts/check-validate-rule-pins.sh` (regra nova no pin de regras), `internal/generators/agentfiles.go`, `internal/generators/agentfiles_test.go`, `internal/pathguard/pathguard.go`, `internal/pathguard/pathguard_test.go`, `scripts/check-interpolated-path-in-python.sh` (comentário), `scripts/check-gates-falsify.sh` (comentário), `docs/cli-parity.md` (seção do `init --scope`, pelo arquiteto)
 **Acceptance criteria:**
-- [ ] `go test ./internal/commands/ -count=1` verde com PATH sem trackfw
-- [ ] contra-braço por AC
+- [x] `go test ./internal/commands/ -count=1` verde com PATH sem trackfw
+- [x] contra-braço por AC
 
 **Gates da wave:**
 ```bash
