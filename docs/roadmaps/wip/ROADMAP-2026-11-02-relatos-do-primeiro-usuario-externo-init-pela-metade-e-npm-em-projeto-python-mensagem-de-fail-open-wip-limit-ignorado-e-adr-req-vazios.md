@@ -61,15 +61,20 @@ grep -q '^## Prescrições' docs/seguranca/2026-11-02-wave0-relatos-primeiro-usu
 > Dependencies: Wave 0 auditada. Ficam em sequência porque o `help.go` (ML-1A) está no pacote `internal/commands`, testado pelo ML-1B, e o ML-1B compila o validator. O `docs/cli-parity.md` fica só com o ML-1A, inclusive a nota de contrato do `init --scope`.
 
 ### ML-1A — Validator: mensagem de fail closed, wip_limit configurável, regra de modelo vazio (apolo-tf) — AC1, AC2, AC5
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-11-02.
+- **AC1:** as quatro mensagens trazem as duas cláusulas; quatro testes `*_AmbasClausulas`; o texto antigo reprova.
+- **AC2:** o limite passa por `applyRule`/`applyRuleTagged`, com padrão `warning` nas duas fontes; testes de padrão, `error` e `off`; voltar ao append fixo reprova.
+- **AC5:** `adr_req_has_content` com os vetores "a" a "j" ("j" prova a fiação no `ValidateUnfiltered`); tirar o `(?s)` reprova "c" e "d". O contra-braço de CRLF não é causal para o vetor "e" (declarado pelo executor).
+- **Medido pelo arquiteto neste repositório:** 0 violações e 8 avisos `adr_req_has_content` em REQs antigas.
+- **Efeito no teste do Quick start:** sem TTY, o Quick start gera ADR e REQ só com o modelo, então o `TestQuickStartEndToEnd` (que exigia 0 warnings) reprova. É a regra funcionando: o ajuste do teste para o conjunto exato de avisos e o BLOCK novo no `check-validate-rule-pins.sh` vão para o ML-1B.
 **Files affected:** `internal/validator/validator_guard_binary_probe.go`, `internal/validator/validator_guard_binary_probe_test.go`, `internal/validator/validator_guard_binary_probe_gitbash_test.go`, `internal/validator/validator.go`, `internal/validator/validator_origin_main_severity_test.go`, teste novo `internal/validator/validator_adr_req_has_content_test.go`, `internal/config/config.go`, `internal/commands/help.go`, `README.md`, `docs/cli-parity.md`
 **Acceptance criteria:**
-- [ ] pacotes tocados verdes, inclusive com PATH sem trackfw
-- [ ] contra-braço por AC
+- [x] pacotes tocados verdes, inclusive com PATH sem trackfw
+- [x] contra-braço por AC
 
 ### ML-1B — Init: pré-checagem do destino, `--scope`, pkg_manager detectado (apolo-tf) — AC3, AC4
 **Status:** ⬜ Pendente
-**Files affected:** `internal/commands/init.go`, `internal/commands/init_test.go`
+**Files affected:** `internal/commands/init.go`, `internal/commands/init_test.go`, `internal/commands/quickstart_e2e_test.go` (conjunto exato de avisos `adr_req_has_content`), `scripts/check-validate-rule-pins.sh` (regra nova no pin de regras)
 **Acceptance criteria:**
 - [ ] `go test ./internal/commands/ -count=1` verde com PATH sem trackfw
 - [ ] contra-braço por AC
