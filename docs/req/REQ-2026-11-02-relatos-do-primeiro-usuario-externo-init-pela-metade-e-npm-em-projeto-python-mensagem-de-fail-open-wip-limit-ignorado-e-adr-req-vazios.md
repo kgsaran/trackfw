@@ -51,9 +51,18 @@ outros (medido no PR #655 com os arquivos do bump de versão).
 
 ## Acceptance Criteria
 
-- [ ] **AC1 (#658).** As mensagens de binário ausente e de binário sem `guard` dizem que o hook **bloqueia
-  todo comando** (fail closed) e como corrigir. Teste reprova se "fail open" voltar nesses dois casos. As
-  mensagens de política Restricted não mudam.
+- [ ] **AC1 (#658).** As mensagens de binário ausente e de binário sem `guard` (`validator_guard_binary_probe.go`,
+  linhas ~308 e ~321) e as duas equivalentes da sonda do Git Bash (~511 e ~543) deixam de afirmar só
+  "fail open" e passam a dizer, **sempre**, as duas verdades medidas:
+  - na forma atual PowerShell/POSIX, o hook **bloqueia todo comando** (exit 2);
+  - nas formas legadas e nos hooks de família cmd.exe, ele pode deixar o comando passar (fail open).
+
+  Em seguida vem a correção (`install trackfw` / `trackfw update`). Teste afirma as duas cláusulas.
+  - *Emenda do arquiteto em 2026-11-02, na auditoria da Wave 0.* A Wave 0 mostrou que o "fail open" está
+    certo para o D2-legado (o bash sai 127) e não foi medido nos hooks cmd.exe (Kiro e Amazon Q). Ela
+    propôs uma mensagem condicional, com dois booleanos novos no loop de detecção e o cache da sonda
+    ampliado. A mensagem incondicional com as duas cláusulas é exata em qualquer configuração e só muda
+    texto. As mensagens de política Restricted não mudam.
 - [ ] **AC2 (#660).** O limite estourado passa por `applyRule("wip_limit", ...)` e respeita a severidade
   configurada. O padrão muda para `warning`, por decisão do KG, para não passar a bloquear quem já tem mais
   de um roadmap em `wip/`. Com `rules.wip_limit: error`, o `validate` reprova. O README deixa de dizer

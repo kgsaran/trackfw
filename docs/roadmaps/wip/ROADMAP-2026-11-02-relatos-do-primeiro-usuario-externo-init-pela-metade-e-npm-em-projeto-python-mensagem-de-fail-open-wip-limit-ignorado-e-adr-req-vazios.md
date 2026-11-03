@@ -27,7 +27,7 @@ As causas estão medidas e escritas na REQ, uma por AC. A varredura de issues ab
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model (hades-tf)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-11-02. P-3 a P-8 aceitas. O P-1 e o P-2 (mensagem condicional, com `hasCurrentSubcmd`/`hasAnyUnverifiedSubcmd` e cache ampliado) foram trocados pelo arquiteto por uma mensagem incondicional com as duas cláusulas medidas; o AC1 foi emendado. Pelo aviso de compilação da Wave 0, o ML-1A roda antes do ML-1B: o `help.go` é do pacote `internal/commands`, e o ML-1B compila o validator.
 **Files affected:** `docs/seguranca/2026-11-02-wave0-relatos-primeiro-usuario-externo.md`
 **Actions:**
 1. Completude da enumeração, por causa:
@@ -47,9 +47,9 @@ As causas estão medidas e escritas na REQ, uma por AC. A varredura de issues ab
 4. Residual declarado.
 5. `## Prescrições`, incluindo o nome da regra do AC5 e a lista de arquivos de cada ML, sem arquivo em comum entre o ML-1A e o ML-1B.
 **Acceptance criteria:**
-- [ ] As cinco seções respondidas com evidência (comando e resultado)
-- [ ] Prescrições em seção intitulada `Prescrições`
-- [ ] Nenhuma linha de implementação escrita
+- [x] As cinco seções respondidas com evidência (comando e resultado)
+- [x] Prescrições em seção intitulada `Prescrições`
+- [x] Nenhuma linha de implementação escrita
 
 **Gates da wave:**
 ```bash
@@ -57,19 +57,19 @@ test -f docs/seguranca/2026-11-02-wave0-relatos-primeiro-usuario-externo.md
 grep -q '^## Prescrições' docs/seguranca/2026-11-02-wave0-relatos-primeiro-usuario-externo.md
 ```
 
-## Wave 1 — Implementação (2 executores; arquivos definidos pela Wave 0)
-> Dependencies: Wave 0 auditada. O ML-1A cuida do validator e da config (AC1, AC2 e AC5); o ML-1B cuida do `init` (AC3 e AC4). O `docs/cli-parity.md` fica só com o ML-1A, e o texto do ML-1B entra por ele ou pelo arquiteto.
+## Wave 1 — Implementação (sequencial: ML-1A, depois ML-1B)
+> Dependencies: Wave 0 auditada. Ficam em sequência porque o `help.go` (ML-1A) está no pacote `internal/commands`, testado pelo ML-1B, e o ML-1B compila o validator. O `docs/cli-parity.md` fica só com o ML-1A, inclusive a nota de contrato do `init --scope`.
 
 ### ML-1A — Validator: mensagem de fail closed, wip_limit configurável, regra de modelo vazio (apolo-tf) — AC1, AC2, AC5
 **Status:** ⬜ Pendente
-**Files affected:** definidos pela Wave 0.
+**Files affected:** `internal/validator/validator_guard_binary_probe.go`, `internal/validator/validator_guard_binary_probe_test.go`, `internal/validator/validator_guard_binary_probe_gitbash_test.go`, `internal/validator/validator.go`, `internal/validator/validator_origin_main_severity_test.go`, teste novo `internal/validator/validator_adr_req_has_content_test.go`, `internal/config/config.go`, `internal/commands/help.go`, `README.md`, `docs/cli-parity.md`
 **Acceptance criteria:**
 - [ ] pacotes tocados verdes, inclusive com PATH sem trackfw
 - [ ] contra-braço por AC
 
 ### ML-1B — Init: pré-checagem do destino, `--scope`, pkg_manager detectado (apolo-tf) — AC3, AC4
 **Status:** ⬜ Pendente
-**Files affected:** definidos pela Wave 0.
+**Files affected:** `internal/commands/init.go`, `internal/commands/init_test.go`
 **Acceptance criteria:**
 - [ ] `go test ./internal/commands/ -count=1` verde com PATH sem trackfw
 - [ ] contra-braço por AC
