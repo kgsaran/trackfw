@@ -305,9 +305,11 @@ func guardBinaryProbeOnce(hasPSPosixEntry bool) (violations, warnings []string) 
 	bin, err := guardLookupBinary("trackfw")
 	if err != nil {
 		return []string{
-			"trackfw binary not found in PATH — the hook will fail open; " +
-				"install trackfw (make install / pip install -g trackfw / npm install -g trackfw) " +
-				"or ensure it is on PATH",
+			"trackfw binary not found in PATH — " +
+				"in the current PowerShell/POSIX hook form this blocks every command " +
+				"the agent runs through it (exit 2); " +
+				"in legacy hook forms and cmd.exe-family hooks it may let commands through (fail open); " +
+				"install trackfw (make install / npm install -g trackfw) or ensure it is on PATH",
 		}, nil
 	}
 
@@ -318,8 +320,10 @@ func guardBinaryProbeOnce(hasPSPosixEntry bool) (violations, warnings []string) 
 		}
 		return []string{fmt.Sprintf(
 			"the trackfw resolved at %q does not have the guard subcommand — "+
-				"the hook will fail open; update trackfw (make install / "+
-				"pip install --upgrade trackfw / npm install -g trackfw)",
+				"in the current PowerShell/POSIX hook form this blocks every command "+
+				"the agent runs through it (exit 2); "+
+				"in legacy hook forms and cmd.exe-family hooks it may let commands through (fail open); "+
+				"run `trackfw update` to regenerate hook forms or install a newer version",
 			bin,
 		)}, nil
 	}
@@ -508,7 +512,10 @@ func guardGitBashBinaryProbe(windowsResolvedBin string) []string {
 		// Bash ran but trackfw was not found in the Git Bash login PATH.
 		return []string{
 			"the Git Bash login shell (used by Claude Code on Windows to run hooks) " +
-				"cannot find trackfw in its PATH — the hook will fail open (exit 127); " +
+				"cannot find trackfw in its PATH — " +
+				"in the current Git Bash hook form this blocks every command " +
+				"the agent runs through it (exit 2); " +
+				"in legacy hook forms it may let commands through (fail open); " +
 				"install trackfw on a path that the Git Bash login profile resolves " +
 				"(the login profile prepends ~/bin to PATH — add a current trackfw there or " +
 				"ensure the installed binary is on a PATH entry that login inherits)",
@@ -540,8 +547,11 @@ func guardGitBashBinaryProbe(windowsResolvedBin string) []string {
 		}
 		return []string{fmt.Sprintf(
 			"the Git Bash login shell (used by Claude Code on Windows to run hooks) resolves %s, "+
-				"which does not have the guard subcommand — the hook will fail open; "+
-				"remove or update that binary "+
+				"which does not have the guard subcommand — "+
+				"in the current Git Bash hook form this blocks every command "+
+				"the agent runs through it (exit 2); "+
+				"in legacy hook forms it may let commands through (fail open); "+
+				"run `trackfw update` to regenerate hook forms or remove that binary "+
 				"(the Git Bash login profile prepends ~/bin to PATH)",
 			winPath,
 		)}

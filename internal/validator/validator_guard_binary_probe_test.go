@@ -337,6 +337,67 @@ func TestGuardBinaryProbeOnce_BinarioSemGuard_Violation(t *testing.T) {
 	}
 }
 
+// --------------------------------------------------------------------------
+// AC1 — duas cláusulas nas mensagens de binário ausente/sem guard (REQ-2026-11-02 #658)
+// --------------------------------------------------------------------------
+
+// Reconciliação: afirma que a mensagem de binário ausente contém SEMPRE as duas cláusulas:
+// (1) na forma atual PS/POSIX o hook bloqueia todo comando (exit 2);
+// (2) nas formas legadas e cmd.exe-family pode deixar passar (fail open).
+// Contra-braço: restaurar o texto antigo ("the hook will fail open" sem "blocks every command")
+// reprova este teste.
+func TestGuardBinaryProbeOnce_BinarioAusente_AmbasClausulas(t *testing.T) {
+	origLookup := guardLookupBinary
+	guardLookupBinary = func(name string) (string, error) {
+		return "", errors.New("not found")
+	}
+	t.Cleanup(func() { guardLookupBinary = origLookup })
+
+	violations, _ := guardBinaryProbeOnce(false)
+	if len(violations) == 0 {
+		t.Fatal("esperado violation, obteve nenhum")
+	}
+	msg := violations[0]
+	if !strings.Contains(msg, "blocks every command") {
+		t.Errorf("mensagem deve conter 'blocks every command' (exit 2 clause), obteve: %q", msg)
+	}
+	if !strings.Contains(msg, "may let commands through (fail open)") {
+		t.Errorf("mensagem deve conter 'may let commands through (fail open)', obteve: %q", msg)
+	}
+	// Old single-clause phrase must not appear (it implied only one outcome).
+	if strings.Contains(msg, "the hook will fail open") {
+		t.Errorf("mensagem não deve mais dizer somente 'the hook will fail open' (faltava a cláusula de bloqueio), obteve: %q", msg)
+	}
+}
+
+// Reconciliação: afirma que a mensagem de binário sem guard contém SEMPRE as duas cláusulas.
+// Contra-braço: restaurar o texto antigo reprova este teste.
+func TestGuardBinaryProbeOnce_BinarioSemGuard_AmbasClausulas(t *testing.T) {
+	origLookup := guardLookupBinary
+	origRun := guardRunProbe
+	guardLookupBinary = func(name string) (string, error) { return "/usr/local/bin/trackfw", nil }
+	guardRunProbe = func(bin string) error { return errors.New("exit status 2") }
+	t.Cleanup(func() {
+		guardLookupBinary = origLookup
+		guardRunProbe = origRun
+	})
+
+	violations, _ := guardBinaryProbeOnce(false)
+	if len(violations) == 0 {
+		t.Fatal("esperado violation, obteve nenhum")
+	}
+	msg := violations[0]
+	if !strings.Contains(msg, "blocks every command") {
+		t.Errorf("mensagem deve conter 'blocks every command' (exit 2 clause), obteve: %q", msg)
+	}
+	if !strings.Contains(msg, "may let commands through (fail open)") {
+		t.Errorf("mensagem deve conter 'may let commands through (fail open)', obteve: %q", msg)
+	}
+	if strings.Contains(msg, "the hook will fail open") {
+		t.Errorf("mensagem não deve mais dizer somente 'the hook will fail open', obteve: %q", msg)
+	}
+}
+
 // Reconciliação: afirma que, quando o binário existe e tem o guard, guardBinaryProbeOnce
 // retorna 0 violations e 0 warnings (não-Windows, sem PS1).
 func TestGuardBinaryProbeOnce_BinarioComGuard_Ok(t *testing.T) {

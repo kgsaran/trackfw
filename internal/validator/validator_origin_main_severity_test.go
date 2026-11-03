@@ -11,6 +11,7 @@ package validator
 import (
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/kgsaran/trackfw/internal/config"
@@ -543,3 +544,107 @@ var _ = cleanupAnchor
 
 // homeVarForTest is a reference to avoid lint warnings about unused imports.
 var _ = os.Getenv
+
+// --------------------------------------------------------------------------
+// AC2 — wip_limit default é "warning" (REQ-2026-11-02 #660)
+// --------------------------------------------------------------------------
+
+// TestWIPLimit_DefaultWarning_SemConfigRules prova que o default de wip_limit é "warning"
+// em strict mode sem nenhum `rules:` no trackfw.yaml — via diskRuleSeverity que lê
+// cfg.Rules["wip_limit"] definido em config.go defaults().
+// Reconciliação: este teste prova que P-4 foi aplicado nas DUAS fontes (config.go e
+// ruleDefaults): se só ruleDefaults for corrigido, diskRuleSeverity ainda retorna "error".
+func TestWIPLimit_DefaultWarning_SemConfigRules(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir, "main")
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+	t.Cleanup(func() { currentOriginMain = originMainAnchor{} })
+
+	// Strict mode, no rules: key — default applies.
+	writeFile(t, dir, "trackfw.yaml", "governance_mode: strict\n")
+
+	// Call ValidateUnfiltered to populate currentOriginMain (needed for origin-less repos).
+	_, _, err := ValidateUnfiltered()
+	if err != nil {
+		t.Fatalf("ValidateUnfiltered() error: %v", err)
+	}
+
+	got := ruleSeverity("wip_limit")
+	if got != "warning" {
+		t.Errorf("wip_limit default: want \"warning\", got %q — check config.go defaults() and ruleDefaults", got)
+	}
+}
+
+// TestWIPLimit_ErrorConfig_Violation prova que `rules.wip_limit: error` com limite
+// estourado produz violation (não warning) — o fix de AC2 faz os callers passarem o
+// retorno de validateWIPLimit por applyRule/applyRuleTagged em vez de anexar diretamente
+// às warnings; applyRule respeita a severidade configurada.
+// Reconciliação: este teste prova que rules.wip_limit: error é honrado (antes do fix,
+// a chamada a validateWIPLimit ignorava applyRule e a severidade configurada).
+func TestWIPLimit_ErrorConfig_Violation(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir, "main")
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+	t.Cleanup(func() { currentOriginMain = originMainAnchor{} })
+
+	// Create 2 roadmaps in wip/ to exceed the default limit of 1.
+	wipDir := dir + "/docs/roadmaps/wip"
+	if err := os.MkdirAll(wipDir, 0755); err != nil {
+		t.Fatalf("mkdir wip: %v", err)
+	}
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-A.md", "# Roadmap A\n")
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-B.md", "# Roadmap B\n")
+
+	writeFile(t, dir, "trackfw.yaml", "governance_mode: strict\nrules:\n  wip_limit: error\n")
+
+	violations, warnings, err := ValidateUnfiltered()
+	if err != nil {
+		t.Fatalf("ValidateUnfiltered() error: %v", err)
+	}
+
+	// With rules.wip_limit: error, the limit finding must be a VIOLATION not a warning.
+	if !hasViolation(violations, "roadmaps in wip/") {
+		t.Errorf("rules.wip_limit: error must produce violation, violations=%v warnings=%v", violations, warnings)
+	}
+}
+
+// TestWIPLimit_OffConfig_Silences prova que `rules.wip_limit: off` com limite estourado
+// não emite nem violation nem warning — o fix de AC2 permite silenciar corretamente.
+// Reconciliação: este teste prova que rules.wip_limit: off é honrado (antes do fix,
+// wipWarningsLimit era adicionado diretamente a warnings sem passar por applyRule).
+func TestWIPLimit_OffConfig_Silences(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir, "main")
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+	t.Cleanup(func() { currentOriginMain = originMainAnchor{} })
+
+	// Create 2 roadmaps in wip/ to exceed the default limit of 1.
+	wipDir := dir + "/docs/roadmaps/wip"
+	if err := os.MkdirAll(wipDir, 0755); err != nil {
+		t.Fatalf("mkdir wip: %v", err)
+	}
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-A.md", "# Roadmap A\n")
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-B.md", "# Roadmap B\n")
+
+	writeFile(t, dir, "trackfw.yaml", "governance_mode: strict\nrules:\n  wip_limit: off\n")
+
+	violations, warnings, err := ValidateUnfiltered()
+	if err != nil {
+		t.Fatalf("ValidateUnfiltered() error: %v", err)
+	}
+
+	// With rules.wip_limit: off, no wip_limit finding should appear at all.
+	for _, v := range violations {
+		if strings.Contains(v, "roadmaps in wip/") {
+			t.Errorf("rules.wip_limit: off must silence violation, got: %v", v)
+		}
+	}
+	for _, w := range warnings {
+		if strings.Contains(w, "roadmaps in wip/") {
+			t.Errorf("rules.wip_limit: off must silence warning, got: %v", w)
+		}
+	}
+}

@@ -167,9 +167,17 @@ var configDocs = []configKeyDoc{
 	{
 		Key:         "rules.wip_limit",
 		Type:        "off|warning|error",
-		Default:     `"error"`,
-		Description: "Severidade: excesso de itens WIP.",
-		Example:     `rules:\n  wip_limit: warning`,
+		Default:     `"warning"`,
+		Description: "Severidade: excesso de itens WIP. Padrão warning: projetos existentes com mais de um roadmap em wip/ não são bloqueados por padrão. Use error para bloquear o gate.",
+		Example:     `rules:\n  wip_limit: error`,
+		Impact:      "error bloqueia o gate; warning exibe mas não bloqueia; off ignora.",
+	},
+	{
+		Key:         "rules.adr_req_has_content",
+		Type:        "off|warning|error",
+		Default:     `"warning"`,
+		Description: "Severidade: ADR ou REQ cujas seções obrigatórias contêm apenas conteúdo do modelo (comentários HTML, checkboxes em branco, espaços). Verifica ## Context/Decision/Consequences/Alternatives Considered (ADR) e ## Motivation/Acceptance Criteria (REQ). Seções opcionais nunca disparam.",
+		Example:     `rules:\n  adr_req_has_content: off`,
 		Impact:      "error bloqueia o gate; warning exibe mas não bloqueia; off ignora.",
 	},
 	{

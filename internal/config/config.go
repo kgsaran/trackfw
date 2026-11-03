@@ -399,7 +399,7 @@ func defaults() ProjectConfig {
 		Rules: map[string]string{
 			"wip_has_req":                "error",
 			"wip_acceptance":             "error",
-			"wip_limit":                  "error",
+			"wip_limit":                  "warning",
 			"stale_wip":                  "warning",
 			"adr_orphan":                 "warning",
 			"ref_targets_exist":          "error",
