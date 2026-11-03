@@ -120,7 +120,19 @@ func TestQuickStartEndToEnd(t *testing.T) {
 		t.Fatalf("roadmap move wip: %v", err)
 	}
 
-	// Step 5: validate — must pass with 0 violations and 0 warnings.
+	// Determine the REQ basename (REQ-<date>-user-authentication.md).
+	// Same date as adrDate — both files are created during the same test run.
+	reqBasename := "REQ-" + adrDate + "-user-authentication.md"
+
+	// Step 5: validate — must pass with 0 violations and exactly 2 warnings,
+	// both adr_req_has_content: the freshly-created ADR and REQ contain only
+	// model/template content (no user-supplied text yet). Any other warning or
+	// any violation is a regression.
+	//
+	// Rule reconciliation (Regra Dura de Reconciliação): this test affirms that
+	// freshly-scaffolded ADR and REQ files both trigger adr_req_has_content warnings,
+	// one per file, naming the specific file — which is the conclusion from ML-1A
+	// (rule fires on template content, is silent on filled content, names the file).
 	violations, warnings, err := validator.ValidateTagged()
 	if err != nil {
 		t.Fatalf("ValidateTagged error: %v", err)
@@ -133,13 +145,38 @@ func TestQuickStartEndToEnd(t *testing.T) {
 		t.Errorf("expected 0 violations after quick start with --adr, got %d:\n  %s",
 			len(violations), strings.Join(msgs, "\n  "))
 	}
-	if len(warnings) != 0 {
+	// Exactly 2 adr_req_has_content warnings — one naming the ADR, one naming the REQ.
+	// Two warnings for the same file, or a warning for an unexpected file, is a regression.
+	const wantWarnRule = "adr_req_has_content"
+	if len(warnings) != 2 {
 		wmsgs := make([]string, len(warnings))
 		for i, w := range warnings {
 			wmsgs[i] = w.Rule + ": " + w.Msg
 		}
-		t.Errorf("expected 0 warnings after quick start with --adr, got %d:\n  %s",
-			len(warnings), strings.Join(wmsgs, "\n  "))
+		t.Errorf("expected exactly 2 %s warnings (one for ADR, one for REQ), got %d:\n  %s",
+			wantWarnRule, len(warnings), strings.Join(wmsgs, "\n  "))
+	}
+	for _, w := range warnings {
+		if w.Rule != wantWarnRule {
+			t.Errorf("unexpected warning rule %q (want %q): %s", w.Rule, wantWarnRule, w.Msg)
+		}
+	}
+	// Each expected basename must appear in exactly one warning message.
+	for _, basename := range []string{adrBasename, reqBasename} {
+		var hits int
+		for _, w := range warnings {
+			if strings.Contains(w.Msg, basename) {
+				hits++
+			}
+		}
+		if hits != 1 {
+			wmsgs := make([]string, len(warnings))
+			for i, w := range warnings {
+				wmsgs[i] = w.Msg
+			}
+			t.Errorf("expected exactly 1 warning mentioning %q, got %d:\n  %s",
+				basename, hits, strings.Join(wmsgs, "\n  "))
+		}
 	}
 }
 

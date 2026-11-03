@@ -8954,9 +8954,9 @@ fi
 #   Afirma que o gate REPROVA `<<PY` (delimitador NÃO citado), onde o shell
 #   expande de verdade.
 # Braço E (interp-path/pin10-pwd-fixture-spared):
-#   Réplica fiel de check-validate-rule-pins.sh:369-374 (o `$PWD` literal em
-#   heredoc citado, dict + json.dump, caminho por sys.argv). Afirma que nem o
-#   tier 1 nem o tier 2 a acusam.
+#   Réplica fiel da fixture `cg-claude-pwd` de check-validate-rule-pins.sh
+#   (o `$PWD` literal em heredoc citado, dict + json.dump, caminho por
+#   sys.argv). Afirma que nem o tier 1 nem o tier 2 a acusam.
 # Braço F (interp-path/split-form-violation):
 #   Afirma que o tier 2 REPROVA a forma dividida (`p = '$DIR/x'` … `open(p)`),
 #   que o ML-0A §2.3 mediu como o ponto frágil de uma varredura de mesma linha.

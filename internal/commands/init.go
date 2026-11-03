@@ -17,6 +17,7 @@ import (
 	"github.com/kgsaran/trackfw/internal/i18n"
 	"github.com/kgsaran/trackfw/internal/identity"
 	"github.com/kgsaran/trackfw/internal/integrations"
+	"github.com/kgsaran/trackfw/internal/pathguard"
 	"github.com/spf13/cobra"
 )
 
@@ -40,6 +41,109 @@ func applyCITriggerFromExisting(cfg *generators.Config) error {
 	return nil
 }
 
+// isPathguardRefusal reports whether err is a containment-refusal error emitted
+// by pathguard.RejectAndReport or pathguard.RefuseUnverifiableRoot. It
+// delegates to pathguard.IsRefusal, which uses errors.As to traverse any
+// wrapping layer — so it works even when an intermediate caller wraps the
+// refusal with additional context via fmt.Errorf("%w", ...).
+//
+// Callers use this predicate to gate the "--scope project" remediation hint
+// exclusively on refusal errors, not on unrelated failures such as a corrupt
+// integrations-manifest.json file.
+func isPathguardRefusal(err error) bool {
+	return pathguard.IsRefusal(err)
+}
+
+// preCheckAIToolDestinations verifies that all destinations for the given AI tools are
+// writable (no symlinks/reparse points traversed) before any project files are written by
+// generators.Scaffold. It checks two groups:
+//
+//   - Group 1 (BuildPlans destinations): resolved via Manager.List which calls the same
+//     resolve/rejectSymlinks path that manager.Install uses, including ClaudeDir for
+//     claude/global plans. This catches ~/.claude being a symlink on Windows (junction) or
+//     macOS (symlink proxy).
+//
+//   - Group 2 (InjectRulesForTool project-local destinations): filepath.Join(resolvedCwd,
+//     generators.AgentFilePath(tool)) for each selected tool, using pathguard.ResolveRoot
+//     for consistency with the actual writer (generators.InjectRulesForTool).
+//
+// On refusal (symlink/reparse-point detected by pathguard), the error names the refused
+// destination and appends a suggestion: use --scope project or trackfw agents install
+// --scope project. Non-refusal errors from Group 1 (e.g. corrupt manifest) are returned
+// as-is without the hint, since --scope project does not resolve them.
+// This is the pre-check described in P-7 of the Wave 0 threat model (REQ-2026-11-02).
+//
+// The write-time guards inside installAITools and InjectRulesForTool remain active (T-9,
+// TOCTOU guard). This function does not replace them.
+func preCheckAIToolDestinations(aiTools []string, cwd, scope, home string) error {
+	if len(aiTools) == 0 {
+		return nil
+	}
+
+	// Group 1: BuildPlans destinations — use Manager.List which mirrors manager.Install's
+	// resolve() path, including ClaudeDir for claude/global plans.
+	catalog, err := integrations.LoadCatalog()
+	if err != nil {
+		return fmt.Errorf("init: pre-check: loading catalog: %w", err)
+	}
+	ident, err := identity.Load(home)
+	if err != nil {
+		return fmt.Errorf("init: pre-check: loading identity: %w", err)
+	}
+
+	var plans []integrations.PlannedArtifact
+	for _, kind := range []integrations.ItemKind{integrations.KindAgents, integrations.KindSkills} {
+		// AgentModels is not needed for path resolution (only affects content).
+		selected, err := integrations.BuildPlans(catalog, integrations.PlanRequest{
+			Kind: kind, Targets: aiTools, Scope: scope, Identity: ident,
+		})
+		if err != nil {
+			return fmt.Errorf("init: pre-check: building plans: %w", err)
+		}
+		plans = append(plans, selected...)
+	}
+
+	manager := integrations.Manager{
+		ProjectRoot: cwd,
+		HomeDir:     home,
+		ClaudeDir: func() (string, error) {
+			return agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver)
+		},
+	}
+
+	// Manager.List calls Inspect → resolve → rejectSymlinks for every plan.
+	// A symlink/junction in the destination path causes resolve to return a refusal
+	// error, which is already printed to stderr by pathguard.RejectAndReport.
+	// The "--scope project" hint is added only for refusal errors; unrelated
+	// errors (e.g. "decode integration manifest: ...") are returned as-is
+	// because --scope project does not resolve them.
+	if _, err := manager.List(plans); err != nil {
+		if isPathguardRefusal(err) {
+			return fmt.Errorf("%w\nTo install AI tools in the project directory only, use --scope project; or run `trackfw agents install --scope project` after init completes", err)
+		}
+		return err
+	}
+
+	// Group 2: InjectRulesForTool project-local destinations.
+	// Use ResolveRoot to match the guard root that generators.InjectRulesForTool uses
+	// (ML-8A / #402: resolves /var/… → /private/var/… on macOS).
+	resolvedCwd, resolveErr := pathguard.ResolveRoot(cwd)
+	if resolveErr != nil {
+		return pathguard.RefuseUnverifiableRoot(cwd, resolveErr)
+	}
+	for _, tool := range aiTools {
+		relPath, ok := generators.AgentFilePath(tool)
+		if !ok {
+			continue
+		}
+		dest := filepath.Join(resolvedCwd, relPath)
+		if err := pathguard.RejectAndReport(resolvedCwd, dest); err != nil {
+			return fmt.Errorf("%w\nTo install AI tools in the project directory only, use --scope project; or run `trackfw agents install --scope project` after init completes", err)
+		}
+	}
+	return nil
+}
+
 func newInitCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init",
@@ -50,6 +154,7 @@ func newInitCmd() *cobra.Command {
 	cmd.Flags().StringSlice("ai-tools", nil, "AI tools to configure (claude,codex,gemini,antigravity,cursor,copilot,windsurf,amazonq,opencode,kiro)")
 	cmd.Flags().String("identity-preset", "none", "Agent identity preset: none, neutral, "+strings.Join(identity.PresetNames(), ", "))
 	cmd.Flags().String("forge", "", "Forge platform: "+strings.Join(forge.ValidForges, ", "))
+	cmd.Flags().String("scope", "global", "Scope for AI tools installation: project or global")
 	return cmd
 }
 
@@ -81,6 +186,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 	home, err := homedir.Dir()
 	if err != nil {
 		return fmt.Errorf("init: nao foi possivel resolver o diretorio home: %w", err)
+	}
+
+	// Validate --scope early, before any filesystem writes (AC4, P-7).
+	scopeValue, _ := cmd.Flags().GetString("scope")
+	scopeChanged := cmd.Flags().Changed("scope")
+	if scopeChanged && scopeValue != "project" && scopeValue != "global" {
+		return fmt.Errorf("init: --scope %q is not valid (accepted: \"project\", \"global\")", scopeValue)
 	}
 
 	presetValue, _ := cmd.Flags().GetString("identity-preset")
@@ -122,12 +234,22 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// Non-TTY: use defaults and skip wizard (matches npm CLI behavior)
 	if !cbterm.IsTerminal(uintptr(os.Stdin.Fd())) {
 		cwd, _ := os.Getwd()
+
+		// AC3 (#661), P-6: detect pkg_manager from the project, don't hardcode "npm".
+		// A project with package.json gets "npm"; all others get "" (empty).
+		// This mirrors the check in internal/discover/discover.go:188 but is inlined
+		// because DiscoveryResult does not expose PkgManager (R-4 of Wave 0).
+		pkgMgr := ""
+		if _, statErr := os.Stat(filepath.Join(cwd, "package.json")); statErr == nil {
+			pkgMgr = "npm"
+		}
+
 		cfg := generators.Config{
 			ProjectName: filepath.Base(cwd),
 			ProjectType: "governance",
 			Frontend:    "",
 			Backend:     "",
-			PkgManager:  "npm",
+			PkgManager:  pkgMgr,
 			Hooks:       "none",
 			CI:          "none",
 		}
@@ -137,11 +259,26 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if err := applyCITriggerFromExisting(&cfg); err != nil {
 			return err
 		}
+
+		// Resolve scope for this non-TTY run.
+		scope := "global"
+		if scopeChanged {
+			scope = scopeValue
+		}
+
+		// AC4 (#657), P-7: pre-check AI tool destinations BEFORE Scaffold.
+		// If any destination is a symlink/reparse point, abort without writing any
+		// project files. The error names the refused destination and suggests
+		// --scope project or `trackfw agents install --scope project`.
+		aiTools, _ := cmd.Flags().GetStringSlice("ai-tools")
+		if err := preCheckAIToolDestinations(aiTools, cwd, scope, home); err != nil {
+			return err
+		}
+
 		if err := generators.Scaffold(cfg); err != nil {
 			return err
 		}
-		aiTools, _ := cmd.Flags().GetStringSlice("ai-tools")
-		if err := installAITools(aiTools, cwd, "global"); err != nil {
+		if err := installAITools(aiTools, cwd, scope); err != nil {
 			return err
 		}
 		fmt.Println(i18n.T("init.success"))
@@ -394,21 +531,26 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if err := generators.Scaffold(cfg); err != nil {
-		return err
-	}
-
-	// D4 — init's wizard also asks for the install scope, only when AI tools
-	// were actually selected (asking otherwise would be a prompt about
-	// nothing). Sem TTY já foi tratado no early-return acima (default
-	// "global"); este ramo só é alcançado quando stdin é um TTY real.
+	// D4 — resolve install scope BEFORE Scaffold (AC4, P-7).
+	// --scope flag wins; otherwise prompt (but only if AI tools were selected).
 	scope := "global"
-	if len(aiTools) > 0 {
+	if scopeChanged {
+		scope = scopeValue
+	} else if len(aiTools) > 0 {
 		var err error
 		scope, err = promptInstallScopeRunner()
 		if err != nil {
 			return err
 		}
+	}
+
+	// Pre-check: verify AI tool destinations before writing any project files (AC4, P-7).
+	if err := preCheckAIToolDestinations(aiTools, cwd, scope, home); err != nil {
+		return err
+	}
+
+	if err := generators.Scaffold(cfg); err != nil {
+		return err
 	}
 
 	if err := installAITools(aiTools, cwd, scope); err != nil {

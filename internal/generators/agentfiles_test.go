@@ -1653,3 +1653,43 @@ func TestInjectClaudeHooks_MigratesLegacyBashMatcherToClaudeShellMatcher(t *test
 		t.Error("PostToolUse[Bash] still has credential-guard after migration — expected it to be removed")
 	}
 }
+
+// TestAgentFilePath_MatchesInjectRulesForTool verifies that AgentFilePath returns the
+// same project-relative destination path that InjectRulesForTool uses when writing the
+// governance rules file.
+//
+// For each tool, InjectRulesForTool is called in an isolated temp dir and then
+// os.Stat is used to confirm the file exists exactly at filepath.Join(dir, AgentFilePath(tool)).
+// This is a behavioral (not a mirror-comparison) test: if InjectRulesForTool ever uses a
+// different path than what AgentFilePath returns, the Stat will fail.
+//
+// Rule reconciliation: affirms that AgentFilePath and InjectRulesForTool share a
+// single source of truth (agentFiles, via the AgentFilePath accessor) — the single-source
+// invariant introduced by ML-1B audit correction 1 to remove the preCheckAgentFiles copy
+// in internal/commands/init.go.
+func TestAgentFilePath_MatchesInjectRulesForTool(t *testing.T) {
+	for tool := range agentFiles {
+		tool := tool
+		t.Run(tool, func(t *testing.T) {
+			toolDir := t.TempDir()
+			if err := InjectRulesForTool(tool, toolDir); err != nil {
+				t.Fatalf("InjectRulesForTool(%q): %v", tool, err)
+			}
+			relPath, ok := AgentFilePath(tool)
+			if !ok {
+				t.Fatalf("AgentFilePath(%q) returned ok=false after InjectRulesForTool succeeded", tool)
+			}
+			dest := filepath.Join(toolDir, relPath)
+			if _, err := os.Stat(dest); err != nil {
+				t.Errorf("expected file at %q (AgentFilePath result), not found: %v", dest, err)
+			}
+		})
+	}
+
+	// Tools without a rules file must return ok=false.
+	for _, bogus := range []string{"antigravity", "kiro", "opencode", "not-a-tool"} {
+		if _, ok := AgentFilePath(bogus); ok {
+			t.Errorf("AgentFilePath(%q): ok=true, want false (tool has no governance rules file)", bogus)
+		}
+	}
+}

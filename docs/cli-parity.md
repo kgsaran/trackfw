@@ -5053,16 +5053,20 @@ Gate: `internal/validator/validator_guard_binary_probe_test.go`
 (`TestGuardGitBashBinaryProbe_Ausente_AmbasClausulas`,
 `TestGuardGitBashBinaryProbe_SemGuard_AmbasClausulas`).
 
-## `trackfw init --scope` — nota de contrato (ML-1B, REQ-2026-11-02, #657)
+## `trackfw init --scope` e pré-checagem do destino das AI tools (REQ-2026-11-02, #657 e #661)
 
-<!-- trackfw-contract: gap reason=ML-1B-ainda-nao-implementado -->
+<!-- trackfw-contract: gate=internal/commands/init_test.go -->
 
-O `trackfw init` ganhará `--scope project|global` (padrão `global`) em ML-1B.
-Comportamento: o `init` confere o destino das AI tools antes de escrever qualquer arquivo do
-projeto. Se o destino for recusado (ex.: reparse point no Windows), aborta sem alterar nada
-e sugere `--scope project` ou `trackfw agents install --scope project` como alternativa.
-
-Esta seção será atualizada por ML-1B com gate e comportamento completo.
+- `trackfw init --scope project|global` (padrão `global`). Um valor inválido dá erro **antes de qualquer
+  escrita**.
+- Antes de gerar qualquer arquivo do projeto, nos caminhos com e sem TTY, o `init` confere os destinos
+  das AI tools selecionadas pelo `pathguard`: os globais, como `~/.claude/...`, e os do projeto, como o
+  `CLAUDE.md`. Se um destino for recusado (symlink ou reparse point, por exemplo um `~/.claude` em
+  junction do OneDrive), o `init` aborta **sem alterar o projeto**, nomeia o destino e sugere
+  `trackfw init --scope project` ou, depois, `trackfw agents install --scope project`. A dica só aparece
+  na recusa de caminho. A recusa em si não mudou, e os guards no momento da escrita continuam valendo.
+- Sem TTY, o `pkg_manager` gravado no `trackfw.yaml` é `npm` quando existe `package.json` na raiz e vazio
+  caso contrário. Antes, era sempre `npm`.
 
 ## Contrato de artefatos gerados (req, adr, roadmap, note)
 
