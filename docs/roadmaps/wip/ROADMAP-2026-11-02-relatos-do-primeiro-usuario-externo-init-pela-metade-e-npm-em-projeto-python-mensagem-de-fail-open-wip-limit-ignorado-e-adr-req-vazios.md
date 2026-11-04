@@ -153,10 +153,10 @@ go test ./internal/validator/ -count=1
 - [x] `make check-required-full` sem divergência
 
 ### ML-2D — Fixture do `init` isola o USERPROFILE no Windows (artemis-tf) — AC4
-**Status:** 🔄 Em andamento — aberto em 2026-11-04 pelo CI do PR #666 (`windows-full-suites`, run 41890643808).
+**Status:** ✅ Concluído — 2026-11-04, auditado. Aberto pelo CI do PR #666 (`windows-full-suites`, run 41890643808). Teste novo: `TestInitFixture_IsolatesUSERPROFILE`.
 **Por que o escopo original não previa:** o `initFixture` só aponta o `HOME` para a pasta temporária. No Windows, o `agentconfig.ClaudeConfigDir` resolve o `~/.claude` pelo `USERPROFILE`, conforme o ADR-2026-10-14 D1, e o produto está certo. Por isso, os três testes novos conferiram o `.claude` real do runner, não o symlink da fixture, e o `init` escreveu nele. Reprovaram `TestInitScopeGlobalPreCheckAbortsOnSymlinkClaudeDir`, `TestInitScopeProjectHintPresentWhenGlobalScope` e `TestExecuteScaffoldAndInstall_PreCheckFiresOnSymlinkClaudeDir`. Mesmo caso já resolvido em `agents_skills_test.go:23` (ML-2E).
 **Files affected:** `internal/commands/init_test.go`
 **Acceptance criteria:**
-- [ ] `initFixture` isola o `USERPROFILE` junto com o `HOME`, com restauração no cleanup
-- [ ] `go test ./internal/commands/` verde com PATH sem trackfw
+- [x] `initFixture` isola o `USERPROFILE` junto com o `HOME`, com restauração no cleanup
+- [x] `go test ./internal/commands/` verde com PATH sem trackfw
 - [ ] `windows-full-suites` verde no CI, sem os três nomes acima

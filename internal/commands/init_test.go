@@ -16,13 +16,21 @@ import (
 // TTY, so every runInit invocation here exercises the non-interactive
 // branch — which is exactly the branch --identity-preset must work through
 // without blocking on any prompt.
+//
+// ML-2D: USERPROFILE is also isolated so that on Windows, where
+// agentconfig.ClaudeConfigDir reads USERPROFILE (not HOME), the symlink
+// placed at home/.claude is exactly the path the pre-check inspects.
 func initFixture(t *testing.T) (project, home string) {
 	t.Helper()
 	project = t.TempDir()
 	home = t.TempDir()
 	oldHome := os.Getenv("HOME")
+	oldUserProfile, hadUserProfile := os.LookupEnv("USERPROFILE")
 	oldWD, _ := os.Getwd()
 	if err := os.Setenv("HOME", home); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Setenv("USERPROFILE", home); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Chdir(project); err != nil {
@@ -31,8 +39,50 @@ func initFixture(t *testing.T) (project, home string) {
 	t.Cleanup(func() {
 		_ = os.Chdir(oldWD)
 		_ = os.Setenv("HOME", oldHome)
+		if hadUserProfile {
+			_ = os.Setenv("USERPROFILE", oldUserProfile)
+		} else {
+			_ = os.Unsetenv("USERPROFILE")
+		}
 	})
 	return project, home
+}
+
+// TestInitFixture_IsolatesUSERPROFILE affirms that after ML-2D initFixture
+// sets both HOME and USERPROFILE to the temp home dir, and that both are
+// restored to their original values after the sub-test's cleanup runs.
+// Rule reconciliation: affirms the ML-2D conclusion that isolating
+// USERPROFILE inside initFixture makes the symlink pre-check tests
+// (TestInitScopeGlobalPreCheckAbortsOnSymlinkClaudeDir,
+// TestInitScopeProjectHintPresentWhenGlobalScope,
+// TestExecuteScaffoldAndInstall_PreCheckFiresOnSymlinkClaudeDir) point at
+// the correct home directory on Windows.
+func TestInitFixture_IsolatesUSERPROFILE(t *testing.T) {
+	outerHome := os.Getenv("HOME")
+	outerUserProfile, outerHadUserProfile := os.LookupEnv("USERPROFILE")
+
+	t.Run("inside-fixture", func(inner *testing.T) {
+		_, home := initFixture(inner)
+		if got := os.Getenv("HOME"); got != home {
+			inner.Errorf("HOME inside fixture = %q, want %q", got, home)
+		}
+		if got := os.Getenv("USERPROFILE"); got != home {
+			inner.Errorf("USERPROFILE inside fixture = %q, want %q", got, home)
+		}
+	})
+	// After t.Run returns, inner's t.Cleanup callbacks have run.
+	if got := os.Getenv("HOME"); got != outerHome {
+		t.Errorf("HOME after cleanup = %q, want outer %q", got, outerHome)
+	}
+	if outerHadUserProfile {
+		if got := os.Getenv("USERPROFILE"); got != outerUserProfile {
+			t.Errorf("USERPROFILE after cleanup = %q, want outer %q", got, outerUserProfile)
+		}
+	} else {
+		if _, present := os.LookupEnv("USERPROFILE"); present {
+			t.Errorf("USERPROFILE must be unset after cleanup, got %q", os.Getenv("USERPROFILE"))
+		}
+	}
 }
 
 func identityJSONPath(home string) string {
