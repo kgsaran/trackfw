@@ -7,6 +7,33 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [11.4.0] - 2026-11-04
+
+Relatos do primeiro usuário externo (#657 a #661), com 11.3.0 no Windows 11.
+
+### Breaking Changes
+
+Nenhum. O padrão de `rules.wip_limit` passa de `error` para `warning`, mas antes o `error` era ignorado
+na prática (o limite sempre saía como aviso); quem configurar `error` passa a ter o limite de verdade.
+
+### Added
+
+- **`trackfw init --scope project|global`** (#657). Antes de escrever qualquer arquivo, o `init` confere
+  todos os destinos, no projeto e nas AI tools. Uma recusa, como um `~/.claude` em junction do OneDrive ou
+  um diretório do projeto em symlink, aborta **sem alterar o projeto** e sugere `--scope project`. Antes,
+  o `init` abortava no meio e deixava o projeto pela metade.
+- **Regra `adr_req_has_content`** (#659), um aviso para ADR ou REQ cujas seções obrigatórias só têm o
+  comentário do modelo. Configurável como as outras.
+
+### Fixed
+
+- **`trackfw validate` não diz mais só "fail open" quando o binário falta no PATH** (#658). Na forma atual
+  PowerShell/POSIX, o hook bloqueia todo comando (exit 2); nas formas legadas e cmd.exe, pode deixar
+  passar. A mensagem diz as duas coisas e cita os canais de instalação certos.
+- **`rules.wip_limit` passa a ser respeitado** (#660). O limite de `wip/` estourado sempre saía como aviso,
+  mesmo com `error` configurado. O padrão agora é `warning`, e o README explica o limite.
+- **`trackfw init` sem TTY não grava mais `pkg_manager: npm` em projeto sem `package.json`** (#661).
+
 ## [11.3.0] - 2026-11-02
 
 ### Breaking Changes
