@@ -159,4 +159,4 @@ go test ./internal/validator/ -count=1
 **Acceptance criteria:**
 - [x] `initFixture` isola o `USERPROFILE` junto com o `HOME`, com restauração no cleanup
 - [x] `go test ./internal/commands/` verde com PATH sem trackfw
-- [ ] `windows-full-suites` verde no CI, sem os três nomes acima
+- [x] `windows-full-suites` verde no CI (run 41894279494), sem os três nomes acima
