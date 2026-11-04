@@ -96,15 +96,43 @@ go test ./internal/commands/ -count=1
 > Dependencies: Wave 1 auditada.
 
 ### ML-2A — Red team (hades-tf)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-11-04. A primeira tentativa foi interrompida pelo limite semanal da API, sem parecer; a segunda reprova, com um achado bloqueante.
+- **T-12, bloqueante e de mesma causa que o #657:** o `Scaffold` confere cada destino do projeto só na hora de escrever. Com `.claude/`, `scripts/` ou `vault/` do projeto em symlink, o `init` escreve vários arquivos e depois aborta (11 arquivos na branch, igual à `main`). A pré-checagem do ML-1B só cobria os destinos das AI tools.
+- **T-8, LOW:** o caminho com TTY da pré-checagem não tem teste; remover a chamada não reprova nada.
+- **LOW-1:** `* [ ]` escapa do padrão de checkbox vazio.
+- **LOW-2:** a correção sugerida pela sonda de binário omite o PyPI.
+- **LOW-3:** a mensagem de binário sem `guard` manda rodar `trackfw update`, que não regenera os hooks de `.claude/settings.json` (o próprio `--help` diz que ele não mexe no estado global).
+
+Tudo vai para o ML-2B. AC1, AC2, AC3, AC5 e a parte das AI tools do AC4 passam.
 **Files affected:** `docs/seguranca/2026-11-02-redteam-relatos-primeiro-usuario-externo.md`
 **Actions:**
 1. Reimplementar, a partir da leitura, os alvos da Wave 0 contra o diff.
 2. Refazer as reproduções dos cinco issues num repositório limpo com o binário da branch.
 **Acceptance criteria:**
-- [ ] Parecer com achados classificados e evidência
+- [x] Parecer com achados classificados e evidência
 
 **Gates da wave:**
 ```bash
 test -f docs/seguranca/2026-11-02-redteam-relatos-primeiro-usuario-externo.md
+```
+
+### ML-2B — Correções do red team: init sem escrita parcial em nenhum destino do projeto (apolo-tf) — AC4
+**Status:** ⬜ Pendente
+**Files affected:** `internal/generators/scaffold.go` e os testes dele, `internal/commands/init.go`, `internal/commands/init_test.go`, `internal/validator/validator.go`, `internal/validator/validator_adr_req_has_content_test.go`, `internal/validator/validator_guard_binary_probe.go` e os dois testes dele, `docs/cli-parity.md` (seção do `init --scope`)
+**Actions:**
+1. **T-12:** antes do primeiro `MkdirAll`, o `Scaffold` confere com o `pathguard` **todos** os destinos que vai escrever no projeto. Uma recusa aborta sem escrever nada. Teste por destino em symlink (`.claude/`, `scripts/`, `vault/`, `docs/`), afirmando o projeto intacto.
+2. **Dica do escopo:** `--scope project` só aparece quando o escopo não é `project`.
+3. **T-8:** teste do caminho com TTY da pré-checagem.
+4. **LOW-1:** `* [ ]` também conta como checkbox vazio.
+5. **LOW-2 e LOW-3:** a correção sugerida pela sonda lista os canais certos e o comando que de fato regenera os hooks, verificado por `--help`.
+**Acceptance criteria:**
+- [ ] pacotes tocados verdes com PATH sem trackfw
+- [ ] contra-braço por item
+
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/generators/ -count=1
+go test ./internal/commands/ -count=1
+go test ./internal/validator/ -count=1
 ```
