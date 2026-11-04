@@ -18,7 +18,7 @@ As causas estão medidas e escritas na REQ, uma por AC. A varredura de issues ab
 🔴 **Todo teste novo que chame `validate` depois de `init`** precisa ser rodado com o PATH sem `trackfw` antes do push (lição do #655).
 
 ## Acceptance Criteria
-- [ ] AC1–AC6 da REQ
+- [x] AC1–AC5 da REQ (AC6 no PR)
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -117,7 +117,15 @@ test -f docs/seguranca/2026-11-02-redteam-relatos-primeiro-usuario-externo.md
 ```
 
 ### ML-2B — Correções do red team: init sem escrita parcial em nenhum destino do projeto (apolo-tf) — AC4
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-11-04, em dois despachos.
+- **T-12:** `scaffoldWriteTargets(cfg)` é a fonte única dos destinos; as escritas usam as mesmas constantes. O `Scaffold` confere todos com o `pathguard` antes do primeiro `MkdirAll`.
+- **Contra-braço:** sem a pré-checagem, 10 arquivos são escritos antes da recusa do `.claude/`; com ela, zero.
+- **Testes por destino:** `.claude/`, `scripts/`, `vault/`, `docs/` e `.github/` em symlink deixam o projeto intacto, com e sem `--ai-tools`.
+- **`executeScaffoldAndInstall`:** ponto único dos caminhos com e sem TTY (T-8).
+- **Dica do escopo:** só aparece fora de `--scope project`.
+- **LOW-1, LOW-2 e LOW-3:** `* [ ]`; `pip install trackfw` e `brew`; correção primária "install a newer version".
+- **Na auditoria, o comentário da lista prometia um teste de cobertura inexistente.** O segundo despacho escreveu `TestScaffoldWriteTargets_CoversEveryFileScaffoldCreates`, com 7 configurações. Ele afirma que todo arquivo criado está na lista, ou é diretório intermediário de um item dela. O contra-braço que tira `credentialGuardScriptPath` acusa exatamente esse arquivo.
+- **`.claude/settings.json`:** é exceção nomeada (não fatal por desenho e coberto pelo ancestral `.claude/`), com asserção de que é criado e de que fica fora da lista. O executor refutou a premissa do arquiteto de que bastaria o critério "dentro de".
 **Files affected:** `internal/generators/scaffold.go` e os testes dele, `internal/commands/init.go`, `internal/commands/init_test.go`, `internal/validator/validator.go`, `internal/validator/validator_adr_req_has_content_test.go`, `internal/validator/validator_guard_binary_probe.go` e os dois testes dele, `docs/cli-parity.md` (seção do `init --scope`)
 **Actions:**
 1. **T-12:** antes do primeiro `MkdirAll`, o `Scaffold` confere com o `pathguard` **todos** os destinos que vai escrever no projeto. Uma recusa aborta sem escrever nada. Teste por destino em symlink (`.claude/`, `scripts/`, `vault/`, `docs/`), afirmando o projeto intacto.
@@ -126,8 +134,8 @@ test -f docs/seguranca/2026-11-02-redteam-relatos-primeiro-usuario-externo.md
 4. **LOW-1:** `* [ ]` também conta como checkbox vazio.
 5. **LOW-2 e LOW-3:** a correção sugerida pela sonda lista os canais certos e o comando que de fato regenera os hooks, verificado por `--help`.
 **Acceptance criteria:**
-- [ ] pacotes tocados verdes com PATH sem trackfw
-- [ ] contra-braço por item
+- [x] pacotes tocados verdes com PATH sem trackfw
+- [x] contra-braço por item
 
 **Gates da wave:**
 ```bash
@@ -136,3 +144,10 @@ go test ./internal/generators/ -count=1
 go test ./internal/commands/ -count=1
 go test ./internal/validator/ -count=1
 ```
+
+### ML-2C — Release 11.4.0 no mesmo PR (trackfw_architect)
+**Status:** ✅ Concluído — 2026-11-04. Minor, porque entram funcionalidades novas (`init --scope` e a regra `adr_req_has_content`). A tag sai logo depois do merge.
+**Files affected:** `CHANGELOG.md`, `docs/visao-projeto/VISION.md`, `internal/version/version.go`, `npm/package-lock.json`, `npm/package.json`, `pypi/pyproject.toml`
+**Acceptance criteria:**
+- [x] `go run ./cmd/trackfw --version` responde `trackfw 11.4.0`
+- [x] `make check-required-full` sem divergência

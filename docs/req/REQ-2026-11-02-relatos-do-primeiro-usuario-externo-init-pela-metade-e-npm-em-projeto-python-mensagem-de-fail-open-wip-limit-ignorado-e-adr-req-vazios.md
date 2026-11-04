@@ -51,7 +51,7 @@ outros (medido no PR #655 com os arquivos do bump de versão).
 
 ## Acceptance Criteria
 
-- [ ] **AC1 (#658).** As mensagens de binário ausente e de binário sem `guard` (`validator_guard_binary_probe.go`,
+- [x] **AC1 (#658).** As mensagens de binário ausente e de binário sem `guard` (`validator_guard_binary_probe.go`,
   linhas ~308 e ~321) e as duas equivalentes da sonda do Git Bash (~511 e ~543) deixam de afirmar só
   "fail open" e passam a dizer, **sempre**, as duas verdades medidas:
   - na forma atual PowerShell/POSIX, o hook **bloqueia todo comando** (exit 2);
@@ -63,19 +63,19 @@ outros (medido no PR #655 com os arquivos do bump de versão).
     propôs uma mensagem condicional, com dois booleanos novos no loop de detecção e o cache da sonda
     ampliado. A mensagem incondicional com as duas cláusulas é exata em qualquer configuração e só muda
     texto. As mensagens de política Restricted não mudam.
-- [ ] **AC2 (#660).** O limite estourado passa por `applyRule("wip_limit", ...)` e respeita a severidade
+- [x] **AC2 (#660).** O limite estourado passa por `applyRule("wip_limit", ...)` e respeita a severidade
   configurada. O padrão muda para `warning`, por decisão do KG, para não passar a bloquear quem já tem mais
   de um roadmap em `wip/`. Com `rules.wip_limit: error`, o `validate` reprova. O README deixa de dizer
   "one at a time" sem ressalva e explica o limite e a severidade.
-- [ ] **AC3 (#661).** Sem TTY, o `init` não grava `pkg_manager: npm` num projeto sem `package.json`. Ele usa
+- [x] **AC3 (#661).** Sem TTY, o `init` não grava `pkg_manager: npm` num projeto sem `package.json`. Ele usa
   a detecção existente, ou deixa vazio quando não há sinal. Um projeto com `package.json` continua npm.
-- [ ] **AC4 (#657).**
+- [x] **AC4 (#657).**
   - Antes de escrever qualquer arquivo do projeto, o `init` confere se o destino das AI tools aceita a
     escrita. Se não aceitar, aborta sem alterar o projeto e diz como seguir (`--scope project`, ou
     `trackfw agents install --scope project` depois).
   - O `init` ganha `--scope project|global`, com padrão `global` como hoje.
   - A recusa de reparse point continua.
-- [ ] **AC5 (#659).** Regra nova, com nome a definir na Wave 0 e severidade padrão `warning`: ADR ou REQ
+- [x] **AC5 (#659).** Regra nova, com nome a definir na Wave 0 e severidade padrão `warning`: ADR ou REQ
   cujas seções obrigatórias só têm o comentário do modelo (`<!-- ... -->`) ou estão vazias geram aviso.
   ADR e REQ preenchidos não geram aviso. A regra é configurável como as outras e não vira exigência sobre
   seções opcionais.
