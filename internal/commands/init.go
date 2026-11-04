@@ -54,6 +54,25 @@ func isPathguardRefusal(err error) bool {
 	return pathguard.IsRefusal(err)
 }
 
+// executeScaffoldAndInstall is the core init sequence shared by both the TTY
+// (wizard) and non-TTY (CI/script) paths. Extracting it to a named function
+// makes the pre-check reachable from tests without simulating a TTY (T-8,
+// REQ-2026-11-02): removing the preCheckAIToolDestinations call from this
+// function causes TestExecuteScaffoldAndInstall_PreCheckFiresOnSymlinkClaudeDir
+// to fail regardless of which path invoked executeScaffoldAndInstall.
+func executeScaffoldAndInstall(cfg generators.Config, aiTools []string, cwd, scope, home string) error {
+	if err := preCheckAIToolDestinations(aiTools, cwd, scope, home); err != nil {
+		return err
+	}
+	if err := generators.Scaffold(cfg); err != nil {
+		return err
+	}
+	if err := installAITools(aiTools, cwd, scope); err != nil {
+		return err
+	}
+	return nil
+}
+
 // preCheckAIToolDestinations verifies that all destinations for the given AI tools are
 // writable (no symlinks/reparse points traversed) before any project files are written by
 // generators.Scaffold. It checks two groups:
@@ -116,9 +135,11 @@ func preCheckAIToolDestinations(aiTools []string, cwd, scope, home string) error
 	// error, which is already printed to stderr by pathguard.RejectAndReport.
 	// The "--scope project" hint is added only for refusal errors; unrelated
 	// errors (e.g. "decode integration manifest: ...") are returned as-is
-	// because --scope project does not resolve them.
+	// because --scope project does not resolve them. The hint is suppressed when
+	// scope is already "project" — the user is already using it, so repeating
+	// it is misleading (T-12/c-proj, REQ-2026-11-02).
 	if _, err := manager.List(plans); err != nil {
-		if isPathguardRefusal(err) {
+		if isPathguardRefusal(err) && scope != "project" {
 			return fmt.Errorf("%w\nTo install AI tools in the project directory only, use --scope project; or run `trackfw agents install --scope project` after init completes", err)
 		}
 		return err
@@ -138,7 +159,10 @@ func preCheckAIToolDestinations(aiTools []string, cwd, scope, home string) error
 		}
 		dest := filepath.Join(resolvedCwd, relPath)
 		if err := pathguard.RejectAndReport(resolvedCwd, dest); err != nil {
-			return fmt.Errorf("%w\nTo install AI tools in the project directory only, use --scope project; or run `trackfw agents install --scope project` after init completes", err)
+			if scope != "project" {
+				return fmt.Errorf("%w\nTo install AI tools in the project directory only, use --scope project; or run `trackfw agents install --scope project` after init completes", err)
+			}
+			return err
 		}
 	}
 	return nil
@@ -266,19 +290,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 			scope = scopeValue
 		}
 
-		// AC4 (#657), P-7: pre-check AI tool destinations BEFORE Scaffold.
-		// If any destination is a symlink/reparse point, abort without writing any
-		// project files. The error names the refused destination and suggests
-		// --scope project or `trackfw agents install --scope project`.
+		// AC4 (#657), P-7: pre-check + scaffold + install in one call (T-8:
+		// same function called from both TTY and non-TTY paths — removing the
+		// pre-check from executeScaffoldAndInstall fails
+		// TestExecuteScaffoldAndInstall_PreCheckFiresOnSymlinkClaudeDir).
 		aiTools, _ := cmd.Flags().GetStringSlice("ai-tools")
-		if err := preCheckAIToolDestinations(aiTools, cwd, scope, home); err != nil {
-			return err
-		}
-
-		if err := generators.Scaffold(cfg); err != nil {
-			return err
-		}
-		if err := installAITools(aiTools, cwd, scope); err != nil {
+		if err := executeScaffoldAndInstall(cfg, aiTools, cwd, scope, home); err != nil {
 			return err
 		}
 		fmt.Println(i18n.T("init.success"))
@@ -544,16 +561,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Pre-check: verify AI tool destinations before writing any project files (AC4, P-7).
-	if err := preCheckAIToolDestinations(aiTools, cwd, scope, home); err != nil {
-		return err
-	}
-
-	if err := generators.Scaffold(cfg); err != nil {
-		return err
-	}
-
-	if err := installAITools(aiTools, cwd, scope); err != nil {
+	// Pre-check + scaffold + install via shared function (T-8: same function as
+	// the non-TTY path — a test on executeScaffoldAndInstall covers both).
+	if err := executeScaffoldAndInstall(cfg, aiTools, cwd, scope, home); err != nil {
 		return err
 	}
 

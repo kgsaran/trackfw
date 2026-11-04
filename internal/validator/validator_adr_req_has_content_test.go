@@ -514,3 +514,73 @@ Real alternatives text.
 		t.Errorf("vetor j: ValidateUnfiltered deve emitir warning adr_req_has_content para ADR com conteúdo modelo, warnings=%v", warnings)
 	}
 }
+
+// --------------------------------------------------------------------------
+// LOW-1: "* [ ]" (asterisk) is also a bare checkbox — aviso
+// --------------------------------------------------------------------------
+
+// TestADRReqHasContent_LOW1_AsteriskBareCheckbox_Aviso asserts that "* [ ]"
+// (GitHub-style bullet) is treated as a bare checkbox by the adrReqBareCheckboxRe
+// pattern and fires adr_req_has_content (LOW-1, REQ-2026-11-02).
+// Reconciliation: affirms that the regex change from `[-]` to `[-*]` causes
+// "* [ ]" to match — reverting to the old pattern would miss this form.
+func TestADRReqHasContent_LOW1_AsteriskBareCheckbox_Aviso(t *testing.T) {
+	_, _, reqDir := setupADRReqDirs(t)
+	writeREQFile(t, reqDir, "REQ-2026-01-03-low1.md", `---
+status: Open
+---
+
+# REQ: LOW-1 test
+
+## Motivation
+
+This is real motivation text.
+
+## Acceptance Criteria
+
+* [ ]
+* [ ]
+`)
+
+	msgs, err := validateADRReqHasContent()
+	if err != nil {
+		t.Fatalf("validateADRReqHasContent() error: %v", err)
+	}
+	if !hasADRReqContentWarning(msgs, "Acceptance Criteria") {
+		t.Errorf("LOW-1: esperado aviso para '* [ ]' (asterisk bare checkbox), obteve: %v", msgs)
+	}
+}
+
+// TestADRReqHasContent_LOW1_AsteriskCheckboxWithText_SemAviso asserts that
+// "* [ ] some text" (a task-list item with description) does NOT fire the rule —
+// only bare checkboxes (no text after the brackets) trigger it.
+// Reconciliation: affirms that the fix is scoped to bare asterisk checkboxes
+// and does not incorrectly flag task-list items with actual text.
+func TestADRReqHasContent_LOW1_AsteriskCheckboxWithText_SemAviso(t *testing.T) {
+	_, _, reqDir := setupADRReqDirs(t)
+	writeREQFile(t, reqDir, "REQ-2026-01-04-low1b.md", `---
+status: Open
+---
+
+# REQ: LOW-1b test
+
+## Motivation
+
+Real motivation.
+
+## Acceptance Criteria
+
+* [ ] AC1: The system does X.
+* [ ] AC2: The system does Y.
+`)
+
+	msgs, err := validateADRReqHasContent()
+	if err != nil {
+		t.Fatalf("validateADRReqHasContent() error: %v", err)
+	}
+	for _, m := range msgs {
+		if strings.Contains(m, "REQ-2026-01-04") {
+			t.Errorf("LOW-1: asterisk checkbox WITH text must not fire adr_req_has_content, got: %v", m)
+		}
+	}
+}

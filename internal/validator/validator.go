@@ -4867,7 +4867,9 @@ var reqOptionalSections = map[string]bool{
 var adrReqHasContentMultilineCommentRe = regexp.MustCompile(`(?s)<!--.*?(?:-->|$)`)
 
 // adrReqBareCheckboxRe matches a line that is only a bare checkbox (vector a).
-var adrReqBareCheckboxRe = regexp.MustCompile(`(?m)^\s*-\s*\[\s*\]\s*$`)
+// LOW-1 (REQ-2026-11-02): extended to match both "- [ ]" (Markdown list) and
+// "* [ ]" (GitHub-style bullet) bare checkbox forms.
+var adrReqBareCheckboxRe = regexp.MustCompile(`(?m)^\s*[-*]\s*\[\s*\]\s*$`)
 
 // adrReqHasMeaningfulContent returns true when the section body contains substantive text
 // beyond HTML comments, bare checkboxes, and pure whitespace (including CRLF, BOM,

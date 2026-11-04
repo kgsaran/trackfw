@@ -309,7 +309,7 @@ func guardBinaryProbeOnce(hasPSPosixEntry bool) (violations, warnings []string) 
 				"in the current PowerShell/POSIX hook form this blocks every command " +
 				"the agent runs through it (exit 2); " +
 				"in legacy hook forms and cmd.exe-family hooks it may let commands through (fail open); " +
-				"install trackfw (make install / npm install -g trackfw) or ensure it is on PATH",
+				"install trackfw (make install / npm install -g trackfw / pip install trackfw / brew install kgsaran/trackfw/trackfw) or ensure it is on PATH",
 		}, nil
 	}
 
@@ -323,7 +323,8 @@ func guardBinaryProbeOnce(hasPSPosixEntry bool) (violations, warnings []string) 
 				"in the current PowerShell/POSIX hook form this blocks every command "+
 				"the agent runs through it (exit 2); "+
 				"in legacy hook forms and cmd.exe-family hooks it may let commands through (fail open); "+
-				"run `trackfw update` to regenerate hook forms or install a newer version",
+				"install a newer version (make install / npm install -g trackfw / pip install trackfw / brew install kgsaran/trackfw/trackfw) "+
+				"or run `trackfw update` to regenerate project hook forms",
 			bin,
 		)}, nil
 	}
@@ -551,8 +552,8 @@ func guardGitBashBinaryProbe(windowsResolvedBin string) []string {
 				"in the current Git Bash hook form this blocks every command "+
 				"the agent runs through it (exit 2); "+
 				"in legacy hook forms it may let commands through (fail open); "+
-				"run `trackfw update` to regenerate hook forms or remove that binary "+
-				"(the Git Bash login profile prepends ~/bin to PATH)",
+				"install a newer version on a path the Git Bash login profile resolves "+
+				"(the login profile prepends ~/bin to PATH) or remove that binary",
 			winPath,
 		)}
 	}

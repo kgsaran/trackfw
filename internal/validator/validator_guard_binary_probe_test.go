@@ -1089,3 +1089,69 @@ func TestML1C_ValidateUnfiltered_PolicyUnreadable_AppearsInWarningsNotViolations
 		}
 	})
 }
+
+// --------------------------------------------------------------------------
+// LOW-2: PyPI channel present in absent-binary message
+// --------------------------------------------------------------------------
+
+// TestGuardBinaryProbeOnce_BinarioAusente_LOW2_PyPIPresente asserts that the
+// absent-binary violation message includes the PyPI channel
+// ("pip install trackfw"), so users on Python-only environments get the right
+// installation command. Reconciliation: affirms that LOW-2 is fixed — the old
+// message omitted pip, so reverting the fix removes "pip install" and fails here.
+func TestGuardBinaryProbeOnce_BinarioAusente_LOW2_PyPIPresente(t *testing.T) {
+	origLookup := guardLookupBinary
+	guardLookupBinary = func(name string) (string, error) {
+		return "", errors.New("not found")
+	}
+	t.Cleanup(func() { guardLookupBinary = origLookup })
+
+	violations, _ := guardBinaryProbeOnce(false)
+	if len(violations) == 0 {
+		t.Fatal("esperado violation, obteve nenhum")
+	}
+	msg := violations[0]
+	if !strings.Contains(msg, "pip install trackfw") {
+		t.Errorf("LOW-2: mensagem deve conter 'pip install trackfw' (canal PyPI), obteve: %q", msg)
+	}
+	// npm channel must also be present (regression guard).
+	if !strings.Contains(msg, "npm install -g trackfw") {
+		t.Errorf("LOW-2: mensagem deve conter 'npm install -g trackfw', obteve: %q", msg)
+	}
+}
+
+// --------------------------------------------------------------------------
+// LOW-3: no-guard message cites correct install remedy
+// --------------------------------------------------------------------------
+
+// TestGuardBinaryProbeOnce_BinarioSemGuard_LOW3_InstallRemedy asserts that the
+// no-guard violation message cites "install a newer version" as the primary
+// remedy and includes installation channels (pip install trackfw). It must NOT
+// cite only "trackfw update" without first suggesting a newer install.
+// Reconciliation: affirms the LOW-3 fix — the old "run `trackfw update`" as
+// primary remedy was confusing because `trackfw update --help` says it never
+// mutates global state.
+func TestGuardBinaryProbeOnce_BinarioSemGuard_LOW3_InstallRemedy(t *testing.T) {
+	origLookup := guardLookupBinary
+	origRun := guardRunProbe
+	guardLookupBinary = func(name string) (string, error) { return "/usr/local/bin/trackfw", nil }
+	guardRunProbe = func(bin string) error { return errors.New("exit status 2") }
+	t.Cleanup(func() {
+		guardLookupBinary = origLookup
+		guardRunProbe = origRun
+	})
+
+	violations, _ := guardBinaryProbeOnce(false)
+	if len(violations) == 0 {
+		t.Fatal("esperado violation, obteve nenhum")
+	}
+	msg := violations[0]
+	// Primary remedy must suggest installing a newer version.
+	if !strings.Contains(msg, "install a newer version") {
+		t.Errorf("LOW-3: mensagem deve sugerir 'install a newer version', obteve: %q", msg)
+	}
+	// pip install channel must be present (from LOW-2 fix applied to this message too).
+	if !strings.Contains(msg, "pip install trackfw") {
+		t.Errorf("LOW-3: mensagem deve conter 'pip install trackfw', obteve: %q", msg)
+	}
+}

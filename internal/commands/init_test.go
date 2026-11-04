@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kgsaran/trackfw/internal/generators"
 	"github.com/kgsaran/trackfw/internal/identity"
 )
 
@@ -509,5 +510,233 @@ func TestInitScopeProjectSucceedsEvenWithSymlinkClaudeDir(t *testing.T) {
 	// trackfw.yaml must exist — Scaffold ran successfully.
 	if _, err := os.Stat(filepath.Join(project, "trackfw.yaml")); err != nil {
 		t.Fatalf("trackfw.yaml not created: %v", err)
+	}
+}
+
+// --------------------------------------------------------------------------
+// T-12: scope hint absent when --scope project
+// --------------------------------------------------------------------------
+
+// TestInitScopeProjectHintAbsentOnSymlinkProjectClaudeDir asserts that when
+// --scope project is used and <proj>/.claude is a symlink, the error does NOT
+// suggest "--scope project" (the user is already using it — the hint would be
+// misleading). Reconciliation: affirms that the hint is gated on scope != "project"
+// in both Group 1 and Group 2 of preCheckAIToolDestinations.
+func TestInitScopeProjectHintAbsentOnSymlinkProjectClaudeDir(t *testing.T) {
+	project, home := initFixture(t)
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	_ = home
+
+	// Make the project's .claude a symlink (Group 1 would catch it via plan
+	// destinations when scope=project).
+	target := t.TempDir()
+	claudeDir := filepath.Join(project, ".claude")
+	if err := os.Symlink(target, claudeDir); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+
+	cmd := newInitCmd()
+	cmd.SetArgs([]string{"--ai-tools", "claude", "--scope", "project"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error: project .claude is a symlink, Scaffold pre-check must fire")
+	}
+	// The hint must NOT appear — user already uses --scope project.
+	if strings.Contains(err.Error(), "--scope project") {
+		t.Errorf("hint '--scope project' must be absent when scope is already project, got: %v", err)
+	}
+}
+
+// TestInitScopeProjectHintPresentWhenGlobalScope is a positive control: with
+// global scope and ~/.claude symlinked, the hint "--scope project" must appear.
+// Without this control, TestInitScopeProjectHintAbsentOnSymlinkProjectClaudeDir
+// would be vacuous. Reconciliation: affirms that the hint appears for global scope.
+func TestInitScopeProjectHintPresentWhenGlobalScope(t *testing.T) {
+	_, home := initFixture(t)
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+
+	target := t.TempDir()
+	claudeDir := filepath.Join(home, ".claude")
+	if err := os.Symlink(target, claudeDir); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+
+	cmd := newInitCmd()
+	cmd.SetArgs([]string{"--ai-tools", "claude"}) // default scope = global
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error: ~/.claude is a symlink, pre-check must abort")
+	}
+	if !strings.Contains(err.Error(), "--scope project") {
+		t.Errorf("hint '--scope project' must appear for global scope refusal, got: %v", err)
+	}
+}
+
+// --------------------------------------------------------------------------
+// T-8: executeScaffoldAndInstall covers both TTY and non-TTY pre-check paths
+// --------------------------------------------------------------------------
+
+// TestExecuteScaffoldAndInstall_PreCheckFiresOnSymlinkClaudeDir asserts that
+// executeScaffoldAndInstall fires preCheckAIToolDestinations before Scaffold:
+// with ~/.claude as a symlink and --ai-tools claude/global, the call must fail
+// and leave the project directory untouched. Reconciliation: affirms that the
+// pre-check is inside executeScaffoldAndInstall — removing it from that
+// function would let Scaffold run and create project files, failing this test.
+// Because both TTY and non-TTY paths call executeScaffoldAndInstall, this test
+// covers both paths.
+func TestExecuteScaffoldAndInstall_PreCheckFiresOnSymlinkClaudeDir(t *testing.T) {
+	project, home := initFixture(t)
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+
+	target := t.TempDir()
+	claudeDir := filepath.Join(home, ".claude")
+	if err := os.Symlink(target, claudeDir); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+
+	cfg := generators.Config{
+		ProjectName: "test",
+		ProjectType: "governance",
+		Hooks:       "none",
+		CI:          "none",
+	}
+	err := executeScaffoldAndInstall(cfg, []string{"claude"}, project, "global", home)
+	if err == nil {
+		t.Fatal("expected error: ~/.claude is a symlink, pre-check must abort")
+	}
+
+	// No project files must have been written.
+	entries, _ := os.ReadDir(project)
+	if len(entries) > 0 {
+		names := make([]string, len(entries))
+		for i, e := range entries {
+			names[i] = e.Name()
+		}
+		t.Errorf("project must be empty after pre-check abort, got: %v", names)
+	}
+}
+
+// --------------------------------------------------------------------------
+// T-12: Scaffold pre-check on symlinked project directories
+// --------------------------------------------------------------------------
+
+// TestInitScaffoldPreCheckAbortsOnSymlinkProjectClaudeNoAITools asserts that
+// even without --ai-tools, init aborts without partial writes when <proj>/.claude
+// is a symlink. Reconciliation: affirms that the Scaffold upfront pre-check
+// (T-12) fires for ClaudeCommandsDirPath regardless of the --ai-tools flag —
+// preCheckAIToolDestinations returns early when aiTools is empty, so the only
+// guard is the Scaffold pre-check.
+func TestInitScaffoldPreCheckAbortsOnSymlinkProjectClaudeNoAITools(t *testing.T) {
+	project, _ := initFixture(t)
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+
+	target := t.TempDir()
+	claudeDir := filepath.Join(project, ".claude")
+	if err := os.Symlink(target, claudeDir); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+
+	cmd := newInitCmd()
+	// No --ai-tools flag — preCheckAIToolDestinations returns nil early.
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error: project .claude is a symlink, Scaffold pre-check must abort")
+	}
+
+	// Count only non-.claude entries (the symlink itself is there before init).
+	entries, _ := os.ReadDir(project)
+	for _, e := range entries {
+		if e.Name() == ".claude" {
+			continue // the symlink we placed
+		}
+		t.Errorf("unexpected project file after pre-check abort: %s", e.Name())
+	}
+}
+
+// TestInitScaffoldPreCheckAbortsOnSymlinkScriptsDir asserts that init aborts
+// without partial writes when <proj>/scripts is a symlink. Reconciliation:
+// affirms that the Scaffold pre-check covers the scripts/ directory via
+// validateScriptPath — partial writes happen without the pre-check.
+func TestInitScaffoldPreCheckAbortsOnSymlinkScriptsDir(t *testing.T) {
+	project, _ := initFixture(t)
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+
+	target := t.TempDir()
+	scriptsDir := filepath.Join(project, "scripts")
+	if err := os.Symlink(target, scriptsDir); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+
+	cmd := newInitCmd()
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error: project scripts/ is a symlink, Scaffold pre-check must abort")
+	}
+
+	// No files other than the scripts symlink should exist.
+	entries, _ := os.ReadDir(project)
+	for _, e := range entries {
+		if e.Name() == "scripts" {
+			continue
+		}
+		t.Errorf("unexpected project file after pre-check abort: %s", e.Name())
+	}
+}
+
+// TestInitScaffoldPreCheckAbortsOnSymlinkVaultDir asserts that init aborts
+// without partial writes when <proj>/vault is a symlink. Reconciliation:
+// affirms that the Scaffold pre-check covers vault/ via vaultIndexPath —
+// without the pre-check, govDirs (docs/) would be written before the error.
+func TestInitScaffoldPreCheckAbortsOnSymlinkVaultDir(t *testing.T) {
+	project, _ := initFixture(t)
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+
+	target := t.TempDir()
+	vaultDir := filepath.Join(project, "vault")
+	if err := os.Symlink(target, vaultDir); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+
+	cmd := newInitCmd()
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error: project vault/ is a symlink, Scaffold pre-check must abort")
+	}
+
+	entries, _ := os.ReadDir(project)
+	for _, e := range entries {
+		if e.Name() == "vault" {
+			continue
+		}
+		t.Errorf("unexpected project file after pre-check abort: %s", e.Name())
+	}
+}
+
+// TestInitScaffoldPreCheckAbortsOnSymlinkDocsDir asserts that init aborts
+// without partial writes when <proj>/docs is a symlink. Reconciliation:
+// affirms that the Scaffold pre-check covers docs/ via govDirs — without the
+// pre-check, some govDirs would succeed before docs/ is refused.
+func TestInitScaffoldPreCheckAbortsOnSymlinkDocsDir(t *testing.T) {
+	project, _ := initFixture(t)
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+
+	target := t.TempDir()
+	docsDir := filepath.Join(project, "docs")
+	if err := os.Symlink(target, docsDir); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+
+	cmd := newInitCmd()
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error: project docs/ is a symlink, Scaffold pre-check must abort")
+	}
+
+	entries, _ := os.ReadDir(project)
+	for _, e := range entries {
+		if e.Name() == "docs" {
+			continue
+		}
+		t.Errorf("unexpected project file after pre-check abort: %s", e.Name())
 	}
 }

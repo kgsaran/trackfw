@@ -5055,13 +5055,16 @@ Gate: `internal/validator/validator_guard_binary_probe_test.go`
 
 ## `trackfw init --scope` e pré-checagem do destino das AI tools (REQ-2026-11-02, #657 e #661)
 
-<!-- trackfw-contract: gate=internal/commands/init_test.go -->
+<!-- trackfw-contract: gate=internal/commands/init_test.go,internal/generators/scaffold_test.go -->
 
 - `trackfw init --scope project|global` (padrão `global`). Um valor inválido dá erro **antes de qualquer
   escrita**.
-- Antes de gerar qualquer arquivo do projeto, nos caminhos com e sem TTY, o `init` confere os destinos
-  das AI tools selecionadas pelo `pathguard`: os globais, como `~/.claude/...`, e os do projeto, como o
-  `CLAUDE.md`. Se um destino for recusado (symlink ou reparse point, por exemplo um `~/.claude` em
+- Antes de gerar qualquer arquivo, nos caminhos com e sem TTY (ponto único `executeScaffoldAndInstall`),
+  o `init` confere pelo `pathguard` os destinos das AI tools selecionadas, globais (como `~/.claude/...`) e
+  do projeto (como o `CLAUDE.md`). Em seguida, o `Scaffold` confere **todos** os destinos que vai escrever
+  no projeto (`scaffoldWriteTargets`), antes do primeiro `MkdirAll` e mesmo sem `--ai-tools`. Um teste
+  amarra a lista a toda escrita do `Scaffold`; o `.claude/settings.json` é exceção nomeada, porque não é
+  fatal e já é coberto pelo ancestral `.claude/`. Se um destino for recusado (symlink ou reparse point, por exemplo um `~/.claude` em
   junction do OneDrive), o `init` aborta **sem alterar o projeto**, nomeia o destino e sugere
   `trackfw init --scope project` ou, depois, `trackfw agents install --scope project`. A dica só aparece
   na recusa de caminho. A recusa em si não mudou, e os guards no momento da escrita continuam valendo.
