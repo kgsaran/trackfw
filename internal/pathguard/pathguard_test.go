@@ -18,11 +18,8 @@ func TestIsRefusal_RealRefusalRecognized(t *testing.T) {
 	// Create a symlink inside dir so that RejectAndReport fires.
 	link := filepath.Join(dir, "sym")
 	target := t.TempDir()
-	if err := os.Symlink(target, link); err != nil {
-		if os.IsPermission(err) {
-			t.Skipf("symlink creation requires elevated privileges: %v", err)
-		}
-		t.Fatalf("os.Symlink: %v", err)
+	if !symlinkOrSkip(t, target, link) {
+		return
 	}
 	dest := filepath.Join(link, "file.txt")
 	err := pathguard.RejectAndReport(dir, dest)
@@ -64,11 +61,8 @@ func TestIsRefusal_WrappedRefusalStillRecognized(t *testing.T) {
 	dir := t.TempDir()
 	link := filepath.Join(dir, "sym")
 	target := t.TempDir()
-	if err := os.Symlink(target, link); err != nil {
-		if os.IsPermission(err) {
-			t.Skipf("symlink creation requires elevated privileges: %v", err)
-		}
-		t.Fatalf("os.Symlink: %v", err)
+	if !symlinkOrSkip(t, target, link) {
+		return
 	}
 	dest := filepath.Join(link, "file.txt")
 	refusal := pathguard.RejectAndReport(dir, dest)

@@ -413,9 +413,7 @@ func TestInitScopeGlobalPreCheckAbortsOnSymlinkClaudeDir(t *testing.T) {
 	// Place a real directory as the symlink target.
 	target := t.TempDir()
 	claudeDir := filepath.Join(home, ".claude")
-	if err := os.Symlink(target, claudeDir); err != nil {
-		t.Skipf("cannot create symlink (filesystem may not support it): %v", err)
-	}
+	symlinkOrSkipCmd(t, target, claudeDir)
 
 	// No --scope flag: default is "global", which is Bruno's scenario (#657).
 	cmd := newInitCmd()
@@ -497,9 +495,7 @@ func TestInitScopeProjectSucceedsEvenWithSymlinkClaudeDir(t *testing.T) {
 	// Place a real directory as the symlink target (same setup as the abort test).
 	target := t.TempDir()
 	claudeDir := filepath.Join(home, ".claude")
-	if err := os.Symlink(target, claudeDir); err != nil {
-		t.Skipf("cannot create symlink (filesystem may not support it): %v", err)
-	}
+	symlinkOrSkipCmd(t, target, claudeDir)
 
 	cmd := newInitCmd()
 	cmd.SetArgs([]string{"--ai-tools", "claude", "--scope", "project"})
@@ -531,9 +527,7 @@ func TestInitScopeProjectHintAbsentOnSymlinkProjectClaudeDir(t *testing.T) {
 	// destinations when scope=project).
 	target := t.TempDir()
 	claudeDir := filepath.Join(project, ".claude")
-	if err := os.Symlink(target, claudeDir); err != nil {
-		t.Skipf("cannot create symlink: %v", err)
-	}
+	symlinkOrSkipCmd(t, target, claudeDir)
 
 	cmd := newInitCmd()
 	cmd.SetArgs([]string{"--ai-tools", "claude", "--scope", "project"})
@@ -557,9 +551,7 @@ func TestInitScopeProjectHintPresentWhenGlobalScope(t *testing.T) {
 
 	target := t.TempDir()
 	claudeDir := filepath.Join(home, ".claude")
-	if err := os.Symlink(target, claudeDir); err != nil {
-		t.Skipf("cannot create symlink: %v", err)
-	}
+	symlinkOrSkipCmd(t, target, claudeDir)
 
 	cmd := newInitCmd()
 	cmd.SetArgs([]string{"--ai-tools", "claude"}) // default scope = global
@@ -590,9 +582,7 @@ func TestExecuteScaffoldAndInstall_PreCheckFiresOnSymlinkClaudeDir(t *testing.T)
 
 	target := t.TempDir()
 	claudeDir := filepath.Join(home, ".claude")
-	if err := os.Symlink(target, claudeDir); err != nil {
-		t.Skipf("cannot create symlink: %v", err)
-	}
+	symlinkOrSkipCmd(t, target, claudeDir)
 
 	cfg := generators.Config{
 		ProjectName: "test",
@@ -632,9 +622,7 @@ func TestInitScaffoldPreCheckAbortsOnSymlinkProjectClaudeNoAITools(t *testing.T)
 
 	target := t.TempDir()
 	claudeDir := filepath.Join(project, ".claude")
-	if err := os.Symlink(target, claudeDir); err != nil {
-		t.Skipf("cannot create symlink: %v", err)
-	}
+	symlinkOrSkipCmd(t, target, claudeDir)
 
 	cmd := newInitCmd()
 	// No --ai-tools flag — preCheckAIToolDestinations returns nil early.
@@ -663,9 +651,7 @@ func TestInitScaffoldPreCheckAbortsOnSymlinkScriptsDir(t *testing.T) {
 
 	target := t.TempDir()
 	scriptsDir := filepath.Join(project, "scripts")
-	if err := os.Symlink(target, scriptsDir); err != nil {
-		t.Skipf("cannot create symlink: %v", err)
-	}
+	symlinkOrSkipCmd(t, target, scriptsDir)
 
 	cmd := newInitCmd()
 	err := cmd.Execute()
@@ -693,9 +679,7 @@ func TestInitScaffoldPreCheckAbortsOnSymlinkVaultDir(t *testing.T) {
 
 	target := t.TempDir()
 	vaultDir := filepath.Join(project, "vault")
-	if err := os.Symlink(target, vaultDir); err != nil {
-		t.Skipf("cannot create symlink: %v", err)
-	}
+	symlinkOrSkipCmd(t, target, vaultDir)
 
 	cmd := newInitCmd()
 	err := cmd.Execute()
@@ -722,9 +706,7 @@ func TestInitScaffoldPreCheckAbortsOnSymlinkDocsDir(t *testing.T) {
 
 	target := t.TempDir()
 	docsDir := filepath.Join(project, "docs")
-	if err := os.Symlink(target, docsDir); err != nil {
-		t.Skipf("cannot create symlink: %v", err)
-	}
+	symlinkOrSkipCmd(t, target, docsDir)
 
 	cmd := newInitCmd()
 	err := cmd.Execute()
