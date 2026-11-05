@@ -24,9 +24,18 @@ reproduziu os dois de forma independente no fork. O arquiteto mediu de novo com 
   (`ghp_…`), chave do Google (`AIza…`) e `sk-proj-…` dão `rc=0` sem aviso.
 - O README diz que os hooks "block agents from materializing real credentials", o que promete mais do que
   o guard entrega.
-- O script gerado `scripts/trackfw-credential-guard.sh` (`credentialGuardDetectionCore` e
-  `credentialGuardModeResolution`, em `internal/generators/scaffold.go`) traz os mesmos dois padrões e o
-  mesmo leitor de `mode`.
+- O `internal/generators/scaffold.go` ainda tem as constantes `credentialGuardDetectionCore`,
+  `credentialGuardModeResolution` e afins, com os mesmos dois padrões e o mesmo leitor de `mode`. A Wave 0
+  mediu que elas são **código morto**: o script gerado `scripts/trackfw-credential-guard.sh` é um shim que
+  chama o binário. Elas enganam quem lê, e por isso a Wave 1 apaga.
+- A Wave 0 achou mais defeitos de mesma causa:
+  - o leitor de `mode` pega 5 linhas depois de `credential_guard:` sem parar na próxima chave de topo, então
+    um `mode:` de uma seção vizinha vaza (medido com `rc=2` no projeto, por excesso, e `rc=0` no global, por
+    falta);
+  - ele usa `Contains("mode:")`, então `# mode: block` e `ci_mode: block` também contam;
+  - no global, o CRLF tem o efeito inverso: `warn\r` cai no padrão `block`;
+  - no guard de git, `\git push`, `g\it push`, `env -i`, `FOO=1 git push` e os prefixos `nohup`, `time`,
+    `exec`, `timeout`, `nice`, `doas` e `stdbuf` também atravessam.
 
 **#663: guard de git.**
 
@@ -38,9 +47,15 @@ reproduziu os dois de forma independente no fork. O arquiteto mediu de novo com 
 
 ## Decision
 
-- **D1. O `mode` é lido igual nos dois lados.** O guard remove o `\r` e espaços finais do valor do `mode`,
-  como o validator. O script gerado converge na mesma correção. Um teste amarra o guard e o validator na
-  mesma tabela de entradas: LF, CRLF, comentário, aspas e indentação.
+- **D1. O `mode` é lido por uma função só.** Ela é exportada de `internal/guard` e usada também pelo
+  validator, conforme a spec de 8 passos do parecer da Wave 0 (§5.1):
+  - cabeçalho na coluna 0, com BOM removido;
+  - para na próxima chave de topo;
+  - chave `mode:` exata, ignorando comentário;
+  - aspas e `\r` removidos.
+
+  Um teste de tabela única afirma o mesmo resultado nos dois lados. As constantes mortas do `scaffold.go`
+  são apagadas.
 - **D2. Padrões de conteúdo com baixo falso positivo**, por decisão do KG. Além de JWT e AWS, o guard
   passa a detectar:
   - GitHub: `ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_` e `github_pat_`, com comprimento mínimo;
@@ -62,8 +77,14 @@ reproduziu os dois de forma independente no fork. O arquiteto mediu de novo com 
   - `cmd` com `/c` ou `/k`;
   - `eval`, cujo argumento é o resto do trecho.
 
-  A profundidade é limitada (valor da Wave 0). Ao passar do limite ou num argumento que não dá para ler,
-  o guard nega (fail closed), como já faz com payload truncado.
+  A profundidade máxima é 2, conforme a Wave 0. Ao passar do limite ou num argumento que não dá para ler,
+  o guard nega (fail closed), como já faz com payload truncado. O mesmo ML trata os prefixos de mesma causa:
+  - atribuição nua (`FOO=1`);
+  - `env -i`/`--` e `command -p`;
+  - `nohup`, `time`, `exec`, `timeout`, `nice`, `doas` e `stdbuf`;
+  - barra invertida POSIX (`\git`, `g\it`), que exige `quoteAwareSplit` e `shellTokenize` no mesmo commit.
+
+  A lista de prefixos é uma denylist aberta, e isso fica declarado.
 - **D5. Limite declarado.** Um interpretador de linguagem que chama git por API, como `python -c` com
   `subprocess` ou `node -e`, continua fora. O README e o `docs/cli-parity.md` dizem isso. Análise de texto
   não fecha execução arbitrária.

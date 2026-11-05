@@ -31,7 +31,12 @@ credencial bloqueia `grep` com glob que alcance arquivos de teste com JWT de exe
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model (hades-tf)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-11-05. Parecer em `docs/seguranca/2026-11-05-wave0-guards-primeiro-usuario-externo.md`, com os achados 1 a 11 e os residuais R1 a R7.
+- **Conferido pelo arquiteto:** o vazamento entre blocos dá `rc=2` no projeto, `\git push` e `g\it push` dão `rc=0`, e as constantes do `scaffold.go` só aparecem em comentário fora do próprio arquivo.
+- **Emendas do arquiteto:**
+  - o leitor compartilhado fica em `internal/guard`, exportado, e não num pacote novo (o validator importa `internal/guard` sem ciclo, medido com `go list -deps`);
+  - entram na lista do ML-1A o `internal/commands/guard.go` (`help` com "JWT or AWS") e o `docs/cli-parity.md` (cita as constantes apagadas);
+  - os achados 2, 3 e 7 a 11 entram pela Regra Dura de Causa Raiz, e o AC1 e o AC4 da REQ foram emendados.
 **Files affected:** `docs/seguranca/2026-11-05-wave0-guards-primeiro-usuario-externo.md`
 **Actions:**
 1. Completude da enumeração, por causa:
@@ -63,9 +68,9 @@ credencial bloqueia `grep` com glob que alcance arquivos de teste com JWT de exe
 5. `## Prescrições`, com a lista de arquivos de cada ML. O ML-1A (credencial) e o ML-1B (git) não podem
    ter arquivo em comum, ou a Wave 0 diz que ficam em sequência.
 **Acceptance criteria:**
-- [ ] As cinco seções respondidas com evidência (comando e resultado)
-- [ ] Prescrições em seção intitulada `Prescrições`
-- [ ] Nenhuma linha de implementação escrita
+- [x] As cinco seções respondidas com evidência (comando e resultado)
+- [x] Prescrições em seção intitulada `Prescrições`
+- [x] Nenhuma linha de implementação escrita
 
 **Gates da wave:**
 ```bash
@@ -73,15 +78,25 @@ test -f docs/seguranca/2026-11-05-wave0-guards-primeiro-usuario-externo.md
 grep -q '^## Prescrições' docs/seguranca/2026-11-05-wave0-guards-primeiro-usuario-externo.md
 ```
 
-## Wave 1 — Implementação
-> Dependencies: Wave 0 auditada. Os MLs e a lista exata de arquivos saem das prescrições da Wave 0, e o
-> arquiteto atualiza esta seção antes do despacho.
+## Wave 1 — Implementação (sequencial: ML-1A, depois ML-1B)
+> Dependencies: Wave 0 auditada. Ficam em sequência porque os dois escrevem no `README.md` e no
+> `docs/cli-parity.md`, em seções diferentes, e porque os dois testam o pacote `internal/guard`.
 
-### ML-1A — Guard de credencial: mode com CRLF e padrões ampliados (apolo-tf) — AC1, AC2, AC3
+### ML-1A — Guard de credencial: leitor de mode único, padrões ampliados, constantes mortas (apolo-tf) — AC1, AC2, AC3
 **Status:** ⬜ Pendente
+**Files affected:** `internal/guard/credential.go`, `internal/guard/credential_test.go`, `internal/guard/credential_mode_test.go`, `internal/guard/credential_patterns_test.go`, `internal/validator/validator_credential_guard_integrity.go`, `internal/validator/validator_credential_guard_integrity_test.go`, `internal/generators/scaffold.go`, `internal/generators/scaffold_literal_copy_parity_test.go`, `internal/generators/credential_guard_test.go`, `internal/commands/guard.go`, `README.md`, `docs/cli-parity.md`
+**Acceptance criteria:**
+- [ ] AC1, AC2 e AC3 da REQ, conforme o parecer da Wave 0 (§5.1)
+- [ ] pacotes tocados verdes com PATH sem trackfw; `make parity-rest` verde
+- [ ] contra-braço por item
 
-### ML-1B — Guard de git: invólucro de shell analisado (apolo-tf) — AC4, AC5
+### ML-1B — Guard de git: invólucro de shell, prefixos e barra invertida (apolo-tf) — AC4, AC5
 **Status:** ⬜ Pendente
+**Files affected:** `internal/guard/gitbranch.go`, `internal/guard/gitbranch_test.go`, `internal/guard/gitbranch_wrapper_test.go`, `README.md`, `docs/cli-parity.md`
+**Acceptance criteria:**
+- [ ] AC4 e AC5 da REQ, conforme o parecer da Wave 0 (§5.2)
+- [ ] pacotes tocados verdes com PATH sem trackfw; `make parity-rest` verde
+- [ ] contra-braço por item
 
 ## Wave 2 — Red team e release
 > Dependencies: Wave 1 auditada.

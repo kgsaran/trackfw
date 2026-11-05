@@ -37,8 +37,10 @@ e fazer os guards antes da REQ de CI. O desenho está no ADR.
 - [ ] **AC1 (#662).** Com `credential_guard.mode: block`, o guard dá `rc=2` com o `trackfw.yaml` em LF e
   também em CRLF, nos escopos de projeto e `--global`. Um teste de tabela única afirma que o guard e o
   `extractCredentialGuardMode` do validator chegam ao mesmo `mode` para cada entrada: LF, CRLF, comentário,
-  aspas, indentação e chave ausente. O script gerado `scripts/trackfw-credential-guard.sh` converge, ou a
-  Wave 0 justifica por escrito por que ele fica de fora.
+  aspas, indentação, chave ausente, `# mode:` comentado, `ci_mode:`, seção vizinha com `mode:` (vazamento
+  entre blocos), linha em branco CRLF, `credential_guard:` aninhado, BOM e tab. No global, `mode: warn` em
+  CRLF dá `rc=0`. As constantes mortas do `scaffold.go` são apagadas, porque o script gerado é um shim, como a
+  Wave 0 mediu.
 - [ ] **AC2 (#662).** O guard detecta os padrões do ADR D2 (o conjunto exato sai da Wave 0), com mensagem
   que nomeia o tipo. Há vetor positivo por padrão e vetor negativo de falso positivo por padrão (prefixo
   curto demais, texto de documentação). Conteúdo comum (`print(1)`) continua com `rc=0`. Os vetores de
@@ -49,7 +51,11 @@ e fazer os guards antes da REQ de CI. O desenho está no ADR.
 - [ ] **AC4 (#663).** O guard de git dá `rc=2` para `bash -c`, `sh -c`, `bash -lc`, `zsh -c`, `eval`,
   `pwsh -c`, `powershell -Command` e `cmd /c` envolvendo cada subcomando hoje bloqueado (`push` e `commit`
   no mínimo, e a tabela inteira de `applyRule` por amostragem). Dá `rc=0` para `bash -c "git status"`.
-  Invólucro aninhado até o limite da Wave 0 também bloqueia, e acima do limite o guard nega.
+  Invólucro aninhado até a profundidade 2 também bloqueia, e acima disso o guard nega. Também dão `rc=2`,
+  porque são da mesma causa e foram achados na Wave 0:
+  - `\git push` e `g\it push`;
+  - `FOO=1 git push`, `env -i git push` e `command -p git push`;
+  - `nohup`, `time`, `exec`, `timeout 10s`, `nice -n 10`, `doas -u x` e `stdbuf` antes de `git push`.
 - [ ] **AC5 (#663).** O limite (interpretador de linguagem, como `python -c` e `node -e`) fica declarado no
   README e no `docs/cli-parity.md`, com um teste que fixa o `rc=0` atual como limite conhecido, não como
   garantia.
@@ -61,6 +67,9 @@ e fazer os guards antes da REQ de CI. O desenho está no ADR.
 - Não detecta credencial por caminho de arquivo (`.env`, `.aws/credentials`, `.ssh/id_*`).
 - Não detecta atribuição genérica (`password = "…"`) nem segredo por entropia.
 - Não analisa interpretadores de linguagem (`python`, `node`, `ruby`, `perl`) nem scripts em arquivo.
+- Não trata shell lido de stdin (heredoc, herestring, `| sh`, `xargs`), `powershell -EncodedCommand`,
+  expansão de variável nem prefixos fora da lista (`ionice`, `taskset`, `nsenter`): são os residuais R1, R3,
+  R4 e R6 da Wave 0, declarados na documentação.
 - Não muda o padrão de `mode` (`warn` no projeto, `block` no global).
 - Não muda a linha de hook gerada nem os eventos e matchers instalados.
 - Não mexe na REQ de CI (#664, #665 e a porta fixa do `serve-address`), que vem depois, em outra branch.
