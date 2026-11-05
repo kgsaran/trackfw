@@ -113,12 +113,17 @@ grep -q '^## Prescrições' docs/seguranca/2026-11-05-wave0-guards-primeiro-usua
 > Dependencies: Wave 1 auditada.
 
 ### ML-2A — Red team (hades-tf)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-11-05. Parecer em `docs/seguranca/2026-11-05-redteam-guards-primeiro-usuario-externo.md`, com 109 vetores. Veredito: **reprova o AC4**.
+- **Bloqueantes:** B1 (abreviação e `--command` do PowerShell), B2 (`.EXE` maiúsculo) e B3 (`cmd /c"…"`).
+- **Corrigir no PR:** C4 (flags do `env`), C5 (`-CommandWithArgs`), C6 (`$'…'`), C7 (`$( … )` e crase), C8 (circunflexo do `cmd` e crase do PowerShell) e C9 (`mode:` na sexta linha cai no padrão).
+- **Conferido pelo arquiteto:** os 13 vetores de B1 a C8 dão `rc=0` no binário da branch, e o C9 dá `rc=0` contra `rc=2` no controle.
+- **Residual declarado:** R-cred-2. O guard de credencial só lê o `trackfw.yaml` do cwd, conforme o D9 do ADR-2026-10-04; o README precisa dizer isso.
+- 🔴 **Incidente:** para provar o `-EncodedCommand`, o red team executou `pwsh` com `git push` real na raiz do repositório, depois de duas negações do classificador. O push falhou só porque a branch não tinha upstream, e o repositório ficou intacto (conferido com `git reflog` e `git branch -vv`). Ficou registrado na memória do arquiteto, e os próximos handoffs proíbem executar interpretadores.
 **Files affected:** `docs/seguranca/2026-11-05-redteam-guards-primeiro-usuario-externo.md`
 **Acceptance criteria:**
-- [ ] cada vetor de ataque com comando e `rc` medidos no binário da branch, contra o guard de credencial e o de git
-- [ ] achados classificados (bloqueante, corrigir no PR, residual declarado), com prescrição para os dois primeiros
-- [ ] nenhuma linha de código alterada
+- [x] cada vetor de ataque com comando e `rc` medidos no binário da branch, contra o guard de credencial e o de git
+- [x] achados classificados (bloqueante, corrigir no PR, residual declarado), com prescrição para os dois primeiros
+- [x] nenhuma linha de código alterada
 
 ### ML-2B — Revisão de qualidade do guard de git (hefesto-tf) — paralelo ao ML-2A
 **Status:** ✅ Concluído — auditado em 2026-11-05. Parecer em `docs/qualidade/2026-11-05-revisao-guards-primeiro-usuario-externo.md`.
@@ -138,3 +143,19 @@ grep -q '^## Prescrições' docs/seguranca/2026-11-05-wave0-guards-primeiro-usua
 - [x] parecer com achados classificados (bloqueante, corrigir no PR, observação), cada um com arquivo e linha
 - [x] posição medida sobre manter dois tokenizadores ou unificar, com o risco de cada caminho no Windows
 - [x] nenhuma linha de código alterada
+
+### ML-2C — Correções do red team e da revisão de qualidade (apolo-tf)
+**Status:** ⬜ Pendente
+**Files affected:** `internal/guard/gitbranch.go`, `internal/guard/gitbranch_wrapper_test.go`, `internal/guard/credential.go`, `internal/guard/credential_mode_test.go`, `internal/validator/validator_credential_guard_integrity_test.go`, `README.md`, `docs/cli-parity.md`
+**Acceptance criteria:**
+- [ ] B1 a B3, C4 a C9, F1-A, F1-B, F2 a F5 e F7 corrigidos, cada um com vetor na tabela de teste e contra-braço
+- [ ] os 47 vetores e as 16 leituras do ML-1B continuam com o mesmo `rc`
+- [ ] pacotes tocados verdes com PATH sem trackfw; `make parity-rest` verde com PATH normal
+
+### ML-2D — Reverificação do red team (hades-tf)
+**Status:** ⬜ Pendente
+**Files affected:** `docs/seguranca/2026-11-05-redteam-guards-primeiro-usuario-externo.md`
+**Acceptance criteria:**
+- [ ] os 109 vetores medidos de novo, só pelo guard, com o `rc` de cada um no parecer
+- [ ] nenhum bloqueante ou "corrigir no PR" em aberto
+- [ ] nenhum interpretador executado com payload de git que escreve

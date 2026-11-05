@@ -55,7 +55,11 @@ e fazer os guards antes da REQ de CI. O desenho está no ADR.
   porque são da mesma causa e foram achados na Wave 0:
   - `\git push` e `g\it push`;
   - `FOO=1 git push`, `env -i git push` e `command -p git push`;
-  - `nohup`, `time`, `exec`, `timeout 10s`, `nice -n 10`, `doas -u x` e `stdbuf` antes de `git push`.
+  - `nohup`, `time`, `exec`, `timeout 10s`, `nice -n 10`, `doas -u x` e `stdbuf` antes de `git push`;
+  - e, pela emenda da Wave 2: `powershell -ExecutionPolicy Bypass -Command`, `pwsh -co`, `pwsh --command`,
+    `pwsh -cwa`, `CMD.EXE /c`, `BASH.EXE -c`, `cmd /c"git push"`, `cmd /c g^it push`, ``pwsh -c 'g`it push'``,
+    `env --unset=HOME`, `bash -c $'git push'`, `echo $(git push)`, ``echo `git push` `` e
+    `OUT=$(git commit -m x)`.
 - [ ] **AC5 (#663).** O limite (interpretador de linguagem, como `python -c` e `node -e`) fica declarado no
   README e no `docs/cli-parity.md`, com um teste que fixa o `rc=0` atual como limite conhecido, não como
   garantia.

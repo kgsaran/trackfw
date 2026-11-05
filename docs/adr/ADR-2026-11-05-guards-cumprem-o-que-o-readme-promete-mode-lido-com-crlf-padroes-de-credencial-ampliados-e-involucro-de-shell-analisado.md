@@ -47,7 +47,9 @@ reproduziu os dois de forma independente no fork. O arquiteto mediu de novo com 
 
 ## Decision
 
-- **D1. O `mode` é lido por uma função só.** Ela é exportada de `internal/guard` e usada também pelo
+- **D1. O `mode` é lido por uma função só.** Sem limite fixo de linhas depois do cabeçalho: a leitura vai
+  até a próxima chave de topo (emenda da Wave 2; o limite de 5 linhas deixava `mode:` na sexta linha cair no
+  padrão). Ela é exportada de `internal/guard` e usada também pelo
   validator, conforme a spec de 8 passos do parecer da Wave 0 (§5.1):
   - cabeçalho na coluna 0, com BOM removido;
   - para na próxima chave de topo;
@@ -85,6 +87,17 @@ reproduziu os dois de forma independente no fork. O arquiteto mediu de novo com 
   - barra invertida POSIX (`\git`, `g\it`), que exige `quoteAwareSplit` e `shellTokenize` no mesmo commit.
 
   A lista de prefixos é uma denylist aberta, e isso fica declarado.
+
+  **Emenda da Wave 2 (red team e revisão de qualidade, 2026-11-05).** Pela Regra Dura de Causa Raiz, entram
+  no D4 as formas de mesma causa (git escondido numa construção que o guard não lê):
+  - PowerShell: abreviação de `-Command` (`-co`, `-com`), `--command`, `-CommandWithArgs`/`-cwa`, flags com
+    argumento antes do comando (`-ExecutionPolicy Bypass`, `-WorkingDirectory`, `-ep`) e o crase como escape;
+  - `cmd`: `/c"…"` sem espaço e o circunflexo como escape;
+  - `.EXE` em maiúsculas;
+  - `env --unset=`, `-u`, `-P`, `-C` e `-S`;
+  - `$'…'` e `$"…"`;
+  - substituição de comando `$( … )` e crase, inclusive no lado direito de uma atribuição. Cada nível conta
+    na profundidade 2.
 - **D5. Limite declarado.** Um interpretador de linguagem que chama git por API, como `python -c` com
   `subprocess` ou `node -e`, continua fora. O README e o `docs/cli-parity.md` dizem isso. Análise de texto
   não fecha execução arbitrária.

@@ -39,6 +39,7 @@
 - [Defeito conhecido se corrige agora](feedback_defeito_conhecido_corrige_agora.md) — residual de red-team ou inconsistência vista na auditoria vira ML no mesmo PR (KG 2x em 2026-10-09)
 - [Mudar contrato: auditar quem afirma o antigo](feedback_mudar_contrato_auditar_quem_afirma_o_antigo.md) — enumerar consumidores não basta; os TESTES deles fixam a forma antiga
 - [Proibir sem rota legítima vira contorno](feedback_proibir_sem_rota_legitima_vira_contorno.md) — medição git que escreve: dê a rota (teste Go em t.TempDir); hades contornou o guard por script
+- [Red team executou interpretador real](feedback_red_team_executa_interprete_real.md) — 🔴 Hades rodou `pwsh -EncodedCommand` com git push no repo após 2 negações; handoff proíbe executar interpretador
 - [Agentes escrevem o working context](project_agentes_escrevem_working_context.md) — 5/9 ignoraram a proibição; a instrução do arquivo do agente vence o handoff; corrigir no gerador
 - [PR incompleto abre como draft](feedback_pr_incompleto_abre_como_draft.md) — wave pendente → `gh pr create --draft`; aviso em prosa não segurou o merge do #598
 - [Mover escrita roda o pathguard](feedback_mover_escrita_roda_pathguard.md) — escrita movida de função/pacote → `go test ./internal/pathguard/`; só o make quality pegou (#602)
