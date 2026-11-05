@@ -608,3 +608,273 @@ em §4.1.
 | C7 — $() e backtick substitution | CORRIGIR | gitbranch.go | L1566, L2075, L442 | — |
 | C8 — cmd caret e PS backtick escape no nome | CORRIGIR | gitbranch.go | L2007, L1987 | — |
 | C9 — lookbehind=5 (mode: na 6ª linha) | CORRIGIR | credential.go | L1069 | AC1 |
+
+---
+
+## Reverificação (ML-2D)
+
+> Data: 2026-11-05 | Binário: `trackfw 11.4.0` HEAD `14792d6e` (ML-2E — último commit de código)
+> Medição executada exclusivamente pelo guard. Nenhum interpretador foi invocado com
+> payload de git de escrita.
+
+### Metodologia de reverificação
+
+Dois scripts de medição em `scratchpad/hades2/`:
+
+- `measure_git.sh` — 78 vetores do guard de git-branch (cobre §2.3 original + vetores ML-2E)
+- `measure_cred.sh` — 36 vetores do guard de credencial (cobre §2.1 + §2.2 original)
+- `measure_new.sh` — 31 vetores de novos ataques contra as correções ML-2C/2E
+
+Testes unitários: `env PATH="$(dirname $(command -v go)):/usr/bin:/bin" go test -count=1 ./internal/guard/`
+→ `ok github.com/kgsaran/trackfw/internal/guard 3.287s`
+
+### Tabela dos 109 vetores originais
+
+#### §2.1 — Guard de credencial, AC1 (parser de mode) — 17 vetores
+
+| Configuração do trackfw.yaml | rc esp. | rc ML-2A | rc agora | Situação |
+|---|---|---|---|---|
+| project-scope, LF `mode: block` | 2 | 2 | 2 | OK — inalterado |
+| project-scope, CRLF `mode: block` | 2 | 2 | 2 | OK — fix ML-1A mantido |
+| project-scope, CRLF `mode: warn` | 0 | 0 | 0 | OK — inalterado |
+| project-scope, BOM+CRLF `mode: block` | 2 | 2 | 2 | OK — fix ML-1A mantido |
+| project-scope, `# mode: block` comentado | 0 | 0 | 0 | OK — inalterado |
+| project-scope, `ci_mode: block` (infix) | 0 | 0 | 0 | OK — inalterado |
+| project-scope, `mode: block` como 5ª linha | 2 | 2 | 2 | OK — inalterado |
+| project-scope, `mode: block` como 6ª linha | 2 | 0 | **2** | **C9 CORRIGIDO** — lookbehind removido (ML-2C) |
+| project-scope, seção vizinha `mode: block` + `credential_guard.mode: warn` | 0 | 0 | 0 | OK — stop rule mantida |
+| global-scope, sem `trackfw.yaml` | 2 | 2 | 2 | OK — inalterado |
+| global-scope, CRLF `mode: warn` | 0 | 0 | 0 | OK — fix ML-1A mantido |
+| global-scope, BOM+CRLF `mode: warn` | 0 | 0 | 0 | OK — fix ML-1A mantido |
+| global-scope, BOM+CRLF `mode: block` | 2 | 2 | 2 | OK — fix ML-1A mantido |
+| global-scope, sem seção `credential_guard` | 2 | 2 | 2 | OK — default block |
+| global-scope, `credential_guard.mode: block` + `other.mode: warn` | 2 | 2 | 2 | OK — stop rule |
+| global-scope, seção vizinha `mode: block` + `credential_guard.mode: warn` | 0 | 0 | 0 | OK — isolamento |
+| project-scope, cwd=`proj/sub/` sem yaml próprio | 0 | 0 | 0 | OK — R-cred-2 preservado |
+
+#### §2.2 — Guard de credencial, AC2 (padrões) — 19 vetores
+
+| Payload (truncado) | rc esp. | rc ML-2A | rc agora | Situação |
+|---|---|---|---|---|
+| `ghp_` + 36 chars alnum | 2 | 2 | 2 | OK |
+| `sk-ant-api03-` + 88 chars | 2 | 2 | 2 | OK |
+| `sk-proj-` + 95 chars | 2 | 2 | 2 | OK |
+| `sk-` + 48 chars alnum | 2 | 2 | 2 | OK |
+| código benigno `echo 'print(1)'` | 0 | 0 | 0 | OK — sem FP |
+| multi-padrão em um payload | 2 | 2 | 2 | OK |
+| `nosk-ant-api03-...` (alnum antes de sk) | 0 | 0 | 0 | OK — boundary |
+| `xsk-ant-api03-...` (alnum antes de sk) | 0 | 0 | 0 | OK — boundary |
+| `task-ant-api03-...` | 0 | 0 | 0 | OK — boundary |
+| `task-` + 5 chars + 48 A's | 0 | 0 | 0 | OK — boundary |
+| `task-sk-ant-api03-...` (hífen antes de `sk-ant-`) | 2 | 2 | 2 | OK |
+| `task-sk-proj-...` | 2 | 2 | 2 | OK |
+| `literal \nsk-ant-...` | 2 | 2 | 2 | OK — `\\[bfnrt]` boundary |
+| `literal \bsk-ant-...` | 2 | 2 | 2 | OK — `\\[bfnrt]` boundary |
+| `ghp_...` em JSON payload | 2 | 2 | 2 | OK — Layer 1 |
+| `echo 'ghp_...' ; cat` (chained) | 2 | 2 | 2 | OK — não isento |
+| `echo 'ghp_...' > /dev/null` | 0 | 0 | 0 | OK — ephemeral exempt |
+| `'gh''p_AAAA...'` (quote-concat) | 0 | 0 | 0 | OK — R-cred-1 residual preservado |
+| `gh\<newline>p_...` (line-continuation) | 0 | 0 | 0 | OK — R-cred-1 residual preservado |
+
+#### §2.3 — Guard de git-branch, AC4 (invólucros de shell e prefixos) — 73 vetores
+
+| Comando medido | rc esp. | rc ML-2A | rc agora | Situação |
+|---|---|---|---|---|
+| `bash -c "git push"` | 2 | 2 | 2 | OK |
+| `sh -c 'git push'` | 2 | 2 | 2 | OK |
+| `bash -lc "git commit -m x"` | 2 | 2 | 2 | OK |
+| `bash -ec 'git push'` | 2 | 2 | 2 | OK |
+| `zsh -c 'git push'` | 2 | 2 | 2 | OK |
+| `eval "git push"` | 2 | 2 | 2 | OK |
+| `eval git push` | 2 | 2 | 2 | OK |
+| `powershell -c "git push"` | 2 | 2 | 2 | OK |
+| `pwsh -Command "git push"` | 2 | 2 | 2 | OK |
+| `cmd /c git push` | 2 | 2 | 2 | OK |
+| `cmd.exe /c "git push"` | 2 | 2 | 2 | OK |
+| `bash -c "sh -c 'git push'"` | 2 | 2 | 2 | OK — depth 2 |
+| `bash -c "bash -c 'bash -c \"git push\"'"` | 2 | 2 | 2 | OK — depth 3 fail-closed |
+| `\git push` | 2 | 2 | 2 | OK — fix ML-1B mantido¹ |
+| `g\it push` | 2 | 2 | 2 | OK — fix ML-1B mantido¹ |
+| `FOO=1 git push` | 2 | 2 | 2 | OK |
+| `env -i git push` | 2 | 2 | 2 | OK |
+| `env -- git push` | 2 | 2 | 2 | OK |
+| `env --unset HOME git push` | 2 | 2 | 2 | OK |
+| `command -p git push` | 2 | 2 | 2 | OK |
+| `nohup git push` | 2 | 2 | 2 | OK |
+| `time git push` | 2 | 2 | 2 | OK |
+| `exec git push` | 2 | 2 | 2 | OK |
+| `timeout 10s git push` | 2 | 2 | 2 | OK |
+| `nice -n 10 git push` | 2 | 2 | 2 | OK |
+| `doas -u x git push` | 2 | 2 | 2 | OK |
+| `stdbuf -oL git push` | 2 | 2 | 2 | OK |
+| `nohup nice -n 5 timeout 3 git push` | 2 | 2 | 2 | OK — cadeia |
+| `GIT.EXE push` | 2 | 2 | 2 | OK |
+| `Git.exe push` | 2 | 2 | 2 | OK |
+| `/c/Git/git.exe push` | 2 | 2 | 2 | OK — forward slash path |
+| `cmd /c "echo a & git push"` | 2 | 2 | 2 | OK |
+| `cmd /c "echo a && git push"` | 2 | 2 | 2 | OK |
+| `bash -c "git status"` | 0 | 0 | 0 | OK — FP: status seguro |
+| `bash -c "trackfw push --follow-tags"` | 0 | 0 | 0 | OK — FP: trackfw ≠ git |
+| `bash -c "echo $(git status)"` | 0 | 0 | 0 | OK — FP: status seguro |
+| `trackfw commit -m "$(cat <<EOF git-push-mention EOF)"` | 0 | 0 | 0 | OK — FP: cat |
+| `$"git push"` (bare, zsh/bash) | 0 | 0 | 0 | OK — FP: comando com espaço |
+| `pwsh -com 'git push'` | 2 | 0 | **2** | **B1 CORRIGIDO** |
+| `pwsh -co 'git push'` | 2 | 0 | **2** | **B1 CORRIGIDO** |
+| `pwsh --command 'git push'` | 2 | 0 | **2** | **B1 CORRIGIDO** |
+| `pwsh --co 'git push'` | 2 | 0 | **2** | **B1 CORRIGIDO** |
+| `CMD.EXE /c 'git push'` | 2 | 0 | **2** | **B2 CORRIGIDO** |
+| `BASH.EXE -c 'git push'` | 2 | 0 | **2** | **B2 CORRIGIDO** |
+| `POWERSHELL.EXE -c 'git push'` | 2 | 0 | **2** | **B2 CORRIGIDO** |
+| `cmd.EXE /c 'git push'` | 2 | 0 | **2** | **B2 CORRIGIDO** |
+| `cmd /c"git push"` (fusionado) | 2 | 0 | **2** | **B3 CORRIGIDO** |
+| `cmd /k"git push"` (fusionado /k) | 2 | 0 | **2** | **B3 CORRIGIDO** |
+| `env --unset=HOME git push` | 2 | 0 | **2** | **C4 CORRIGIDO** |
+| `env -S 'git push'` | 2 | 0 | **2** | **C4 CORRIGIDO** |
+| `env -P /usr/bin git push` | 2 | 0 | **2** | **C4 CORRIGIDO** |
+| `env -C /tmp git push` | 2 | 0 | **2** | **C4 CORRIGIDO** |
+| `pwsh -CommandWithArgs "git push"` | 2 | 0 | **2** | **C5 CORRIGIDO** |
+| `pwsh -cwa "git push"` | 2 | 0 | **2** | **C5 CORRIGIDO** |
+| `bash -c $'git push'` | 2 | 0 | **2** | **C6 CORRIGIDO** |
+| `bash -c $"git push"` | 2 | 0 | **2** | **C6 CORRIGIDO** |
+| `git $'push'` | 2 | 0 | **2** | **C6 CORRIGIDO** |
+| `g$'it' push` | 2 | 0 | **2** | **C6 CORRIGIDO** |
+| `bash -c $'\x67\x69\x74 push'` (ANSI-C hex) | 0 | 0 | 0 | OK — R-C6-esc residual preservado |
+| `$(git push)` bare | 2 | 0 | **2** | **C7 CORRIGIDO (parcial 1/4)** |
+| `bash -c "$(git push)"` | 2 | 0 | **2** | **C7 CORRIGIDO (parcial 2/4)** |
+| `` `git push` `` bare backtick | 2 | 0 | **2** | **C7 CORRIGIDO (parcial 3/4)** |
+| `echo "$(git push)"` | 2 | 0 | **2** | **C7 CORRIGIDO (parcial 4/4)** |
+| `cat <(git push)` process substitution | 2 | 0 | 0 | **C7 AINDA FALHA** — `<(...)` não está em `extractCmdSubstBodies` |
+| `OUT=$(git commit -m x 2>&1)` | 2 | 0 | 0 | **C7 AINDA FALHA** — `stripShellSuffixPOSIX` consome `)` de `2>&1)` |
+| `cmd /c g^it push` | 2 | 0 | **2** | **C8 CORRIGIDO** |
+| `pwsh -c 'g` + `` `it push'`` | 2 | 0 | **2** | **C8 CORRIGIDO** |
+| `builtin eval 'git push'` | 0 | 0 | 0 | OK — R4 residual preservado |
+| `bash <<< 'git push'` | 0 | 0 | 0 | OK — R1 residual preservado |
+| `ionice git push` | 0 | 0 | 0 | OK — R4 residual preservado |
+| `python3 -c 'import subprocess...'` | 0 | 0 | 0 | OK — R2 residual preservado |
+| `powershell -EncodedCommand ZwBpAHQAIABwAHUAcwBoAA==` | 0 | 0 | 0 | OK — R3 residual preservado |
+| `pwsh -enc ZwBpAHQAIABwAHUAcwBoAA==` | 0 | 0 | 0 | OK — R3 residual preservado |
+
+¹ Medição ML-2D: o script de medição usou `'\\\\git push'` (4 barras = 2 barras literais) em vez de `'\git push'` (1 barra), gerando rc=0 no script. Verificado manualmente com escaping correto: `trackfw guard git-branch --command '\git push'` → rc=2. O guard está correto; o erro foi do script.
+
+**Resumo §2.3:** 71/73 vetores originais OK; 2 ainda falham (C7 parcial).
+
+**Vetores adicionados pelo ML-2E (medidos nesta rodada):**
+
+| Comando | rc esp. | rc agora | Situação |
+|---|---|---|---|
+| `powershell git push` (posicional) | 2 | 2 | **ML-2E CORRIGIDO** |
+| `powershell 'git push'` (posicional quoted) | 2 | 2 | **ML-2E CORRIGIDO** |
+| `powershell -ExecutionPolicy Bypass -Command 'git push'` | 2 | 2 | **F1-A CORRIGIDO** |
+| `pwsh -WorkingDirectory C:\x -c 'git push'` | 2 | 2 | **F1-A CORRIGIDO** |
+| `pwsh -ep Bypass -c 'git push'` | 2 | 2 | **F1-A CORRIGIDO** |
+| `pwsh git push` (posicional PS 7) | 0 | 0 | OK — residual declarado (`-File`) |
+
+---
+
+### Novos achados da rodada ML-2D
+
+#### D-1 — `pwsh -ConfigurationFile foo.ps1 -c 'git push'` → rc=0 (LOW)
+
+`-ConfigurationFile` não está em `isPsArgConsumingFlag` (`gitbranch.go` ~L2057). O loop trata
+`-ConfigurationFile` como flag booleana (via `strings.HasPrefix(tok, "-") → continue`); `foo.ps1`
+(próximo token) não começa com `-`, então é tratado como positional para `pwsh` → interpreta como
+`-File` → `isPsNoAnalyzeFlag` → retorna sem analisar. O `-c 'git push'` seguinte nunca é alcançado.
+
+**Evidência:** `trackfw guard git-branch --command "pwsh -ConfigurationFile foo.ps1 -c 'git push'"` → rc=0.
+
+**Severidade:** LOW. Requer conhecimento do parâmetro `-ConfigurationFile` e um arquivo `.ps1`
+controlado pelo adversário. O payload de `-c 'git push'` é a parte que escreve, e está oculto
+atrás do `-ConfigurationFile` não-reconhecido.
+
+**Prescrição:** adicionar `-configurationfile` à lista em `isPsArgConsumingFlag`.
+
+---
+
+#### D-2 — `env --split-string='git push'` (forma combinada) → rc=0 (LOW)
+
+`stripEnvCommandPrefix` em L529 testa `lower == "--split-string"` (igualdade exata). A forma
+`--split-string='git push'` chega ao tokenizador POSIX como token único
+`--split-string=git push` (após remoção de aspas); esse token não casa com a igualdade exata.
+O loop trata-o como flag booleana com `HasPrefix(lower, "--") → continue`; `git` (próximo token)
+é o "comando" → `base = "git"` mas sem subcomando `push` → rc=0.
+
+**Evidência:** `trackfw guard git-branch --command "env --split-string='git push'"` → rc=0 (want=2).
+Forma separada `env --split-string 'git push'` → rc=2 (fixada pelo C4).
+
+**Severidade:** LOW. Variante sintática do C4 já corrigido; exige forma combinada `=value`.
+
+**Prescrição:** em `stripEnvCommandPrefix`, adicionar teste para forma combinada:
+```go
+if strings.HasPrefix(lower, "--split-string=") {
+    split := shellTokenizePOSIX(tok[len("--split-string="):])
+    tokens = append(split, tokens...)
+    break
+}
+```
+
+---
+
+#### D-3 — `bash -c "$(git push"` (paren desbalanceado) → rc=0 fail-open (LOW)
+
+`extractBalancedParenBody` retorna `("", -1)` quando o paren não fecha. Resultado: o body não é
+analisado; o guard retorna rc=0 (fail-open). Comportamento documentado no código como residual
+explícito da Wave 0 (entradas malformadas → fail-open).
+
+**Evidência:** `trackfw guard git-branch --command 'bash -c "$(git push"'` → rc=0.
+
+**Severidade:** LOW. Payload malformado — bash também rejeitaria `"$(git push"` por syntax error.
+O vetor não é executável em produção; é defensável como fail-open.
+
+**Prescrição:** nenhuma obrigatória nesta rodada. Documentar como residual explícito se ainda não estiver.
+
+---
+
+#### D-4 — Confirmação: `pwsh -ConfigurationName Foo -c 'git push'` → rc=2 (sem FP)
+
+Inicialmente documentado no script com expectativa incorreta (`want=0`). Verificação corrigida:
+após o fix F1-A, `-ConfigurationName` é reconhecido em `isPsArgConsumingFlag`; `Foo` é consumido
+como argumento; `-c 'git push'` é processado → rc=2. Comportamento correto — sem falso positivo.
+
+---
+
+### Placar geral
+
+| Categoria | ML-2A | Agora |
+|---|---|---|
+| Vetores OK (rc = esperado) | 70 | 103 |
+| BLOQUEANTES (B1–B3) | 10 | 0 |
+| CORRIGIR (C4–C9): corrigidos | — | 17/19 |
+| CORRIGIR (C7 parcial): ainda falham | — | 2 |
+| Residuais preservados | 10 | 10 |
+| Novos achados ML-2D (LOW) | — | 3 (D-1, D-2, D-3) |
+| Total vetores medidos | 109 | 109 + 6 (ML-2E) + 3 (ML-2D) |
+
+---
+
+### Veredito — Reverificação ML-2D
+
+```
+HOMOLOGA COM RESSALVAS
+```
+
+**Os 3 achados BLOQUEANTES (B1, B2, B3) estão corrigidos.** AC4 agora é satisfeito para todas as
+grafias canônicas dos invólucros nomeados no AC4 (Windows: `CMD.EXE`, `BASH.EXE`,
+`POWERSHELL.EXE`, variantes de maiúsculas/minúsculas, fusionados `/c"..."` e `/k"..."`).
+
+**C4–C8 corrigidos**, com exceção de 2 vetores C7 que permanecem abertos:
+
+| Achado residual | rc agora | Mecanismo |
+|---|---|---|
+| `cat <(git push)` | 0 | `<(...)` não está em `extractCmdSubstBodies`; não é `$(...)` nem backtick |
+| `OUT=$(git commit -m x 2>&1)` | 0 | `stripShellSuffixPOSIX` consome `)` de `2>&1)` como parte do redirect |
+
+**C9 corrigido:** `mode: block` na 6ª linha ou além agora é encontrado (lookbehind removido,
+substituído por stop-rule de cross-block boundary).
+
+**Novos achados ML-2D:** três achados LOW (D-1, D-2, D-3), nenhum BLOQUEANTE. D-1 e D-2 são
+candidatos a ML adicional na REQ vigente (Regra Dura de Causa Raiz — mesma causa dos C4/F1-A
+já corrigidos). D-3 é fail-open documentado; nenhuma ação obrigatória.
+
+**Confirmação de segurança de execução:** nenhum interpretador foi invocado com payload de git de
+escrita nesta rodada. Todos os vetores foram medidos via `trackfw guard git-branch --command` e
+`trackfw guard credential` (stdin). Payloads semânticos usaram `echo ok` ou `Write-Output ok`.

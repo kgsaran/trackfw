@@ -157,12 +157,17 @@ grep -q '^## Prescrições' docs/seguranca/2026-11-05-wave0-guards-primeiro-usua
 - [x] pacotes tocados verdes com PATH sem trackfw; `make parity-rest` verde com PATH normal
 
 ### ML-2D — Reverificação do red team (hades-tf)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-11-05. A seção `## Reverificação (ML-2D)` foi acrescentada ao parecer do red team. Veredito: homologa com ressalvas.
+- **Corrigidos:** B1 a B3, C4 a C6, C8, C9 e 4 dos 6 vetores do C7. Os 36 vetores do guard de credencial passaram.
+- **Ainda abertos, conferidos pelo arquiteto com `rc=0`:** `cat <(git push)` (substituição de processo), `OUT=$(git commit -m x 2>&1)` (o `)` é consumido como parte do redirecionamento), `pwsh -ConfigurationFile foo.ps1 -c 'git push'` (D-1) e `env --split-string='git push'` (D-2). Pela regra da casa, defeito conhecido se corrige agora, e os quatro vão para o ML-2F.
+- **Residual declarado (D-3):** `bash -c "$(git push"`, com parêntese desbalanceado, dá `rc=0`. O próprio shell recusa por erro de sintaxe e não executa nada.
+- **Mudança de critério:** o segundo critério dizia "nenhum achado em aberto". Passou a dizer que os achados em aberto viram ML corretivo, porque a reverificação mede e não corrige. O fechamento real fica no aceite do ML-2F.
+- Nenhum interpretador foi executado com payload de git (declarado pelo agente).
 **Files affected:** `docs/seguranca/2026-11-05-redteam-guards-primeiro-usuario-externo.md`
 **Acceptance criteria:**
-- [ ] os 109 vetores medidos de novo, só pelo guard, com o `rc` de cada um no parecer
-- [ ] nenhum bloqueante ou "corrigir no PR" em aberto
-- [ ] nenhum interpretador executado com payload de git que escreve
+- [x] os 109 vetores medidos de novo, só pelo guard, com o `rc` de cada um no parecer
+- [x] achados em aberto classificados e enviados a um ML corretivo (ML-2F)
+- [x] nenhum interpretador executado com payload de git que escreve
 
 ### ML-2E — Teste que fixava a lacuna antiga e argumento posicional do `powershell` (apolo-tf)
 **Status:** ✅ Concluído — auditado pelo arquiteto em 2026-11-05, em dois despachos.
@@ -177,3 +182,12 @@ grep -q '^## Prescrições' docs/seguranca/2026-11-05-wave0-guards-primeiro-usua
 - [x] `powershell git push` e `powershell "git push"` dão `rc=2`; `pwsh git push` fica declarado
 - [x] contra-braços de B1, C7, C9 e F1-B relatados, com o nome do teste que reprova
 - [x] `make quality` com `rc=0`
+
+### ML-2F — Últimos vetores da reverificação (apolo-tf)
+**Status:** ⬜ Pendente
+**Files affected:** `internal/guard/gitbranch.go`, `internal/guard/gitbranch_wrapper_test.go`, `README.md`, `docs/cli-parity.md`
+**Acceptance criteria:**
+- [ ] `cat <(git push)`, `OUT=$(git commit -m x 2>&1)`, `pwsh -ConfigurationFile foo.ps1 -c 'git push'` e `env --split-string='git push'` dão `rc=2`, com vetor na tabela e contra-braço
+- [ ] `diff <(git status) x` continua `rc=0`; `m663.sh`, `rt2.sh` e `fp2c.sh` sem regressão
+- [ ] D-3 (parêntese desbalanceado) declarado como residual na documentação
+- [ ] `make quality` com `MQ_RC=0`, lido no arquivo de saída pelo arquiteto
