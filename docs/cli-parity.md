@@ -6747,6 +6747,67 @@ como o caminho governado. Formas que não apagam branch — `--mirror`, `--prune
 `reasonPush` e apontando para `trackfw ship`/`trackfw push`/`trackfw release tag`. Coberto por
 `TestRunGitBranch_PushDelete_BranchDeleteForms` (`internal/guard/gitbranch_test.go`) e `TestGitBranchGuard_PushDelete_ParityBranchDeleteForms` (`internal/generators/git_branch_guard_test.go`, ML-1C, REQ-2026-10-10).
 
+### Detecção de invólucro de shell (D4, ML-1B, REQ-2026-11-05)
+
+<!-- trackfw-contract: gate=internal/guard/gitbranch_wrapper_test.go partial=TestMatchSubcommand_AC4_Wrapper_Blocked, TestMatchSubcommand_AC4_Wrapper_Allowed, TestRunGitBranch_AC4_WrapperBlocked, TestRunGitBranch_AC4_WrapperAllowed, TestMatchSubcommand_AC4_Depth3_WrapperNotAnalyzed (AC4); TestMatchSubcommand_AC5_LanguageRuntime_Allowed (AC5) -->
+
+Desde v11.5.0, o `trackfw guard git-branch` analisa invólucros de shell antes de decidir se o
+comando cria uma branch ou realiza uma operação de escrita. `MatchSubcommand` roda primeiro a
+análise existente (`quoteAwareSplit` e `shellTokenize`, que tratam a barra invertida como literal
+por causa dos caminhos do Windows). Se ela não acha nada, roda uma segunda análise, POSIX
+(`matchSubcommandPOSIX`). O guard bloqueia se **qualquer uma** das duas achar uma escrita. A
+segunda análise só acrescenta bloqueios: comandos como `bash -c "git push"`, que a 11.4.0 deixava
+passar, passam a ser bloqueados de propósito.
+
+**Interpretadores reconhecidos**, pelo basename, sem diferenciar maiúsculas e sem `.exe`:
+
+- `bash`, `sh`, `zsh`, `dash` e `ksh` com `-c`, incluindo flags combinadas (`-lc`, `-ec`);
+- `pwsh` e `powershell` com `-c` ou `-Command`;
+- `cmd` com `/c` ou `/k`;
+- `eval`, cujo argumento é o resto do trecho.
+
+As listas de interpretadores e de prefixos são **abertas** (denylist): o que não está listado
+não é analisado.
+
+**Profundidade máxima:** dois níveis (ex.: `bash -c "bash -c 'git push'"`). Um terceiro invólucro
+em profundidade 3 retorna `wrapper-not-analyzed` e é **bloqueado** (fail-closed). Implementado
+em `handleShellWrapper` (`internal/guard/gitbranch.go`) com guarda `depth >= 2`.
+
+**Prefixos removidos antes do interpretador ou do `git`:**
+
+`env` (com `-i`, `-u`, `--unset=`, `--ignore-environment`), `command` (com `-p`, `-v`, `-V`),
+`nohup`, `time`, `exec` (com `-a NAME`, `-c`, `-l`), `nice` (com `-n ADJUSTMENT`),
+`doas` (com `-u USER`, `-C CONFIG`), `timeout` (posicional DURATION + `--foreground`,
+`--kill-after`, `--preserve-status`, `--verbose`), `stdbuf` (com `-i/-o/-e SIZE`),
+e atribuições nuas de variável shell da forma `NAME=value` (ex.: `FOO=1 git push`).
+
+**Escape POSIX de barra invertida:**
+
+- Fora de aspas: `\x` → `x` (evita que `\git push` chegue ao `filepath.Base` como não-git).
+- Dentro de `"..."`: conjunto especial `\"` → `"`, `\\` → `\`, `\$` → `$`,
+  `` \` `` → `` ` `` (unescape); outros `\x` → `\x` (mantém os dois, POSIX §2.2.3).
+- Dentro de `'...'`: tudo literal (POSIX — sem escape).
+
+**Limites (não detectados):**
+
+- `python -c`, `node -e`, `ruby -e` e similares: não analisados. A string pode construir um
+  comando git em tempo de execução; essa análise está fora do escopo.
+- Shell lido de stdin (`bash -s <<'EOF'`, `bash <<< "git push"`, `echo git push | sh`,
+  `bash < script.sh`, `xargs git push`): não analisado (residual R1 da Wave 0).
+- Prefixos fora da lista acima (`ionice`, `taskset`, `nsenter`): não são removidos, então o `git`
+  depois deles não é visto (residual R6).
+- `-EncodedCommand` (PowerShell): payload em Base64; não decodificado.
+- Expansão de variável (`bash -c "$CMD"`): o valor de `$CMD` não é conhecido em hook-time.
+- Terceiro invólucro e além: bloqueado (fail-closed, ver acima).
+
+**Cobertura de testes:** `TestMatchSubcommand_AC4_Wrapper_Blocked` (casos bloqueados),
+`TestMatchSubcommand_AC4_Wrapper_Allowed` (falso positivo ausente), `TestRunGitBranch_AC4_WrapperBlocked`
+(ponta a ponta, rc=2), `TestRunGitBranch_AC4_WrapperAllowed` (ponta a ponta, rc=0),
+`TestMatchSubcommand_AC4_Depth3_WrapperNotAnalyzed` (teto de profundidade, fail-closed),
+`TestMatchSubcommand_AC5_LanguageRuntime_Allowed` (python/node não bloqueados),
+e baixo nível: `TestQuoteAwareSplitPOSIX_*`, `TestShellTokenizePOSIX_*`,
+`TestStripShellSuffixPOSIX_*` (`internal/guard/gitbranch_wrapper_test.go`).
+
 ### Invólucro `.sh` — contrato do thin wrapper (ML-2A, ADR-2026-10-04)
 
 <!-- trackfw-contract: gate=internal/generators/guard_thin_wrapper_test.go partial=testes fail-closed (trackfw ausente/sem subcomando guard) e delegate (binário real bloqueia/permite) — veja comentários AFIRMA em cada teste -->

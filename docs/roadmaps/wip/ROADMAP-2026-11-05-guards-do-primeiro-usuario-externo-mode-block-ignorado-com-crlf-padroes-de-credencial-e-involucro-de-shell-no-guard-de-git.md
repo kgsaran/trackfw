@@ -96,12 +96,18 @@ grep -q '^## Prescrições' docs/seguranca/2026-11-05-wave0-guards-primeiro-usua
 - [x] contra-braço por item
 
 ### ML-1B — Guard de git: invólucro de shell, prefixos e barra invertida (apolo-tf) — AC4, AC5
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-11-05.
+- **AC4:** medido no binário da branch com 47 vetores, por `--command`. Os 47 dão `rc=2`: os invólucros `bash`, `sh`, `zsh`, `dash`, `ksh`, `pwsh`, `powershell`, `cmd` e `eval` (com flags combinadas, `.exe`, maiúsculas e `--norc`/`-o pipefail`), dois níveis de aninhamento, o terceiro nível com `wrapper-not-analyzed`, `\git push`, `g\it push`, atribuição nua e os prefixos. No contra-braço, a 11.3.0 instalada deixa passar 44 dos 47.
+- **Sem falso positivo:** 16 vetores de leitura dão `rc=0`, entre eles `bash -c "git status"`, `echo 'bash -c git push'`, `git log --grep 'bash -c push'` e `time make test`.
+- **AC5 e residuais:** `python3 -c` com `subprocess`, `bash <<<`, `| sh`, `xargs`, `$X push` e `ionice` dão `rc=0`, como a documentação declara.
+- **Desvio de desenho aceito:** em vez de mudar `quoteAwareSplit` e `shellTokenize`, o ML criou cópias POSIX (`quoteAwareSplitPOSIX`, `shellTokenizePOSIX`, `stripShellSuffixPOSIX`) e uma segunda análise que só roda quando a primeira não acha nada. Motivo: a primeira trata a barra invertida como literal por causa dos caminhos do Windows. O preço são dois tokenizadores para manter, e o ML-2A avalia isso.
+- **Corrigido pelo arquiteto na documentação:** o README e o `docs/cli-parity.md` diziam que o guard "só bloqueia quando as duas análises concordam" e que "nada permitido hoje vira bloqueado". O código bloqueia quando qualquer uma acha uma escrita, e `bash -c "git push"` passa a ser bloqueado de propósito. Também entraram os residuais R1 e R6 (`| sh`, `<<<`, `xargs`, `ionice`) e as flags certas de cada interpretador. O comentário com a mesma frase errada ficou em `gitbranch.go` e vai para as correções da Wave 2.
+- **Gates:** `go test ./internal/guard/` com PATH sem trackfw deu `rc=0`, `go vet` deu `rc=0` e `make parity-rest` com PATH normal deu `rc=0`. Contra-braços (a) a (d) relatados pelo executor; o (d) só reprova quando as duas guardas de profundidade são mudadas.
 **Files affected:** `internal/guard/gitbranch.go`, `internal/guard/gitbranch_test.go`, `internal/guard/gitbranch_wrapper_test.go`, `internal/guard/credential.go` (só a remoção de `credLegacyPatternNames`), `README.md`, `docs/cli-parity.md`
 **Acceptance criteria:**
-- [ ] AC4 e AC5 da REQ, conforme o parecer da Wave 0 (§5.2)
-- [ ] pacotes tocados verdes com PATH sem trackfw; `make parity-rest` verde
-- [ ] contra-braço por item
+- [x] AC4 e AC5 da REQ, conforme o parecer da Wave 0 (§5.2)
+- [x] pacotes tocados verdes com PATH sem trackfw; `make parity-rest` verde
+- [x] contra-braço por item
 
 ## Wave 2 — Red team e release
 > Dependencies: Wave 1 auditada.

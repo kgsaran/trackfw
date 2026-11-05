@@ -67,13 +67,6 @@ var credPatterns = []credPattern{
 	{"PEM private key", regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----`)},
 }
 
-// credLegacyPatternNames is the set of type names whose patterns existed before D2.
-// Used by the second-layer exemption, which must accept all patterns.
-var credLegacyPatternNames = map[string]bool{
-	"JWT":            true,
-	"AWS access key": true,
-}
-
 // credCmdHasTypeMatch reports whether any registered pattern with the given type
 // name matches s.  Used by the ephemeral-exemption second layer so that all
 // sub-patterns that share a name (e.g. the five "GitHub token" prefixes

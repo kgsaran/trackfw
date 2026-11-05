@@ -21,3 +21,4 @@
 - [Dois clones no loop falham no segundo push](feedback_git_fixture_loop_double_push.md) — usar clone "semente" + dois clones independentes; nunca commit+push no segundo clone dos mesmos arquivos
 - [Subagente não escreve working context](feedback_subagente_nao_escreve_working_context.md) — D1 REQ-2026-10-23: apenas o arquiteto escreve; subagente reporta no relatório final; handoff prevalece sobre arquivo instalado
 - [Counter-arm: emissão e detecção devem usar o mesmo constante](feedback_counter_arm_emission_detection_drift.md) — arm verde pode significar que a mutação nunca chegou ao artefato emitido; grepar os sítios de emissão antes de rodar o arm
+- [Guard D4: dois guards de profundidade — patch os dois no counter-arm](feedback_depth_guard_dual_check.md) — handleShellWrapper (depth >= 2) É o teto efetivo; matchSubcommandPOSIX (depth > 2) é cinturão; patchar só o segundo dá falso verde no counter-arm

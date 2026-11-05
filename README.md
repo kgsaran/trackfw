@@ -1119,6 +1119,58 @@ The strongest protection remains the ordinary one: the guard script and `trackfw
 **versioned files**. Review their diffs like you review any other code. Every limitation above has
 the same escape hatch: the change is *visible* in `git diff`.
 
+## Git-branch guard: shell wrapper detection
+
+Since v11.5.0, `trackfw guard git-branch` looks through shell wrappers before deciding whether
+a command creates a branch or performs a write operation. When the existing analysis finds
+nothing, a second, POSIX-aware analysis runs, and the guard blocks if either one finds a write.
+Commands such as `bash -c "git push"`, which earlier versions allowed, are now blocked on purpose.
+
+### Recognized wrappers and interpreters
+
+A shell interpreter is recognized by its basename, case-insensitively and without `.exe`, when
+it is invoked with its command flag:
+
+- `bash`, `sh`, `zsh`, `dash` and `ksh` with `-c`, including combined flags such as `-lc` or `-ec`;
+- `pwsh` and `powershell` with `-c` or `-Command`;
+- `cmd` with `/c` or `/k`.
+
+`eval` is a wrapper too: its command string is the rest of the segment.
+
+A leading backslash or one inside a word is read the POSIX way, so `\git push` and `g\it push`
+are seen as `git push`.
+
+**These lists are open:** a wrapper or prefix that is not listed here is not analyzed.
+
+Nesting is analyzed up to **two levels** deep (e.g. `bash -c "bash -c 'git push'"`). A
+third shell wrapper at depth 3 returns `wrapper-not-analyzed` and is **blocked** (fail-closed).
+
+### Recognized prefixes (stripped before the interpreter or git check)
+
+Command modifiers that precede the actual command are stripped:
+
+`env` (with `-i`, `-u`, `--unset=`, `--ignore-environment`), `command` (with `-p`, `-v`, `-V`),
+`nohup`, `time`, `exec` (with `-a NAME`, `-c`, `-l`), `nice` (with `-n ADJUSTMENT`),
+`doas` (with `-u USER`, `-C CONFIG`), `timeout` (DURATION positional + `--foreground`,
+`--kill-after`, `--preserve-status`, `--verbose`), `stdbuf` (with `-i`, `-o`, `-e SIZE`),
+and bare shell variable assignments of the form `NAME=value` (e.g. `FOO=1 git push`).
+
+### Limits (what is not detected)
+
+- **Language runtime calls** (`python -c`, `node -e`, `ruby -e`): not analyzed. The command
+  string may contain a credential or construct a git command at runtime; that analysis is out
+  of scope (see `python -c` in the credential guard table above).
+- **Shell read from stdin** (`bash -s <<'EOF'`, `bash <<< "git push"`, `echo git push | sh`,
+  `bash < script.sh`, `xargs git push`): not analyzed.
+- **Prefixes outside the list above** (`ionice`, `taskset`, `nsenter`, …): not stripped, so a
+  `git` command behind them is not seen.
+- **`-EncodedCommand` (PowerShell)**: the payload is Base64-encoded; not decoded.
+- **Variable expansion** (`bash -c "$CMD"`): the value of `$CMD` is not known at hook time;
+  not analyzed.
+- **Third wrapper and beyond**: blocked outright (fail-closed, see above).
+
+Full contract and exit codes: `docs/cli-parity.md` → `## Git branch guard por runtime`.
+
 ## What trackfw is not
 
 - Not a project management SaaS — no accounts, no cloud sync, no data leaving your repository. A local dashboard is available via `trackfw serve`.
