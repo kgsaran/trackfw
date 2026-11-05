@@ -471,6 +471,133 @@ func TestIsNakedAssignment(t *testing.T) {
 	}
 }
 
+// --- ML-2F: D-1 (ConfigurationFile), D-2 (env --split-string combined),
+// process substitution, and cmd-subst-before-redirect ---
+
+// TestMatchSubcommand_ML2F_Blocked asserts that the four vectors from ML-2F
+// that previously gave rc=0 are now detected and blocked (want ≠ "").
+//
+// Reconciliation (one sentence per test, per the Regra Dura de Reconciliação):
+//
+//   - proc-subst-lt-git-push: asserts that <(git push) is extracted as a
+//     subshell body before stripShellSuffixPOSIX consumes it as a redirect target.
+//   - proc-subst-lt-space-git-push: asserts that "cat < <(git push)" (space
+//     between < and <() is detected because extractCmdSubstBodies scans for <(
+//     anywhere in the pre-strip segment, not only adjacent to a redirect.
+//   - proc-subst-gt-git-push: asserts that >(git push) (output process
+//     substitution) is also extracted and blocked.
+//   - cmd-subst-with-redirect-2redir1: asserts that OUT=$(git commit -m x 2>&1)
+//     is blocked after moving extractCmdSubstBodies before stripShellSuffixPOSIX,
+//     which previously consumed the closing ')' as part of the "2>&1" target.
+//   - cmd-subst-redirect-dev-null: asserts that echo $(git push 2>/dev/null) is
+//     blocked; the redirect is inside the $(...) body but does not destroy the
+//     outer body extraction because we extract before stripping.
+//   - cmd-subst-redirect-out-file: asserts that echo $(git push >out) is blocked
+//     for the same reason.
+//   - ps-configurationfile-c: asserts that pwsh -ConfigurationFile foo.ps1 -c
+//     'git push' is blocked after adding -configurationfile to isPsArgConsumingFlag,
+//     which causes foo.ps1 to be consumed as an argument instead of as the command.
+//   - ps-co-is-command-not-configfile: asserts that -co still routes to -Command
+//     (not -ConfigurationFile) because isPsCommandFlag is checked first.
+//   - ps-con-consumes-arg: asserts that -con consumes an argument (via
+//     -configurationname prefix) and -c 'git push' is then found as the command.
+//   - env-split-string-combined-long: asserts that env --split-string='git push'
+//     is blocked after adding the HasPrefix("--split-string=") case to
+//     stripEnvCommandPrefix, which re-tokenises the embedded value.
+//   - env-split-string-combined-short: asserts that env -S'git push' (combined
+//     short form -SVALUE) is blocked by the new lower[:2]=="-s" case.
+func TestMatchSubcommand_ML2F_Blocked(t *testing.T) {
+	cases := []struct {
+		name string
+		cmd  string
+		want string
+	}{
+		// Process substitution — vector 1 (ML-2F, REQ-2026-11-05).
+		{"proc-subst-lt-git-push", `cat <(git push)`, "push"},
+		{"proc-subst-lt-space-git-push", `cat < <(git push)`, "push"},
+		{"proc-subst-gt-git-push", `tee >(git push)`, "push"},
+		// Command substitution with redirect — vector 2 (ML-2F, REQ-2026-11-05).
+		{"cmd-subst-with-redirect-2redir1", `OUT=$(git commit -m x 2>&1)`, "commit"},
+		{"cmd-subst-redirect-dev-null", `echo $(git push 2>/dev/null)`, "push"},
+		{"cmd-subst-redirect-out-file", `echo $(git push >out)`, "push"},
+		// PowerShell -ConfigurationFile — vector 3 / D-1 (ML-2F, REQ-2026-11-05).
+		{"ps-configurationfile-c", `pwsh -ConfigurationFile foo.ps1 -c 'git push'`, "push"},
+		{"ps-co-is-command-not-configfile", `pwsh -co 'git push'`, "push"},
+		{"ps-con-consumes-arg", `pwsh -con x -c 'git push'`, "push"},
+		// env --split-string combined forms — vector 4 / D-2 (ML-2F, REQ-2026-11-05).
+		{"env-split-string-combined-long", `env --split-string='git push'`, "push"},
+		{"env-split-string-combined-short", `env -S'git push'`, "push"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := MatchSubcommand(tc.cmd)
+			if got != tc.want {
+				t.Errorf("MatchSubcommand(%q) = %q, want %q", tc.cmd, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestMatchSubcommand_ML2F_Allowed asserts that the ML-2F fixes do not
+// introduce false positives for related but benign commands.
+//
+// Reconciliation (one sentence per test, per the Regra Dura de Reconciliação):
+//
+//   - proc-subst-git-status: asserts that <(git status) is NOT blocked because
+//     git status is a read-only subcommand not in the blocked set.
+//   - proc-subst-echo: asserts that <(echo ok) produces no blocked body, so the
+//     outer command is allowed.
+//   - proc-subst-single-quoted: asserts that '<(git push)' inside single quotes
+//     is literal and does not trigger process-substitution extraction.
+//   - proc-subst-double-quoted: asserts that "<(git push)" inside double quotes
+//     is NOT treated as process substitution (bash does not expand <(…) in "…").
+//   - cmd-subst-redirect-git-status: asserts that $(git status 2>/dev/null)
+//     inside a command substitution with redirect is allowed when the subcommand
+//     is not blocked.
+//   - ps-of-is-output-format: asserts that pwsh -of Text -c 'git push' is
+//     blocked (not a false positive) — -of is now recognised as an arg-consuming
+//     alias for -OutputFormat, so Text is consumed and -c finds the command.
+//   - env-split-string-separate-status: asserts that env --split-string
+//     'git status' is allowed because git status is a read-only subcommand.
+func TestMatchSubcommand_ML2F_Allowed(t *testing.T) {
+	cases := []struct {
+		name string
+		cmd  string
+	}{
+		// Process substitution false-positive checks.
+		{"proc-subst-git-status", `diff <(git status) x`},
+		{"proc-subst-echo", `cat <(echo ok)`},
+		{"proc-subst-single-quoted", `echo '<(git push)'`},
+		{"proc-subst-double-quoted", `echo "<(git push)"`},
+		// Command substitution with redirect — only allowed subcommands.
+		{"cmd-subst-redirect-git-status", `echo $(git status 2>/dev/null)`},
+		// env split-string with allowed subcommand.
+		{"env-split-string-separate-status", `env --split-string 'git status'`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := MatchSubcommand(tc.cmd)
+			if got != "" {
+				t.Errorf("MatchSubcommand(%q) = %q, want %q (allow)", tc.cmd, got, "")
+			}
+		})
+	}
+}
+
+// TestMatchSubcommand_ML2F_PsOfBlocked asserts that the -of alias fix for
+// -OutputFormat does not accidentally allow pwsh -of Text -c 'git push'.
+// This is a block test for a secondary fix within vector 3.
+//
+// Reconciliation: asserts that -of is now in isPsArgConsumingFlag, so "Text"
+// is consumed as the OutputFormat argument and -c 'git push' is found as the
+// command string — the same mechanism as -ep/-wd/-if.
+func TestMatchSubcommand_ML2F_PsOfBlocked(t *testing.T) {
+	got := MatchSubcommand(`pwsh -of Text -c 'git push'`)
+	if got != "push" {
+		t.Errorf(`MatchSubcommand("pwsh -of Text -c 'git push'") = %q, want "push"`, got)
+	}
+}
+
 // TestIsDurationArg asserts the helper correctly identifies timeout durations.
 //
 // Reconciliation: asserts the precondition for timeout prefix stripping —

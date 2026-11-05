@@ -532,6 +532,16 @@ func stripEnvCommandPrefix(tokens []string) []string {
 							tokens = append(split, tokens[1:]...)
 						}
 						break envLoop
+					// Combined long form: --split-string=VALUE — ML-2F (REQ-2026-11-05).
+					case strings.HasPrefix(lower, "--split-string="):
+						split := shellTokenizePOSIX(t[len("--split-string="):])
+						tokens = append(split, tokens...)
+						break envLoop
+					// Combined short form: -SVALUE (value glued immediately after -S) — ML-2F.
+					case len(lower) > 2 && lower[:2] == "-s":
+						split := shellTokenizePOSIX(t[2:])
+						tokens = append(split, tokens...)
+						break envLoop
 					// Flags that consume one positional argument.
 					case lower == "-u" || lower == "--unset",
 						lower == "-p" || lower == "--path",
@@ -2055,15 +2065,16 @@ func isPsArgConsumingFlag(norm string) bool {
 		return false
 	}
 	for _, full := range []string{
-		"-executionpolicy",   // -ex, -exe, ... (NOT -ep — alias below)
-		"-workingdirectory",  // -wo, -wor, ... (NOT -wd — alias below)
-		"-windowstyle",       // -w, -wi, ...
-		"-configurationname", // -config, ...
-		"-outputformat",      // -o, -out, ...
-		"-inputformat",       // -in, -inp, ... (NOT -if — alias below)
-		"-settingsfile",      // -set, ...
-		"-custompipename",    // -cust, ...
-		"-version",           // -v, -ve, ...
+		"-executionpolicy",    // -ex, -exe, ... (NOT -ep — alias below)
+		"-workingdirectory",   // -wo, -wor, ... (NOT -wd — alias below)
+		"-windowstyle",        // -w, -wi, ...
+		"-configurationname",  // -config, ... (prefix also covers -con through -configurationn)
+		"-configurationfile",  // no short alias; -configurationf distinguishes from -configurationname
+		"-outputformat",       // -o, -ou, ... (NOT -of — alias below)
+		"-inputformat",        // -in, -inp, ... (NOT -if — alias below)
+		"-settingsfile",       // -set, -sett, ...
+		"-custompipename",     // -cust, ...
+		"-version",            // -v, -ve, ...
 	} {
 		if strings.HasPrefix(full, norm) {
 			return true
@@ -2071,10 +2082,12 @@ func isPsArgConsumingFlag(norm string) bool {
 	}
 	// Explicit documented pwsh 7 aliases that are NOT prefixes of the full name.
 	// Source: https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_pwsh
+	// ML-2F adds -of (OutputFormat alias). (REQ-2026-11-05).
 	switch norm {
 	case "-ep", // alias for -ExecutionPolicy
 		"-wd", // alias for -WorkingDirectory
-		"-if": // alias for -InputFormat
+		"-if", // alias for -InputFormat
+		"-of": // alias for -OutputFormat — ML-2F (REQ-2026-11-05)
 		return true
 	}
 	return false
@@ -2351,9 +2364,12 @@ func extractBacktickSubstBody(runes []rune, start int) (string, int) {
 }
 
 // extractCmdSubstBodies scans a raw shell segment and returns all command-
-// substitution bodies ($(...) and `...`) that occur outside single-quoted
-// regions. Double-quoted regions are included because $(…) and `…` expand
-// there. C7 — D4 Wave 2 (REQ-2026-11-05, ML-2C).
+// and process-substitution bodies ($(...), `...`, <(...), >(...)) that occur
+// outside single-quoted regions. Double-quoted regions are included because
+// $(…) and `…` expand there; <(…)/>(…) (process substitution) do not expand
+// inside "…" in any shell, so they are only extracted outside double-quoted
+// regions. C7 — D4 Wave 2 (REQ-2026-11-05, ML-2C); process substitution
+// added in ML-2F (REQ-2026-11-05).
 func extractCmdSubstBodies(seg string) []string {
 	var bodies []string
 	runes := []rune(seg)
@@ -2412,6 +2428,16 @@ func extractCmdSubstBodies(seg string) []string {
 			}
 			continue
 		}
+		// Process substitution: <(...) and >(...) — bash-only; does not expand
+		// inside "…" in any shell. ML-2F (REQ-2026-11-05).
+		if !inDQ && (c == '<' || c == '>') && i+1 < n && runes[i+1] == '(' {
+			body, end := extractBalancedParenBody(runes, i+2)
+			if end >= 0 {
+				bodies = append(bodies, body)
+				i = end
+			}
+			continue
+		}
 	}
 	return bodies
 }
@@ -2439,20 +2465,23 @@ func matchSubcommandPOSIX(cmdRaw string, depth int) string {
 		if len(seg) > 0 && seg[0] == '&' {
 			seg = strings.TrimLeft(seg[1:], " \t")
 		}
-		seg = stripShellSuffixPOSIX(seg)
-		if seg == "" {
-			continue
-		}
 
-		// C7: scan for command substitutions ($(...) and `...`) in this
-		// segment before tokenisation. Single-quoted regions are literal;
-		// double-quoted $(...) and `...` still expand. Each substitution body
-		// is a subshell that counts as one depth level. D4 Wave 2
-		// (REQ-2026-11-05, ML-2C).
+		// C7+ML-2F: extract command- and process-substitution bodies BEFORE
+		// stripping redirections. The redirect consumer in stripShellSuffixPOSIX
+		// eats the closing ')' of $(cmd 2>&1) and the entire <(cmd) body, so
+		// running extractCmdSubstBodies on the post-strip segment misses them.
+		// Running it on the pre-strip segment is strictly more inclusive: the
+		// strip never creates new $(...) or <(...) patterns.
+		// (REQ-2026-11-05, ML-2F).
 		for _, body := range extractCmdSubstBodies(seg) {
 			if tag := matchSubcommandPOSIX(body, depth+1); tag != "" {
 				return tag
 			}
+		}
+
+		seg = stripShellSuffixPOSIX(seg)
+		if seg == "" {
+			continue
 		}
 
 		tokens := shellTokenizePOSIX(seg)

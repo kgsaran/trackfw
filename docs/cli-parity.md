@@ -6833,6 +6833,11 @@ e atribuições nuas de variável shell da forma `NAME=value` (ex.: `FOO=1 git p
 - **`pwsh git push`** (PowerShell 7, posicional): no `pwsh` 7, o primeiro argumento posicional
   é `-File` (caminho de script), não `-Command`; `pwsh git push` não é analisado como comando
   e é residual declarado (ML-2E, REQ-2026-11-05).
+- **`bash -c "$(git push"` (D-3 — parêntese desbalanceado)**: a expressão
+  `$(git push` não tem `)` de fechamento; `extractBalancedParenBody` retorna
+  `("", -1)` e o guard retorna rc=0 (fail-open). O próprio shell **recusa** o
+  comando por erro de sintaxe antes de executar qualquer coisa, portanto nada
+  é executado em produção. Residual declarado (ML-2F, REQ-2026-11-05).
 - Terceiro invólucro e além: bloqueado (fail-closed, ver acima).
 
 **Cobertura de testes:** `TestMatchSubcommand_AC4_Wrapper_Blocked` (casos bloqueados, incluindo
@@ -6848,6 +6853,11 @@ vetores F7 adicionados no ML-2C: `zsh -c`, `dash -c`, `ksh -c`, `cmd /k`, `BASH 
 `TestRunGitBranch_AC4_WrapperAllowed` (ponta a ponta, rc=0),
 `TestMatchSubcommand_AC4_Depth3_WrapperNotAnalyzed` (teto de profundidade, fail-closed),
 `TestMatchSubcommand_AC5_LanguageRuntime_Allowed` (python/node não bloqueados),
+`TestMatchSubcommand_ML2F_Blocked` (D-1 `-ConfigurationFile`, D-2 `--split-string=` combinado,
+substituição de processo `<(…)`/`>(…)`, e substituição de comando com redirecionamento
+`$(cmd 2>&1)`), `TestMatchSubcommand_ML2F_Allowed` (falso positivo ausente: `diff <(git status) x`,
+aspas simples/duplas, subcomando permitido com redirecionamento), `TestMatchSubcommand_ML2F_PsOfBlocked`
+(`-of` alias de `-OutputFormat` consome argumento),
 e baixo nível: `TestQuoteAwareSplitPOSIX_*`, `TestShellTokenizePOSIX_*`,
 `TestStripShellSuffixPOSIX_*` (`internal/guard/gitbranch_wrapper_test.go`).
 

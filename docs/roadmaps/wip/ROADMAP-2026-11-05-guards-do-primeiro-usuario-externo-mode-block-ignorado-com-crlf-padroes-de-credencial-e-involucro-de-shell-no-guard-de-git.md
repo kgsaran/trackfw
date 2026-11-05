@@ -184,10 +184,30 @@ grep -q '^## Prescrições' docs/seguranca/2026-11-05-wave0-guards-primeiro-usua
 - [x] `make quality` com `rc=0`
 
 ### ML-2F — Últimos vetores da reverificação (apolo-tf)
+**Status:** ✅ Concluído — auditado pelo arquiteto em 2026-11-05.
+- **Vetores medidos no binário:** os 4 vetores dão `rc=2`, e também `tee >(git push)`, `cat < <(git push)`, `echo $(git push 2>/dev/null)`, `env -S'git push'` e `pwsh -of text -c 'git push'`. `diff <(git status) x` continua `rc=0`.
+- **Regressões:** sem nenhuma. `m663.sh` 63/63, `rt2.sh` 15/15, `fp2c.sh` 17 com `rc=0`.
+- **`make quality`:** `MQ_RC=0` e 365 OK no gate de falsificação, lidos pelo arquiteto em `mq3.txt`.
+- **Causa de V1 e V2:** os corpos de substituição eram extraídos depois do strip de redirecionamento.
+- **A mesma família continua aberta, medida pelo arquiteto:** um separador `|` ou `&&` dentro da substituição corta o corpo antes da extração. Dão `rc=0`:
+  - `echo $(git push | cat)`
+  - `OUT=$(git push && echo x)`
+  - `cat <(git push | cat)`
+  - `bash -c 'echo $(git push | cat)'`
+
+  O mesmo vale para abreviações de opção longa do `env`, que o GNU `getopt_long` aceita (`--split=`, `--sp`). Tudo isso vai para o ML-2G, com correção estrutural.
+**Files affected:** `internal/guard/gitbranch.go`, `internal/guard/gitbranch_wrapper_test.go`, `README.md`, `docs/cli-parity.md`
+**Acceptance criteria:**
+- [x] `cat <(git push)`, `OUT=$(git commit -m x 2>&1)`, `pwsh -ConfigurationFile foo.ps1 -c 'git push'` e `env --split-string='git push'` dão `rc=2`, com vetor na tabela e contra-braço
+- [x] `diff <(git status) x` continua `rc=0`; `m663.sh`, `rt2.sh` e `fp2c.sh` sem regressão
+- [x] D-3 (parêntese desbalanceado) declarado como residual na documentação
+- [x] `make quality` com `MQ_RC=0`, lido no arquivo de saída pelo arquiteto
+
+### ML-2G — Corpo de substituição extraído da string crua, antes de qualquer divisão (apolo-tf)
 **Status:** ⬜ Pendente
 **Files affected:** `internal/guard/gitbranch.go`, `internal/guard/gitbranch_wrapper_test.go`, `README.md`, `docs/cli-parity.md`
 **Acceptance criteria:**
-- [ ] `cat <(git push)`, `OUT=$(git commit -m x 2>&1)`, `pwsh -ConfigurationFile foo.ps1 -c 'git push'` e `env --split-string='git push'` dão `rc=2`, com vetor na tabela e contra-braço
-- [ ] `diff <(git status) x` continua `rc=0`; `m663.sh`, `rt2.sh` e `fp2c.sh` sem regressão
-- [ ] D-3 (parêntese desbalanceado) declarado como residual na documentação
+- [ ] `echo $(git push | cat)`, `OUT=$(git push && echo x)`, `cat <(git push | cat)`, `bash -c 'echo $(git push | cat)'`, `env --split='git push'` e `env --sp 'git push'` dão `rc=2`
+- [ ] `echo $(git status | head)`, `echo '$(git push | cat)'`, `x=$(ls && pwd)` e `echo ok # $(git push)` continuam com `rc=0`; `m663.sh`, `rt2.sh`, `fp2c.sh`, `d2.sh` e `f2.sh` sem regressão
 - [ ] `make quality` com `MQ_RC=0`, lido no arquivo de saída pelo arquiteto
+
