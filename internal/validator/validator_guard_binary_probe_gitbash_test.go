@@ -218,7 +218,7 @@ func TestGuardBinaryProbeOnce_NaoWindows_GitBashFindNaoEhChamada(t *testing.T) {
 
 // Reconciliação: afirma que, quando o Git Bash login executa com sucesso mas não encontra
 // trackfw (command -v retorna não-zero, loginPath=""), guardGitBashBinaryProbe emite violation
-// informando que o hook falhará com exit 127 (fail-open).
+// informando que o hook atual bloqueia (exit 2) e que formas legadas falham aberto (fail open).
 func TestGuardGitBashBinaryProbe_TrackfwNaoEncontradoNoGitBash_Violation(t *testing.T) {
 	stubGitBashSeams(t,
 		`C:\Program Files\Git\bin\bash.exe`,
@@ -230,8 +230,8 @@ func TestGuardGitBashBinaryProbe_TrackfwNaoEncontradoNoGitBash_Violation(t *test
 	if !hasViolation(msgs, "Git Bash") {
 		t.Errorf("esperado violation com 'Git Bash', obteve: %v", msgs)
 	}
-	if !hasViolation(msgs, "exit 127") {
-		t.Errorf("esperado violation mencionando 'exit 127', obteve: %v", msgs)
+	if !hasViolation(msgs, "fail open") {
+		t.Errorf("esperado violation mencionando 'fail open', obteve: %v", msgs)
 	}
 }
 
@@ -470,5 +470,67 @@ func TestGuardGitBashBinaryProbe_PrazoNoSegundoBinario_NaoAfirmaNada(t *testing.
 	}
 	if !strings.Contains(msgs[0], "does not have the guard subcommand") {
 		t.Errorf("mensagem inesperada: %q", msgs[0])
+	}
+}
+
+// --------------------------------------------------------------------------
+// AC1 — duas cláusulas nas mensagens Git Bash (REQ-2026-11-02 #658)
+// --------------------------------------------------------------------------
+
+// Reconciliação: afirma que a mensagem do Git Bash para trackfw ausente contém SEMPRE as
+// duas cláusulas: (1) na forma atual Git Bash o hook bloqueia (exit 2); (2) nas formas
+// legadas pode deixar passar (fail open). Contra-braço: restaurar o texto antigo
+// ("the hook will fail open (exit 127)" sem "blocks every command") reprova este teste.
+func TestGuardGitBashBinaryProbe_Ausente_AmbasClausulas(t *testing.T) {
+	stubGitBashSeams(t,
+		`C:\Program Files\Git\bin\bash.exe`,
+		"", true, // loginPath="" means trackfw not found in Git Bash PATH
+		func(bin string) error { return nil },
+	)
+
+	msgs := guardGitBashBinaryProbe(`C:\tools\trackfw.exe`)
+	if len(msgs) == 0 {
+		t.Fatal("esperado violation, obteve nenhum")
+	}
+	msg := msgs[0]
+	if !strings.Contains(msg, "blocks every command") {
+		t.Errorf("mensagem deve conter 'blocks every command' (exit 2 clause), obteve: %q", msg)
+	}
+	if !strings.Contains(msg, "may let commands through (fail open)") {
+		t.Errorf("mensagem deve conter 'may let commands through (fail open)', obteve: %q", msg)
+	}
+	if strings.Contains(msg, "the hook will fail open") {
+		t.Errorf("mensagem não deve mais dizer somente 'the hook will fail open', obteve: %q", msg)
+	}
+}
+
+// Reconciliação: afirma que a mensagem do Git Bash para binário sem guard contém SEMPRE as
+// duas cláusulas. Contra-braço: restaurar o texto antigo reprova este teste.
+func TestGuardGitBashBinaryProbe_SemGuard_AmbasClausulas(t *testing.T) {
+	const sombra = `C:\shadow\trackfw`
+	stubGitBashSeams(t,
+		`C:\Program Files\Git\bin\bash.exe`,
+		"/c/shadow/trackfw", true,
+		func(bin string) error {
+			if bin == sombra {
+				return errors.New("exit status 2") // no guard
+			}
+			return nil
+		},
+	)
+
+	msgs := guardGitBashBinaryProbe(`C:\tools\trackfw.exe`)
+	if len(msgs) == 0 {
+		t.Fatal("esperado violation, obteve nenhum")
+	}
+	msg := msgs[0]
+	if !strings.Contains(msg, "blocks every command") {
+		t.Errorf("mensagem deve conter 'blocks every command' (exit 2 clause), obteve: %q", msg)
+	}
+	if !strings.Contains(msg, "may let commands through (fail open)") {
+		t.Errorf("mensagem deve conter 'may let commands through (fail open)', obteve: %q", msg)
+	}
+	if strings.Contains(msg, "the hook will fail open") {
+		t.Errorf("mensagem não deve mais dizer somente 'the hook will fail open', obteve: %q", msg)
 	}
 }

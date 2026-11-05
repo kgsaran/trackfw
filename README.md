@@ -477,7 +477,7 @@ distributions.
 ```
 docs/roadmaps/
 ├── backlog/     queued, not started
-├── wip/         actively being worked on (one at a time)
+├── wip/         actively being worked on (configurable limit, default 1)
 ├── blocked/     waiting on a dependency or decision
 ├── done/        completed and validated
 └── abandoned/   discontinued — reason required in file
@@ -544,13 +544,19 @@ Every governance rule has configurable severity:
 ```yaml
 # trackfw.yaml
 rules:
-  req_has_adr:      "error"    # default
-  req_has_roadmap:  "warning"  # relax for tactical REQs
-  blocked_has_req:  "error"
-  wip_limit:        "warning"
-  stale_wip:        "warning"
-  adr_orphan:       "off"      # silence during migration
+  req_has_adr:           "error"    # default
+  req_has_roadmap:       "warning"  # relax for tactical REQs
+  blocked_has_req:       "error"
+  wip_limit:             "warning"  # default; use "error" to block the gate
+  stale_wip:             "warning"
+  adr_orphan:            "off"      # silence during migration
+  adr_req_has_content:   "off"      # silence if ADRs/REQs have partial content
 ```
+
+`wip_limit` controls how many roadmaps can be in `wip/` at once (default 1, set via
+`wip_limit: <number>` in `trackfw.yaml`). The `rules.wip_limit` severity governs how
+the rule is reported: `warning` (default) shows the finding but does not block the gate;
+`error` causes `trackfw validate` to exit non-zero in strict mode.
 
 15+ rules available. Adopt progressively — start with `warning`, tighten to `error` as your team builds the habit.
 

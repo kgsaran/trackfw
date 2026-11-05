@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -222,6 +223,14 @@ var ruleDefaults = map[string]string{
 	"req_roadmap_sync": "warning",
 	// roadmap_wave0_required, roadmap_gate_coverage, roadmap_duplicate_label are absent:
 	// they fall through to "error" (ML-4A, REQ #392 — all pre-existing sítios sanitized).
+	// ML-1A (REQ-2026-11-02, #660): changed from "error" to "warning" — projects with more
+	// than one roadmap in wip/ must not be broken by default (they already exist). To block
+	// excess WIP, set rules.wip_limit: error. Mirrors config.go defaults() change.
+	"wip_limit": "warning",
+	// ML-1A (REQ-2026-11-02, #659): ADR or REQ whose mandatory sections contain only model
+	// content (HTML comments, bare checkboxes, whitespace) emits a warning. Default "warning":
+	// many existing ADRs and REQs have partially filled sections. "off" silences; "error" blocks.
+	"adr_req_has_content": "warning",
 	// D4 (ADR-2026-10-04, REQ #514 ML-1B): new rule, born as warning — endure in "error" is a
 	// future decision. Corte retroativo proibido (113 REQs Done com caixa aberta, pré-corte).
 	"req_done_open_criteria": "warning",
@@ -944,18 +953,25 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	}
 	applyRule("adr_file_without_prefix", adrWithoutPrefixWarnings, &violations, &warnings)
 
+	// ML-1A (REQ-2026-11-02, #659): ADR/REQ with only model content in mandatory sections.
+	// 🔴 Mirror site in validateUnfilteredTagged below — forgetting it silences the rule from --json.
+	adrReqContentMsgs, e := validateADRReqHasContent()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRule("adr_req_has_content", adrReqContentMsgs, &violations, &warnings)
+
 	criteriaViolations, e := validateWIPHasAcceptanceCriteria()
 	if e != nil {
 		return nil, nil, e
 	}
 	applyRule("wip_acceptance", criteriaViolations, &violations, &warnings)
 
-	wipViolationsLimit, wipWarningsLimit, e := validateWIPLimit()
+	_, wipWarningsLimit, e := validateWIPLimit()
 	if e != nil {
 		return nil, nil, e
 	}
-	applyRule("wip_limit", wipViolationsLimit, &violations, &warnings)
-	warnings = append(warnings, wipWarningsLimit...) // warnings de limite não têm severidade configurável
+	applyRule("wip_limit", wipWarningsLimit, &violations, &warnings)
 
 	staleWarnings, e := validateStaleWIP()
 	if e != nil {
@@ -1475,20 +1491,25 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 	}
 	applyRuleTagged("adr_file_without_prefix", adrWithoutPrefixWarningsT, &violations, &warnings)
 
+	// ML-1A (REQ-2026-11-02, #659): tagged mirror of ValidateUnfiltered block.
+	// 🔴 Forgetting this Tagged site makes adr_req_has_content vanish from --json.
+	adrReqContentMsgsT, e := validateADRReqHasContent()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleTagged("adr_req_has_content", adrReqContentMsgsT, &violations, &warnings)
+
 	criteriaViolations, e := validateWIPHasAcceptanceCriteria()
 	if e != nil {
 		return nil, nil, e
 	}
 	applyRuleTagged("wip_acceptance", criteriaViolations, &violations, &warnings)
 
-	wipViolationsLimit, wipWarningsLimit, e := validateWIPLimit()
+	_, wipWarningsLimitT, e := validateWIPLimit()
 	if e != nil {
 		return nil, nil, e
 	}
-	applyRuleTagged("wip_limit", wipViolationsLimit, &violations, &warnings)
-	for _, m := range wipWarningsLimit {
-		warnings = append(warnings, TaggedMsg{Rule: "wip_limit", Msg: m})
-	}
+	applyRuleTagged("wip_limit", wipWarningsLimitT, &violations, &warnings)
 
 	staleWarnings, e := validateStaleWIP()
 	if e != nil {
@@ -4812,4 +4833,187 @@ func validateLogEntriesDirGitignored() ([]string, error) {
 		// exit 1 = not ignored; other errors (git absent, not-a-repo) = already excluded above.
 	}
 	return msgs, nil
+}
+
+// --------------------------------------------------------------------------
+// validateADRReqHasContent — rule "adr_req_has_content" (ML-1A, REQ-2026-11-02 #659)
+// --------------------------------------------------------------------------
+
+// adrMandatorySections lists the section headings that must have content in ADR files.
+// Both ADR templates in generators/adr.go use these four headings.
+var adrMandatorySections = []string{
+	"## Context",
+	"## Decision",
+	"## Consequences",
+	"## Alternatives Considered",
+}
+
+// reqMandatorySections lists the section headings that must have content in REQ files.
+var reqMandatorySections = []string{
+	"## Motivation",
+	"## Acceptance Criteria",
+}
+
+// reqOptionalSections is the set of REQ/ADR headings that are never checked (optional).
+var reqOptionalSections = map[string]bool{
+	"## Linked ADR":       true,
+	"## Blocked by ADRs":  true,
+	"## Linked Roadmap":   true,
+	"## Negative scope":   true,
+}
+
+// adrReqHasContentMultilineCommentRe matches a multi-line HTML comment <!-- ... --> or an
+// unclosed <!-- that extends to the end of the string (vector d: unclosed comment).
+var adrReqHasContentMultilineCommentRe = regexp.MustCompile(`(?s)<!--.*?(?:-->|$)`)
+
+// adrReqBareCheckboxRe matches a line that is only a bare checkbox (vector a).
+// LOW-1 (REQ-2026-11-02): extended to match both "- [ ]" (Markdown list) and
+// "* [ ]" (GitHub-style bullet) bare checkbox forms.
+var adrReqBareCheckboxRe = regexp.MustCompile(`(?m)^\s*[-*]\s*\[\s*\]\s*$`)
+
+// adrReqHasMeaningfulContent returns true when the section body contains substantive text
+// beyond HTML comments, bare checkboxes, and pure whitespace (including CRLF, BOM,
+// U+200B zero-width space, U+2060 word joiner).
+func adrReqHasMeaningfulContent(body string) bool {
+	// Strip all HTML comments (single-line, multi-line, and unclosed — vectors b, c, d, e).
+	stripped := adrReqHasContentMultilineCommentRe.ReplaceAllString(body, "")
+	// Remove bare checkboxes (vector a).
+	stripped = adrReqBareCheckboxRe.ReplaceAllString(stripped, "")
+	// Strip whitespace: tabs, newlines, CRLF (vector e), BOM (U+FEFF), U+200B, U+2060, NBSP.
+	stripped = strings.Map(func(r rune) rune {
+		switch r {
+		case ' ', '\t', '\r', '\n',
+			'\u00A0', // NBSP
+			'\uFEFF', // BOM / ZERO WIDTH NO-BREAK SPACE
+			'\u200B', // ZERO WIDTH SPACE
+			'\u2060': // WORD JOINER
+			return -1 // drop
+		}
+		return r
+	}, stripped)
+	return len(stripped) > 0
+}
+
+// adrReqExtractSectionBody returns the body text for the given heading inside content,
+// stopping at the next level-2 heading ("## " prefix). Deeper headings (###, ####, …)
+// are treated as part of the section body so that sections structured with subsections
+// are not incorrectly classified as empty.
+// Returns ("", false) when the heading is not found.
+func adrReqExtractSectionBody(content, heading string) (string, bool) {
+	// Normalise CRLF so line-based matching works.
+	normalised := strings.ReplaceAll(content, "\r\n", "\n")
+	lines := strings.Split(normalised, "\n")
+	headingLower := strings.ToLower(strings.TrimSpace(heading))
+	inSection := false
+	var bodyLines []string
+	for _, line := range lines {
+		if inSection {
+			// Stop only at the next level-2 heading ("## "), not deeper (###, ####, …).
+			if strings.HasPrefix(line, "## ") {
+				break
+			}
+			bodyLines = append(bodyLines, line)
+			continue
+		}
+		// Match heading (case-insensitive, trim trailing whitespace).
+		if strings.ToLower(strings.TrimRight(line, " \t\r")) == headingLower {
+			inSection = true
+		}
+	}
+	if !inSection {
+		return "", false
+	}
+	return strings.Join(bodyLines, "\n"), true
+}
+
+// validateADRReqHasContent implements rule "adr_req_has_content":
+// emits a warning for each ADR or REQ whose mandatory sections contain only model
+// content (HTML comments, bare checkboxes, or whitespace).
+//
+// ADR mandatory sections: ## Context, ## Decision, ## Consequences, ## Alternatives Considered.
+// REQ mandatory sections: ## Motivation, ## Acceptance Criteria.
+// Optional sections (## Linked ADR, ## Blocked by ADRs, ## Linked Roadmap, ## Negative scope)
+// are never checked.
+func validateADRReqHasContent() ([]string, error) {
+	cfg := config.Load()
+	var warnings []string
+
+	// --- ADRs ---
+	seenADR := make(map[string]bool)
+	for _, adrDir := range cfg.ADRDirs {
+		expanded := config.ExpandPath(adrDir)
+		_ = filepath.WalkDir(expanded, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			if !isRegularOrLinkToRegular(path, d) {
+				return nil
+			}
+			name := filepath.Base(path)
+			if !isADRFileName(name) {
+				return nil // not an ADR
+			}
+			abs, kerr := filepath.Abs(path)
+			if kerr != nil {
+				abs = filepath.Clean(path)
+			}
+			if seenADR[abs] {
+				return nil
+			}
+			seenADR[abs] = true
+			content, readErr := readRegularFile(path)
+			if readErr != nil {
+				return nil
+			}
+			contentStr := string(content)
+			var emptySections []string
+			for _, section := range adrMandatorySections {
+				body, found := adrReqExtractSectionBody(contentStr, section)
+				if !found {
+					continue // missing section: not this rule's concern (R-8, R-9)
+				}
+				if !adrReqHasMeaningfulContent(body) {
+					emptySections = append(emptySections, section)
+				}
+			}
+			if len(emptySections) > 0 {
+				warnings = append(warnings, fmt.Sprintf(
+					"adr_req_has_content: %q has mandatory section(s) with only model content: %s — fill in or set rules.adr_req_has_content: off",
+					path, strings.Join(emptySections, ", "),
+				))
+			}
+			return nil
+		})
+	}
+
+	// --- REQs ---
+	reqFiles, reqErr := ResolveREQFiles(cfg)
+	if reqErr != nil {
+		return nil, reqErr
+	}
+	for _, path := range reqFiles {
+		content, readErr := readRegularFile(path)
+		if readErr != nil {
+			continue
+		}
+		contentStr := string(content)
+		var emptySections []string
+		for _, section := range reqMandatorySections {
+			body, found := adrReqExtractSectionBody(contentStr, section)
+			if !found {
+				continue
+			}
+			if !adrReqHasMeaningfulContent(body) {
+				emptySections = append(emptySections, section)
+			}
+		}
+		if len(emptySections) > 0 {
+			warnings = append(warnings, fmt.Sprintf(
+				"adr_req_has_content: %q has mandatory section(s) with only model content: %s — fill in or set rules.adr_req_has_content: off",
+				path, strings.Join(emptySections, ", "),
+			))
+		}
+	}
+
+	return warnings, nil
 }

@@ -42,6 +42,7 @@
 package pathguard
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -176,6 +177,35 @@ func GuardedWrite(root, filename string, data []byte, mode os.FileMode) error {
 	return os.Rename(temporaryName, filename)
 }
 
+// refusalError is the concrete error type returned by every containment-refusal
+// emission site (RejectAndReport and RefuseUnverifiableRoot). Callers in other
+// packages use IsRefusal to recognise it through any wrapping layer, without
+// depending on the text of the message.
+//
+// Error() returns exactly the same string that the former fmt.Errorf calls
+// produced, preserving byte-identical output for all callers and gates that
+// pin the message text.
+type refusalError struct {
+	msg   string
+	cause error
+}
+
+func (e *refusalError) Error() string { return e.msg }
+func (e *refusalError) Unwrap() error { return e.cause }
+
+// IsRefusal reports whether err (or any error in its Unwrap chain) is a
+// containment-refusal error emitted by RejectAndReport or
+// RefuseUnverifiableRoot. It uses errors.As and therefore works through any
+// number of fmt.Errorf("%w", ...) wrapping layers.
+//
+// Callers outside this package use IsRefusal instead of comparing the error
+// message with strings.HasPrefix — the string check is fragile when an
+// intermediate layer wraps the error with additional context.
+func IsRefusal(err error) bool {
+	var r *refusalError
+	return errors.As(err, &r)
+}
+
 // refusalGrammar is the ONE grammar of the containment refusal. Both the
 // user-facing stderr line and the returned error are built from this single
 // literal, so they cannot drift apart: identical by construction, not by
@@ -222,7 +252,10 @@ func RejectAndReport(resolvedRoot, absTarget string) error {
 		return nil
 	}
 	fmt.Fprintf(os.Stderr, stderrPrefix+refusalGrammar+"%v\n", absTarget, guardErr)
-	return fmt.Errorf(refusalGrammar+"%w", absTarget, guardErr)
+	return &refusalError{
+		msg:   fmt.Sprintf(refusalGrammar+"%v", absTarget, guardErr),
+		cause: guardErr,
+	}
 }
 
 // unverifiableReason is the ONE reason clause used when the root itself could
@@ -243,7 +276,10 @@ const unverifiableReason = "cannot verify containment: "
 // refusal.
 func RefuseUnverifiableRoot(target string, cause error) error {
 	fmt.Fprintf(os.Stderr, stderrPrefix+refusalGrammar+unverifiableReason+"%v\n", target, cause)
-	return fmt.Errorf(refusalGrammar+unverifiableReason+"%w", target, cause)
+	return &refusalError{
+		msg:   fmt.Sprintf(refusalGrammar+unverifiableReason+"%v", target, cause),
+		cause: cause,
+	}
 }
 
 // ResolveRoot turns a caller-supplied root into the form the guard predicates

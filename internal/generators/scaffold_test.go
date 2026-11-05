@@ -2,12 +2,14 @@ package generators
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/roadmapdoc"
 )
 
@@ -1112,4 +1114,541 @@ func TestGenerateHuskyHook_HardlinkNotFollowed(t *testing.T) {
 	if string(got) != originalContent {
 		t.Errorf("hardlink shared inode was overwritten\nwant: %q\ngot:  %q", originalContent, string(got))
 	}
+}
+
+// --------------------------------------------------------------------------
+// T-12: Scaffold pre-check on symlinked project directories
+// --------------------------------------------------------------------------
+
+// scaffoldProjectState walks the project directory and returns a map of
+// relative path → content (for files) or "dir" (for dirs) or "symlink:target"
+// (for symlinks). Used to compare project state before and after a Scaffold
+// call to assert no partial writes.
+func scaffoldProjectState(t *testing.T, dir string) map[string]string {
+	t.Helper()
+	state := map[string]string{}
+	_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		rel, _ := filepath.Rel(dir, path)
+		if rel == "." {
+			return nil
+		}
+		if d.Type()&os.ModeSymlink != 0 {
+			target, _ := os.Readlink(path)
+			state[rel] = "symlink:" + target
+			return nil
+		}
+		if d.IsDir() {
+			state[rel] = "dir"
+			return nil
+		}
+		content, _ := os.ReadFile(path)
+		state[rel] = string(content)
+		return nil
+	})
+	return state
+}
+
+// TestScaffoldPreCheckAbortsOnSymlinkClaudeDir asserts that Scaffold aborts
+// without any write when <project>/.claude is a symlink. Reconciliation:
+// affirms that the upfront pre-check in Scaffold fires for ClaudeCommandsDirPath
+// before the first MkdirAll — without the pre-check, 11 files would be written
+// before generateClaudeCommands detects the symlink (T-12 root cause).
+func TestScaffoldPreCheckAbortsOnSymlinkClaudeDir(t *testing.T) {
+	dir := t.TempDir()
+	target := t.TempDir()
+
+	// Pre-capture state (only the .claude symlink).
+	claudeDir := filepath.Join(dir, ".claude")
+	symlinkOrSkip(t, target, claudeDir)
+	before := scaffoldProjectState(t, dir)
+
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	cfg := Config{ProjectName: "test", ProjectType: "governance", Hooks: "none", CI: "none"}
+	err := Scaffold(cfg)
+	if err == nil {
+		t.Fatal("Scaffold must fail when <proj>/.claude is a symlink")
+	}
+
+	after := scaffoldProjectState(t, dir)
+	// Only the symlink we placed must exist — no new entries.
+	for k, v := range after {
+		if bv, ok := before[k]; !ok || bv != v {
+			t.Errorf("unexpected write after aborted Scaffold: %s = %q (before: %q)", k, v, bv)
+		}
+	}
+}
+
+// TestScaffoldPreCheckAbortsOnSymlinkScriptsDir asserts that Scaffold aborts
+// without any write when <project>/scripts is a symlink. Reconciliation:
+// affirms that the upfront pre-check covers validateScriptPath — without it,
+// govDirs would succeed before scripts/ is refused (5 files written).
+func TestScaffoldPreCheckAbortsOnSymlinkScriptsDir(t *testing.T) {
+	dir := t.TempDir()
+	target := t.TempDir()
+	scriptsDir := filepath.Join(dir, "scripts")
+	symlinkOrSkip(t, target, scriptsDir)
+	before := scaffoldProjectState(t, dir)
+
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	cfg := Config{ProjectName: "test", ProjectType: "governance", Hooks: "none", CI: "none"}
+	err := Scaffold(cfg)
+	if err == nil {
+		t.Fatal("Scaffold must fail when <proj>/scripts is a symlink")
+	}
+
+	after := scaffoldProjectState(t, dir)
+	for k, v := range after {
+		if bv, ok := before[k]; !ok || bv != v {
+			t.Errorf("unexpected write after aborted Scaffold: %s = %q (before: %q)", k, v, bv)
+		}
+	}
+}
+
+// TestScaffoldPreCheckAbortsOnSymlinkVaultDir asserts that Scaffold aborts
+// without any write when <project>/vault is a symlink. Reconciliation:
+// affirms that the upfront pre-check covers vaultIndexPath — without it,
+// govDirs entries before vault/ would succeed (1 file written).
+func TestScaffoldPreCheckAbortsOnSymlinkVaultDir(t *testing.T) {
+	dir := t.TempDir()
+	target := t.TempDir()
+	vaultDir := filepath.Join(dir, "vault")
+	symlinkOrSkip(t, target, vaultDir)
+	before := scaffoldProjectState(t, dir)
+
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	cfg := Config{ProjectName: "test", ProjectType: "governance", Hooks: "none", CI: "none"}
+	err := Scaffold(cfg)
+	if err == nil {
+		t.Fatal("Scaffold must fail when <proj>/vault is a symlink")
+	}
+
+	after := scaffoldProjectState(t, dir)
+	for k, v := range after {
+		if bv, ok := before[k]; !ok || bv != v {
+			t.Errorf("unexpected write after aborted Scaffold: %s = %q (before: %q)", k, v, bv)
+		}
+	}
+}
+
+// TestScaffoldPreCheckAbortsOnSymlinkDocsDir asserts that Scaffold aborts
+// without any write when <project>/docs is a symlink. Reconciliation:
+// affirms that the upfront pre-check covers govDirs entries under docs/ —
+// without it, the first govDirs entries (docs/adr) already succeed via MkdirAll.
+func TestScaffoldPreCheckAbortsOnSymlinkDocsDir(t *testing.T) {
+	dir := t.TempDir()
+	target := t.TempDir()
+	docsDir := filepath.Join(dir, "docs")
+	symlinkOrSkip(t, target, docsDir)
+	before := scaffoldProjectState(t, dir)
+
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	cfg := Config{ProjectName: "test", ProjectType: "governance", Hooks: "none", CI: "none"}
+	err := Scaffold(cfg)
+	if err == nil {
+		t.Fatal("Scaffold must fail when <proj>/docs is a symlink")
+	}
+
+	after := scaffoldProjectState(t, dir)
+	for k, v := range after {
+		if bv, ok := before[k]; !ok || bv != v {
+			t.Errorf("unexpected write after aborted Scaffold: %s = %q (before: %q)", k, v, bv)
+		}
+	}
+}
+
+// TestScaffoldPreCheckCounterArm_WithoutPreCheckClaudeDirWritesFiles is the
+// counter-arm for TestScaffoldPreCheckAbortsOnSymlinkClaudeDir: it verifies
+// that WITHOUT the upfront pre-check loop, Scaffold would write project files
+// before the error (the write-time guard fires later). Implemented by running
+// a modified Scaffold that skips the upfront loop. Reconciliation: affirms that
+// removing the scaffoldWriteTargets loop from Scaffold causes partial writes
+// — if this test passes, the counter-arm is active.
+func TestScaffoldPreCheckCounterArm_WithoutPreCheckClaudeDirWritesFiles(t *testing.T) {
+	dir := t.TempDir()
+	target := t.TempDir()
+	claudeDir := filepath.Join(dir, ".claude")
+	symlinkOrSkip(t, target, claudeDir)
+
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	// Run scaffoldWithoutPreCheck to simulate the old behavior.
+	cfg := Config{ProjectName: "test", ProjectType: "governance", Hooks: "none", CI: "none"}
+	err := scaffoldWithoutPreCheck(cfg)
+	if err == nil {
+		t.Fatal("scaffoldWithoutPreCheck must still fail (write-time guard fires)")
+	}
+
+	// At least one project file must have been written before the error.
+	entries, _ := os.ReadDir(dir)
+	hasProjectFile := false
+	for _, e := range entries {
+		if e.Name() != ".claude" {
+			hasProjectFile = true
+			break
+		}
+	}
+	if !hasProjectFile {
+		t.Error("counter-arm: scaffoldWithoutPreCheck must write project files before the error; got no files — this means the upfront pre-check is not needed (unexpected)")
+	}
+}
+
+// ─── ML-2B completion: scaffoldWriteTargets coverage test + symlink .github ──
+
+// isCovered reports whether path p (ToSlash-normalized) is covered by any
+// target in targets (also ToSlash-normalized).
+//
+// Coverage criterion — a path P is covered by target T when:
+//   - P == T  (exact match)
+//   - strings.HasPrefix(P, T+"/")  — P is inside directory T
+//   - strings.HasPrefix(T, P+"/")  — P is an ancestor dir of T that must have
+//     been created as an intermediate directory to reach T
+//
+// The ancestor direction (third rule) is what keeps intermediate dirs created
+// by os.MkdirAll — docs/, scripts/, .claude/, .claude/commands/, etc. — from
+// failing the check without needing to enumerate them in scaffoldWriteTargets.
+func isCovered(p string, targets []string) bool {
+	for _, t := range targets {
+		if p == t || strings.HasPrefix(p, t+"/") || strings.HasPrefix(t, p+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// TestScaffoldWriteTargets_CoversEveryFileScaffoldCreates — ML-2B completion
+//
+// Affirms that scaffoldWriteTargets(cfg) declares every path that Scaffold(cfg)
+// creates in a fresh project directory for seven representative Config values.
+// The comment at scaffold.go:114-120 promises this invariant; this test makes
+// it executable.
+//
+// Refutation of the handoff premise: the comment at scaffold.go:168-172
+// explicitly excludes .claude/settings.json from the upfront pre-check list —
+// that exclusion is CORRECT and must not be reversed (adding it would make a
+// non-fatal path fatal at pre-check). The "dentro de" coverage criterion cannot
+// absorb .claude/settings.json without a rule that accepts every root-level file
+// (the ancestor of every target is "."), so the exception path is taken here:
+// .claude/settings.json is a named explicit exclusion. InjectClaudeHooks (the
+// writer) guards the leaf via pathguard.RejectAndReport before writing, so
+// symlink protection already exists at the write site. Two assertions keep the
+// exclusion current and deliberate.
+//
+// Regra Dura de Reconciliação sentence: this test affirms that every path
+// Scaffold creates for a given Config is either an explicit entry in
+// scaffoldWriteTargets(cfg) or an intermediate directory obligatory for such an
+// entry — so a future write added to Scaffold without a corresponding entry in
+// scaffoldWriteTargets is immediately detected.
+func TestScaffoldWriteTargets_CoversEveryFileScaffoldCreates(t *testing.T) {
+	// .claude/settings.json is written by InjectClaudeHooks (triggered by the
+	// CLAUDE.md that Scaffold creates) as a non-fatal, explicitly excluded path.
+	// See scaffold.go:168-172 and InjectClaudeHooks (agentfiles.go) for the guard.
+	const claudeSettingsJSON = ".claude/settings.json"
+
+	cases := []struct {
+		name string
+		cfg  Config
+	}{
+		{"NoHooksNoCI", Config{}},
+		{"HuskyNoReq", Config{Hooks: "husky"}},
+		{"HuskyWithReq", Config{Hooks: "husky", RequireReqInCommit: true}},
+		{"LefthookNoReq", Config{Hooks: "lefthook"}},
+		{"LefthookWithReq", Config{Hooks: "lefthook", RequireReqInCommit: true}},
+		{"GitHubActions", Config{CI: "github-actions"}},
+		{"Java", Config{Backend: "java"}},
+	}
+
+	origDir, _ := os.Getwd()
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("USERPROFILE", home)
+			t.Setenv("CLAUDE_CONFIG_DIR", "")
+			config.Reset()
+			t.Cleanup(config.Reset)
+
+			if err := os.Chdir(dir); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.Chdir(origDir) })
+
+			if err := Scaffold(tc.cfg); err != nil {
+				t.Fatalf("Scaffold(%s) failed: %v", tc.name, err)
+			}
+
+			// Collect all paths created by Scaffold (relative, ToSlash-normalized).
+			var created []string
+			_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+				if err != nil {
+					return nil
+				}
+				rel, relErr := filepath.Rel(dir, path)
+				if relErr != nil || rel == "." {
+					return nil
+				}
+				created = append(created, filepath.ToSlash(rel))
+				return nil
+			})
+
+			targets := scaffoldWriteTargets(tc.cfg)
+			normTargets := make([]string, len(targets))
+			for i, tgt := range targets {
+				normTargets[i] = filepath.ToSlash(tgt)
+			}
+
+			// Assertion 1 — deliberate exclusion is still present in the walk (keeps
+			// the exclusion current: if InjectClaudeHooks stops writing settings.json,
+			// this fails so the exclusion can be removed).
+			foundSettingsJSON := false
+			for _, p := range created {
+				if p == claudeSettingsJSON {
+					foundSettingsJSON = true
+					break
+				}
+			}
+			if !foundSettingsJSON {
+				t.Errorf("%s: %s not found in walk — exclusion may be stale (InjectClaudeHooks may no longer fire)",
+					tc.name, claudeSettingsJSON)
+			}
+
+			// Assertion 2 — deliberate exclusion is absent from scaffoldWriteTargets
+			// (keeps the exclusion deliberate: if someone adds it to the list, this
+			// fails to prevent a non-fatal path from becoming fatal at pre-check).
+			for _, tgt := range normTargets {
+				if tgt == claudeSettingsJSON {
+					t.Errorf("%s: %s is now IN scaffoldWriteTargets — the deliberate exclusion "+
+						"was reversed; adding it makes a non-fatal path fatal at pre-check "+
+						"(see scaffold.go:168-172)",
+						tc.name, claudeSettingsJSON)
+				}
+			}
+
+			// Coverage check — every walked path is covered, excluding the deliberate exclusion.
+			for _, p := range created {
+				if p == claudeSettingsJSON {
+					continue // deliberate exclusion: leaf-guarded at write site
+				}
+				if !isCovered(p, normTargets) {
+					t.Errorf("%s: path %q is not covered by scaffoldWriteTargets — "+
+						"add it or one of its parent dirs to scaffoldWriteTargets",
+						tc.name, p)
+				}
+			}
+
+			// Vacuous-pass guard — assert at least vault/notes/index.md was created.
+			foundVaultIndex := false
+			for _, p := range created {
+				if p == filepath.ToSlash(vaultIndexPath) {
+					foundVaultIndex = true
+					break
+				}
+			}
+			if !foundVaultIndex {
+				t.Errorf("%s: Scaffold succeeded but %s not found — Scaffold may be a no-op",
+					tc.name, vaultIndexPath)
+			}
+		})
+	}
+
+	// Counter-arm — remove credentialGuardScriptPath from the targets; uncovered()
+	// must report exactly that one file. This verifies that the coverage check is
+	// active and would catch a genuinely missing entry.
+	t.Run("CounterArm_MissingEntryDetected", func(t *testing.T) {
+		dir := t.TempDir()
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("USERPROFILE", home)
+		t.Setenv("CLAUDE_CONFIG_DIR", "")
+		config.Reset()
+		t.Cleanup(config.Reset)
+
+		if err := os.Chdir(dir); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chdir(origDir) })
+
+		cfg := Config{}
+		if err := Scaffold(cfg); err != nil {
+			t.Fatalf("Scaffold failed: %v", err)
+		}
+
+		var created []string
+		_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			rel, relErr := filepath.Rel(dir, path)
+			if relErr != nil || rel == "." {
+				return nil
+			}
+			created = append(created, filepath.ToSlash(rel))
+			return nil
+		})
+
+		// Build trimmed targets: all entries except credentialGuardScriptPath.
+		allTargets := scaffoldWriteTargets(cfg)
+		trimmed := make([]string, 0, len(allTargets)-1)
+		for _, tgt := range allTargets {
+			if filepath.ToSlash(tgt) == filepath.ToSlash(credentialGuardScriptPath) {
+				continue
+			}
+			trimmed = append(trimmed, filepath.ToSlash(tgt))
+		}
+		if len(trimmed) != len(allTargets)-1 {
+			t.Fatalf("credentialGuardScriptPath %q not found in scaffoldWriteTargets — counter-arm is broken",
+				credentialGuardScriptPath)
+		}
+
+		// Collect uncovered paths (excluding the deliberate .claude/settings.json exclusion).
+		const claudeSettingsJSON = ".claude/settings.json"
+		var uncov []string
+		for _, p := range created {
+			if p == claudeSettingsJSON {
+				continue
+			}
+			if !isCovered(p, trimmed) {
+				uncov = append(uncov, p)
+			}
+		}
+
+		want := filepath.ToSlash(credentialGuardScriptPath)
+		if len(uncov) != 1 || uncov[0] != want {
+			t.Errorf("counter-arm: expected exactly [%s] uncovered, got %v", want, uncov)
+		}
+	})
+}
+
+// TestScaffold_GithubActionsSymlinkRefused_ProjectStateUnchanged — ML-2B completion
+//
+// Affirms that Scaffold aborts without any write when <project>/.github is a
+// symlink, even when CI: "github-actions" is set. The T-12 upfront pre-check
+// must fire for GitHubActionsWorkflowPath before the first MkdirAll — testing
+// the conditional branch of scaffoldWriteTargets that existing pre-check tests
+// do not reach.
+//
+// Regra Dura de Reconciliação sentence: this test affirms that the upfront
+// scaffoldWriteTargets pre-check covers the GitHubActionsWorkflowPath branch
+// (CI: "github-actions") so a symlinked .github/ aborts Scaffold before any
+// project file is written.
+func TestScaffold_GithubActionsSymlinkRefused_ProjectStateUnchanged(t *testing.T) {
+	outside := t.TempDir()
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+
+	githubDir := filepath.Join(dir, ".github")
+	symlinkOrSkip(t, outside, githubDir)
+	before := scaffoldProjectState(t, dir)
+
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	cfg := Config{CI: "github-actions"}
+	err := Scaffold(cfg)
+	if err == nil {
+		t.Fatal("Scaffold must fail when <proj>/.github is a symlink, got nil")
+	}
+	if !strings.Contains(err.Error(), "scaffold pre-check") {
+		t.Errorf("error must mention 'scaffold pre-check', got: %v", err)
+	}
+	if !strings.Contains(err.Error(), ".github") {
+		t.Errorf("error must name .github in the message, got: %v", err)
+	}
+
+	after := scaffoldProjectState(t, dir)
+	for k, v := range after {
+		bv, ok := before[k]
+		if !ok || bv != v {
+			t.Errorf("unexpected write after aborted Scaffold: %s = %q (before: %q)", k, v, bv)
+		}
+	}
+	for k := range before {
+		if _, ok := after[k]; !ok {
+			t.Errorf("unexpected deletion after aborted Scaffold: %s", k)
+		}
+	}
+
+	if _, statErr := os.Stat(filepath.Join(outside, "workflows")); statErr == nil {
+		t.Error("containment violated: workflows/ was created in the outside dir")
+	}
+}
+
+// scaffoldWithoutPreCheck runs Scaffold without the upfront pathguard loop,
+// mimicking the behaviour before T-12. Used only by the counter-arm test.
+func scaffoldWithoutPreCheck(cfg Config) error {
+	root, err := projectRoot()
+	if err != nil {
+		return fmt.Errorf("Scaffold: %w", err)
+	}
+	for _, dir := range govDirs {
+		absDir := filepath.Join(root, dir)
+		if err := rejectScaffoldPath(root, absDir); err != nil {
+			return err
+		}
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("creating %s: %w", dir, err)
+		}
+	}
+	if err := generateVaultIndex(); err != nil {
+		return err
+	}
+	if err := generateGitAttributes(); err != nil {
+		return err
+	}
+	if err := generateGitIgnore(); err != nil {
+		return err
+	}
+	if err := writeTrackfwConfig(cfg); err != nil {
+		return err
+	}
+	if err := generateValidateScript(cfg); err != nil {
+		return err
+	}
+	if err := GenerateAttentionScripts(""); err != nil {
+		return err
+	}
+	if err := GenerateCredentialGuardScript(""); err != nil {
+		return err
+	}
+	if err := GenerateGitBranchGuardScript(""); err != nil {
+		return err
+	}
+	if err := generateClaudeMD(cfg); err != nil {
+		return err
+	}
+	if err := generateClaudeCommands(); err != nil {
+		return err
+	}
+	return nil
 }

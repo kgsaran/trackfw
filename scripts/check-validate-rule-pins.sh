@@ -8,7 +8,7 @@
 # specific rule names, message substrings, exit codes.  Nothing here invokes
 # `node npm/bin/trackfw` or `python3 -m trackfw`.
 #
-# Pin inventory (34 pins across 6 blocks):
+# Pin inventory (38 pins across 7 blocks):
 #   Block 1 — ADR/REQ rule-set:         {adr_accepted_when_req_done, blocked_by_draft_adr}
 #   Block 2 — branch_has_wip_roadmap:    nomatch/diff message markers + --agent guidance
 #                                        + the ML-3A matcher: token overlap accepts (PIN6),
@@ -20,6 +20,8 @@
 #                                         done/ state covered (PIN28 / PIN26 vacuity check)
 #   Block 6 — adr_file_without_prefix:   non-prefixed .md with status → warning (PIN28),
 #                                         ADR-prefixed .md with status → no warning (PIN29)
+#   Block 7 — adr_req_has_content:       template-only ADR/REQ → warning naming file (PIN30),
+#                                         filled ADR/REQ → no warning (PIN31)
 #
 # Falsification evidence is recorded after `make quality` run.
 set -euo pipefail
@@ -1075,10 +1077,192 @@ if found_prefixed:
 print(f"OK [validate-rule-pins/pin29-adr-prefixed-silent]")
 PY
 
-echo "validate-rule-pins: all 34 pins pass"
+# ---------------------------------------------------------------------------
+# BLOCK 7: adr_req_has_content message pins (ML-1A, REQ-2026-11-02 #659)
+#
+# PIN30 — ADR/REQ with template-only sections → warning naming the file
+# PIN31 — ADR/REQ with real content            → no warning (silence)
+# ---------------------------------------------------------------------------
+mkdir -p \
+  "$TMP_DIR/p7/docs/adr" \
+  "$TMP_DIR/p7/docs/req" \
+  "$TMP_DIR/p7/docs/roadmaps"/{backlog,wip,blocked,done,abandoned}
+
+cat >"$TMP_DIR/p7/trackfw.yaml" <<'EOF'
+governance_mode: strict
+adr_dirs:
+  - docs/adr
+req_dir: docs/req
+roadmap_dir: docs/roadmaps
+EOF
+
+# Template-only ADR (all 4 mandatory sections are HTML comments — model content).
+cat >"$TMP_DIR/p7/docs/adr/ADR-2026-11-02-template-only.md" <<'EOF'
+---
+status: Proposed
+date: 2026-11-02
+author: ""
+---
+
+# ADR: Template Only
+
+> Date: 2026-11-02 | Status: Proposed
+
+## Context
+<!-- What is the situation that motivates this decision? -->
+
+## Decision
+<!-- What was decided? -->
+
+## Consequences
+<!-- What are the positive and negative consequences of this decision? -->
+
+## Alternatives Considered
+<!-- What other options were evaluated and why were they rejected? -->
+EOF
+
+# Template-only REQ (Motivation = HTML comment, Acceptance Criteria = bare checkboxes).
+cat >"$TMP_DIR/p7/docs/req/REQ-2026-11-02-template-only.md" <<'EOF'
+---
+status: Open
+date: 2026-11-02
+author: ""
+---
+
+# REQ: Template Only
+
+> Date: 2026-11-02 | Status: Open
+
+## Motivation
+<!-- Why is this requirement needed? What problem does it solve? -->
+
+## Acceptance Criteria
+- [ ]
+- [ ]
+
+## Linked ADR
+ADR:
+
+## Linked Roadmap
+Roadmap:
+EOF
+
+# ADR with real content — must NOT trigger the rule.
+cat >"$TMP_DIR/p7/docs/adr/ADR-2026-11-02-filled.md" <<'EOF'
+---
+status: Proposed
+date: 2026-11-02
+author: ""
+---
+
+# ADR: Filled
+
+> Date: 2026-11-02 | Status: Proposed
+
+## Context
+This ADR has substantive content in every mandatory section.
+
+## Decision
+We decided to write real content here so the rule does not fire.
+
+## Consequences
+The rule remains silent when content exists.
+
+## Alternatives Considered
+The alternative was to leave placeholders; it was rejected because the rule would fire.
+EOF
+
+# REQ with real content — must NOT trigger the rule.
+cat >"$TMP_DIR/p7/docs/req/REQ-2026-11-02-filled.md" <<'EOF'
+---
+status: Open
+date: 2026-11-02
+author: ""
+---
+
+# REQ: Filled
+
+> Date: 2026-11-02 | Status: Open
+
+## Motivation
+This requirement has a real motivation — not a placeholder.
+
+## Acceptance Criteria
+- [ ] The rule must fire for template-only files and be silent for filled files.
+
+## Linked ADR
+ADR:
+
+## Linked Roadmap
+Roadmap:
+EOF
+
+set +e
+(cd "$TMP_DIR/p7" && "$GO_BIN" validate --json) >"$TMP_DIR/p7.json" 2>"$TMP_DIR/p7.stderr"
+P7_RC=$?
+set -e
+
+python3 - "$TMP_DIR/p7.json" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as f:
+    payload = json.load(f)
+warnings = payload.get("warnings", [])
+rule = "adr_req_has_content"
+
+# PIN30: template-only ADR and REQ must each produce a warning naming the file.
+found_adr = any(
+    (item.get("rule") == rule or item.get("message", "").startswith(rule + ":"))
+    and "ADR-2026-11-02-template-only.md" in item.get("message", "")
+    for item in warnings
+)
+if not found_adr:
+    raise SystemExit(
+        f"PIN30a: {rule!r} warning not found for template-only ADR — "
+        f"rule not firing or message format changed. warnings: {warnings!r}"
+    )
+print("OK [validate-rule-pins/pin30a-adr-template-only-fires]")
+
+found_req = any(
+    (item.get("rule") == rule or item.get("message", "").startswith(rule + ":"))
+    and "REQ-2026-11-02-template-only.md" in item.get("message", "")
+    for item in warnings
+)
+if not found_req:
+    raise SystemExit(
+        f"PIN30b: {rule!r} warning not found for template-only REQ — "
+        f"rule not firing or message format changed. warnings: {warnings!r}"
+    )
+print("OK [validate-rule-pins/pin30b-req-template-only-fires]")
+
+# PIN31: filled ADR and REQ must NOT appear in the rule's warnings.
+found_filled_adr = any(
+    (item.get("rule") == rule or item.get("message", "").startswith(rule + ":"))
+    and "ADR-2026-11-02-filled.md" in item.get("message", "")
+    for item in warnings
+)
+if found_filled_adr:
+    raise SystemExit(
+        f"PIN31a: {rule!r} fired for ADR with real content — rule must be silent when sections are filled"
+    )
+print("OK [validate-rule-pins/pin31a-adr-filled-silent]")
+
+found_filled_req = any(
+    (item.get("rule") == rule or item.get("message", "").startswith(rule + ":"))
+    and "REQ-2026-11-02-filled.md" in item.get("message", "")
+    for item in warnings
+)
+if found_filled_req:
+    raise SystemExit(
+        f"PIN31b: {rule!r} fired for REQ with real content — rule must be silent when sections are filled"
+    )
+print("OK [validate-rule-pins/pin31b-req-filled-silent]")
+PY
+
+echo "validate-rule-pins: all 38 pins pass"
 echo "  Block 1 (rule-set):          pin1"
 echo "  Block 2 (bhr-messages):      pin2-pin5 + pin2b/pin2c/pin2d (ML-3A matcher)"
 echo "  Block 3 (credential-guard):  pin6-pin20 + pin20b/pin20c (ML-4C Windows migration warning)"
 echo "  Block 4 (git-branch-guard):  pin21-pin25"
 echo "  Block 5 (unterminated-fence): pin26-pin27"
 echo "  Block 6 (adr-without-prefix): pin28-pin29"
+echo "  Block 7 (adr-req-has-content): pin30-pin31"

@@ -4982,6 +4982,95 @@ Gate: `internal/validator/validator_adr_prefix_test.go`
 (`TestADRFileWithoutPrefix_FrontmatterStatusDispara`, `TestADRFileWithoutPrefix_CabecalhoStatusDispara`,
 `TestADRFileWithoutPrefix_READMESemStatusNaoDispara`, `TestADRFileWithoutPrefix_ADRPrefixadoNaoDispara`).
 
+## Regra `adr_req_has_content` (ML-1A, REQ-2026-11-02, #659)
+
+<!-- trackfw-contract: gate=internal/validator/validator_adr_req_has_content_test.go -->
+
+Severidade padrão: **warning** (configurável via `rules: {adr_req_has_content: off/error}`).
+
+Acusa ADR ou REQ cujas seções obrigatórias contêm apenas conteúdo do modelo — comentários HTML,
+bare checkboxes ou whitespace puro — sem nenhum texto substantivo.
+
+**Seções obrigatórias:**
+
+- ADR (arquivos `ADR-*.md` em `adr_dirs`): `## Context`, `## Decision`, `## Consequences`,
+  `## Alternatives Considered` (ambos os templates em `generators/adr.go`).
+- REQ (arquivos em `req_dir`): `## Motivation`, `## Acceptance Criteria`.
+
+**Seções opcionais (nunca disparam):** `## Linked ADR`, `## Blocked by ADRs`,
+`## Linked Roadmap`, `## Negative scope`.
+
+**Conteúdo considerado "modelo" (não substantivo):**
+- Comentários HTML: `<!-- ... -->` single-line e multi-line, incluindo `<!--` não fechado.
+- Whitespace puro: espaços, tabs, CRLF, LF, BOM, NBSP, U+200B, U+2060.
+- Bare checkboxes: linhas `^\s*-\s*\[\s*\]\s*$`.
+
+Uma seção com texto além de comentários não dispara (vetor `g`: `"CQRS (<!-- sigla -->)"`
+passa porque contém texto fora do comentário). Seções ausentes não disparam (R-8, R-9).
+
+**Mensagem:**
+
+```
+adr_req_has_content: "<path>" has mandatory section(s) with only model content: <sections> — fill in or set rules.adr_req_has_content: off
+```
+
+Gate: `internal/validator/validator_adr_req_has_content_test.go`
+(vetores `a`–`h`: bare checkbox, comentário single-line, multi-line, não fechado, CRLF,
+parágrafo de texto, texto com comentário interno, seção opcional — conforme P-8 da Wave 0).
+
+## Regra `wip_limit` — severidade configurável (ML-1A, REQ-2026-11-02, #660)
+
+<!-- trackfw-contract: gate=internal/validator/validator_origin_main_severity_test.go -->
+
+Severidade padrão: **warning** (mudou de `error` para `warning` em ML-1A, REQ-2026-11-02).
+O valor inteiro `wip_limit` em `trackfw.yaml` continua controlando o limite (padrão 1).
+
+- `rules.wip_limit: warning` (padrão): exibe o aviso, não bloqueia o gate.
+- `rules.wip_limit: error`: `trackfw validate` sai não-zero em strict mode quando o limite é ultrapassado.
+- `rules.wip_limit: off`: silencia completamente.
+
+A mudança de padrão foi necessária porque projetos com mais de um roadmap em `wip/` existiam
+e seriam bloqueados retroativamente por um padrão `error`.
+
+## Mensagens do probe de binário — duas cláusulas (ML-1A, REQ-2026-11-02, #658)
+
+<!-- trackfw-contract: gate=internal/validator/validator_guard_binary_probe_test.go,internal/validator/validator_guard_binary_probe_gitbash_test.go -->
+
+As mensagens de binário ausente e de binário sem subcomando `guard`
+(`validator_guard_binary_probe.go`, funções `guardBinaryProbeOnce` e `guardGitBashBinaryProbe`)
+afirmam sempre as duas cláusulas:
+
+1. Na forma atual PowerShell/POSIX, o hook **blocks every command** the agent runs through it (exit 2).
+2. In legacy hook forms and cmd.exe-family hooks it **may let commands through (fail open)**.
+
+As mensagens de política Restricted (`guardCheckPS1RestrictedPolicy`) não mudam — descrevem
+fail-open real (exit 0) e são corretas como estão.
+
+Gate: `internal/validator/validator_guard_binary_probe_test.go`
+(`TestGuardBinaryProbeOnce_BinarioAusente_AmbosasClasulasMensagem`,
+`TestGuardBinaryProbeOnce_BinarioSemGuard_AmbasClausulas`) e
+`internal/validator/validator_guard_binary_probe_gitbash_test.go`
+(`TestGuardGitBashBinaryProbe_Ausente_AmbasClausulas`,
+`TestGuardGitBashBinaryProbe_SemGuard_AmbasClausulas`).
+
+## `trackfw init --scope` e pré-checagem do destino das AI tools (REQ-2026-11-02, #657 e #661)
+
+<!-- trackfw-contract: gate=internal/commands/init_test.go,internal/generators/scaffold_test.go -->
+
+- `trackfw init --scope project|global` (padrão `global`). Um valor inválido dá erro **antes de qualquer
+  escrita**.
+- Antes de gerar qualquer arquivo, nos caminhos com e sem TTY (ponto único `executeScaffoldAndInstall`),
+  o `init` confere pelo `pathguard` os destinos das AI tools selecionadas, globais (como `~/.claude/...`) e
+  do projeto (como o `CLAUDE.md`). Em seguida, o `Scaffold` confere **todos** os destinos que vai escrever
+  no projeto (`scaffoldWriteTargets`), antes do primeiro `MkdirAll` e mesmo sem `--ai-tools`. Um teste
+  amarra a lista a toda escrita do `Scaffold`; o `.claude/settings.json` é exceção nomeada, porque não é
+  fatal e já é coberto pelo ancestral `.claude/`. Se um destino for recusado (symlink ou reparse point, por exemplo um `~/.claude` em
+  junction do OneDrive), o `init` aborta **sem alterar o projeto**, nomeia o destino e sugere
+  `trackfw init --scope project` ou, depois, `trackfw agents install --scope project`. A dica só aparece
+  na recusa de caminho. A recusa em si não mudou, e os guards no momento da escrita continuam valendo.
+- Sem TTY, o `pkg_manager` gravado no `trackfw.yaml` é `npm` quando existe `package.json` na raiz e vazio
+  caso contrário. Antes, era sempre `npm`.
+
 ## Contrato de artefatos gerados (req, adr, roadmap, note)
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->

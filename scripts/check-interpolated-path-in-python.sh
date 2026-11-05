@@ -57,7 +57,7 @@
 #   Os dois sao ARMADILHAS REAIS e cada um e poupado por uma razao DIFERENTE.
 #   Duas razoes independentes: se uma quebrar, a outra nao mascara a falha.
 #
-#   1. scripts/check-validate-rule-pins.sh:371
+#   1. scripts/check-validate-rule-pins.sh (Block 3, fixture cg-claude-pwd)
 #        'command': '$PWD/scripts/trackfw-credential-guard.sh'
 #      Esta dentro de `<<'PY'` — heredoc CITADO. O `$PWD` e LITERAL, e a
 #      fixture (`cg-claude-pwd`) existe justamente para testar um `$PWD` NAO
@@ -96,7 +96,7 @@
 #   para o amanha, e e o unico braco do gate sem sitio real que o exercite.
 #
 #   ESTREITAMENTO DELIBERADO DO TIER 2 — ligacao a LITERAL DE STRING, UM SALTO,
-#   sem transitividade. Sem ele, `check-validate-rule-pins.sh:371` viraria
+#   sem transitividade. Sem ele, a fixture `cg-claude-pwd` em `check-validate-rule-pins.sh` viraria
 #   FALSO POSITIVO VIVO se alguem trocasse `<<'PY'` por `<<PY`: ali o valor
 #   interpolado entra num DICT (`d = {… '$PWD/…'}`), e o `d` vai para
 #   `json.dump(d, f)` — o caminho aberto e `sys.argv[1]`, nao `d`.

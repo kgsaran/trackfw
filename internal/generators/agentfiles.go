@@ -25,6 +25,23 @@ var agentFiles = map[string]string{
 	"cursor":   ".cursor/rules/trackfw.mdc",
 }
 
+// AgentFilePath returns the project-relative path of the governance rules file
+// for the named AI tool (one of: claude, codex, gemini, copilot, windsurf,
+// amazonq, cursor). ok is false for any tool not in this list.
+//
+// This is the authoritative accessor for agentFiles: every caller OUTSIDE
+// package generators that needs the destination path — in particular
+// preCheckAIToolDestinations in internal/commands/init.go — must go through
+// AgentFilePath so that InjectRulesForTool and the pre-check always stay in
+// sync (single source of truth, no copy-drift). Callers inside this package
+// may also range over agentFiles directly for non-write purposes (such as
+// InjectRulesDetected's existence checks), since they share the same package
+// and cannot drift from the source.
+func AgentFilePath(tool string) (string, bool) {
+	path, ok := agentFiles[tool]
+	return path, ok
+}
+
 var agentHeaders = map[string]string{
 	"claude":   "# Project Instructions\n",
 	"codex":    "# Project Instructions\n",
@@ -197,7 +214,7 @@ func injectOrUpdateRules(filePath, headerIfNew, guardRoot string) error {
 // AI tool. tool must be one of: claude, codex, gemini, copilot, windsurf, amazonq, cursor.
 // cwd is the project root directory.
 func InjectRulesForTool(tool, rootDir string) error {
-	relPath, ok := agentFiles[tool]
+	relPath, ok := AgentFilePath(tool)
 	if !ok {
 		return nil
 	}

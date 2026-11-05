@@ -90,6 +90,89 @@ var govDirs = []string{
 	"vault/notes",
 }
 
+// Script path constants — single source of truth shared by the writers and by
+// scaffoldWriteTargets. Changing a path here automatically updates both the
+// writer and the pre-check list.
+const (
+	validateScriptPath        = "scripts/trackfw-validate.sh"
+	attentionSignalScriptPath = "scripts/trackfw-attention-signal.sh"
+	attentionCleanupScriptPath = "scripts/trackfw-attention-cleanup.sh"
+	credentialGuardScriptPath = "scripts/trackfw-credential-guard.sh"
+	gitBranchGuardScriptPath  = "scripts/trackfw-git-branch-guard.sh"
+	vaultIndexPath            = "vault/notes/index.md"
+	gitAttributesPath         = ".gitattributes"
+	gitIgnorePath             = ".gitignore"
+	trackfwYAMLPath           = "trackfw.yaml"
+	claudeMDPath              = "CLAUDE.md"
+	huskyPreCommitPath        = ".husky/pre-commit"
+	huskyCommitMsgPath        = ".husky/commit-msg"
+	lefthookYAMLPath          = "lefthook.yml"
+	lefthookCommitMsgScript   = ".lefthook/commit-msg/trackfw-req-check.sh"
+	pomXMLPath                = "pom.xml"
+)
+
+// scaffoldWriteTargets returns all relative paths that Scaffold will write to for
+// the given Config. It mirrors Scaffold's conditional logic exactly — a path is
+// included if and only if the corresponding writer would be called under this Config.
+//
+// This list is the single source for the upfront pre-check in Scaffold (T-12,
+// AC4): all destinations are verified before any write. It is also used by the
+// coverage test to assert that every file Scaffold creates is enumerated here.
+func scaffoldWriteTargets(cfg Config) []string {
+	// Unconditional govDirs (directories).
+	targets := make([]string, 0, 30)
+	targets = append(targets, govDirs...)
+
+	// Unconditional file writes.
+	targets = append(targets,
+		vaultIndexPath,
+		gitAttributesPath,
+		gitIgnorePath,
+		trackfwYAMLPath,
+		validateScriptPath,
+		attentionSignalScriptPath,
+		attentionCleanupScriptPath,
+		credentialGuardScriptPath,
+		gitBranchGuardScriptPath,
+		claudeMDPath,
+		ClaudeCommandsDirPath,
+	)
+
+	// Conditional on CI.
+	switch cfg.CI {
+	case "github-actions":
+		targets = append(targets, GitHubActionsWorkflowPath)
+	case "gitlab-ci":
+		targets = append(targets, GitLabCIWorkflowPath)
+	}
+
+	// Conditional on Hooks.
+	switch cfg.Hooks {
+	case "husky":
+		targets = append(targets, huskyPreCommitPath)
+		if cfg.RequireReqInCommit {
+			targets = append(targets, huskyCommitMsgPath)
+		}
+	case "lefthook":
+		targets = append(targets, lefthookYAMLPath)
+		if cfg.RequireReqInCommit {
+			targets = append(targets, lefthookCommitMsgScript)
+		}
+	}
+
+	// Conditional on Backend.
+	if cfg.Backend == "java" {
+		targets = append(targets, pomXMLPath)
+	}
+
+	// InjectHooksDetected (.claude/settings.json) is non-fatal by design and
+	// never aborts init. Its directory (.claude/) is already covered through
+	// ClaudeCommandsDirPath — a symlinked .claude/ fails that check. Excluded
+	// from the upfront list for that reason.
+
+	return targets
+}
+
 // scaffoldRoot resolves a rootDir argument for the exported scaffold functions.
 // When rootDir is "" or ".", it resolves to projectRoot() (EvalSymlinks-canonical).
 // When rootDir is already absolute it is returned as-is after EvalSymlinks.
@@ -118,6 +201,19 @@ func Scaffold(cfg Config) error {
 	if err != nil {
 		return fmt.Errorf("Scaffold: %w", err)
 	}
+
+	// T-12 (AC4, REQ-2026-11-02): upfront pre-check of ALL destinations before
+	// the first write. pathguard.RejectAndReport tolerates ENOENT so a fresh
+	// project (no files yet) cannot produce a false positive. If any path is
+	// under a symlink or reparse point, Scaffold aborts here, before writing
+	// anything. The write-time guards in every individual writer remain active
+	// as a belt-and-suspenders measure against TOCTOU (T-9).
+	for _, rel := range scaffoldWriteTargets(cfg) {
+		if err := pathguard.RejectAndReport(root, filepath.Join(root, rel)); err != nil {
+			return fmt.Errorf("scaffold pre-check: %w", err)
+		}
+	}
+
 	for _, dir := range govDirs {
 		absDir := filepath.Join(root, dir)
 		if err := rejectScaffoldPath(root, absDir); err != nil {

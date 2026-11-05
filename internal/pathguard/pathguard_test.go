@@ -2,6 +2,7 @@ package pathguard_test
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -9,6 +10,70 @@ import (
 
 	"github.com/kgsaran/trackfw/internal/pathguard"
 )
+
+// TestIsRefusal_RealRefusalRecognized affirms that an error produced by
+// RejectAndReport (a genuine pathguard refusal) is recognised by IsRefusal.
+func TestIsRefusal_RealRefusalRecognized(t *testing.T) {
+	dir := t.TempDir()
+	// Create a symlink inside dir so that RejectAndReport fires.
+	link := filepath.Join(dir, "sym")
+	target := t.TempDir()
+	if !symlinkOrSkip(t, target, link) {
+		return
+	}
+	dest := filepath.Join(link, "file.txt")
+	err := pathguard.RejectAndReport(dir, dest)
+	if err == nil {
+		t.Fatal("RejectAndReport returned nil for symlink path — test setup wrong")
+	}
+	if !pathguard.IsRefusal(err) {
+		t.Errorf("IsRefusal = false for a real refusal from RejectAndReport; got error: %v", err)
+	}
+}
+
+// TestIsRefusal_UnrelatedErrorNotRecognized affirms that an ordinary error not
+// produced by pathguard is not recognised as a refusal, even if its text
+// coincidentally starts with "refusing write to ".
+//
+// Rule reconciliation: affirms that IsRefusal uses type identity, not string
+// matching — the conclusion of ML-1B correction 1.
+func TestIsRefusal_UnrelatedErrorNotRecognized(t *testing.T) {
+	lookalike := errors.New("refusing write to /some/path: not a real refusal")
+	if pathguard.IsRefusal(lookalike) {
+		t.Errorf("IsRefusal = true for a plain errors.New lookalike; must be false")
+	}
+	if pathguard.IsRefusal(errors.New("unrelated error")) {
+		t.Errorf("IsRefusal = true for an unrelated error; must be false")
+	}
+	if pathguard.IsRefusal(nil) {
+		t.Errorf("IsRefusal = true for nil; must be false")
+	}
+}
+
+// TestIsRefusal_WrappedRefusalStillRecognized affirms that a genuine refusal
+// wrapped by an intermediate fmt.Errorf("...: %w", refusal) layer is still
+// recognised by IsRefusal — the core property that motivated exporting it.
+//
+// Rule reconciliation: affirms that IsRefusal traverses the error chain with
+// errors.As rather than inspecting the message string — the conclusion of
+// ML-1B correction 1.
+func TestIsRefusal_WrappedRefusalStillRecognized(t *testing.T) {
+	dir := t.TempDir()
+	link := filepath.Join(dir, "sym")
+	target := t.TempDir()
+	if !symlinkOrSkip(t, target, link) {
+		return
+	}
+	dest := filepath.Join(link, "file.txt")
+	refusal := pathguard.RejectAndReport(dir, dest)
+	if refusal == nil {
+		t.Fatal("RejectAndReport returned nil for symlink path — test setup wrong")
+	}
+	wrapped := fmt.Errorf("outer context: %w", refusal)
+	if !pathguard.IsRefusal(wrapped) {
+		t.Errorf("IsRefusal = false for a refusal wrapped with fmt.Errorf(%%w); got: %v", wrapped)
+	}
+}
 
 // TestBeneath_ContainedPath — affirms ML-1A extraction conclusion (i): Beneath has the same
 // semantics as the private beneath in internal/integrations/manager.go; a path strictly inside
