@@ -238,9 +238,9 @@ grep -q '^## Prescrições' docs/seguranca/2026-11-05-wave0-guards-primeiro-usua
 - [x] `make quality` com `MQ_RC=0`, lido no arquivo de saída pelo arquiteto
 
 ### ML-2J — Release 11.5.0: versão e CHANGELOG (apolo-tf)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado pelo arquiteto em 2026-11-05. O `grep` confirma `11.5.0` nos quatro arquivos e nenhum `11.4.0`. O CHANGELOG ficou com o texto do handoff. `make quality` `MQ_RC=0`, lido em `scratchpad/apolo/mq7.txt`. Nenhum arquivo fora da lista foi tocado.
 **Files affected:** `internal/version/version.go`, `npm/package.json`, `npm/package-lock.json`, `pypi/pyproject.toml`, `CHANGELOG.md`
 **Acceptance criteria:**
-- [ ] os quatro arquivos de versão dizem `11.5.0`, e `grep -rn '11\.4\.0'` nos quatro não acha nada
-- [ ] o `CHANGELOG.md` tem `## [11.5.0] - 2026-11-05` logo abaixo de `## [Unreleased]`, com o texto do handoff
-- [ ] `make quality` com `MQ_RC=0`, lido no arquivo de saída pelo arquiteto
+- [x] os quatro arquivos de versão dizem `11.5.0`, e `grep -rn '11\.4\.0'` nos quatro não acha nada
+- [x] o `CHANGELOG.md` tem `## [11.5.0] - 2026-11-05` logo abaixo de `## [Unreleased]`, com o texto do handoff
+- [x] `make quality` com `MQ_RC=0`, lido no arquivo de saída pelo arquiteto
