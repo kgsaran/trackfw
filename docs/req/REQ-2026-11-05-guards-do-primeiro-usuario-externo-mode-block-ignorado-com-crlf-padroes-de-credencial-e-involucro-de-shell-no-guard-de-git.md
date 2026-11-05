@@ -34,21 +34,21 @@ Decisões do KG em 2026-11-05: ampliar os padrões de conteúdo e corrigir o REA
 e fazer os guards antes da REQ de CI. O desenho está no ADR.
 
 ## Acceptance Criteria
-- [ ] **AC1 (#662).** Com `credential_guard.mode: block`, o guard dá `rc=2` com o `trackfw.yaml` em LF e
+- [x] **AC1 (#662).** Com `credential_guard.mode: block`, o guard dá `rc=2` com o `trackfw.yaml` em LF e
   também em CRLF, nos escopos de projeto e `--global`. Um teste de tabela única afirma que o guard e o
   `extractCredentialGuardMode` do validator chegam ao mesmo `mode` para cada entrada: LF, CRLF, comentário,
   aspas, indentação, chave ausente, `# mode:` comentado, `ci_mode:`, seção vizinha com `mode:` (vazamento
   entre blocos), linha em branco CRLF, `credential_guard:` aninhado, BOM e tab. No global, `mode: warn` em
   CRLF dá `rc=0`. As constantes mortas do `scaffold.go` são apagadas, porque o script gerado é um shim, como a
   Wave 0 mediu.
-- [ ] **AC2 (#662).** O guard detecta os padrões do ADR D2 (o conjunto exato sai da Wave 0), com mensagem
+- [x] **AC2 (#662).** O guard detecta os padrões do ADR D2 (o conjunto exato sai da Wave 0), com mensagem
   que nomeia o tipo. Há vetor positivo por padrão e vetor negativo de falso positivo por padrão (prefixo
   curto demais, texto de documentação). Conteúdo comum (`print(1)`) continua com `rc=0`. Os vetores de
   exemplo vêm de valores públicos de documentação, nunca de segredo real.
-- [ ] **AC3 (#662).** O README e o `docs/cli-parity.md` listam exatamente o que o guard de credencial
+- [x] **AC3 (#662).** O README e o `docs/cli-parity.md` listam exatamente o que o guard de credencial
   detecta e o que não detecta (caminho de arquivo, atribuição genérica). A frase "block agents from
   materializing real credentials" passa a ter ressalva.
-- [ ] **AC4 (#663).** O guard de git dá `rc=2` para `bash -c`, `sh -c`, `bash -lc`, `zsh -c`, `eval`,
+- [x] **AC4 (#663).** O guard de git dá `rc=2` para `bash -c`, `sh -c`, `bash -lc`, `zsh -c`, `eval`,
   `pwsh -c`, `powershell -Command` e `cmd /c` envolvendo cada subcomando hoje bloqueado (`push` e `commit`
   no mínimo, e a tabela inteira de `applyRule` por amostragem). Dá `rc=0` para `bash -c "git status"`.
   Invólucro aninhado até a profundidade 2 também bloqueia, e acima disso o guard nega. Também dão `rc=2`,
@@ -60,7 +60,7 @@ e fazer os guards antes da REQ de CI. O desenho está no ADR.
     `pwsh -cwa`, `CMD.EXE /c`, `BASH.EXE -c`, `cmd /c"git push"`, `cmd /c g^it push`, ``pwsh -c 'g`it push'``,
     `env --unset=HOME`, `bash -c $'git push'`, `echo $(git push)`, ``echo `git push` `` e
     `OUT=$(git commit -m x)`.
-- [ ] **AC5 (#663).** O limite (interpretador de linguagem, como `python -c` e `node -e`) fica declarado no
+- [x] **AC5 (#663).** O limite (interpretador de linguagem, como `python -c` e `node -e`) fica declarado no
   README e no `docs/cli-parity.md`, com um teste que fixa o `rc=0` atual como limite conhecido, não como
   garantia.
 - [ ] **AC6.** Os issues #662 e #663 recebem comentário com o que mudou e a versão. O PR fecha os dois com
