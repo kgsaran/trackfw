@@ -6805,7 +6805,9 @@ em `handleShellWrapper` (`internal/guard/gitbranch.go`) com guarda `depth >= max
 **Prefixos removidos antes do interpretador ou do `git`:**
 
 `env` (com `-i`/`--ignore-environment`, `-u`/`--unset=`, `-P`/`--path=`, `-C`/`--chdir=`,
-`-S`/`--split-string=`), `command` (com `-p`, `-v`, `-V`),
+`-S`/`--split-string=`, e prefixos inequívocos de `--split-string` como `--s=`, `--sp`, etc.
+— GNU getopt_long aceita qualquer prefixo inequívoco; `--split-string` é a única opção longa de
+`env` iniciada por `--s`, portanto qualquer prefixo de comprimento ≥ 3 é aceito), `command` (com `-p`, `-v`, `-V`),
 `nohup`, `time`, `exec` (com `-a NAME`, `-c`, `-l`), `nice` (com `-n ADJUSTMENT`),
 `doas` (com `-u USER`, `-C CONFIG`), `timeout` (posicional DURATION + `--foreground`,
 `--kill-after`, `--preserve-status`, `--verbose`), `stdbuf` (com `-i/-o/-e SIZE`),
@@ -6833,11 +6835,11 @@ e atribuições nuas de variável shell da forma `NAME=value` (ex.: `FOO=1 git p
 - **`pwsh git push`** (PowerShell 7, posicional): no `pwsh` 7, o primeiro argumento posicional
   é `-File` (caminho de script), não `-Command`; `pwsh git push` não é analisado como comando
   e é residual declarado (ML-2E, REQ-2026-11-05).
-- **`bash -c "$(git push"` (D-3 — parêntese desbalanceado)**: a expressão
-  `$(git push` não tem `)` de fechamento; `extractBalancedParenBody` retorna
-  `("", -1)` e o guard retorna rc=0 (fail-open). O próprio shell **recusa** o
-  comando por erro de sintaxe antes de executar qualquer coisa, portanto nada
-  é executado em produção. Residual declarado (ML-2F, REQ-2026-11-05).
+- **`bash -c "$(git push"` (parêntese desbalanceado)**: a expressão
+  `$(git push` não tem `)` de fechamento — é um erro de sintaxe shell. O guard
+  não analisa substituições malformadas; o próprio shell recusa o comando antes
+  de executar qualquer coisa, portanto nada é executado em produção. Residual
+  declarado.
 - Terceiro invólucro e além: bloqueado (fail-closed, ver acima).
 
 **Cobertura de testes:** `TestMatchSubcommand_AC4_Wrapper_Blocked` (casos bloqueados, incluindo
@@ -6858,6 +6860,14 @@ substituição de processo `<(…)`/`>(…)`, e substituição de comando com re
 `$(cmd 2>&1)`), `TestMatchSubcommand_ML2F_Allowed` (falso positivo ausente: `diff <(git status) x`,
 aspas simples/duplas, subcomando permitido com redirecionamento), `TestMatchSubcommand_ML2F_PsOfBlocked`
 (`-of` alias de `-OutputFormat` consome argumento),
+`TestMatchSubcommand_ML2G_Blocked` (corpos de substituição com operadores dentro: `$(git push | cat)`,
+`$(git push && echo x)`, `<(git push | cat)`, invólucro shell com corpo contendo pipe, abreviações
+de `--split-string`: `--split=`, `--sp`, `--s=`, `--s`; aspas duplas em torno de `$(…)`,
+aninhamento de dois níveis, três níveis → wrapper-not-analyzed; barra invertida antes de aspas:
+`echo \'$(git push)\'`, `cat \" <(git push)` — 13 casos rc=2),
+`TestMatchSubcommand_ML2G_Allowed` (falso positivo ausente:
+substituição com subcomando permitido, aspas simples neutralizam a substituição, comentário `#` após
+`ok` neutraliza, `<(git status)` em argumento de diff — 6 casos rc=0),
 e baixo nível: `TestQuoteAwareSplitPOSIX_*`, `TestShellTokenizePOSIX_*`,
 `TestStripShellSuffixPOSIX_*` (`internal/guard/gitbranch_wrapper_test.go`).
 

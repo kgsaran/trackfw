@@ -1188,11 +1188,10 @@ and bare shell variable assignments of the form `NAME=value` (e.g. `FOO=1 git pu
   not analyzed. Use `pwsh -c git push` or `pwsh -Command git push` to have the guard analyze it.
 - **Variable expansion** (`bash -c "$CMD"`): the value of `$CMD` is not known at hook time;
   not analyzed.
-- **`bash -c "$(git push"` (unbalanced parenthesis, D-3)**: the `$(git push`
-  expression has no closing `)`; `extractBalancedParenBody` returns `("", -1)`
-  and the guard returns rc=0 (fail-open). The shell itself refuses to execute
-  the command due to a syntax error, so nothing runs in production. Declared
-  residual (ML-2F, REQ-2026-11-05).
+- **`bash -c "$(git push"` (unbalanced parenthesis)**: the `$(git push`
+  expression has no closing `)` — it is a shell syntax error. The guard does
+  not analyze malformed substitutions; the shell itself refuses to execute the
+  command, so nothing runs in production. Declared residual.
 - **Third wrapper and beyond**: blocked outright (fail-closed, see above).
 
 Full contract and exit codes: `docs/cli-parity.md` → `## Git branch guard por runtime`.

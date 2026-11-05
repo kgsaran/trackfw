@@ -542,6 +542,34 @@ func stripEnvCommandPrefix(tokens []string) []string {
 						split := shellTokenizePOSIX(t[2:])
 						tokens = append(split, tokens...)
 						break envLoop
+					// Abbreviated combined long form: --s=VALUE, --sp=VALUE, --split=VALUE, etc.
+					// GNU getopt_long accepts any unambiguous prefix of a long option;
+					// --split-string is the only env long option starting with --s, so any
+					// prefix of length >= 3 that includes '=' is an unambiguous abbreviation.
+					// (Minimum: '--s'; shorter '--' is not a valid long-option prefix.)
+					// ML-2G (REQ-2026-11-05).
+					case func() bool {
+						eq := strings.IndexByte(lower, '=')
+						if eq < 0 {
+							return false
+						}
+						opt := lower[:eq]
+						return len(opt) >= 3 && strings.HasPrefix("--split-string", opt) && opt != "--split-string"
+					}():
+						eq := strings.IndexByte(lower, '=')
+						split := shellTokenizePOSIX(t[eq+1:])
+						tokens = append(split, tokens...)
+						break envLoop
+					// Abbreviated separate long form: --s, --sp, --spl, --split, --split-, etc.
+					// (prefix of --split-string without inline =, not the full name handled above).
+					// Minimum length 3 ('--s'); '--' alone is never a valid option token.
+					// ML-2G (REQ-2026-11-05).
+					case len(lower) >= 3 && strings.HasPrefix("--split-string", lower) && lower != "--split-string":
+						if len(tokens) > 0 {
+							split := shellTokenizePOSIX(tokens[0])
+							tokens = append(split, tokens[1:]...)
+						}
+						break envLoop
 					// Flags that consume one positional argument.
 					case lower == "-u" || lower == "--unset",
 						lower == "-p" || lower == "--path",
@@ -2363,19 +2391,34 @@ func extractBacktickSubstBody(runes []rune, start int) (string, int) {
 	return "", -1 // unbalanced
 }
 
-// extractCmdSubstBodies scans a raw shell segment and returns all command-
-// and process-substitution bodies ($(...), `...`, <(...), >(...)) that occur
-// outside single-quoted regions. Double-quoted regions are included because
-// $(…) and `…` expand there; <(…)/>(…) (process substitution) do not expand
-// inside "…" in any shell, so they are only extracted outside double-quoted
-// regions. C7 — D4 Wave 2 (REQ-2026-11-05, ML-2C); process substitution
-// added in ML-2F (REQ-2026-11-05).
-func extractCmdSubstBodies(seg string) []string {
+// extractRawCmdSubstBodies scans the raw command string s and returns all
+// command- and process-substitution bodies ($(...), `...`, <(...), >(...))
+// that occur outside single-quoted regions, with comment awareness.
+//
+// This is called on the FULL raw string BEFORE any splitting into segments,
+// so it correctly extracts bodies that contain '|', '&&', '||' — operators
+// that quoteAwareSplitPOSIX would otherwise use to split the string before
+// the body could be seen intact. For example, $(git push | cat) is extracted
+// correctly here; the per-segment approach would see $(git push truncated at '|'.
+//
+// Rules:
+//   - Single-quoted regions are entirely literal (no extraction).
+//   - Inside "…", $(...) and `...` still expand and are extracted;
+//     <(...)/>(...) do NOT expand inside "…" in any shell, so they are
+//     only extracted outside double-quoted regions.
+//   - '#' at a word boundary (after whitespace, separator, or at the start of
+//     the string) outside quotes starts a comment; the rest of the line is
+//     skipped, preventing $(...) inside comments from being extracted.
+//
+// ML-2G (REQ-2026-11-05). Replaces the per-segment extractCmdSubstBodies
+// call that was done after quoteAwareSplitPOSIX.
+func extractRawCmdSubstBodies(s string) []string {
 	var bodies []string
-	runes := []rune(seg)
+	runes := []rune(s)
 	n := len(runes)
 	inSQ := false
 	inDQ := false
+	atWordBound := true // true at start and after whitespace or operator chars
 
 	for i := 0; i < n; i++ {
 		c := runes[i]
@@ -2385,58 +2428,101 @@ func extractCmdSubstBodies(seg string) []string {
 			if c == '\'' {
 				inSQ = false
 			}
+			atWordBound = false
+			continue
+		}
+
+		// Outside any quote context: backslash escapes the next character.
+		// In POSIX shell \' and \" are literal characters, not quote openers:
+		//   echo \'$(git push)\'  — the \' is a plain quote, NOT a SQ delimiter
+		//   cat \" <(git push)   — the \" is a plain quote, NOT a DQ delimiter
+		// Without this, the scanner would treat \'…\' as a SQ region and skip the
+		// $() body inside, returning a false rc=0. ML-2G (REQ-2026-11-05).
+		if !inDQ && c == '\\' && i+1 < n {
+			i++ // skip the escaped character
+			atWordBound = false
 			continue
 		}
 
 		// Enter single-quoted region (outside "…").
 		if c == '\'' && !inDQ {
 			inSQ = true
+			atWordBound = false
 			continue
 		}
 
-		// Double-quoted region: backslash quoting only; $(...) still expands.
+		// Inside double-quoted region.
 		if inDQ {
 			if c == '\\' && i+1 < n {
-				i++ // skip escaped char
+				i++ // skip escaped char; prevents \$( from triggering extraction
+				atWordBound = false
 				continue
 			}
 			if c == '"' {
 				inDQ = false
+				atWordBound = false
 				continue
 			}
-			// Fall through: check for $(...) and `...` below.
-		} else if c == '"' {
-			inDQ = true
-			continue
+			// Fall through to $(...) and `...` checks below — both expand inside "…".
+		} else {
+			// Outside any quotes.
+			if c == '"' {
+				inDQ = true
+				atWordBound = false
+				continue
+			}
+
+			// '#' at word boundary: comment — skip to end of line.
+			// This prevents $(...) inside comments from being extracted.
+			if c == '#' && atWordBound {
+				for i+1 < n && runes[i+1] != '\n' {
+					i++
+				}
+				// The newline (if any) is processed next and sets atWordBound=true.
+				continue
+			}
+
+			// Process substitution: <(...) and >(...).
+			// Bash-only; does not expand inside "…", so extracted only here.
+			if (c == '<' || c == '>') && i+1 < n && runes[i+1] == '(' {
+				body, end := extractBalancedParenBody(runes, i+2)
+				if end >= 0 {
+					bodies = append(bodies, body)
+					i = end
+				}
+				atWordBound = false
+				continue
+			}
 		}
 
-		// Command substitution: $(...)
+		// Command substitution: $(...) — active inside and outside "…".
 		if c == '$' && i+1 < n && runes[i+1] == '(' {
 			body, end := extractBalancedParenBody(runes, i+2)
 			if end >= 0 {
 				bodies = append(bodies, body)
 				i = end
 			}
+			atWordBound = false
 			continue
 		}
-		// Command substitution: `...`
+
+		// Command substitution: `...` — active inside and outside "…".
 		if c == '`' {
 			body, end := extractBacktickSubstBody(runes, i+1)
 			if end >= 0 {
 				bodies = append(bodies, body)
 				i = end
 			}
+			atWordBound = false
 			continue
 		}
-		// Process substitution: <(...) and >(...) — bash-only; does not expand
-		// inside "…" in any shell. ML-2F (REQ-2026-11-05).
-		if !inDQ && (c == '<' || c == '>') && i+1 < n && runes[i+1] == '(' {
-			body, end := extractBalancedParenBody(runes, i+2)
-			if end >= 0 {
-				bodies = append(bodies, body)
-				i = end
-			}
-			continue
+
+		// Track word boundaries for '#' comment detection.
+		switch c {
+		case ' ', '\t', '\n', ';', '|', '&', '(', ')':
+			atWordBound = true
+		default:
+			atWordBound = false
 		}
 	}
 	return bodies
@@ -2458,25 +2544,26 @@ func matchSubcommandPOSIX(cmdRaw string, depth int) string {
 	}
 
 	normalized := stripHeredocBodies(cmdRaw)
+
+	// ML-2G: scan the full normalized string BEFORE splitting into segments.
+	// quoteAwareSplitPOSIX splits on '|', '&&', '||' — operators that also
+	// appear inside $(...) bodies. By scanning the raw string first, we extract
+	// bodies like $(git push | cat) in one piece, then recurse at depth+1.
+	// '#' comments are handled inside extractRawCmdSubstBodies: a # at word
+	// boundary skips the rest of the line, so $(git push) inside a comment
+	// is not extracted. (REQ-2026-11-05, ML-2G).
+	for _, body := range extractRawCmdSubstBodies(normalized) {
+		if tag := matchSubcommandPOSIX(body, depth+1); tag != "" {
+			return tag
+		}
+	}
+
 	segments := quoteAwareSplitPOSIX(normalized)
 
 	for _, seg := range segments {
 		seg = strings.TrimLeft(seg, " \t")
 		if len(seg) > 0 && seg[0] == '&' {
 			seg = strings.TrimLeft(seg[1:], " \t")
-		}
-
-		// C7+ML-2F: extract command- and process-substitution bodies BEFORE
-		// stripping redirections. The redirect consumer in stripShellSuffixPOSIX
-		// eats the closing ')' of $(cmd 2>&1) and the entire <(cmd) body, so
-		// running extractCmdSubstBodies on the post-strip segment misses them.
-		// Running it on the pre-strip segment is strictly more inclusive: the
-		// strip never creates new $(...) or <(...) patterns.
-		// (REQ-2026-11-05, ML-2F).
-		for _, body := range extractCmdSubstBodies(seg) {
-			if tag := matchSubcommandPOSIX(body, depth+1); tag != "" {
-				return tag
-			}
 		}
 
 		seg = stripShellSuffixPOSIX(seg)

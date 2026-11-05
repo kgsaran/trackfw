@@ -204,10 +204,14 @@ grep -q '^## Prescrições' docs/seguranca/2026-11-05-wave0-guards-primeiro-usua
 - [x] `make quality` com `MQ_RC=0`, lido no arquivo de saída pelo arquiteto
 
 ### ML-2G — Corpo de substituição extraído da string crua, antes de qualquer divisão (apolo-tf)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado pelo arquiteto em 2026-11-05.
+- **Medido no binário da branch:** `f2.sh` 9/9 `rc=2` e 4/4 `rc=0`; `d2.sh`, `rt2.sh` (13 + C9), `m663.sh` e `fp2c.sh` sem regressão (16 legítimos `rc=0`; `powershell git push` `rc=2`, `pwsh git push` `rc=0` declarado). `make quality` `MQ_RC=0`, lido em `scratchpad/apolo/mq5.txt` (365 OK, 0 FAIL no falsify). Os 19 casos `TestMatchSubcommand_ML2G_*` existem e passam.
+- **Causa estrutural:** o split por `|`/`&&` vinha antes da extração do corpo. Agora `extractRawCmdSubstBodies` varre a string crua; a extração por segmento foi removida. Nota no vault: `guard-git-divisao-antes-da-extracao-de-substituicao-2026-11-05`.
+- **Mesma família, fechados no ML:** `\'`/`\"` fora de aspas abrindo região falsa; `env --s` (prefixo de 3 caracteres).
+- **Correção do relatório do executor:** o "furo pendente" `` echo `echo "hi`; git push` `` é erro de sintaxe em bash 3.2, bash 5, zsh e sh, medido com payload inofensivo, e nada executa. As variantes válidas dão `rc=2`. `echo \$(git push)` passou para `rc=0`, o que está certo: o `\$` é literal.
 **Files affected:** `internal/guard/gitbranch.go`, `internal/guard/gitbranch_wrapper_test.go`, `README.md`, `docs/cli-parity.md`
 **Acceptance criteria:**
-- [ ] `echo $(git push | cat)`, `OUT=$(git push && echo x)`, `cat <(git push | cat)`, `bash -c 'echo $(git push | cat)'`, `env --split='git push'` e `env --sp 'git push'` dão `rc=2`
-- [ ] `echo $(git status | head)`, `echo '$(git push | cat)'`, `x=$(ls && pwd)` e `echo ok # $(git push)` continuam com `rc=0`; `m663.sh`, `rt2.sh`, `fp2c.sh`, `d2.sh` e `f2.sh` sem regressão
-- [ ] `make quality` com `MQ_RC=0`, lido no arquivo de saída pelo arquiteto
+- [x] `echo $(git push | cat)`, `OUT=$(git push && echo x)`, `cat <(git push | cat)`, `bash -c 'echo $(git push | cat)'`, `env --split='git push'` e `env --sp 'git push'` dão `rc=2`
+- [x] `echo $(git status | head)`, `echo '$(git push | cat)'`, `x=$(ls && pwd)` e `echo ok # $(git push)` continuam com `rc=0`; `m663.sh`, `rt2.sh`, `fp2c.sh`, `d2.sh` e `f2.sh` sem regressão
+- [x] `make quality` com `MQ_RC=0`, lido no arquivo de saída pelo arquiteto
 

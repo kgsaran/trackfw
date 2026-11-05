@@ -199,9 +199,9 @@ func TestMatchSubcommand_AC4_Regression_CommitMsgWithEscapedQuote(t *testing.T) 
 // TestMatchSubcommand_C7_CmdSubst_Blocked asserts that command substitution
 // bodies ($(...) and `...`) containing a blocked git subcommand are detected.
 //
-// Reconciliation: asserts that extractCmdSubstBodies in matchSubcommandPOSIX
-// (C7, ML-2C) scans each command-substitution body as a subshell, so that
-// $(git push), `git push`, and OUT=$(git commit -m x) are all blocked (D4).
+// Reconciliation: asserts that extractRawCmdSubstBodies in matchSubcommandPOSIX
+// (ML-2G) scans the raw string before segment splitting, so that $(git push),
+// `git push`, and OUT=$(git commit -m x) are all blocked (C7, D4).
 func TestMatchSubcommand_C7_CmdSubst_Blocked(t *testing.T) {
 	cases := []struct {
 		name string
@@ -595,6 +595,120 @@ func TestMatchSubcommand_ML2F_PsOfBlocked(t *testing.T) {
 	got := MatchSubcommand(`pwsh -of Text -c 'git push'`)
 	if got != "push" {
 		t.Errorf(`MatchSubcommand("pwsh -of Text -c 'git push'") = %q, want "push"`, got)
+	}
+}
+
+// --- ML-2G: raw-string substitution extraction ---
+
+// TestMatchSubcommand_ML2G_Blocked asserts that substitution bodies containing
+// shell operators ('|', '&&') are correctly extracted from the raw string and
+// analysed, blocking the git subcommand inside. Also covers backslash-before-quote
+// escaping and the full range of --split-string abbreviations.
+//
+// Reconciliation (one sentence per test, per the Regra Dura de Reconciliação):
+//
+//   - cmd-subst-pipe: asserts that $(git push | cat) is extracted from the raw
+//     string before quoteAwareSplitPOSIX splits on '|', so the body
+//     "git push | cat" is analysed in full and "push" is blocked.
+//   - cmd-subst-and-and: asserts that OUT=$(git push && echo x) is extracted
+//     before the '&&' separator splits the string, exposing "git push" in the body.
+//   - proc-subst-pipe: asserts that <(git push | cat) is extracted from the raw
+//     string as a process-substitution body before the '|' splits the segment.
+//   - bash-c-dollar-pipe: asserts that bash -c 'echo $(git push | cat)' is
+//     handled via two levels: the shell wrapper extracts 'echo $(git push | cat)',
+//     and extractRawCmdSubstBodies then extracts the body "git push | cat".
+//   - env-split-abbrev-eq: asserts that env --split='git push' is handled by the
+//     new abbreviated combined form case in stripEnvCommandPrefix (--split is an
+//     unambiguous prefix of --split-string accepted by GNU getopt_long).
+//   - env-split-abbrev-sep: asserts that env --sp 'git push' is handled by the
+//     new abbreviated separate form case in stripEnvCommandPrefix (--sp is an
+//     unambiguous prefix of --split-string).
+//   - env-s-abbrev-eq: asserts that env --s='git push' is handled by the
+//     abbreviated combined form (--s is the shortest unambiguous prefix, length 3).
+//   - env-s-abbrev-sep: asserts that env --s 'git push' is handled by the
+//     abbreviated separate form (--s length ≥ 3 threshold).
+//   - dquote-dollar-pipe: asserts that echo "$(git push | cat)" is blocked
+//     because extractRawCmdSubstBodies extracts $(…) bodies inside "…".
+//   - two-levels-nested: asserts that x=$(echo $(git push | cat)) is blocked at
+//     depth 2 by recursing from the outer body into the inner body.
+//   - three-levels-wrapper-not-analyzed: asserts that echo $(echo $(echo
+//     $(git push))) reaches depth 3 (> maxWrapperDepth) and returns
+//     "wrapper-not-analyzed" (fail-closed), not an empty allow.
+//   - bs-sq-dollar: asserts that echo \'$(git push)\' is blocked because the
+//     backslash handler in extractRawCmdSubstBodies consumes \' as a literal
+//     character instead of opening a single-quoted region, allowing the $(…) body
+//     to be extracted.
+//   - bs-dq-proc: asserts that cat \" <(git push) is blocked because the
+//     backslash handler consumes \" as a literal character instead of opening a
+//     double-quoted region, allowing <(…) to be extracted as a process substitution.
+func TestMatchSubcommand_ML2G_Blocked(t *testing.T) {
+	cases := []struct {
+		name string
+		cmd  string
+		want string
+	}{
+		{"cmd-subst-pipe", `echo $(git push | cat)`, "push"},
+		{"cmd-subst-and-and", `OUT=$(git push && echo x)`, "push"},
+		{"proc-subst-pipe", `cat <(git push | cat)`, "push"},
+		{"bash-c-dollar-pipe", `bash -c 'echo $(git push | cat)'`, "push"},
+		{"env-split-abbrev-eq", `env --split='git push'`, "push"},
+		{"env-split-abbrev-sep", `env --sp 'git push'`, "push"},
+		{"env-s-abbrev-eq", `env --s='git push'`, "push"},
+		{"env-s-abbrev-sep", `env --s 'git push'`, "push"},
+		{"dquote-dollar-pipe", `echo "$(git push | cat)"`, "push"},
+		{"two-levels-nested", `x=$(echo $(git push | cat))`, "push"},
+		{"three-levels-wrapper-not-analyzed", `echo $(echo $(echo $(git push)))`, "wrapper-not-analyzed"},
+		{"bs-sq-dollar", `echo \'$(git push)\'`, "push"},
+		{"bs-dq-proc", `cat \" <(git push)`, "push"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := MatchSubcommand(tc.cmd)
+			if got != tc.want {
+				t.Errorf("MatchSubcommand(%q) = %q, want %q", tc.cmd, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestMatchSubcommand_ML2G_Allowed asserts that the ML-2G raw-string extraction
+// does not introduce false positives for related but benign commands.
+//
+// Reconciliation (one sentence per test, per the Regra Dura de Reconciliação):
+//
+//   - dollar-status-pipe: asserts that echo $(git status | head) is NOT blocked
+//     because git status is a read-only subcommand that is not in the blocked set.
+//   - single-quoted-dollar-pipe: asserts that echo '$(git push | cat)' (body
+//     inside single quotes) is NOT extracted, so no blocking occurs.
+//   - x-ls-and-pwd: asserts that x=$(ls && pwd) is NOT blocked because neither
+//     ls nor pwd is git.
+//   - comment-dollar-push: asserts that echo ok # $(git push) is NOT blocked
+//     because the '#' at word boundary starts a comment and the $() inside the
+//     comment is not extracted by extractRawCmdSubstBodies.
+//   - diff-proc-subst-status: asserts that diff <(git status) x is NOT blocked
+//     because git status is not a blocked subcommand.
+//   - dquote-proc-subst: asserts that echo "<(git push)" is NOT blocked because
+//     process substitution <(…) does not expand inside "…", so extractRawCmdSubstBodies
+//     does not extract it.
+func TestMatchSubcommand_ML2G_Allowed(t *testing.T) {
+	cases := []struct {
+		name string
+		cmd  string
+	}{
+		{"dollar-status-pipe", `echo $(git status | head)`},
+		{"single-quoted-dollar-pipe", `echo '$(git push | cat)'`},
+		{"x-ls-and-pwd", `x=$(ls && pwd)`},
+		{"comment-dollar-push", `echo ok # $(git push)`},
+		{"diff-proc-subst-status", `diff <(git status) x`},
+		{"dquote-proc-subst", `echo "<(git push)"`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := MatchSubcommand(tc.cmd)
+			if got != "" {
+				t.Errorf("MatchSubcommand(%q) = %q, want %q (allow)", tc.cmd, got, "")
+			}
+		})
 	}
 }
 

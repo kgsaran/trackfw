@@ -3,6 +3,7 @@
 > Ponto de entrada de conhecimento do projeto para agentes e pessoas.
 
 ## Índice
+- [guard-git-divisao-antes-da-extracao-de-substituicao-2026-11-05](guard-git-divisao-antes-da-extracao-de-substituicao-2026-11-05.md) — 🔴 **guard de git dividia em `|`/`&&` antes de extrair `$( )`/crase/`<( )`: `echo $(git push | cat)` passava; extraia o aninhado da string crua antes do split; sem `trackfw.yaml` no cwd o guard fica inativo e toda medição dá rc=0** (#663 ML-2G)
 - [gitignore-negation-override-by-append-2026-11-01](gitignore-negation-override-by-append-2026-11-01.md) — MEDIUM: `hasGitIgnoreAgentMemoryRule` skips `!` lines as "absent" → append after negation overrides opt-out via last-match-wins; fix: return true if any `!agent-memory` line exists (#646 ML-2A A-1)
 - [harness-memoria-read-side-nao-corrigivel-por-instrucao-e-nested-repo-root-2026-11-01](harness-memoria-read-side-nao-corrigivel-por-instrucao-e-nested-repo-root-2026-11-01.md) — 🔴 **harness injeta `MEMORY.md loaded` de cwd-dispatch (incontornável por instrução no body); `git rev-parse --show-toplevel` em nested repo retorna inner root; AC4 deve excluir nested repos de "stray"** (#646 Wave 0)
 - [git-terminal-prompt-sem-terminal-falha-na-hora-2026-10-31](git-terminal-prompt-sem-terminal-falha-na-hora-2026-10-31.md) — sem terminal o git falha em 0 s ao pedir credencial (abre `/dev/tty`); `GIT_TERMINAL_PROMPT=0` não muda nada para agente/CI; GCM e SSH são outra causa
