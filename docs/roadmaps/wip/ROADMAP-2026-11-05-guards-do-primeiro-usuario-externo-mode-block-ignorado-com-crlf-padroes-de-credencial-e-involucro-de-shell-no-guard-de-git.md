@@ -215,3 +215,11 @@ grep -q '^## Prescrições' docs/seguranca/2026-11-05-wave0-guards-primeiro-usua
 - [x] `echo $(git status | head)`, `echo '$(git push | cat)'`, `x=$(ls && pwd)` e `echo ok # $(git push)` continuam com `rc=0`; `m663.sh`, `rt2.sh`, `fp2c.sh`, `d2.sh` e `f2.sh` sem regressão
 - [x] `make quality` com `MQ_RC=0`, lido no arquivo de saída pelo arquiteto
 
+
+### ML-2H — Reverificação final do red team sobre o ML-2F e o ML-2G (hades-tf)
+**Status:** 🔄 Em andamento
+**Files affected:** `docs/seguranca/2026-11-05-redteam-guards-primeiro-usuario-externo.md`
+**Acceptance criteria:**
+- [ ] o leitor de substituição (`extractRawCmdSubstBodies`: aspas, barra invertida fora de aspas, `#` no início de palavra, profundidade) foi atacado, e cada vetor tem `rc` medido via `trackfw guard git-branch --command`
+- [ ] a interação entre a leitura crua e o desescape do invólucro (`bash -c "…\$(…)"`, `eval "…"`) foi medida
+- [ ] veredito escrito (homologa, homologa com ressalvas, ou reprova) e cada furo novo tem `rc` medido
