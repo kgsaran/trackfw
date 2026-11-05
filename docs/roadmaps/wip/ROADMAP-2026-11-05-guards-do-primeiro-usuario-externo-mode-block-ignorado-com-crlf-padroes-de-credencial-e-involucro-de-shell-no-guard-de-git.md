@@ -83,16 +83,21 @@ grep -q '^## Prescrições' docs/seguranca/2026-11-05-wave0-guards-primeiro-usua
 > `docs/cli-parity.md`, em seções diferentes, e porque os dois testam o pacote `internal/guard`.
 
 ### ML-1A — Guard de credencial: leitor de mode único, padrões ampliados, constantes mortas (apolo-tf) — AC1, AC2, AC3
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-11-05, em dois despachos.
+- **AC1:** `guard.ReadCredentialGuardMode` é o leitor único, e o validator delega a ele. A tabela de `credential_mode_test.go` cobre CRLF, BOM, `# mode:`, `ci_mode:`, vazamento entre blocos, aninhado e tab. Desvio aceito: tab conta como indentação, o que preserva o resultado do validator. Medido no binário: com YAML em CRLF e `mode: block`, AWS, `ghp_`, `AIza` e `sk-proj-` dão `rc=2` e `print(1)` dá `rc=0`.
+- **AC2:** 14 expressões para 12 tipos, com borda explícita nos `sk-`. **Na auditoria, a segunda camada buscava a expressão pelo nome**, e 5 padrões do GitHub compartilham o nome. A isenção de `echo … > /dev/null` falhava para `gho_`, `ghu_`, `ghs_` e `ghr_`, e o teste que deveria pegar isso era tautológico. O segundo despacho criou `credCmdHasTypeMatch` e `TestCredEphemeralExemption_AllPatterns`, que testa os 14 padrões nos dois braços. No contra-braço, os 4 subcasos esperados reprovam.
+- **AC3:** README, `docs/cli-parity.md` e o `help` do `guard credential` listam os tipos e o que não é detectado. 249 linhas de constantes mortas foram apagadas.
+- **`make parity-rest`:** passou com `rc=0` no PATH normal. O "pré-existente" do relatório era o bash 3.2 do PATH restrito (erro de prescrição do arquiteto, já registrado na memória).
+- **Resíduo:** a variável `credLegacyPatternNames` ficou sem leitura e vai para o ML-1B.
 **Files affected:** `internal/guard/credential.go`, `internal/guard/credential_test.go`, `internal/guard/credential_mode_test.go`, `internal/guard/credential_patterns_test.go`, `internal/validator/validator_credential_guard_integrity.go`, `internal/validator/validator_credential_guard_integrity_test.go`, `internal/generators/scaffold.go`, `internal/generators/scaffold_literal_copy_parity_test.go`, `internal/generators/credential_guard_test.go`, `internal/commands/guard.go`, `README.md`, `docs/cli-parity.md`
 **Acceptance criteria:**
-- [ ] AC1, AC2 e AC3 da REQ, conforme o parecer da Wave 0 (§5.1)
-- [ ] pacotes tocados verdes com PATH sem trackfw; `make parity-rest` verde
-- [ ] contra-braço por item
+- [x] AC1, AC2 e AC3 da REQ, conforme o parecer da Wave 0 (§5.1)
+- [x] pacotes tocados verdes com PATH sem trackfw; `make parity-rest` verde
+- [x] contra-braço por item
 
 ### ML-1B — Guard de git: invólucro de shell, prefixos e barra invertida (apolo-tf) — AC4, AC5
 **Status:** ⬜ Pendente
-**Files affected:** `internal/guard/gitbranch.go`, `internal/guard/gitbranch_test.go`, `internal/guard/gitbranch_wrapper_test.go`, `README.md`, `docs/cli-parity.md`
+**Files affected:** `internal/guard/gitbranch.go`, `internal/guard/gitbranch_test.go`, `internal/guard/gitbranch_wrapper_test.go`, `internal/guard/credential.go` (só a remoção de `credLegacyPatternNames`), `README.md`, `docs/cli-parity.md`
 **Acceptance criteria:**
 - [ ] AC4 e AC5 da REQ, conforme o parecer da Wave 0 (§5.2)
 - [ ] pacotes tocados verdes com PATH sem trackfw; `make parity-rest` verde

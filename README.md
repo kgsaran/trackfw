@@ -1020,10 +1020,31 @@ The Codex integration is repository-scoped: `AGENTS.md` carries persistent instr
 
 ## Credential guard: detection, not prevention
 
-trackfw can generate **guard hooks** that block agents from materializing real credentials,
-creating raw git branches, or writing to frozen paths. Since v9.3.0, guard hooks call the
-trackfw binary directly (`trackfw guard credential`, `trackfw guard git-branch`,
+trackfw can generate **guard hooks** that help block agents from materializing real credentials
+in plain text, creating raw git branches, or writing to frozen paths. Since v9.3.0, guard hooks
+call the trackfw binary directly (`trackfw guard credential`, `trackfw guard git-branch`,
 `trackfw guard write-scope`) — no `.sh` script is required.
+
+The credential guard scans each hook payload for the following pattern types and reports the type
+in the warning or block message:
+
+| Type | Pattern |
+|---|---|
+| JWT | `eyJ…` (three-part base64url) |
+| AWS access key | `AKIA` + 16 uppercase alphanumerics |
+| GitHub classic PAT | `ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_` + 36+ chars |
+| GitHub fine-grained PAT | `github_pat_` + 82+ alphanumeric/underscore chars |
+| Anthropic API key | `sk-ant-` + 20+ chars |
+| OpenAI project key | `sk-proj-` + 20+ chars |
+| OpenAI API key | `sk-` + 48+ chars |
+| Google API key | `AIza` + 35+ chars |
+| Slack token | `xox[abprs]-` + 20+ chars |
+| PEM private key | `-----BEGIN … PRIVATE KEY-----` |
+
+**Not detected** (by design): file paths that may contain credentials (`.env`, `.aws/credentials`,
+`.ssh/id_rsa` — a file *read* of that path is not the credential itself), generic key-value
+assignments (`password = "…"`), and language interpreter calls (`python -c`, `node -e`,
+`ruby -e`) where the credential might be in a variable or file read at runtime.
 
 `trackfw validate` reports when a guard looks compromised (`credential_guard_hook_resolvable`,
 `git_branch_guard_hook_resolvable`):

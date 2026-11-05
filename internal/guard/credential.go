@@ -18,12 +18,92 @@ import (
 	"github.com/kgsaran/trackfw/internal/pathguard"
 )
 
-var (
-	// credJWTRe matches the JWT_PATTERN from the .sh.
-	credJWTRe = regexp.MustCompile(`eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+`)
+// credPattern pairs a human-readable type name with a compiled pattern.
+// The name appears in guard messages: "possible <name> detected in tool payload."
+// All patterns are compiled from backtick raw strings so that \\ and character
+// classes reach the RE2 engine unmodified (double-quoted strings would halve \\).
+type credPattern struct {
+	name string
+	re   *regexp.Regexp
+}
 
-	// credAWSRe matches the AWS_KEY_PATTERN from the .sh.
-	credAWSRe = regexp.MustCompile(`AKIA[0-9A-Z]{16}`)
+// credPatterns is the ordered set of credential patterns (D2, Wave 0 §5.1 and §1.2).
+// JWT and AWS go first to preserve the message text that existing integrations may
+// observe.  New patterns from D2 follow.
+//
+// sk-* patterns use an explicit boundary (?:^|[^A-Za-z0-9_]|\\[bfnrt]) instead of
+// \b because inputStr contains the raw JSON bytes: JSON \n is two chars '\' and 'n',
+// so 'n' is a word char and \b before 's' does not fire after a JSON newline.
+// The explicit boundary covers non-word chars AND the two-char JSON escape sequences
+// \b \f \n \r \t.  See Wave 0 §5.1 note on boundary and R7.
+//
+// Patterns without a boundary risk (ghp_, gho_, AIza, xox, PEM, -----BEGIN) have
+// distinctive-enough prefixes that infix FP in this repository measured at 0.
+var credPatterns = []credPattern{
+	// Legacy patterns — preserved exactly to keep existing message text.
+	{"JWT", regexp.MustCompile(`eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+`)},
+	{"AWS access key", regexp.MustCompile(`AKIA[0-9A-Z]{16}`)},
+
+	// GitHub tokens (D2).
+	{"GitHub token", regexp.MustCompile(`ghp_[A-Za-z0-9]{36,}`)},
+	{"GitHub token", regexp.MustCompile(`gho_[A-Za-z0-9]{36,}`)},
+	{"GitHub token", regexp.MustCompile(`ghu_[A-Za-z0-9]{36,}`)},
+	{"GitHub token", regexp.MustCompile(`ghs_[A-Za-z0-9]{36,}`)},
+	{"GitHub token", regexp.MustCompile(`ghr_[A-Za-z0-9]{36,}`)},
+	{"GitHub fine-grained PAT", regexp.MustCompile(`github_pat_[A-Za-z0-9_]{82,}`)},
+
+	// OpenAI / Anthropic (D2) — explicit boundary (see note above).
+	{"Anthropic API key", regexp.MustCompile(`(?:^|[^A-Za-z0-9_]|\\[bfnrt])sk-ant-[A-Za-z0-9_-]{20,}`)},
+	{"OpenAI project key", regexp.MustCompile(`(?:^|[^A-Za-z0-9_]|\\[bfnrt])sk-proj-[A-Za-z0-9_-]{20,}`)},
+	{"OpenAI API key", regexp.MustCompile(`(?:^|[^A-Za-z0-9_]|\\[bfnrt])sk-[A-Za-z0-9]{48,}`)},
+
+	// Google (D2).
+	{"Google API key", regexp.MustCompile(`AIza[0-9A-Za-z_-]{35,}`)},
+
+	// Slack (D2).
+	{"Slack token", regexp.MustCompile(`xox[abprs]-[0-9A-Za-z-]{20,}`)},
+
+	// PEM private key header (D2).
+	{"PEM private key", regexp.MustCompile(`-----BEGIN [A-Z ]*PRIVATE KEY-----`)},
+}
+
+// credLegacyPatternNames is the set of type names whose patterns existed before D2.
+// Used by the second-layer exemption, which must accept all patterns.
+var credLegacyPatternNames = map[string]bool{
+	"JWT":            true,
+	"AWS access key": true,
+}
+
+// credCmdHasTypeMatch reports whether any registered pattern with the given type
+// name matches s.  Used by the ephemeral-exemption second layer so that all
+// sub-patterns that share a name (e.g. the five "GitHub token" prefixes
+// ghp_, gho_, ghu_, ghs_, ghr_) are tried, not just the first one.
+func credCmdHasTypeMatch(name, s string) bool {
+	for _, p := range credPatterns {
+		if p.name == name && p.re.MatchString(s) {
+			return true
+		}
+	}
+	return false
+}
+
+// credScanInput returns the first matching credential type name in s, or "".
+// Runs all patterns in order; returns the name of the first match.
+func credScanInput(s string) string {
+	for _, p := range credPatterns {
+		if p.re.MatchString(s) {
+			return p.name
+		}
+	}
+	return ""
+}
+
+var (
+	// credJWTRe and credAWSRe are kept as package-level vars for the parts of the
+	// code (credScanFile, credDeepScan) that still reference them directly.
+	// They are the same objects as credPatterns[0].re and credPatterns[1].re.
+	credJWTRe = credPatterns[0].re
+	credAWSRe = credPatterns[1].re
 
 	// credRedirectRe extracts redirect targets from RAW.
 	// Port of grep -oE '[0-9]?>>?[[:space:]]*[^[:space:]|&;,:]+' — BUG-2 fix:
@@ -64,13 +144,13 @@ const credMaxFileSize = 1048576 // 1 MiB
 // Order of operations:
 //  1. Read all stdin (no timeout — residual declared in ADR D9).
 //  2. Check trackfw.yaml in cwd only (no walk-up, per ADR D9 and .sh L8).
-//  3. Layer 1: scan payload for JWT then AWS key.
+//  3. Layer 1: scan payload for all patterns in credPatterns.
 //  4. Unescape \" → " to get RAW.
 //  5. Extract REDIRECTS from RAW.
 //  6. Layer 2: scan non-ephemeral redirect files and command file args.
 //  7. No match → return 0.
 //  8. Exemption: all redirects are ephemeral → return 0.
-//  9. Read credential_guard.mode (default "warn").
+//  9. Read credential_guard.mode (default "warn") via ReadCredentialGuardMode.
 //  10. block → stderr + return 2; warn → stderr + write attention JSON + return 0.
 //
 // Returns 0 to allow, 2 to block. The caller MUST exit with this code.
@@ -87,14 +167,9 @@ func RunCredential(stdin io.Reader, stdout, stderr io.Writer) int {
 		return 0 // not inside a trackfw project
 	}
 
-	// Step 3: Layer 1 — JWT (first), then AWS key.
+	// Step 3: Layer 1 — scan all patterns in order.
 	inputStr := string(data)
-	match := ""
-	if credJWTRe.MatchString(inputStr) {
-		match = "JWT"
-	} else if credAWSRe.MatchString(inputStr) {
-		match = "AWS access key"
-	}
+	match := credScanInput(inputStr)
 
 	// Steps 4–8: Extract shell command, scan for redirects, run Layer 2, apply
 	// ephemeral exemption.
@@ -147,8 +222,7 @@ func RunCredential(stdin io.Reader, stdout, stderr io.Writer) int {
 	// regex-extracted "command" value (never to the raw contextStr as a whole,
 	// because argv0 of the full raw payload is always '{').
 	if isJSON {
-		cmdHasMatch := (match == "JWT" && credJWTRe.MatchString(shellCmd)) ||
-			(match == "AWS access key" && credAWSRe.MatchString(shellCmd))
+		cmdHasMatch := credCmdHasTypeMatch(match, shellCmd)
 		if cmdHasMatch && credIsAllEphemeral(contextStr, redirectMatches) &&
 			credIsSimpleCmd(shellCmd) && credAllTargetsAreDevNull(redirectMatches) {
 			return 0
@@ -159,8 +233,7 @@ func RunCredential(stdin io.Reader, stdout, stderr io.Writer) int {
 			if cmd == "" {
 				continue
 			}
-			cmdHasMatch := (match == "JWT" && credJWTRe.MatchString(cmd)) ||
-				(match == "AWS access key" && credAWSRe.MatchString(cmd))
+			cmdHasMatch := credCmdHasTypeMatch(match, cmd)
 			cmdRedirects := credRedirectRe.FindAllString(cmd, -1)
 			if cmdHasMatch && credIsAllEphemeral(cmd, cmdRedirects) &&
 				credIsSimpleCmd(cmd) && credAllTargetsAreDevNull(cmdRedirects) {
@@ -187,7 +260,7 @@ func RunCredential(stdin io.Reader, stdout, stderr io.Writer) int {
 
 // RunCredentialGlobal implements the credential guard logic for global scope.
 // Entry point for `trackfw guard credential --global`.
-// Faithful Go port of globalCredentialGuardScript (credentialGuardGlobalTail):
+// Faithful Go port of globalCredentialGuardScript:
 //   - no trackfw.yaml guard: runs in any directory.
 //   - DEFAULT_MODE = "block" (vs "warn" in project scope).
 //   - ROADMAP_DIR = "docs/roadmaps" (fixed, relative to cwd).
@@ -202,14 +275,9 @@ func RunCredentialGlobal(stdin io.Reader, stdout, stderr io.Writer) int {
 
 	// Step 2: No trackfw.yaml guard — global scope runs in any directory.
 
-	// Step 3: Layer 1 — JWT (first), then AWS key.
+	// Step 3: Layer 1 — scan all patterns in order.
 	inputStr := string(data)
-	match := ""
-	if credJWTRe.MatchString(inputStr) {
-		match = "JWT"
-	} else if credAWSRe.MatchString(inputStr) {
-		match = "AWS access key"
-	}
+	match := credScanInput(inputStr)
 
 	// Steps 4–8: same logic as RunCredential (JSON-aware extraction and exemption).
 	shellCmd, shellCwd, toolName, isJSON := credExtractCmdAndCwd(data)
@@ -244,8 +312,7 @@ func RunCredentialGlobal(stdin io.Reader, stdout, stderr io.Writer) int {
 
 	// F2 shape-based exemption (same conditions as RunCredential).
 	if isJSON {
-		cmdHasMatch := (match == "JWT" && credJWTRe.MatchString(shellCmd)) ||
-			(match == "AWS access key" && credAWSRe.MatchString(shellCmd))
+		cmdHasMatch := credCmdHasTypeMatch(match, shellCmd)
 		if cmdHasMatch && credIsAllEphemeral(contextStr, redirectMatches) &&
 			credIsSimpleCmd(shellCmd) && credAllTargetsAreDevNull(redirectMatches) {
 			return 0
@@ -256,8 +323,7 @@ func RunCredentialGlobal(stdin io.Reader, stdout, stderr io.Writer) int {
 			if cmd == "" {
 				continue
 			}
-			cmdHasMatch := (match == "JWT" && credJWTRe.MatchString(cmd)) ||
-				(match == "AWS access key" && credAWSRe.MatchString(cmd))
+			cmdHasMatch := credCmdHasTypeMatch(match, cmd)
 			cmdRedirects := credRedirectRe.FindAllString(cmd, -1)
 			if cmdHasMatch && credIsAllEphemeral(cmd, cmdRedirects) &&
 				credIsSimpleCmd(cmd) && credAllTargetsAreDevNull(cmdRedirects) {
@@ -267,8 +333,8 @@ func RunCredentialGlobal(stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	// Step 9: Read credential_guard.mode; default is "block" (global scope).
-	// Faithful port of credentialGuardGlobalTail: reads from trackfw.yaml in cwd if it
-	// exists; falls back to "block" when the file is absent or mode is unrecognised.
+	// Reads from trackfw.yaml in cwd if it exists; falls back to "block" when the file
+	// is absent or mode is unrecognised (global scope default).
 	cwd, err := os.Getwd()
 	if err != nil {
 		cwd = ""
@@ -409,14 +475,7 @@ func credScanFile(path string) string {
 	if err != nil {
 		return ""
 	}
-	cs := string(content)
-	if credJWTRe.MatchString(cs) {
-		return "JWT"
-	}
-	if credAWSRe.MatchString(cs) {
-		return "AWS access key"
-	}
-	return ""
+	return credScanInput(string(content))
 }
 
 // credIsPowerShellTool reports whether toolName is any spelling of PowerShell
@@ -968,61 +1027,112 @@ func credNonJSONLayerTwoB(contextStr, shellCwd string) string {
 	return ""
 }
 
-// credReadModeWithDefault reads credential_guard.mode from trackfw.yaml.
-// Returns defaultMode when the file is absent, unreadable, or the mode value is not
-// "warn" or "block".
+// ReadCredentialGuardMode extracts the credential_guard.mode value from YAML
+// content (the full text of a trackfw.yaml file, as a string).
 //
-// The sed pipeline does NOT strip \r from the mode value; a line ending in
-// "block\r" (CRLF file) does not match "block" and falls through to the
-// defaultMode. This is the measured .sh behaviour (CRLF residual).
+// Implements the 8-step spec from Wave 0 §5.1 (D1):
+//  1. Find the first line where strings.HasPrefix(line, "credential_guard:") at
+//     column 0.  Strip BOM U+FEFF (3 bytes) from line 0 before the HasPrefix
+//     check — Windows editors may prepend a BOM.
+//  2. Scan the next 5 lines, stopping early when a line is non-empty
+//     (TrimSpace(line) != "") and does not start with a space or '#' — that
+//     signals the start of the next top-level YAML key (cross-block boundary,
+//     Achado 11).  A line of only \r is considered empty (tolerated in CRLF
+//     files).
+//  3. For each candidate line: skip if TrimSpace is empty or starts with '#'.
+//     Continue only if HasPrefix(trimmed, "mode:") — exact key, not Contains.
+//  4. Extract: val = TrimSpace(TrimPrefix(trimmed, "mode:")).
+//  5. Remove trailing comment: if '#' in val, truncate before it and
+//     TrimRight(" \t") to remove whitespace that the comment was attached to.
+//  6. Remove surrounding quotes: Trim(val, `"'`).
+//  7. Remove trailing \r: TrimRight(val, "\r").
+//  8. Return val.
+//
+// Returns (val, true) when a credential_guard: section is found (val may be "").
+// Returns ("", false) when no credential_guard: header exists.
+//
+// The validator's extractCredentialGuardMode and the guard's credReadModeWithDefault
+// both delegate to this function so that the two callers converge on exactly the
+// same mode for every input (AC1).
+func ReadCredentialGuardMode(content string) (mode string, ok bool) {
+	lines := strings.Split(content, "\n")
+
+	headerIdx := -1
+	for i, line := range lines {
+		// Strip BOM from the very first line before the prefix check.
+		if i == 0 {
+			line = strings.TrimPrefix(line, "\xef\xbb\xbf")
+		}
+		if strings.HasPrefix(line, "credential_guard:") {
+			headerIdx = i
+			break
+		}
+	}
+	if headerIdx == -1 {
+		return "", false
+	}
+
+	// Scan up to 5 lines after the header.
+	const lookbehind = 5
+	end := headerIdx + 1 + lookbehind
+	if end > len(lines) {
+		end = len(lines)
+	}
+
+	for _, line := range lines[headerIdx+1 : end] {
+		// Stop rule (cross-block boundary, Achado 11):
+		// a non-empty line whose first character is not a space, tab, or '#' begins
+		// a new top-level YAML key — stop scanning.
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" && !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") && !strings.HasPrefix(line, "#") {
+			break
+		}
+
+		// Skip blank or comment-only lines.
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+
+		// Only process lines where "mode:" is the exact key.
+		if !strings.HasPrefix(trimmed, "mode:") {
+			continue
+		}
+
+		// Step 4: extract value.
+		val := strings.TrimSpace(strings.TrimPrefix(trimmed, "mode:"))
+		// Step 5: strip trailing comment.
+		if ci := strings.Index(val, "#"); ci >= 0 {
+			val = strings.TrimRight(val[:ci], " \t")
+		}
+		// Step 6: strip quotes.
+		val = strings.Trim(val, `"'`)
+		// Step 7: strip \r.
+		val = strings.TrimRight(val, "\r")
+		return val, true
+	}
+
+	return "", true // section found but no "mode:" key within the lookbehind window
+}
+
+// credReadModeWithDefault reads credential_guard.mode from the YAML file at
+// yamlPath, returning defaultMode when the file is absent, unreadable, or the
+// extracted value is not "warn" or "block".
+//
+// Delegates to ReadCredentialGuardMode for all parsing (D1 — shared reader).
 func credReadModeWithDefault(yamlPath, defaultMode string) string {
 	data, err := os.ReadFile(yamlPath)
 	if err != nil {
 		return defaultMode
 	}
 
-	lines := strings.Split(string(data), "\n")
-
-	// Collect the 5 lines after each "^credential_guard:" line (grep -A 5).
-	var candidates []string
-	for i, line := range lines {
-		if strings.HasPrefix(line, "credential_guard:") {
-			end := i + 6 // i+1 through i+5 inclusive (5 lines after)
-			if end > len(lines) {
-				end = len(lines)
-			}
-			candidates = append(candidates, lines[i+1:end]...)
-		}
+	val, ok := ReadCredentialGuardMode(string(data))
+	if !ok {
+		return defaultMode
 	}
-
-	// First candidate line containing "mode:" (grep 'mode:' | head -1).
-	for _, line := range candidates {
-		if !strings.Contains(line, "mode:") {
-			continue
-		}
-		idx := strings.Index(line, "mode:")
-		val := line[idx+len("mode:"):]
-		// Strip leading whitespace: sed -E 's/^[[:space:]]*mode:[[:space:]]*//'
-		val = strings.TrimLeft(val, " \t")
-		// Strip trailing comment: sed -E 's/[[:space:]]*#.*$//'
-		if ci := strings.Index(val, "#"); ci >= 0 {
-			val = strings.TrimRight(val[:ci], " \t")
-		}
-		// tr -d "\"'" — do NOT strip \r (CRLF residual declared above)
-		val = strings.Map(func(r rune) rune {
-			if r == '"' || r == '\'' {
-				return -1
-			}
-			return r
-		}, val)
-
-		switch val {
-		case "warn", "block":
-			return val
-		}
-		break // first "mode:" line processed; not warn|block → fall through to defaultMode
+	switch val {
+	case "warn", "block":
+		return val
 	}
-
 	return defaultMode
 }
 

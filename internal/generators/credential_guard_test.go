@@ -651,7 +651,7 @@ func TestGlobalCredentialGuardScript_YAMLPresentWithoutModeKey_FallsBackToBlock(
 // TestCredentialGuardScript_SecondLayer_CatArgument_Captured cobre o cenário (c) da REQ: um
 // comando Bash que referencia um arquivo contendo o segredo por CAMINHO — sem o JWT/AWS key
 // literal no texto do comando — deve ser capturado pela segunda camada de detecção
-// (credentialGuardDetectionCore, ADR-2026-08-06 emenda 8), via argumento direto de `cat`.
+// (ADR-2026-08-06 emenda 8), via argumento direto de `cat`.
 func TestCredentialGuardScript_SecondLayer_CatArgument_Captured(t *testing.T) {
 	dir, script := setupCredentialGuardFixture(t, "credential_guard:\n  mode: block\n")
 	fixture := filepath.Join(dir, "token-fixture.txt")

@@ -3621,7 +3621,7 @@ Before v8.0.0, Node.js used `cfg.credentialGuard.mode` and Python used `cfg["cre
 
 | Field (YAML key) | Type | Default (absent) | Consumed by |
 |---|---|---|---|
-| `credential_guard.mode` | `warn` \| `block` | `warn` | `scripts/trackfw-credential-guard.sh` — decides whether a detected JWT/AWS-key pattern only logs an attention signal (`warn`) or aborts the tool call with exit code 2 (`block`) |
+| `credential_guard.mode` | `warn` \| `block` | `warn` | `trackfw guard credential` (and the thin shell shim) — decides whether a detected credential pattern only logs an attention signal (`warn`) or aborts the tool call with exit code 2 (`block`) |
 
 ```yaml
 credential_guard:
@@ -5877,14 +5877,13 @@ no Codex.
   que sai `exit 0` (`echo '#!/bin/bash' > scripts/trackfw-credential-guard.sh && echo 'exit 0' >>
   scripts/trackfw-credential-guard.sh`) é estritamente pior que apagar: produz `hook: PreToolUse
   Completed` — o **mesmo rótulo de sucesso normal** medido no controle positivo do ML-1A — zero sinal
-  distinguível de execução legítima. E o próprio comando de escrita não contém JWT nem chave AWS, não
-  casando com o padrão de detecção do credential-guard.
+  distinguível de execução legítima. E o próprio comando de escrita não contém um padrão de
+  credencial detectável, não casando com a detecção do credential-guard.
 - **Downgrade de `credential_guard.mode` via `trackfw.yaml`.** O modo (`warn`/`block`) é lido em
-  **runtime**, por `grep` simples do `trackfw.yaml` no cwd (`internal/generators/scaffold.go:1005`,
-  `credentialGuardModeResolution`) — não embutido no script. Uma edição de uma linha derruba o
-  controle para não-bloqueante sem tocar no script em absoluto (bit-idêntico), derrotando até uma
-  eventual verificação de integridade que cubra só o script. Mesmo mecanismo no escopo global
-  (`~/.trackfw/scripts/trackfw-credential-guard.sh`, `internal/generators/scaffold.go:1047-1051`).
+  **runtime** por `ReadCredentialGuardMode` (`internal/guard/credential.go`) — não embutido no
+  script. Uma edição de uma linha derruba o controle para não-bloqueante sem tocar no script em
+  absoluto (bit-idêntico), derrotando até uma eventual verificação de integridade que cubra só o
+  script. Mesmo mecanismo no escopo global.
 
 **Hipótese não medida, rotulada como tal (não usada para sustentar severidade sozinha):**
 
@@ -6010,10 +6009,9 @@ como as demais regras do validador — `applyRule`/`applyRuleTagged`, `internal/
   sucesso normal** de uma execução legítima — zero sinal observável em qualquer um dos dois lugares
   (validador e log de hook). Ver §"Semântica de falha de hook por CLI", §5, "Achado 2.1".
 - **Não cobre downgrade de `credential_guard.mode` no `trackfw.yaml`.** O modo (`warn`/`block`) é lido
-  em **runtime**, por leitura direta do `trackfw.yaml` no cwd (`internal/generators/scaffold.go:1005`,
-  `credentialGuardModeResolution`) — não embutido no script nem verificado por esta regra. Uma edição
-  de uma linha de YAML derruba o controle para não-bloqueante sem tocar no script em absoluto
-  (bit-idêntico ao script legítimo).
+  em **runtime** por `ReadCredentialGuardMode` (`internal/guard/credential.go`) — não embutido no
+  script nem verificado por esta regra. Uma edição de uma linha de YAML derruba o controle para
+  não-bloqueante sem tocar no script em absoluto (bit-idêntico ao script legítimo).
 - **Comando com formato de caminho desconhecido é ignorado de propósito.** Evita falso positivo em
   wiring próprio do usuário fora dos 3 formatos que o trackfw gera hoje — mas, como consequência
   direta, a regra **não cobre wiring que o trackfw não gerou**, mesmo que aponte para um script
@@ -6146,39 +6144,33 @@ opt-in que nunca bloqueia por padrão é uma falsa sensação de proteção — 
 `trackfw update harness --targets <tool>-credential-guard` demonstrou intenção explícita de ter o
 mecanismo ativo.
 
-`scripts/trackfw-credential-guard.sh` tem duas variantes de texto — **escopo de projeto** (gerado
-por `trackfw init`/`discover`/`update` dentro do repositório) e **escopo global**
-(`~/.trackfw/scripts/trackfw-credential-guard.sh`, gerado por `trackfw update harness`) — que
-compartilham a mesma leitura de `credential_guard.mode` (`credentialGuardModeResolution` em Go;
-pré-v8: equivalentes em Node/Python) mas divergem no **fallback** quando essa chave não está presente:
+`scripts/trackfw-credential-guard.sh` é um thin shim que chama `trackfw guard credential` (projeto)
+ou `trackfw guard credential --global` (global). A lógica de detecção e leitura de `mode` vive
+inteiramente em Go (`internal/guard/credential.go`). Os dois escopos divergem no **fallback** quando
+`credential_guard.mode` não está presente no `trackfw.yaml`:
 
-| Escopo | Constante (Go) | Fallback (`DEFAULT_MODE`) sem `trackfw.yaml`/sem a chave | `trackfw.yaml` com `credential_guard.mode` explícito no cwd |
+| Escopo | Função Go | Fallback sem `trackfw.yaml`/sem a chave | `trackfw.yaml` com `credential_guard.mode` explícito no cwd |
 |---|---|---|---|
-| Projeto | `credentialGuardProjectTail` | `warn` — **inalterado** | Respeitado (`warn` ou `block`) — inalterado |
-| Global | `credentialGuardGlobalTail` | `block` — **mudança de comportamento** (era `warn`) | Respeitado (`warn` ou `block`) — mesma leitura da variante de projeto |
+| Projeto | `RunCredential` | `warn` | Respeitado (`warn` ou `block`) |
+| Global | `RunCredentialGlobal` | `block` | Respeitado (`warn` ou `block`) |
 
 Pontos pinados:
 
-- **A leitura de `credential_guard.mode` é a mesma nos dois escopos** — o script global lê
-  `trackfw.yaml` **do cwd de onde o hook disparou** (o projeto atual), não de um arquivo de config
-  global (`~/.trackfw/config.yaml` continua não existindo — decisão mantida do ML-1A original: não
-  vale a complexidade de uma segunda fonte de configuração só para isto). Um usuário que já
+- **A leitura de `credential_guard.mode` é a mesma nos dois escopos** via `ReadCredentialGuardMode`
+  (`internal/guard/credential.go`) — lê `trackfw.yaml` **do cwd de onde o hook disparou** (o projeto
+  atual), não de um arquivo de config global (`~/.trackfw/config.yaml` não existe — decisão mantida:
+  não vale a complexidade de uma segunda fonte de configuração só para isto). Um usuário que já
   configurou `credential_guard.mode: warn` explicitamente em `trackfw.yaml` **não vê nenhuma
-  mudança de comportamento** com esta REQ.
-- **Só o fallback (ausência de `trackfw.yaml`, ou `trackfw.yaml` sem a chave) muda**, e só no
-  escopo global: passa de `warn` para `block` — abortar a tool call (exit 2) em vez de apenas
-  logar um attention signal.
+  mudança de comportamento**.
+- **Só o fallback (ausência de `trackfw.yaml`, ou `trackfw.yaml` sem a chave) diverge entre escopos**:
+  projeto → `warn`; global → `block` (abortar a tool call, exit 2).
 - **`ROADMAP_DIR` em escopo global permanece o caminho fixo `docs/roadmaps`** (sem ler
   `roadmap_dir:` de `trackfw.yaml`, já que não há garantia de o arquivo existir) e o attention
-  signal só é gravado se esse diretório já existir — inalterado por esta REQ, documentado aqui só
-  para não confundir com a resolução de `MODE`, que é independente.
-- Implementado byte-idêntico nos 3 stacks: `credentialGuardProjectTail`/`credentialGuardGlobalTail`
-  (Go, `internal/generators/scaffold.go`), as constantes homônimas em
-  `npm/src/generators/hooks.js`, e `_CG_PROJECT_TAIL`/`_CG_GLOBAL_TAIL` (Python,
-  `pypi/trackfw/generators/init_gen.py`) — cada bloco de resolução de `MODE` replicado como texto
-  literal idêntico em vez de extraído para uma constante compartilhada concatenada, por causa da
-  restrição do gate de paridade documentada em
-  `vault/notes/credential-guard-parity-test-extractor-rejects-string-concatenation-2026-08-08.md`.
+  signal só é gravado se esse diretório já existir.
+- **v8 tem implementação única em Go** — as constantes `credentialGuardProjectTail`,
+  `credentialGuardGlobalTail` e `credentialGuardModeResolution` foram removidas do
+  `internal/generators/scaffold.go` em ML-1A (ADR-2026-11-05): eram código morto, pois o script
+  gerado é um thin shim que delega ao binário.
 
 ## Cobertura de matchers Read/Write/Edit do credential-guard por CLI (ADR-2026-08-06 emenda 7, ROADMAP-2026-08-08 Wave 2)
 
@@ -6673,7 +6665,7 @@ dos 7 runtimes sem precisar de uma variante de script por runtime:
 1. **Argumentos de linha de comando** (`$1..$N`) — o comando git cru passado como argv.
 2. **Payload JSON via stdin** — tenta `.tool_input.command`, `.command` e `.hook_input.command`,
    nessa ordem; usa `jq` quando disponível, com fallback awk (sem exigir `jq` no PATH, mesmo
-   espírito de `credentialGuardDetectionCore`).
+   mesmo espírito do credential-guard: sem parser JSON completo, sem dependência de `jq`).
 3. **Texto cru via stdin**, ou `$TRACKFW_GIT_COMMAND` como último fallback.
 
 Padrão casado: `^git (commit|push|checkout -b|switch -c)\b`, aceitando flags globais antes do
