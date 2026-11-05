@@ -4981,8 +4981,8 @@ cp "$ROOT_DIR/go.sum" "$T62A_MOD/go.sum"
 
 corrupt_literal \
   "$ROOT_DIR/internal/guard/gitbranch.go" "$T62A_MOD/internal/guard/gitbranch.go" \
-  $'func stripEnvCommandPrefix(tokens []string) []string {\n\tfor len(tokens) > 0 {' \
-  $'func stripEnvCommandPrefix(tokens []string) []string {\n\treturn tokens // [falsified s62a: env/command prefix stripping disabled]\n\tfor len(tokens) > 0 {' \
+  $'func stripEnvCommandPrefix(tokens []string) []string {\n\t// Strip leading bare variable assignments first (FOO=1 git push).\n\ttokens = consumeNakedAssignments(tokens)\n\n\tfor len(tokens) > 0 {' \
+  $'func stripEnvCommandPrefix(tokens []string) []string {\n\t// Strip leading bare variable assignments first (FOO=1 git push).\n\ttokens = consumeNakedAssignments(tokens)\n\treturn tokens // [falsified s62a: env/command prefix stripping disabled]\n\n\tfor len(tokens) > 0 {' \
   "s62a-go-env-command-prefix-stripping-removed"
 
 T62A_BIN="$WORK/s62a-bin/trackfw"
@@ -5235,10 +5235,10 @@ assert_guard_exit "git-branch-guard/env-var-assignment/baseline-blocks-multiple"
   '{"tool_input":{"command":"env FOO=bar BAZ=qux git commit -m x"}}' \
   2
 
-assert_guard_exit "git-branch-guard/env-var-assignment/baseline-still-evades-flag-form" \
+assert_guard_exit "git-branch-guard/env-var-assignment/baseline-blocks-flag-form" \
   "$T63C_BASE_OUT/scripts/trackfw-git-branch-guard.sh" \
   '{"tool_input":{"command":"env -i git push"}}' \
-  0
+  2
 
 T63C_MOD="$WORK/s63c-mod"
 mkdir -p "$T63C_MOD/cmd" "$T63C_MOD/internal"
@@ -5252,6 +5252,17 @@ corrupt_literal \
   $'tokens = tokens[1:] // KEY=value: skip' \
   $'break // [falsified s63c: stop instead of skipping KEY=val]' \
   "s63c-go-env-var-assignment-stripping-removed"
+
+# ML-1B adicionou consumeNakedAssignments após cada wrapper (linha 750 de
+# gitbranch.go) como camada de segurança — sem ela, `env FOO=bar git push`
+# ainda é bloqueado mesmo com a primeira corrupção, pois o pós-wrapper
+# consome FOO=bar de volta. A segunda corrupção desativa essa camada para que
+# o braço de detecção prove um desvio real, não um duplo lastro.
+corrupt_literal \
+  "$T63C_MOD/internal/guard/gitbranch.go" "$T63C_MOD/internal/guard/gitbranch.go" \
+  $'\t\t// After consuming a prefix, strip any new naked assignments that may have\n\t\t// been revealed (e.g. nohup FOO=1 git push).\n\t\ttokens = consumeNakedAssignments(tokens)' \
+  $'\t\t// After consuming a prefix, strip any new naked assignments that may have\n\t\t// been revealed (e.g. nohup FOO=1 git push).\n\t\t// [falsified s63c-2: post-prefix consumeNakedAssignments disabled]\n\t\ttokens = tokens[0:] // no-op' \
+  "s63c-go-post-prefix-assignment-stripping-removed"
 
 T63C_BIN="$WORK/s63c-bin/trackfw"
 mkdir -p "$(dirname "$T63C_BIN")"
@@ -5267,10 +5278,11 @@ assert_guard_bin_exit "git-branch-guard/env-var-assignment/detection-catches-byp
   '{"tool_input":{"command":"env FOO=bar BAZ=qux git commit -m x"}}' \
   0
 
-# Auto-discriminação: contra o MESMO build corrompido, a forma NUA (sem
-# atribuição de variável) `env git push`, fechada pelo ML-4B, precisa
-# continuar bloqueada — isola a corrupção ao stripping de CHAVE=valor, não
-# ao stripping de env/command como um todo.
+# Auto-discriminação: contra o MESMO build corrompido (duas corrupções:
+# stripping de CHAVE=valor no envLoop + consumeNakedAssignments pós-wrapper),
+# a forma SEM atribuição `env git push` precisa continuar bloqueada — isola
+# as corrupções ao stripping de CHAVE=valor e da camada de segurança ML-1B,
+# não ao stripping de env/command como um todo.
 assert_guard_bin_exit "git-branch-guard/env-var-assignment/detection-does-not-break-bare-env-prefix" \
   "$T63C_BIN" \
   '{"tool_input":{"command":"env git push"}}' \

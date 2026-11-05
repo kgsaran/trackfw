@@ -769,14 +769,27 @@ func TestGitBranchGuard_EnvWithMultipleVarAssignments_Blocks(t *testing.T) {
 	}
 }
 
-func TestGitBranchGuard_EnvWithFlag_StillEvades(t *testing.T) {
-	// Declarado, não fechado: env com FLAG (não atribuição de variável) continua evadindo.
-	dir, script := setupGitBranchGuardFixture(t)
+// TestGitBranchGuard_EnvWithFlag_Blocks asserts that env with a flag before git
+// (e.g. env -i git push) is blocked (rc=2). The ML-1B extended stripEnvCommandPrefix
+// to consume env flags such as -i, -- before the actual command, so env -i git push
+// now resolves to "git push" and is denied.
+//
+// PARIDADE CONGELADA: a fixture congelada (testdata/guard-sh-reference/git-branch-guard.sh)
+// predates ML-1B e retorna rc=0 para "env -i git push". A divergência é intencional:
+// a fixture é um snapshot histórico do script antes das melhorias do ML-1B.
+// Este teste usa runGuardBinaryGitBranch diretamente para validar o comportamento Go
+// sem o braço de paridade com o .sh (que falha por design neste caso).
+//
+// Reconciliation: asserts that ML-1B's extended env-flag stripping closes the
+// bypass where env -i could previously prepend an ignored flag to evade the guard.
+func TestGitBranchGuard_EnvWithFlag_Blocks(t *testing.T) {
+	// script não é usado: a fixture congelada predates ML-1B e diverge por design.
+	dir, _ := setupGitBranchGuardFixture(t)
 	payload := `{"tool_input":{"command":"env -i git push"}}`
 
-	code, _, stderr := runGitBranchGuard(t, dir, script, nil, payload)
-	if code != 0 {
-		t.Errorf("exit code: want 0 (env -i com flag continua fora do escopo declarado), got %d (stderr: %s)", code, stderr)
+	code, _, stderr := runGuardBinaryGitBranch(t, dir, nil, payload, nil)
+	if code != 2 {
+		t.Errorf("exit code: want 2 (env -i git push bloqueado desde ML-1B), got %d (stderr: %s)", code, stderr)
 	}
 }
 

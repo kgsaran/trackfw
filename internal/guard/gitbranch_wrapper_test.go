@@ -39,7 +39,24 @@ func TestMatchSubcommand_AC4_Wrapper_Blocked(t *testing.T) {
 		{"eval-git-push", `eval "git push"`, "push"},
 		{"pwsh-c-git-push", `pwsh -c "git push"`, "push"},
 		{"powershell-command-git-push", `powershell -Command "git push"`, "push"},
+		// B1: flag abbreviations for -Command (prefix matching) and --command (double-dash).
+		// Reconciliation: asserts that isPsCommandFlag matches any prefix of "-command", so that
+		// -co, -com, --command etc. all route to extractPowerShellCommandString as a command flag.
+		{"powershell-co-git-push", `powershell -co "git push"`, "push"},
+		{"powershell-com-git-push", `powershell -com "git push"`, "push"},
+		{"powershell-double-dash-command-git-push", `powershell --command "git push"`, "push"},
+		{"pwsh-co-git-push", `pwsh -co "git push"`, "push"},
 		{"cmd-c-git-push", `cmd /c "git push"`, "push"},
+		// ML-2E: powershell (PS 5.1) positional -Command — first non-flag token is the
+		// implicit command string.
+		// Reconciliation: asserts that extractPowerShellCommandString with
+		// usePositionalCommand=true treats the first non-flag token as -Command for
+		// powershell (PS 5.1), so "powershell git push" and "powershell \"git push\""
+		// are blocked; pwsh git push is a declared residual (see Allowed table).
+		{"powershell-positional-bare-git-push", `powershell git push`, "push"},
+		{"powershell-positional-quoted-git-push", `powershell "git push"`, "push"},
+		{"powershell-noprofile-positional-git-push", `powershell -NoProfile git push`, "push"},
+		{"powershell-exe-ep-bypass-positional-git-push", `powershell.exe -ExecutionPolicy Bypass git push`, "push"},
 		// Env/command prefix + wrapper.
 		{"env-bash-c-git-push", `env bash -c "git push"`, "push"},
 		{"sudo-bash-c-git-push", `sudo bash -c "git push"`, "push"},
@@ -114,6 +131,14 @@ func TestMatchSubcommand_AC4_Wrapper_Allowed(t *testing.T) {
 		// Two double-backslashes: POSIX \\g → \g → token \git ≠ git → allowed.
 		// (This is NOT the bypass; the bypass is single-backslash \git.)
 		{"double-backslash-not-bypass", `\\git push`},
+		// ML-2E: powershell false-positive checks — allowed git reads and non-git.
+		{"powershell-get-childitem", `powershell Get-ChildItem`},
+		{"powershell-file-build-ps1", `powershell -File build.ps1`},
+		{"powershell-dot-build-ps1", `powershell .\build.ps1`},
+		// pwsh positional is -File (not -Command): pwsh git push is a declared residual.
+		// Reconciliation: asserts the declared limit — pwsh (PS 7) first positional is
+		// -File, so "pwsh git push" is NOT treated as a command string and is allowed.
+		{"pwsh-positional-git-push-residual", `pwsh git push`},
 	}
 
 	for _, tc := range cases {
@@ -168,6 +193,59 @@ func TestMatchSubcommand_AC4_Regression_CommitMsgWithEscapedQuote(t *testing.T) 
 	got := MatchSubcommand(cmd)
 	if got != "commit" {
 		t.Errorf(`git commit -m "say \"hi\"": MatchSubcommand = %q, want "commit"`, got)
+	}
+}
+
+// TestMatchSubcommand_C7_CmdSubst_Blocked asserts that command substitution
+// bodies ($(...) and `...`) containing a blocked git subcommand are detected.
+//
+// Reconciliation: asserts that extractCmdSubstBodies in matchSubcommandPOSIX
+// (C7, ML-2C) scans each command-substitution body as a subshell, so that
+// $(git push), `git push`, and OUT=$(git commit -m x) are all blocked (D4).
+func TestMatchSubcommand_C7_CmdSubst_Blocked(t *testing.T) {
+	cases := []struct {
+		name string
+		cmd  string
+		want string
+	}{
+		{"dollar-paren-push", `$(git push)`, "push"},
+		{"backtick-push", "`git push`", "push"},
+		{"assignment-dollar-paren-commit", `OUT=$(git commit -m x)`, "commit"},
+		{"double-quoted-dollar-paren-push", `echo "$(git push)"`, "push"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := MatchSubcommand(tc.cmd)
+			if got != tc.want {
+				t.Errorf("MatchSubcommand(%q) = %q, want %q", tc.cmd, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestMatchSubcommand_C7_CmdSubst_Allowed asserts that command substitution
+// bodies with allowed git subcommands do NOT trigger a block.
+//
+// Reconciliation: asserts that C7 does not introduce false positives for
+// $(git status), `git log`, and $(echo …) — only blocked subcommands inside
+// $(...) or `...` produce a denial.
+func TestMatchSubcommand_C7_CmdSubst_Allowed(t *testing.T) {
+	cases := []struct {
+		name string
+		cmd  string
+	}{
+		{"dollar-paren-status", `echo "$(git status)"`},
+		{"backtick-log", "`git log --oneline`"},
+		{"dollar-paren-echo", `$(echo ok)`},
+		{"assign-dollar-paren-describe", `VER=$(git describe --tags)`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := MatchSubcommand(tc.cmd)
+			if got != "" {
+				t.Errorf("MatchSubcommand(%q) = %q, want %q (allow)", tc.cmd, got, "")
+			}
+		})
 	}
 }
 

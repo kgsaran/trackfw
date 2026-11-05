@@ -34,3 +34,5 @@ tem). Cruze sempre com `.github/windows-known-failures.json` **e** com o veredit
 chamar qualquer uma de regressão. Ver [[o-instrumento-mente]].
 
 Relacionado: [[medir-com-a-regra-nao-com-grep]], [[vm-investiga-ci-mede]].
+
+**Reincidência em 2026-11-05 (guards, #663):** o ML-1B fechou de propósito a lacuna `env -i git push`. Dois artefatos ainda afirmavam o `rc=0` antigo: o teste Go `TestGitBranchGuard_EnvWithFlag_StillEvades` e o cenário `baseline-still-evades-flag-form` em `scripts/check-gates-falsify.sh`, que tem peso em `falsify-scenario-weights.json`. Nenhum gate do ML-1B rodou `internal/generators` nem o `parity-falsify`, e o executor chamou a falha de "pré-existente". **Quando um guard passa a bloquear o que antes era lacuna declarada, procure também em `scripts/*.sh` (`assert_guard_exit ... 0`) e rode `make quality` no próprio ML.** Para saber o rc, leia o arquivo de saída: o executor relatou `rc=0` com um log que terminava em `Error 1`.

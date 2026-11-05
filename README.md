@@ -1136,6 +1136,10 @@ it is invoked with its command flag:
   `-com`, …), `--command`, `-CommandWithArgs`/`-cwa`, or any argument-consuming flag
   (`-ExecutionPolicy`/`-ep`/`-ex`, `-WorkingDirectory`/`-wd`, `-WindowStyle`/`-w`, etc.)
   followed by its value before the command flag (e.g. `-ExecutionPolicy Bypass -Command "…"`).
+  In Windows PowerShell 5.1 (`powershell`/`powershell.exe`), the first positional argument is
+  treated as `-Command`, so `powershell git push` and `powershell "git push"` are also blocked.
+  In PowerShell 7 (`pwsh`), the first positional is `-File` (a script path); `pwsh git push`
+  is a declared residual and is not analyzed (see Limits below).
   `-File`/`-EncodedCommand` are not analyzed (see Limits below).
 - `cmd` with `/c` or `/k`, including the fused form `/c"…"` (no space after the switch).
   Caret escapes (`g^it push`) are stripped before analysis.
@@ -1179,6 +1183,9 @@ and bare shell variable assignments of the form `NAME=value` (e.g. `FOO=1 git pu
 - **`-EncodedCommand`/`-File` (PowerShell)**: the payload is Base64-encoded or a file path;
   not decoded or read. The `-File` and `-EncodedCommand` flags (and their abbreviations `-f`,
   `-e`, `-en`, `-enc`) are explicitly excluded from command-string analysis.
+- **`pwsh git push` (PowerShell 7 positional)**: in `pwsh` 7, the first positional argument
+  is `-File` (a script path), not `-Command`; `pwsh git push` is a declared residual and is
+  not analyzed. Use `pwsh -c git push` or `pwsh -Command git push` to have the guard analyze it.
 - **Variable expansion** (`bash -c "$CMD"`): the value of `$CMD` is not known at hook time;
   not analyzed.
 - **Third wrapper and beyond**: blocked outright (fail-closed, see above).

@@ -2132,9 +2132,14 @@ func isPsNoAnalyzeFlag(norm string) bool {
 //   - flags that consume one argument ("-ExecutionPolicy Bypass", "-wd C:\x", …)
 //   - flags without an argument ("-NoProfile", "-NonInteractive", "-Sta", …)
 //   - "-File"/"-EncodedCommand": not a -c invocation (return not-found)
+//   - positional command (powershell only, PS 5.1): when base=="powershell", the
+//     first non-flag token is the implicit -Command argument (PS 5.1 default
+//     positional). For pwsh 7, the first positional is -File, so it is not
+//     treated as a command string (break, return not-found).
 //
 // B1, C5, F1-A — D4 Wave 2 (REQ-2026-11-05, ML-2C).
-func extractPowerShellCommandString(rest []string) (string, bool, bool) {
+// Positional (powershell 5.1) — ML-2E (REQ-2026-11-05).
+func extractPowerShellCommandString(rest []string, usePositionalCommand bool) (string, bool, bool) {
 	for i := 0; i < len(rest); i++ {
 		tok := rest[i]
 		lower := strings.ToLower(tok)
@@ -2164,7 +2169,13 @@ func extractPowerShellCommandString(rest []string) (string, bool, bool) {
 			continue
 		}
 
-		// Non-flag token before the command flag: not a -c invocation.
+		// Non-flag token before the command flag.
+		// powershell (PS 5.1): the first positional argument is -Command, so
+		// treat the remaining tokens as the command string.
+		// pwsh (PS 7): the first positional is -File; not analysed statically.
+		if usePositionalCommand {
+			return stripPsBacktick(strings.Join(rest[i:], " ")), true, false
+		}
 		break
 	}
 	return "", false, false
@@ -2241,8 +2252,12 @@ func extractShellCommandString(base string, rest []string) (string, bool, bool) 
 	switch base {
 	case "bash", "sh", "zsh", "dash", "ksh":
 		return extractPOSIXShellCommandString(rest)
-	case "pwsh", "powershell":
-		return extractPowerShellCommandString(rest)
+	case "pwsh":
+		// pwsh 7: first positional is -File, not -Command. No positional analysis.
+		return extractPowerShellCommandString(rest, false)
+	case "powershell":
+		// powershell (PS 5.1): first positional is -Command. Use positional analysis.
+		return extractPowerShellCommandString(rest, true)
 	case "cmd":
 		return extractCmdCommandString(rest)
 	case "eval":

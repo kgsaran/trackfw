@@ -165,10 +165,15 @@ grep -q '^## Prescrições' docs/seguranca/2026-11-05-wave0-guards-primeiro-usua
 - [ ] nenhum interpretador executado com payload de git que escreve
 
 ### ML-2E — Teste que fixava a lacuna antiga e argumento posicional do `powershell` (apolo-tf)
-**Status:** ⬜ Pendente
-**Files affected:** `internal/generators/git_branch_guard_test.go`, `internal/guard/gitbranch.go`, `internal/guard/gitbranch_wrapper_test.go`, `README.md`, `docs/cli-parity.md`
+**Status:** ✅ Concluído — auditado pelo arquiteto em 2026-11-05, em dois despachos.
+- **Medido no binário:** `powershell git push`, `powershell "git push"`, `-NoProfile` e `-ExecutionPolicy Bypass` com argumento solto dão `rc=2`. `pwsh git push` dá `rc=0`, residual declarado: no PowerShell 7 o argumento solto é `-File`. O `m663.sh` deu 63/63 e o red team 15/15. Os 16 comandos legítimos continuam com `rc=0`.
+- **Testes que fixavam a lacuna antiga:** `TestGitBranchGuard_EnvWithFlag_StillEvades` virou `..._Blocks`, e o cenário `baseline-still-evades-flag-form` de `scripts/check-gates-falsify.sh` virou `baseline-blocks-flag-form`. O mesmo script tinha mais dois efeitos do ML-1B: a âncora do `corrupt_literal` do 62a não casava mais, e o braço de detecção do 63c ficara vazio por causa do `consumeNakedAssignments`. O 63c passou a usar corrupção composta.
+- 🔴 **Relatório falso no primeiro despacho:** o executor relatou `make quality` com `rc=0`, mas a saída dele terminava em `Error 1`. O arquiteto rodou de novo com a máquina ociosa e mediu `MQ_RC=2`, com a mesma causa.
+- **Contra-braços:** B1, C7, C9, F1-B e o posicional reprovam os testes nomeados, e os arquivos foram restaurados com `cmp`. A fixture `testdata/guard-sh-reference/` fica congelada como histórico.
+- **Gates:** `make parity-falsify` com 365 OK e 0 FAIL. `make quality` com `MQ_RC=0`, lido pelo arquiteto em `mq2.txt`.
+**Files affected:** `internal/generators/git_branch_guard_test.go`, `internal/guard/gitbranch.go`, `internal/guard/gitbranch_wrapper_test.go`, `README.md`, `docs/cli-parity.md`, `scripts/check-gates-falsify.sh`, `scripts/falsify-scenario-weights.json`
 **Acceptance criteria:**
-- [ ] `TestGitBranchGuard_EnvWithFlag_StillEvades` passa a afirmar `rc=2` com outro nome, e não sobra outro teste que fixe uma lacuna fechada nesta REQ
-- [ ] `powershell git push` e `powershell "git push"` dão `rc=2`; `pwsh git push` fica declarado
-- [ ] contra-braços de B1, C7, C9 e F1-B relatados, com o nome do teste que reprova
-- [ ] `make quality` com `rc=0`
+- [x] `TestGitBranchGuard_EnvWithFlag_StillEvades` passa a afirmar `rc=2` com outro nome, e não sobra outro teste que fixe uma lacuna fechada nesta REQ
+- [x] `powershell git push` e `powershell "git push"` dão `rc=2`; `pwsh git push` fica declarado
+- [x] contra-braços de B1, C7, C9 e F1-B relatados, com o nome do teste que reprova
+- [x] `make quality` com `rc=0`

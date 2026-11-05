@@ -37,7 +37,7 @@
 - [make quality com máquina ociosa](feedback_make_quality_com_maquina_ociosa.md) — #504: 5/5 limpas ociosa; as 3 "penduradas" tinham concorrência; capture ps antes de matar
 - [req new já cria a roadmap](project_req_new_ja_cria_roadmap.md) — `roadmap new` depois sobrescreve sem vínculo; só o push pega; não rode os dois
 - [Defeito conhecido se corrige agora](feedback_defeito_conhecido_corrige_agora.md) — residual de red-team ou inconsistência vista na auditoria vira ML no mesmo PR (KG 2x em 2026-10-09)
-- [Mudar contrato: auditar quem afirma o antigo](feedback_mudar_contrato_auditar_quem_afirma_o_antigo.md) — enumerar consumidores não basta; os TESTES deles fixam a forma antiga
+- [Mudar contrato: auditar quem afirma o antigo](feedback_mudar_contrato_auditar_quem_afirma_o_antigo.md) — testes E cenários de `scripts/check-gates-falsify.sh` fixam a forma antiga; 2x no #663
 - [Proibir sem rota legítima vira contorno](feedback_proibir_sem_rota_legitima_vira_contorno.md) — medição git que escreve: dê a rota (teste Go em t.TempDir); hades contornou o guard por script
 - [Red team executou interpretador real](feedback_red_team_executa_interprete_real.md) — 🔴 Hades rodou `pwsh -EncodedCommand` com git push no repo após 2 negações; handoff proíbe executar interpretador
 - [Agentes escrevem o working context](project_agentes_escrevem_working_context.md) — 5/9 ignoraram a proibição; a instrução do arquivo do agente vence o handoff; corrigir no gerador

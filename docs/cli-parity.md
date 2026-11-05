@@ -6778,7 +6778,11 @@ comando `$(…)` e crase, e escapes (`g^it push`, `` g`it push ``).
   `-com`, …), `--command`, `-CommandWithArgs`/`-cwa`. Flags que consomem argumento antes do
   flag de comando (`-ExecutionPolicy`/`-ep`/`-ex`, `-WorkingDirectory`/`-wd`,
   `-WindowStyle`/`-w`, `-OutputFormat`/`-o`, `-InputFormat`/`-if`, etc.) são puladas com seu
-  valor. `-File`/`-EncodedCommand` não são analisados (ver Limites).
+  valor. No Windows PowerShell 5.1 (`powershell`/`powershell.exe`), o primeiro argumento
+  posicional é tratado como `-Command`: `powershell git push` e `powershell "git push"` são
+  bloqueados (ML-2E, REQ-2026-11-05). No PowerShell 7 (`pwsh`), o primeiro posicional é
+  `-File` (caminho de script); `pwsh git push` é residual declarado — não analisado (ver
+  Limites). `-File`/`-EncodedCommand` não são analisados (ver Limites).
 - `cmd` com `/c` ou `/k`, incluindo a forma fundida `/c"…"` (sem espaço após o switch).
   Escapes com circunflexo (`g^it push`) são removidos antes da análise.
 - `eval`, cujo argumento é o resto do trecho.
@@ -6826,11 +6830,20 @@ e atribuições nuas de variável shell da forma `NAME=value` (ex.: `FOO=1 git p
   decodificado nem lido (residual R3). Abreviações `-e`, `-en`, `-enc`, `-f`, `-fi`, etc.
   também excluem a análise.
 - Expansão de variável (`bash -c "$CMD"`): o valor de `$CMD` não é conhecido em hook-time.
+- **`pwsh git push`** (PowerShell 7, posicional): no `pwsh` 7, o primeiro argumento posicional
+  é `-File` (caminho de script), não `-Command`; `pwsh git push` não é analisado como comando
+  e é residual declarado (ML-2E, REQ-2026-11-05).
 - Terceiro invólucro e além: bloqueado (fail-closed, ver acima).
 
 **Cobertura de testes:** `TestMatchSubcommand_AC4_Wrapper_Blocked` (casos bloqueados, incluindo
 vetores F7 adicionados no ML-2C: `zsh -c`, `dash -c`, `ksh -c`, `cmd /k`, `BASH -c`,
-`GIT push`, `git.exe push`), `TestMatchSubcommand_AC4_Wrapper_Allowed` (falso positivo ausente),
+`GIT push`, `git.exe push`; vetores B1 ML-2E: `powershell -co`, `powershell -com`,
+`powershell --command`; vetores posicional ML-2E: `powershell git push`,
+`powershell "git push"`, `powershell -NoProfile git push`,
+`powershell.exe -ExecutionPolicy Bypass git push`), `TestMatchSubcommand_AC4_Wrapper_Allowed`
+(falso positivo ausente, incluindo `powershell Get-ChildItem`, `powershell -File build.ps1`,
+`powershell .\build.ps1`, `pwsh git push` residual declarado), `TestMatchSubcommand_C7_CmdSubst_Blocked`
+(substituição de comando), `TestMatchSubcommand_C7_CmdSubst_Allowed` (falso positivo ausente),
 `TestRunGitBranch_AC4_WrapperBlocked` (ponta a ponta, rc=2),
 `TestRunGitBranch_AC4_WrapperAllowed` (ponta a ponta, rc=0),
 `TestMatchSubcommand_AC4_Depth3_WrapperNotAnalyzed` (teto de profundidade, fail-closed),
