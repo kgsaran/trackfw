@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-11-02
 req: "docs/req/REQ-2026-11-02-relatos-do-primeiro-usuario-externo-init-pela-metade-e-npm-em-projeto-python-mensagem-de-fail-open-wip-limit-ignorado-e-adr-req-vazios.md"
 squad: "hades-tf, apolo-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf"
 
 # Roadmap: Relatos do primeiro usuário externo: init pela metade e npm em projeto Python, mensagem de fail open, wip_limit ignorado e ADR/REQ vazios
 
-> Created: 2026-11-02 | Status: wip
+> Created: 2026-11-02 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-11-02-relatos-do-primeiro-usuario-externo-init-pela-metade-e-npm-em-projeto-python-mensagem-de-fail-open-wip-limit-ignorado-e-adr-req-vazios.md
@@ -18,7 +18,7 @@ As causas estão medidas e escritas na REQ, uma por AC. A varredura de issues ab
 🔴 **Todo teste novo que chame `validate` depois de `init`** precisa ser rodado com o PATH sem `trackfw` antes do push (lição do #655).
 
 ## Acceptance Criteria
-- [x] AC1–AC5 da REQ (AC6 no PR)
+- [x] AC1–AC6 da REQ (AC6: comentários nos 5 issues e Closes no #666)
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado

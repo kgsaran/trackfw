@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-11-02
 author: "Zeus (trackfw_architect)"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-11-02-relatos-do-primeiro-usuario-externo-init-pela-metade-e-npm-em-projeto-python-mensagem-de-fail-open-wip-limit-ignorado-e-adr-req-vazios.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-11-02-relatos-do-primeiro-usuario-externo-init-pela-metade-e-npm-em-projeto-python-mensagem-de-fail-open-wip-limit-ignorado-e-adr-req-vazios.md"
 ---
 
 # REQ: Relatos do primeiro usuário externo: init pela metade e npm em projeto Python, mensagem de fail open, wip_limit ignorado e ADR/REQ vazios
 
-> Date: 2026-11-02 | Status: Open
+> Date: 2026-11-02 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 | GitHub Issues: #657, #658, #659, #660, #661
@@ -79,7 +79,7 @@ outros (medido no PR #655 com os arquivos do bump de versão).
   cujas seções obrigatórias só têm o comentário do modelo (`<!-- ... -->`) ou estão vazias geram aviso.
   ADR e REQ preenchidos não geram aviso. A regra é configurável como as outras e não vira exigência sobre
   seções opcionais.
-- [ ] **AC6.** Cada issue recebe comentário com o que mudou e a versão. O PR fecha os cinco com `Closes`.
+- [x] **AC6.** Cada issue recebe comentário com o que mudou e a versão. O PR fecha os cinco com `Closes`.
 
 ## Negative scope
 
@@ -98,4 +98,4 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-11-02-relatos-do-primeiro-usuario-externo-init-pela-metade-e-npm-em-projeto-python-mensagem-de-fail-open-wip-limit-ignorado-e-adr-req-vazios.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-11-02-relatos-do-primeiro-usuario-externo-init-pela-metade-e-npm-em-projeto-python-mensagem-de-fail-open-wip-limit-ignorado-e-adr-req-vazios.md
