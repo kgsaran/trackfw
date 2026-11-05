@@ -121,10 +121,20 @@ grep -q '^## Prescrições' docs/seguranca/2026-11-05-wave0-guards-primeiro-usua
 - [ ] nenhuma linha de código alterada
 
 ### ML-2B — Revisão de qualidade do guard de git (hefesto-tf) — paralelo ao ML-2A
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-11-05. Parecer em `docs/qualidade/2026-11-05-revisao-guards-primeiro-usuario-externo.md`.
+- **Bloqueantes, confirmados pelo arquiteto:**
+  - **F1-A:** uma flag com argumento antes de `-Command` faz o PowerShell escapar. `powershell -ExecutionPolicy Bypass -Command "git push"`, `pwsh -WorkingDirectory C:\x -c` e `-ep Bypass -c` dão `rc=0`. É a forma mais comum no Windows.
+  - **F1-B:** o AC1 não tem teste que amarre o guard e o validator. Nenhum teste do validator chama o leitor compartilhado.
+- **Corrigir no PR:**
+  - F2: `credJWTRe` e `credAWSRe` são código morto;
+  - F3: o cabeçalho de `credential.go` fala em "152 lines";
+  - F4: o comentário "nothing allowed today becomes blocked";
+  - F5: falta a constante `maxWrapperDepth` e a explicação das duas guardas;
+  - F7: faltam na tabela os vetores `zsh`, `dash`, `ksh`, `cmd /k`, `BASH`, `GIT` e `git.exe`.
+- **Tokenizadores:** os dois ficam separados, porque servem gramáticas diferentes (caminho do Windows e POSIX). Extrair helpers em comum fica como observação.
 **Files affected:** `docs/qualidade/2026-11-05-revisao-guards-primeiro-usuario-externo.md`
 **Motivo:** o ML-1B criou um segundo tokenizador (`quoteAwareSplitPOSIX`, `shellTokenizePOSIX`, `stripShellSuffixPOSIX`) ao lado do primeiro, com 878 linhas novas em `internal/guard/gitbranch.go`. O ML-2A e o ML-2B só escrevem o próprio parecer, então rodam em paralelo.
 **Acceptance criteria:**
-- [ ] parecer com achados classificados (bloqueante, corrigir no PR, observação), cada um com arquivo e linha
-- [ ] posição medida sobre manter dois tokenizadores ou unificar, com o risco de cada caminho no Windows
-- [ ] nenhuma linha de código alterada
+- [x] parecer com achados classificados (bloqueante, corrigir no PR, observação), cada um com arquivo e linha
+- [x] posição medida sobre manter dois tokenizadores ou unificar, com o risco de cada caminho no Windows
+- [x] nenhuma linha de código alterada
