@@ -115,3 +115,16 @@ grep -q '^## Prescrições' docs/seguranca/2026-11-05-wave0-guards-primeiro-usua
 ### ML-2A — Red team (hades-tf)
 **Status:** ⬜ Pendente
 **Files affected:** `docs/seguranca/2026-11-05-redteam-guards-primeiro-usuario-externo.md`
+**Acceptance criteria:**
+- [ ] cada vetor de ataque com comando e `rc` medidos no binário da branch, contra o guard de credencial e o de git
+- [ ] achados classificados (bloqueante, corrigir no PR, residual declarado), com prescrição para os dois primeiros
+- [ ] nenhuma linha de código alterada
+
+### ML-2B — Revisão de qualidade do guard de git (hefesto-tf) — paralelo ao ML-2A
+**Status:** ⬜ Pendente
+**Files affected:** `docs/qualidade/2026-11-05-revisao-guards-primeiro-usuario-externo.md`
+**Motivo:** o ML-1B criou um segundo tokenizador (`quoteAwareSplitPOSIX`, `shellTokenizePOSIX`, `stripShellSuffixPOSIX`) ao lado do primeiro, com 878 linhas novas em `internal/guard/gitbranch.go`. O ML-2A e o ML-2B só escrevem o próprio parecer, então rodam em paralelo.
+**Acceptance criteria:**
+- [ ] parecer com achados classificados (bloqueante, corrigir no PR, observação), cada um com arquivo e linha
+- [ ] posição medida sobre manter dois tokenizadores ou unificar, com o risco de cada caminho no Windows
+- [ ] nenhuma linha de código alterada
