@@ -878,3 +878,225 @@ já corrigidos). D-3 é fail-open documentado; nenhuma ação obrigatória.
 **Confirmação de segurança de execução:** nenhum interpretador foi invocado com payload de git de
 escrita nesta rodada. Todos os vetores foram medidos via `trackfw guard git-branch --command` e
 `trackfw guard credential` (stdin). Payloads semânticos usaram `echo ok` ou `Write-Output ok`.
+
+---
+
+## Reverificação final (ML-2H)
+
+> Data: 2026-11-05 | Binário: `trackfw 11.4.0+` HEAD `7518a798` (ML-2G — último commit de código)
+> Medição executada exclusivamente pelo guard. Nenhum interpretador foi invocado com payload de
+> git de escrita. Payloads de prova de execução usaram `echo PAYLOAD_RAN`.
+
+### Metodologia
+
+Binário compilado de HEAD `7518a798`: `go build -o <scratchpad>/hades2h/trackfw-g ./cmd/trackfw`.
+Projeto de teste em `<scratchpad>/hades2h/proj/` com `trackfw.yaml: roadmap_dir: docs/roadmaps`.
+Controle armado antes de cada lote: `git push` → rc=2, `git status` → rc=0.
+
+Quatro scripts de medição em `<scratchpad>/hades2h/`:
+- `measure_pending.sh` — 2 C7 pendentes do ML-2D
+- `measure_new.sh` — 36 novos vetores (B1–B12 + FP)
+- `proof_execution.sh` — provas de execução com payload seguro
+- `measure_regression.sh` — 36 vetores críticos de rounds anteriores
+
+### Dois C7 pendentes do ML-2D — CORRIGIDOS em ML-2F/2G
+
+| Vetor | rc ML-2D | rc agora | Situação |
+|---|---|---|---|
+| `cat <(git push)` | 0 | **2** | **ML-2F CORRIGIDO** — `<(...)` adicionado a `extractRawCmdSubstBodies` |
+| `OUT=$(git commit -m x 2>&1)` | 0 | **2** | **ML-2G CORRIGIDO** — pré-scan da string completa antes de dividir em segmentos elimina o problema de `stripShellSuffixPOSIX` consumir `)` de `2>&1)` |
+
+### D-1 e D-2 do ML-2D — CORRIGIDOS em ML-2F/2G
+
+| Vetor | rc ML-2D | rc agora | Situação |
+|---|---|---|---|
+| `pwsh -ConfigurationFile foo.ps1 -c 'git push'` | 0 | **2** | **ML-2F CORRIGIDO** — `-configurationfile` adicionado a `isPsArgConsumingFlag` |
+| `env --split-string='git push'` (forma combinada com `=`) | 0 | **2** | **ML-2F CORRIGIDO** — forma combinada `--split-string=VALUE` tratada em `stripEnvCommandPrefix` |
+| `env --s='git push'`, `--sp=`, `--split=` (abreviações combinadas) | — | **2** | **ML-2G CORRIGIDO** — abreviações não-ambíguas de `--split-string` com `=` tratadas |
+
+### Novos vetores ML-2H — Tabela completa
+
+#### B1 — Detecção de `#` como comentário
+
+| Comando | rc esp. | rc obtido | Observação |
+|---|---|---|---|
+| `echo a#$(git push)` | 2 | 2 | OK — `#` não é limite de palavra (após `a`) |
+| `echo ok #$(git push)` | 0 | 0 | OK — `#` em limite de palavra → comentário correto |
+| `echo ${x#$(git push)}` | 2 | 2 | OK — `#` após `x` (não-limite), inner `$(` extraído |
+| `echo $#` | 0 | 0 | OK — sem FP em variável especial `$#` |
+| `# $(git push)` | 0 | 0 | OK — `#` no início (atWordBound=true) → comentário |
+| `echo ok\n# $(git push)` | 0 | 0 | OK — `#` após `\n` (limite de palavra) → comentário |
+
+#### B2 — Backslash antes de `$(`
+
+| Comando | rc esp. | rc obtido | Observação |
+|---|---|---|---|
+| `echo \\$(git push)` | 2 | 2 | OK — `\\` = `\` literal; `$(` exposto → capturado |
+| `echo \\\$(git push)` | 0 | 0 | OK — bash: syntax error (não executa); rc=0 correto |
+| `diff \\<(git push) x` | 2 | 2 | OK — `\\` não bloqueia `<(`; capturado |
+
+#### B3 — Ataque via `case` statement — ACHADO N-1 (MEDIUM)
+
+| Comando | rc esp. | rc obtido | Observação |
+|---|---|---|---|
+| `echo $(case x in x) git push ;; esac)` | 2 | **0** | **N-1 — bypass** |
+| `$(case x in *) git push ;; esac)` | 2 | **0** | **N-1 — bypass** |
+| `bash -c '$(case x in x) git push ;; esac)'` | 2 | **0** | **N-1 — bypass** |
+| `bash -c '$(case x in *) git push ;; esac)'` | 2 | **0** | **N-1 — bypass** |
+| `sh -c '$(case x in x) git push ;; esac)'` | 0 | 0 | OK — sh/dash: syntax error (não executa) |
+| `$(case x in x\|y) git push ;; esac)` | 2 | 2 | OK — `\|` em padrão split `quoteAwareSplitPOSIX`, `git push` aparece em segmento próprio |
+
+**Prova de execução:**
+```
+bash -c '$(case x in x) echo PAYLOAD_RAN ;; esac)'
+→ bash: line 1: PAYLOAD_RAN: command not found
+```
+O corpo do case executou `echo PAYLOAD_RAN`. A saída `PAYLOAD_RAN` foi capturada pelo `$()` e bash tentou executá-la como comando. Se o corpo fosse `git push`, git push executaria antes da captura.
+
+Forma mais limpa (top-level sem bash -c):
+```
+echo $(case x in x) echo PAYLOAD_RAN ;; esac)
+→ PAYLOAD_RAN
+```
+
+#### B4 — Expansão de parâmetro com `$(...)` interno
+
+| Comando | rc esp. | rc obtido | Observação |
+|---|---|---|---|
+| `echo ${var:-$(git push)}` | 2 | 2 | OK — inner `$(` detectado |
+| `echo ${var:=$(git push)}` | 2 | 2 | OK |
+| `echo ${var:+$(git push)}` | 2 | 2 | OK |
+| `echo ${array[$(git push)]}` | 2 | 2 | OK |
+
+#### B5 — `$((…))` aritmético com `$()` interno
+
+| Comando | rc esp. | rc obtido | Observação |
+|---|---|---|---|
+| `echo $(( 1 + $(git push) ))` | 2 | 2 | OK — inner `$(` detectado em nested body |
+| `echo $(($(git push)))` | 2 | 2 | OK |
+
+#### B6 — Profundidade com `case` + wrapper
+
+| Comando | rc esp. | rc obtido | Observação |
+|---|---|---|---|
+| `bash -c "bash -c '$(case x in x) git push ;; esac)'"` | 2 | 2 | OK — depth 2, wrapper-not-analyzed |
+
+#### B7 — Exaustão de profundidade via novos caminhos
+
+| Comando | rc esp. | rc obtido | Observação |
+|---|---|---|---|
+| `bash -c "$(bash -c '$(git push)')"` | 2 | 2 | OK — depth excedido → wrapper-not-analyzed |
+| `bash -c "$(bash -c "$(bash -c 'git push')")"` | 2 | 2 | OK — depth 3 → wrapper-not-analyzed |
+
+#### B8 — ANSI-C quoting `$'...'`
+
+| Comando | rc esp. | rc obtido | Observação |
+|---|---|---|---|
+| `bash -c $'git push'` | 2 | 2 | OK — regressão C6 mantida |
+| `bash -c $'git\npush'` | 0 | 0 | OK — bash executa `git` e `push` separados (não `git push`); rc=0 correto |
+
+#### B9 — Body multilinha
+
+| Comando | rc esp. | rc obtido | Observação |
+|---|---|---|---|
+| `echo "$(git push\ncat)"` | 2 | 2 | OK — body `git push\ncat` detectado |
+| `bash -c "$(echo ok; git push # comment)"` | 2 | 2 | OK — body após `;` detectado |
+
+#### B10 — Falsos positivos (legítimos que NÃO devem ser bloqueados)
+
+| Comando | rc esp. | rc obtido | Observação |
+|---|---|---|---|
+| `echo "$(git log --format='%H')"` | 0 | 0 | OK — `git log` não é write |
+| `echo "$(git diff --stat)"` | 0 | 0 | OK — `git diff` não é write |
+| `grep '#$(x)' file.txt` | 0 | 0 | OK — `#$(x)` em single-quotes é literal |
+| `trackfw req new 'title $(date)'` | 0 | 0 | OK — `$(date)` em SQ é literal |
+
+#### B11 — Substituição de processo
+
+| Comando | rc esp. | rc obtido | Observação |
+|---|---|---|---|
+| `diff <(git push) x` | 2 | 2 | OK — ML-2F confirmado |
+| `cat foo >(git push)` | 2 | 2 | OK — `>(...)` extraído |
+| `diff <(git push) <(git status)` | 2 | 2 | OK — múltiplas substituições |
+
+#### B12 — `OUT=...` assignment com `$()`
+
+| Comando | rc esp. | rc obtido | Observação |
+|---|---|---|---|
+| `OUT=$(git commit -m x 2>&1)` | 2 | 2 | OK — ML-2D residual CORRIGIDO |
+| `X=$(git push) Y=ok` | 2 | 2 | OK |
+| `OUT=$(git push) echo done` | 2 | 2 | OK |
+
+### Achado N-1 — Case statement `)`  trunca `extractBalancedParenBody` (MEDIUM)
+
+**Arquivo:** `internal/guard/gitbranch.go` — `extractBalancedParenBody` (L2336)
+
+**Mecanismo:**
+
+Em bash, dentro de `$(...)`, o parser rastreia a sintaxe do `case` e sabe que `)` após um
+padrão `case X in PATTERN)` não fecha o `$()`. O `extractBalancedParenBody` do guard usa apenas
+contagem de profundidade `()`, sem consciência de `case`. Resultado: o `)` do padrão
+`case x in x)` decrementa `depth` para zero, o body retornado é `case x in x` (incompleto),
+e `git push ;; esac` fica fora do body analisado.
+
+Após a fase de scan, `quoteAwareSplitPOSIX` divide o string original em segmentos. No primeiro
+segmento (`$(case x in x) git push ` antes do `;;`), os tokens são
+`["$(case", "x", "in", "x)", "git", "push"]`. O primeiro token `$(case` não é `git` nem
+interpretador de shell → o segmento inteiro é ignorado. `git push` nos tokens 5-6 nunca é
+alcançado.
+
+**Evidência:**
+```
+rc esp. = 2 | rc obtido = 0 | echo $(case x in x) git push ;; esac)
+rc esp. = 2 | rc obtido = 0 | $(case x in *) git push ;; esac)
+rc esp. = 2 | rc obtido = 0 | bash -c '$(case x in x) git push ;; esac)'
+```
+
+**Prova de execução:** `echo $(case x in x) echo PAYLOAD_RAN ;; esac)` → imprime `PAYLOAD_RAN`.
+
+**Severidade:** MEDIUM.
+- Requer conhecimento de sintaxe `case` em bash
+- bash-específico (sh/dash dá syntax error)
+- O padrão `*)` cobre qualquer valor → bypass não depende de string previsível
+- Reachable sem wrapper (`echo $(case x in x) git push ;; esac)` como comando direto)
+
+**Prescrição:** `extractBalancedParenBody` precisa rastrear o contexto de `case`:
+ao encontrar a sequência `case … in` dentro do body, marcar `inCase=true`; enquanto `inCase`,
+o primeiro `)` após um padrão fecha o padrão (não o `$(`); `;;` ou `esac` fecham a cláusula.
+Alternativamente, ao extrair um body da forma `extractRawCmdSubstBodies`, se o body começar
+com `case`, re-extrair de forma que o `;;` seguinte seja o delimitador em vez de `)`.
+
+**Nota sobre `$(case x in x|y) git push ;; esac)`:** o `|` em padrão separado por `|` força
+`quoteAwareSplitPOSIX` a dividir ali (trata `|` como pipe), expondo `git push` em segmento
+próprio → rc=2. O bypass N-1 se aplica somente a padrões sem `|`.
+
+### Regressão — vetores críticos de rounds anteriores
+
+Todos os 36 vetores críticos da regressão passaram. Um vetor mostrou want errado no script:
+`\git push` retornou rc=2, que é CORRETO (a nota de rodapé ¹ do ML-2D já confirmava isso
+manualmente). Sem regressões.
+
+### Veredito — Reverificação final ML-2H
+
+```
+HOMOLOGA COM RESSALVAS
+```
+
+**Dois C7 pendentes do ML-2D estão corrigidos** (`cat <(git push)` → rc=2; `OUT=$(git commit
+-m x 2>&1)` → rc=2). **D-1 e D-2 estão corrigidos** (ML-2F/2G). Nenhuma regressão.
+
+**Um novo achado MEDIUM (N-1):** `case` statement trunca `extractBalancedParenBody`. Não é
+BLOQUEANTE porque o AC4 não nomeia ataques via `case` como superfície obrigatória, e o bypass
+requer conhecimento de sintaxe bash-específica. Deve ser declarado como residual ou endereçado
+em ML adicional antes do merge (Regra Dura de Causa Raiz — mesma função raiz dos C7).
+
+| Achado | Classe | Arquivo | Linha(s) | Status |
+|---|---|---|---|---|
+| Dois C7 pendentes (ML-2D) | — | gitbranch.go | — | ✅ CORRIGIDOS em ML-2F/2G |
+| D-1 — pwsh -ConfigurationFile | — | gitbranch.go | isPsArgConsumingFlag | ✅ CORRIGIDO em ML-2F |
+| D-2 — env --split-string=VAL | — | gitbranch.go | stripEnvCommandPrefix | ✅ CORRIGIDO em ML-2F/2G |
+| N-1 — case `)` trunca body | MEDIUM | gitbranch.go | L2336 `extractBalancedParenBody` | NOVO — residual ou ML adicional |
+
+**Confirmação de segurança de execução:** nenhum interpretador foi invocado com payload de git
+de escrita. Todos os vetores medidos via `trackfw guard git-branch --command`. Payloads de prova
+de execução usaram exclusivamente `echo PAYLOAD_RAN`.

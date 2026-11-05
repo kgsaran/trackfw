@@ -217,9 +217,19 @@ grep -q '^## Prescrições' docs/seguranca/2026-11-05-wave0-guards-primeiro-usua
 
 
 ### ML-2H — Reverificação final do red team sobre o ML-2F e o ML-2G (hades-tf)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado pelo arquiteto em 2026-11-05. Veredito do red team: **homologa com ressalvas**.
+- Os itens do ML-2F e do ML-2G foram confirmados, e os 36 vetores de regressão passaram. O executor escreveu só o relatório de segurança.
+- **N-1 (médio), reproduzido pelo arquiteto:** `echo $(case x in x) git push ;; esac)`, `$(case x in *) git push ;; esac)`, `bash -c '$(case x in x) git push ;; esac)'` e `x=$(case a in a) git commit -m y;; esac)` dão `rc=0`. No bash 5, `echo $(case x in x) echo PAYLOAD_RAN ;; esac)` imprime `PAYLOAD_RAN`. A causa é que `extractBalancedParenBody` fecha o corpo no `)` do padrão do `case`. Vai para o ML-2I.
 **Files affected:** `docs/seguranca/2026-11-05-redteam-guards-primeiro-usuario-externo.md`
 **Acceptance criteria:**
-- [ ] o leitor de substituição (`extractRawCmdSubstBodies`: aspas, barra invertida fora de aspas, `#` no início de palavra, profundidade) foi atacado, e cada vetor tem `rc` medido via `trackfw guard git-branch --command`
-- [ ] a interação entre a leitura crua e o desescape do invólucro (`bash -c "…\$(…)"`, `eval "…"`) foi medida
-- [ ] veredito escrito (homologa, homologa com ressalvas, ou reprova) e cada furo novo tem `rc` medido
+- [x] o leitor de substituição (`extractRawCmdSubstBodies`: aspas, barra invertida fora de aspas, `#` no início de palavra, profundidade) foi atacado, e cada vetor tem `rc` medido via `trackfw guard git-branch --command`
+- [x] a interação entre a leitura crua e o desescape do invólucro (`bash -c "…\$(…)"`, `eval "…"`) foi medida
+- [x] veredito escrito (homologa, homologa com ressalvas, ou reprova) e cada furo novo tem `rc` medido
+
+### ML-2I — `)` do padrão de `case` não fecha o corpo da substituição (apolo-tf)
+**Status:** 🔄 Em andamento
+**Files affected:** `internal/guard/gitbranch.go`, `internal/guard/gitbranch_wrapper_test.go`, `README.md`, `docs/cli-parity.md`
+**Acceptance criteria:**
+- [ ] `echo $(case x in x) git push ;; esac)`, `$(case x in *) git push ;; esac)`, `bash -c '$(case x in x) git push ;; esac)'`, `x=$(case a in a) git commit -m y;; esac)`, `cat <(case x in x) git push ;; esac)` e o `case` aninhado dentro de `case` dão `rc=2`
+- [ ] `echo $(case x in x) echo ok ;; esac)`, `echo '$(case x in x) git push ;; esac)'` e `echo $(case $v in a|b) git status ;; esac)` continuam com `rc=0`; `f2.sh`, `d2.sh`, `rt2.sh`, `m663.sh`, `fp2c.sh` e `bs.sh` sem regressão
+- [ ] `make quality` com `MQ_RC=0`, lido no arquivo de saída pelo arquiteto
