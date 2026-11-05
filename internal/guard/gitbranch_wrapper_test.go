@@ -71,6 +71,17 @@ func TestMatchSubcommand_AC4_Wrapper_Blocked(t *testing.T) {
 		{"doas-git-push", `doas git push`, "push"},
 		{"doas-u-x-git-push", `doas -u x git push`, "push"},
 		{"stdbuf-oL-git-push", `stdbuf -oL git push`, "push"},
+		// F7: additional shells, cmd /k, uppercase interpreter, uppercase git,
+		// and git.exe — Reconciliation: asserts that D4 covers zsh, dash, ksh,
+		// cmd /k, case-insensitive interpreter and git names, and .exe suffix.
+		// All confirmed blocked in ML-2C integration testing.
+		{"zsh-c-git-push", `zsh -c 'git push'`, "push"},
+		{"dash-c-git-push", `dash -c 'git push'`, "push"},
+		{"ksh-c-git-push", `ksh -c 'git push'`, "push"},
+		{"cmd-k-git-push", `cmd /k git push`, "push"},
+		{"BASH-uppercase-c-git-push", `BASH -c 'git push'`, "push"},
+		{"GIT-uppercase-push", `GIT push`, "push"},
+		{"git-exe-push", `git.exe push`, "push"},
 	}
 
 	for _, tc := range cases {

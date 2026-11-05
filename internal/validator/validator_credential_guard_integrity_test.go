@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/guard"
 )
 
 // ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A.
@@ -606,5 +607,55 @@ func TestCredentialGuardModeDowngrade_ArquivoDeletadoNoDisco_Dispara(t *testing.
 	}
 	if !hasViolation(msgs, "credential_guard.mode: block") {
 		t.Fatalf("esperado violation quando trackfw.yaml é deletado após mode: block no HEAD, obteve: %v", msgs)
+	}
+}
+
+// TestConvergence_ExtractCredentialGuardMode_ValidatorEqualsGuard asserts that
+// validator.extractCredentialGuardMode and guard.ReadCredentialGuardMode
+// produce identical (mode, ok) results for every AC1 input vector, confirming
+// the shared-reader contract (D1, AC1) is mechanically enforced.
+//
+// Reconciliation: asserts that the validator's extractCredentialGuardMode
+// delegates to guard.ReadCredentialGuardMode rather than re-implementing the
+// parsing logic independently (F1-B, ML-2C, REQ-2026-11-05). If the delegate
+// is ever replaced by an independent implementation, at least one vector below
+// (especially the C9 vectors) will diverge and the test will FAIL.
+func TestConvergence_ExtractCredentialGuardMode_ValidatorEqualsGuard(t *testing.T) {
+	vectors := []struct {
+		name    string
+		content string
+	}{
+		{"LF block", "credential_guard:\n  mode: block\n"},
+		{"CRLF block", "credential_guard:\r\n  mode: block\r\n"},
+		{"CRLF warn", "credential_guard:\r\n  mode: warn\r\n"},
+		{"section absent", "roadmap_dir: docs/roadmaps\n"},
+		{"no mode key", "credential_guard:\n  # no mode here\nroadmap_dir: docs/roadmaps\n"},
+		{"cross-block boundary", "credential_guard:\n  enabled: true\nother_section:\n  mode: block\n"},
+		{"comment stripped", "credential_guard:\n  mode: block # enforce strict\n"},
+		{"commented mode ignored", "credential_guard:\n  # mode: block\n"},
+		// C9 vectors: mode: on 6th (or beyond) line after the header.
+		{
+			"mode on 6th line (5 comments)",
+			"credential_guard:\n  # c1\n  # c2\n  # c3\n  # c4\n  # c5\n  mode: block\n",
+		},
+		{
+			"mode after 10 blank CRLF lines",
+			"credential_guard:\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n  mode: warn\r\n",
+		},
+	}
+
+	for _, v := range vectors {
+		v := v
+		t.Run(v.name, func(t *testing.T) {
+			t.Parallel()
+			guardMode, guardOK := guard.ReadCredentialGuardMode(v.content)
+			valMode, valOK := extractCredentialGuardMode(v.content)
+			if guardMode != valMode || guardOK != valOK {
+				t.Errorf(
+					"divergence for %q:\n  guard.ReadCredentialGuardMode → (%q, %v)\n  validator.extractCredentialGuardMode → (%q, %v)",
+					v.name, guardMode, guardOK, valMode, valOK,
+				)
+			}
+		})
 	}
 }

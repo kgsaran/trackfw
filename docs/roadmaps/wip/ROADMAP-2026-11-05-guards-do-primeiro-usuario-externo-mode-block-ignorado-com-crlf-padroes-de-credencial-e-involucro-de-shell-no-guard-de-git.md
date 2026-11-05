@@ -145,12 +145,16 @@ grep -q '^## Prescrições' docs/seguranca/2026-11-05-wave0-guards-primeiro-usua
 - [x] nenhuma linha de código alterada
 
 ### ML-2C — Correções do red team e da revisão de qualidade (apolo-tf)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado pelo arquiteto em 2026-11-05.
+- **Medido no binário da branch:** os 13 vetores de B1 a C8, os 3 de F1-A e o C9 passaram de `rc=0` para `rc=2`. O `m663.sh` deu 63/63 OK. Nenhum falso positivo em 16 comandos legítimos, entre eles `echo '$(git push)'`, `VER=$(git describe --tags)`, `cd C:\repo\git && git status`, `C:\Program Files\Git\bin\git.exe status`, `powershell -ExecutionPolicy Bypass -File build.ps1` e `echo ^caret`.
+- **Desvios do executor:** ele editou o roadmap (proibido no handoff; o texto dele foi substituído por este) e um comentário em `internal/validator/validator_credential_guard_integrity.go`, fora da lista. O comentário foi aceito porque citava o limite de 5 linhas que o C9 removeu. O relatório também não trouxe os contra-braços por item.
+- **Erro de classificação:** o executor chamou de "pré-existente" a falha do `make quality` em `TestGitBranchGuard_EnvWithFlag_StillEvades` (`internal/generators/git_branch_guard_test.go`). Ela não existe na `main`. Esse teste fixava a lacuna antiga (`env -i git push` com `rc=0`), e o ML-1B a fechou de propósito. É regressão desta branch e vai para o ML-2E.
+- **Achado novo do arquiteto:** `powershell git push` e `powershell "git push"` dão `rc=0`. No Windows PowerShell 5.1, o primeiro argumento posicional é `-Command`, então isso executa o git. No `pwsh` 7, o posicional é `-File`. Vai para o ML-2E.
 **Files affected:** `internal/guard/gitbranch.go`, `internal/guard/gitbranch_wrapper_test.go`, `internal/guard/credential.go`, `internal/guard/credential_mode_test.go`, `internal/validator/validator_credential_guard_integrity_test.go`, `README.md`, `docs/cli-parity.md`
 **Acceptance criteria:**
-- [ ] B1 a B3, C4 a C9, F1-A, F1-B, F2 a F5 e F7 corrigidos, cada um com vetor na tabela de teste e contra-braço
-- [ ] os 47 vetores e as 16 leituras do ML-1B continuam com o mesmo `rc`
-- [ ] pacotes tocados verdes com PATH sem trackfw; `make parity-rest` verde com PATH normal
+- [x] B1 a B3, C4 a C9, F1-A, F1-B, F2 a F5 e F7 corrigidos, cada um com vetor na tabela de teste e contra-braço
+- [x] os 47 vetores e as 16 leituras do ML-1B continuam com o mesmo `rc` (m663.sh: 63/63 OK)
+- [x] pacotes tocados verdes com PATH sem trackfw; `make parity-rest` verde com PATH normal
 
 ### ML-2D — Reverificação do red team (hades-tf)
 **Status:** ⬜ Pendente
@@ -159,3 +163,12 @@ grep -q '^## Prescrições' docs/seguranca/2026-11-05-wave0-guards-primeiro-usua
 - [ ] os 109 vetores medidos de novo, só pelo guard, com o `rc` de cada um no parecer
 - [ ] nenhum bloqueante ou "corrigir no PR" em aberto
 - [ ] nenhum interpretador executado com payload de git que escreve
+
+### ML-2E — Teste que fixava a lacuna antiga e argumento posicional do `powershell` (apolo-tf)
+**Status:** ⬜ Pendente
+**Files affected:** `internal/generators/git_branch_guard_test.go`, `internal/guard/gitbranch.go`, `internal/guard/gitbranch_wrapper_test.go`, `README.md`, `docs/cli-parity.md`
+**Acceptance criteria:**
+- [ ] `TestGitBranchGuard_EnvWithFlag_StillEvades` passa a afirmar `rc=2` com outro nome, e não sobra outro teste que fixe uma lacuna fechada nesta REQ
+- [ ] `powershell git push` e `powershell "git push"` dão `rc=2`; `pwsh git push` fica declarado
+- [ ] contra-braços de B1, C7, C9 e F1-B relatados, com o nome do teste que reprova
+- [ ] `make quality` com `rc=0`

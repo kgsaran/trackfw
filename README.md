@@ -1132,24 +1132,36 @@ A shell interpreter is recognized by its basename, case-insensitively and withou
 it is invoked with its command flag:
 
 - `bash`, `sh`, `zsh`, `dash` and `ksh` with `-c`, including combined flags such as `-lc` or `-ec`;
-- `pwsh` and `powershell` with `-c` or `-Command`;
-- `cmd` with `/c` or `/k`.
+- `pwsh` and `powershell` with `-c`, `-Command`, any unambiguous prefix of `-Command` (`-co`,
+  `-com`, …), `--command`, `-CommandWithArgs`/`-cwa`, or any argument-consuming flag
+  (`-ExecutionPolicy`/`-ep`/`-ex`, `-WorkingDirectory`/`-wd`, `-WindowStyle`/`-w`, etc.)
+  followed by its value before the command flag (e.g. `-ExecutionPolicy Bypass -Command "…"`).
+  `-File`/`-EncodedCommand` are not analyzed (see Limits below).
+- `cmd` with `/c` or `/k`, including the fused form `/c"…"` (no space after the switch).
+  Caret escapes (`g^it push`) are stripped before analysis.
 
 `eval` is a wrapper too: its command string is the rest of the segment.
 
 A leading backslash or one inside a word is read the POSIX way, so `\git push` and `g\it push`
-are seen as `git push`.
+are seen as `git push`. ANSI-C quoting (`$'git push'`) and backtick escapes in PowerShell
+(`` g`it push ``) are also normalized before analysis.
+
+**Command substitution** (`$(git push)` and `` `git push` ``) is detected even when nested inside
+an assignment (`OUT=$(git commit -m x)`) or a double-quoted string. Single-quoted regions are
+literal and are not scanned.
 
 **These lists are open:** a wrapper or prefix that is not listed here is not analyzed.
 
 Nesting is analyzed up to **two levels** deep (e.g. `bash -c "bash -c 'git push'"`). A
 third shell wrapper at depth 3 returns `wrapper-not-analyzed` and is **blocked** (fail-closed).
+Command substitution also counts as a depth level.
 
 ### Recognized prefixes (stripped before the interpreter or git check)
 
 Command modifiers that precede the actual command are stripped:
 
-`env` (with `-i`, `-u`, `--unset=`, `--ignore-environment`), `command` (with `-p`, `-v`, `-V`),
+`env` (with `-i`/`--ignore-environment`, `-u`/`--unset=`, `-P`/`--path=`, `-C`/`--chdir=`,
+`-S`/`--split-string=`), `command` (with `-p`, `-v`, `-V`),
 `nohup`, `time`, `exec` (with `-a NAME`, `-c`, `-l`), `nice` (with `-n ADJUSTMENT`),
 `doas` (with `-u USER`, `-C CONFIG`), `timeout` (DURATION positional + `--foreground`,
 `--kill-after`, `--preserve-status`, `--verbose`), `stdbuf` (with `-i`, `-o`, `-e SIZE`),
@@ -1164,7 +1176,9 @@ and bare shell variable assignments of the form `NAME=value` (e.g. `FOO=1 git pu
   `bash < script.sh`, `xargs git push`): not analyzed.
 - **Prefixes outside the list above** (`ionice`, `taskset`, `nsenter`, …): not stripped, so a
   `git` command behind them is not seen.
-- **`-EncodedCommand` (PowerShell)**: the payload is Base64-encoded; not decoded.
+- **`-EncodedCommand`/`-File` (PowerShell)**: the payload is Base64-encoded or a file path;
+  not decoded or read. The `-File` and `-EncodedCommand` flags (and their abbreviations `-f`,
+  `-e`, `-en`, `-enc`) are explicitly excluded from command-string analysis.
 - **Variable expansion** (`bash -c "$CMD"`): the value of `$CMD` is not known at hook time;
   not analyzed.
 - **Third wrapper and beyond**: blocked outright (fail-closed, see above).

@@ -79,6 +79,20 @@ const (
 // Exported so the cobra command in internal/commands can pass it to RunGitBranch.
 const StdInIdleTimeout = 2 * time.Second
 
+// maxWrapperDepth is the maximum nesting depth the POSIX analysis path will
+// recurse into. Two guards enforce this boundary:
+//
+//   - handleShellWrapper uses depth >= maxWrapperDepth (teto efetivo): called
+//     before any recursive descent, so it fires when we're already at the limit.
+//
+//   - matchSubcommandPOSIX uses depth > maxWrapperDepth (belt-and-suspenders):
+//     guards against future callers that might invoke matchSubcommandPOSIX
+//     directly with depth >= maxWrapperDepth. Logically unreachable today, but
+//     present so an accidental direct call doesn't bypass the ceiling.
+//
+// D4, Wave 2 (REQ-2026-11-05, ML-2C).
+const maxWrapperDepth = 2
+
 // RunGitBranch implements the full git-branch guard logic. It is the entry
 // point called by the cobra RunE for `trackfw guard git-branch`.
 //
@@ -404,9 +418,10 @@ func MatchSubcommand(cmdRaw string) string {
 
 	// D4 — POSIX-aware second pass: shell wrappers, POSIX backslash escape,
 	// and extended prefixes (nohup, exec, naked assignments, etc.).
-	// Block if the POSIX pipeline also blocks (additive by construction: nothing
-	// allowed today becomes blocked on any OS because we deny only when the POSIX
-	// path independently agrees). D4, Wave 1 ML-1B (REQ-2026-11-05).
+	// The result does not vary by OS: a command blocked on any platform is
+	// blocked everywhere (the POSIX path adds coverage; it never removes it).
+	// Note: stripEnvCommandPrefix is shared between both passes, so the second
+	// pass is not fully independent of the first. D4, Wave 1 ML-1B (REQ-2026-11-05).
 	if tag := matchSubcommandPOSIX(cmdRaw, 0); tag != "" {
 		return tag
 	}
@@ -492,13 +507,14 @@ func stripEnvCommandPrefix(tokens []string) []string {
 	tokens = consumeNakedAssignments(tokens)
 
 	for len(tokens) > 0 {
-		base := strings.ToLower(strings.TrimSuffix(filepath.Base(tokens[0]), ".exe"))
+		base := strings.TrimSuffix(strings.ToLower(filepath.Base(tokens[0])), ".exe")
 		consumed := true
 
 		switch base {
 		case "env":
 			tokens = tokens[1:] // skip "env"
 			// Skip flags and KEY=value pairs.
+		envLoop:
 			for len(tokens) > 0 {
 				t := tokens[0]
 				if t == "--" {
@@ -508,9 +524,27 @@ func stripEnvCommandPrefix(tokens []string) []string {
 				if strings.HasPrefix(t, "-") {
 					tokens = tokens[1:]
 					lower := strings.ToLower(t)
-					// -u/--unset consume the next argument (the variable name).
-					if (lower == "-u" || strings.HasPrefix(lower, "--unset")) && len(tokens) > 0 && !strings.Contains(tokens[0], "=") {
-						tokens = tokens[1:]
+					switch {
+					// -S/--split-string: treat argument as a command line and re-tokenise.
+					case lower == "-s" || lower == "--split-string":
+						if len(tokens) > 0 {
+							split := shellTokenizePOSIX(tokens[0])
+							tokens = append(split, tokens[1:]...)
+						}
+						break envLoop
+					// Flags that consume one positional argument.
+					case lower == "-u" || lower == "--unset",
+						lower == "-p" || lower == "--path",
+						lower == "-c" || lower == "--chdir":
+						// --unset=VAR is the combined form; skip only if separate form.
+						if len(tokens) > 0 && !strings.Contains(lower, "=") {
+							tokens = tokens[1:]
+						}
+					// --unset=VAR: combined form, no next token consumed.
+					case strings.HasPrefix(lower, "--unset="),
+						strings.HasPrefix(lower, "--path="),
+						strings.HasPrefix(lower, "--chdir="):
+						// value is embedded; nothing extra to consume
 					}
 					continue
 				}
@@ -1785,6 +1819,14 @@ func shellTokenizePOSIX(s string) []string {
 				inWord = false
 			}
 
+		case c == '$' && i+1 < n && (runes[i+1] == '\'' || runes[i+1] == '"'):
+			// ANSI-C quoting: $'...' and locale quoting: $"..."
+			// The leading $ is decorative; drop it and let the following
+			// quote character open a quoted region on the next iteration.
+			// C6 — D4 Wave 2 (REQ-2026-11-05, ML-2C).
+			inWord = true
+			// Do NOT advance i; let the next iteration open the quote.
+
 		default:
 			cur.WriteRune(c)
 			inWord = true
@@ -1982,35 +2024,204 @@ func extractPOSIXShellCommandString(rest []string) (string, bool, bool) {
 	return "", false, false
 }
 
-// extractPowerShellCommandString finds -c/-Command in the tokens that follow
-// pwsh/powershell and returns the command string (joined for multi-token forms).
+// psNormFlag normalises a PowerShell flag token: strips a leading extra dash
+// so that "--command" becomes "-command" (PS 7 accepts double-dash for some
+// params). The result always starts with exactly one '-' when the input is a
+// flag.
+func psNormFlag(lower string) string {
+	if strings.HasPrefix(lower, "--") && len(lower) > 2 {
+		return lower[1:] // "--command" → "-command"
+	}
+	return lower
+}
+
+// isPsCommandFlag reports whether norm (already lower-cased and double-dash-
+// normalised) is the PowerShell command-string flag in any recognised form:
+//   - any prefix of "-command" ("-c", "-co", "-com", …, "-command")
+//   - "-commandwithargs" (PS 7.4+) or its abbreviation "-cwa"
+func isPsCommandFlag(norm string) bool {
+	return strings.HasPrefix("-command", norm) ||
+		norm == "-commandwithargs" || norm == "-cwa"
+}
+
+// isPsArgConsumingFlag reports whether norm is a PowerShell flag that consumes
+// one following argument (the argument itself is not a command string).
+// Two checks are applied:
+//  1. norm is a prefix of a full flag name (len >= 2 to avoid "-" alone).
+//  2. norm is an explicit documented non-prefix alias for pwsh 7
+//     (e.g. "-ep" for "-ExecutionPolicy" is not a prefix but is official).
+func isPsArgConsumingFlag(norm string) bool {
+	if len(norm) < 2 {
+		return false
+	}
+	for _, full := range []string{
+		"-executionpolicy",   // -ex, -exe, ... (NOT -ep — alias below)
+		"-workingdirectory",  // -wo, -wor, ... (NOT -wd — alias below)
+		"-windowstyle",       // -w, -wi, ...
+		"-configurationname", // -config, ...
+		"-outputformat",      // -o, -out, ...
+		"-inputformat",       // -in, -inp, ... (NOT -if — alias below)
+		"-settingsfile",      // -set, ...
+		"-custompipename",    // -cust, ...
+		"-version",           // -v, -ve, ...
+	} {
+		if strings.HasPrefix(full, norm) {
+			return true
+		}
+	}
+	// Explicit documented pwsh 7 aliases that are NOT prefixes of the full name.
+	// Source: https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_pwsh
+	switch norm {
+	case "-ep", // alias for -ExecutionPolicy
+		"-wd", // alias for -WorkingDirectory
+		"-if": // alias for -InputFormat
+		return true
+	}
+	return false
+}
+
+// stripPsBacktick removes PowerShell backtick (`) escape characters from a
+// command string outside of single-quoted regions. Inside '…' backtick is
+// literal. This normalises "g`it push" → "git push". C8 — D4 Wave 2
+// (REQ-2026-11-05, ML-2C).
+func stripPsBacktick(s string) string {
+	var out strings.Builder
+	inSQ := false
+	runes := []rune(s)
+	n := len(runes)
+	for i := 0; i < n; i++ {
+		c := runes[i]
+		switch {
+		case c == '\'' && !inSQ:
+			inSQ = true
+			out.WriteRune(c)
+		case c == '\'' && inSQ:
+			inSQ = false
+			out.WriteRune(c)
+		case c == '`' && !inSQ && i+1 < n:
+			// Backtick outside single-quotes: emit the next character only.
+			out.WriteRune(runes[i+1])
+			i++
+		default:
+			out.WriteRune(c)
+		}
+	}
+	return out.String()
+}
+
+// isPsNoAnalyzeFlag reports whether norm is a PowerShell flag whose argument
+// cannot be statically analysed by this guard:
+//   - "-file" ("-f", "-fi", …): the argument is a script path, not a command.
+//   - "-encodedcommand" ("-e", "-en", "-enc", …): the argument is Base64-encoded
+//     UTF-16LE; decoding it is out-of-scope (Residual R3).
+func isPsNoAnalyzeFlag(norm string) bool {
+	if len(norm) < 2 {
+		return false
+	}
+	return strings.HasPrefix("-file", norm) || strings.HasPrefix("-encodedcommand", norm)
+}
+
+// extractPowerShellCommandString finds the command-string flag in the tokens
+// that follow pwsh/powershell and returns the command string (joined for
+// multi-token forms).
+//
+// Handles:
+//   - double-dash normalisation ("--command" → "-command", PS 7 quirk)
+//   - any prefix abbreviation of "-command" ("-c", "-co", "-com", …)
+//   - "-commandwithargs" / "-cwa" (PS 7.4+)
+//   - flags that consume one argument ("-ExecutionPolicy Bypass", "-wd C:\x", …)
+//   - flags without an argument ("-NoProfile", "-NonInteractive", "-Sta", …)
+//   - "-File"/"-EncodedCommand": not a -c invocation (return not-found)
+//
+// B1, C5, F1-A — D4 Wave 2 (REQ-2026-11-05, ML-2C).
 func extractPowerShellCommandString(rest []string) (string, bool, bool) {
 	for i := 0; i < len(rest); i++ {
 		tok := rest[i]
 		lower := strings.ToLower(tok)
-		if lower == "-c" || lower == "-command" {
-			if i+1 < len(rest) {
-				return strings.Join(rest[i+1:], " "), true, false
-			}
-			return "", false, true
+		norm := psNormFlag(lower)
+
+		// -File / -EncodedCommand: cannot analyse statically (R3).
+		if isPsNoAnalyzeFlag(norm) {
+			return "", false, false
 		}
+
+		// Command-string flag: everything that follows is the command.
+		if isPsCommandFlag(norm) {
+			if i+1 < len(rest) {
+				return stripPsBacktick(strings.Join(rest[i+1:], " ")), true, false
+			}
+			return "", false, true // flag present but no argument
+		}
+
+		// Flags that consume one following argument.
+		if isPsArgConsumingFlag(norm) {
+			i++ // skip the argument value
+			continue
+		}
+
+		// Flags without argument ("-NoProfile", "-NonInteractive", "-Sta", …).
 		if strings.HasPrefix(tok, "-") {
 			continue
 		}
-		break // non-flag before -c/-Command: not a -c invocation
+
+		// Non-flag token before the command flag: not a -c invocation.
+		break
 	}
 	return "", false, false
 }
 
+// stripCmdCarets removes caret (^) escape characters from a cmd.exe command
+// string outside of double-quoted regions. Inside "…" the caret is literal.
+// This normalises "g^it push" → "git push" so the guard can inspect the
+// real command. C8 — D4 Wave 2 (REQ-2026-11-05, ML-2C).
+func stripCmdCarets(s string) string {
+	var out strings.Builder
+	inDQ := false
+	runes := []rune(s)
+	for i, c := range runes {
+		switch {
+		case c == '"':
+			inDQ = !inDQ
+			out.WriteRune(c)
+		case c == '^' && !inDQ:
+			// Caret outside quotes: escape the next character (which the
+			// tokenizer will keep). Drop the caret itself.
+			if i+1 < len(runes) {
+				// next char will be emitted in the next iteration
+			}
+		default:
+			out.WriteRune(c)
+		}
+	}
+	return out.String()
+}
+
 // extractCmdCommandString finds /c or /k in the tokens that follow cmd.exe
-// and returns the command string.
+// and returns the command string. Handles:
+//   - separated form:  cmd /c "git push"
+//   - fused form:      cmd /c"git push"   (no space after /c)
+//
+// Caret escapes (g^it) are stripped via stripCmdCarets. B3, C8 — D4 Wave 2
+// (REQ-2026-11-05, ML-2C).
 func extractCmdCommandString(rest []string) (string, bool, bool) {
 	for i := 0; i < len(rest); i++ {
 		tok := rest[i]
 		lower := strings.ToLower(tok)
+
+		// Fused form: "/c..." or "/k..." (no space between switch and string).
+		if (strings.HasPrefix(lower, "/c") || strings.HasPrefix(lower, "/k")) && len(tok) > 2 {
+			fused := tok[2:]
+			tail := strings.Join(rest[i+1:], " ")
+			if tail != "" {
+				fused = fused + " " + tail
+			}
+			return stripCmdCarets(strings.Trim(fused, "\"")), true, false
+		}
+
+		// Separated form: "/c" or "/k" as a standalone token.
 		if lower == "/c" || lower == "/k" {
 			if i+1 < len(rest) {
-				return strings.Join(rest[i+1:], " "), true, false
+				return stripCmdCarets(strings.Join(rest[i+1:], " ")), true, false
 			}
 			return "", false, true
 		}
@@ -2056,10 +2267,138 @@ func handleShellWrapper(base string, rest []string, depth int) string {
 	if !found {
 		return "" // not a -c invocation (e.g. bash -s, bash script.sh)
 	}
-	if depth >= 2 {
+	if depth >= maxWrapperDepth {
 		return "wrapper-not-analyzed"
 	}
 	return matchSubcommandPOSIX(cmdStr, depth+1)
+}
+
+// extractBalancedParenBody extracts the body of a $(…) starting at position
+// start (immediately after the opening '('). Returns (body, index-of-closing-
+// paren) or ("", -1) if parentheses are unbalanced. Single-quoted regions
+// inside are literal. C7 — D4 Wave 2 (REQ-2026-11-05, ML-2C).
+func extractBalancedParenBody(runes []rune, start int) (string, int) {
+	depth := 1
+	var body strings.Builder
+	n := len(runes)
+	inSQ := false
+
+	for i := start; i < n; i++ {
+		c := runes[i]
+		if inSQ {
+			if c == '\'' {
+				inSQ = false
+			} else {
+				body.WriteRune(c)
+			}
+			continue
+		}
+		switch c {
+		case '\'':
+			inSQ = true
+		case '(':
+			depth++
+			body.WriteRune(c)
+		case ')':
+			depth--
+			if depth == 0 {
+				return body.String(), i
+			}
+			body.WriteRune(c)
+		default:
+			body.WriteRune(c)
+		}
+	}
+	return "", -1 // unbalanced
+}
+
+// extractBacktickSubstBody extracts the body of a `…` substitution starting
+// at position start (immediately after the opening backtick). Returns (body,
+// index-of-closing-backtick) or ("", -1) if no closing backtick is found.
+// C7 — D4 Wave 2 (REQ-2026-11-05, ML-2C).
+func extractBacktickSubstBody(runes []rune, start int) (string, int) {
+	var body strings.Builder
+	n := len(runes)
+	for i := start; i < n; i++ {
+		c := runes[i]
+		if c == '`' {
+			return body.String(), i
+		}
+		if c == '\\' && i+1 < n && runes[i+1] == '`' {
+			// \` inside backtick substitution → literal backtick in body.
+			body.WriteRune('`')
+			i++
+			continue
+		}
+		body.WriteRune(c)
+	}
+	return "", -1 // unbalanced
+}
+
+// extractCmdSubstBodies scans a raw shell segment and returns all command-
+// substitution bodies ($(...) and `...`) that occur outside single-quoted
+// regions. Double-quoted regions are included because $(…) and `…` expand
+// there. C7 — D4 Wave 2 (REQ-2026-11-05, ML-2C).
+func extractCmdSubstBodies(seg string) []string {
+	var bodies []string
+	runes := []rune(seg)
+	n := len(runes)
+	inSQ := false
+	inDQ := false
+
+	for i := 0; i < n; i++ {
+		c := runes[i]
+
+		// Single-quoted region: everything is literal.
+		if inSQ {
+			if c == '\'' {
+				inSQ = false
+			}
+			continue
+		}
+
+		// Enter single-quoted region (outside "…").
+		if c == '\'' && !inDQ {
+			inSQ = true
+			continue
+		}
+
+		// Double-quoted region: backslash quoting only; $(...) still expands.
+		if inDQ {
+			if c == '\\' && i+1 < n {
+				i++ // skip escaped char
+				continue
+			}
+			if c == '"' {
+				inDQ = false
+				continue
+			}
+			// Fall through: check for $(...) and `...` below.
+		} else if c == '"' {
+			inDQ = true
+			continue
+		}
+
+		// Command substitution: $(...)
+		if c == '$' && i+1 < n && runes[i+1] == '(' {
+			body, end := extractBalancedParenBody(runes, i+2)
+			if end >= 0 {
+				bodies = append(bodies, body)
+				i = end
+			}
+			continue
+		}
+		// Command substitution: `...`
+		if c == '`' {
+			body, end := extractBacktickSubstBody(runes, i+1)
+			if end >= 0 {
+				bodies = append(bodies, body)
+				i = end
+			}
+			continue
+		}
+	}
+	return bodies
 }
 
 // matchSubcommandPOSIX is the POSIX-aware variant of MatchSubcommand. It uses
@@ -2073,7 +2412,7 @@ func handleShellWrapper(base string, rest []string, depth int) string {
 // depth 2 = two levels (e.g. bash -c "bash -c 'git push'").
 // depth > 2 = recursion guard: returns "wrapper-not-analyzed" (fail-closed).
 func matchSubcommandPOSIX(cmdRaw string, depth int) string {
-	if depth > 2 {
+	if depth > maxWrapperDepth {
 		return "wrapper-not-analyzed"
 	}
 
@@ -2089,6 +2428,18 @@ func matchSubcommandPOSIX(cmdRaw string, depth int) string {
 		if seg == "" {
 			continue
 		}
+
+		// C7: scan for command substitutions ($(...) and `...`) in this
+		// segment before tokenisation. Single-quoted regions are literal;
+		// double-quoted $(...) and `...` still expand. Each substitution body
+		// is a subshell that counts as one depth level. D4 Wave 2
+		// (REQ-2026-11-05, ML-2C).
+		for _, body := range extractCmdSubstBodies(seg) {
+			if tag := matchSubcommandPOSIX(body, depth+1); tag != "" {
+				return tag
+			}
+		}
+
 		tokens := shellTokenizePOSIX(seg)
 		if len(tokens) == 0 {
 			continue
@@ -2099,7 +2450,7 @@ func matchSubcommandPOSIX(cmdRaw string, depth int) string {
 			continue
 		}
 
-		base := strings.ToLower(strings.TrimSuffix(filepath.Base(tokens[0]), ".exe"))
+		base := strings.TrimSuffix(strings.ToLower(filepath.Base(tokens[0])), ".exe")
 
 		// D4: recognised shell interpreter — recurse into the command string.
 		if shellInterpreter(base) {

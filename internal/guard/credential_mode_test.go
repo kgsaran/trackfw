@@ -127,6 +127,41 @@ var credModeVectors = []credModeVector{
 		wantMode: "warn",
 		wantOK:   true,
 	},
+	// C9 vectors: mode: on the 6th (and beyond) line after the header.
+	// These failed with the old const lookbehind = 5 (line 6 is index 5,
+	// exclusive end, so it was not scanned). They must pass now that the
+	// limit is removed and the scan stops at the next top-level YAML key.
+	// Assertion: removing lookbehind=5 allows mode: on lines 6, 7, … to be found.
+	{
+		name: "mode on 6th line after header (5 comment lines)",
+		content: "credential_guard:\n" +
+			"  # comment1\n" +
+			"  # comment2\n" +
+			"  # comment3\n" +
+			"  # comment4\n" +
+			"  # comment5\n" +
+			"  mode: block\n",
+		wantMode: "block",
+		wantOK:   true,
+	},
+	{
+		name: "mode after 10 blank CRLF lines",
+		content: "credential_guard:\r\n" +
+			"\r\n\r\n\r\n\r\n\r\n" +
+			"\r\n\r\n\r\n\r\n\r\n" +
+			"  mode: warn\r\n",
+		wantMode: "warn",
+		wantOK:   true,
+	},
+	{
+		name: "mode on 7th line; sibling section after does not bleed",
+		content: "credential_guard:\n" +
+			"  # a\n# b\n  # c\n  # d\n  # e\n  # f\n" +
+			"  mode: block\n" +
+			"other:\n  mode: warn\n",
+		wantMode: "block",
+		wantOK:   true,
+	},
 }
 
 // TestReadCredentialGuardMode_UnitVectors exercises all AC1 table vectors through

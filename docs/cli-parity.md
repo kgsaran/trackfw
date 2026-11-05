@@ -6162,6 +6162,14 @@ Pontos pinados:
   não vale a complexidade de uma segunda fonte de configuração só para isto). Um usuário que já
   configurou `credential_guard.mode: warn` explicitamente em `trackfw.yaml` **não vê nenhuma
   mudança de comportamento**.
+- **Comportamento do leitor** (spec de 8 passos, D1 ADR-2026-11-05, emendado pelo ML-2C/C9):
+  cabeçalho `credential_guard:` na coluna 0 (BOM removido); a varredura continua até a próxima
+  chave de topo (linha não-indentada, não comentada, não-vazia) — sem limite fixo de linhas (C9:
+  `mode:` na 6ª linha ou além é encontrado); chave `mode:` exata (não `ci_mode:`, não comentada);
+  aspas e `\r` removidos. Testado por `TestReadCredentialGuardMode_UnitVectors`
+  (`internal/guard/credential_mode_test.go`) e
+  `TestConvergence_ExtractCredentialGuardMode_ValidatorEqualsGuard`
+  (`internal/validator/validator_credential_guard_integrity_test.go`).
 - **Só o fallback (ausência de `trackfw.yaml`, ou `trackfw.yaml` sem a chave) diverge entre escopos**:
   projeto → `warn`; global → `block` (abortar a tool call, exit 2).
 - **`ROADMAP_DIR` em escopo global permanece o caminho fixo `docs/roadmaps`** (sem ler
@@ -6759,23 +6767,41 @@ por causa dos caminhos do Windows). Se ela não acha nada, roda uma segunda aná
 segunda análise só acrescenta bloqueios: comandos como `bash -c "git push"`, que a 11.4.0 deixava
 passar, passam a ser bloqueados de propósito.
 
+A emenda da Wave 2 (ML-2C, REQ-2026-11-05) fecha formas de mesma causa:
+abreviações de flag PS, forma fundida `cmd /c"…"`, aspas ANSI-C `$'…'`, substituição de
+comando `$(…)` e crase, e escapes (`g^it push`, `` g`it push ``).
+
 **Interpretadores reconhecidos**, pelo basename, sem diferenciar maiúsculas e sem `.exe`:
 
 - `bash`, `sh`, `zsh`, `dash` e `ksh` com `-c`, incluindo flags combinadas (`-lc`, `-ec`);
-- `pwsh` e `powershell` com `-c` ou `-Command`;
-- `cmd` com `/c` ou `/k`;
+- `pwsh` e `powershell` com `-c`, `-Command`, qualquer prefixo unívoco de `-Command` (`-co`,
+  `-com`, …), `--command`, `-CommandWithArgs`/`-cwa`. Flags que consomem argumento antes do
+  flag de comando (`-ExecutionPolicy`/`-ep`/`-ex`, `-WorkingDirectory`/`-wd`,
+  `-WindowStyle`/`-w`, `-OutputFormat`/`-o`, `-InputFormat`/`-if`, etc.) são puladas com seu
+  valor. `-File`/`-EncodedCommand` não são analisados (ver Limites).
+- `cmd` com `/c` ou `/k`, incluindo a forma fundida `/c"…"` (sem espaço após o switch).
+  Escapes com circunflexo (`g^it push`) são removidos antes da análise.
 - `eval`, cujo argumento é o resto do trecho.
 
 As listas de interpretadores e de prefixos são **abertas** (denylist): o que não está listado
 não é analisado.
 
+**Substituição de comando** (`$(…)` e crase) é detectada em qualquer segmento, inclusive em
+atribuições (`OUT=$(git commit -m x)`) e dentro de aspas duplas. Regiões em aspas simples são
+literais e não são escaneadas. Cada substituição conta como um nível de profundidade.
+
+**Aspas ANSI-C** (`$'…'`) e **aspas de locale** (`$"…"`): o `$` inicial é descartado antes
+que a aspa abra a região correspondente, logo o conteúdo é tokenizado normalmente.
+
 **Profundidade máxima:** dois níveis (ex.: `bash -c "bash -c 'git push'"`). Um terceiro invólucro
 em profundidade 3 retorna `wrapper-not-analyzed` e é **bloqueado** (fail-closed). Implementado
-em `handleShellWrapper` (`internal/guard/gitbranch.go`) com guarda `depth >= 2`.
+em `handleShellWrapper` (`internal/guard/gitbranch.go`) com guarda `depth >= maxWrapperDepth`
+(`maxWrapperDepth = 2`). Substituição de comando também conta como nível.
 
 **Prefixos removidos antes do interpretador ou do `git`:**
 
-`env` (com `-i`, `-u`, `--unset=`, `--ignore-environment`), `command` (com `-p`, `-v`, `-V`),
+`env` (com `-i`/`--ignore-environment`, `-u`/`--unset=`, `-P`/`--path=`, `-C`/`--chdir=`,
+`-S`/`--split-string=`), `command` (com `-p`, `-v`, `-V`),
 `nohup`, `time`, `exec` (com `-a NAME`, `-c`, `-l`), `nice` (com `-n ADJUSTMENT`),
 `doas` (com `-u USER`, `-C CONFIG`), `timeout` (posicional DURATION + `--foreground`,
 `--kill-after`, `--preserve-status`, `--verbose`), `stdbuf` (com `-i/-o/-e SIZE`),
@@ -6790,19 +6816,23 @@ e atribuições nuas de variável shell da forma `NAME=value` (ex.: `FOO=1 git p
 
 **Limites (não detectados):**
 
-- `python -c`, `node -e`, `ruby -e` e similares: não analisados. A string pode construir um
-  comando git em tempo de execução; essa análise está fora do escopo.
+- `python -c`, `node -e`, `ruby -e` e similares: não analisados (residual D5). A string pode
+  construir um comando git em tempo de execução; essa análise está fora do escopo.
 - Shell lido de stdin (`bash -s <<'EOF'`, `bash <<< "git push"`, `echo git push | sh`,
   `bash < script.sh`, `xargs git push`): não analisado (residual R1 da Wave 0).
-- Prefixos fora da lista acima (`ionice`, `taskset`, `nsenter`): não são removidos, então o `git`
-  depois deles não é visto (residual R6).
-- `-EncodedCommand` (PowerShell): payload em Base64; não decodificado.
+- Prefixos fora da lista acima (`ionice`, `taskset`, `nsenter`): não são removidos, então o
+  `git` depois deles não é visto (residual R6).
+- `-EncodedCommand`/`-File` (PowerShell): payload em Base64 ou caminho de arquivo; não
+  decodificado nem lido (residual R3). Abreviações `-e`, `-en`, `-enc`, `-f`, `-fi`, etc.
+  também excluem a análise.
 - Expansão de variável (`bash -c "$CMD"`): o valor de `$CMD` não é conhecido em hook-time.
 - Terceiro invólucro e além: bloqueado (fail-closed, ver acima).
 
-**Cobertura de testes:** `TestMatchSubcommand_AC4_Wrapper_Blocked` (casos bloqueados),
-`TestMatchSubcommand_AC4_Wrapper_Allowed` (falso positivo ausente), `TestRunGitBranch_AC4_WrapperBlocked`
-(ponta a ponta, rc=2), `TestRunGitBranch_AC4_WrapperAllowed` (ponta a ponta, rc=0),
+**Cobertura de testes:** `TestMatchSubcommand_AC4_Wrapper_Blocked` (casos bloqueados, incluindo
+vetores F7 adicionados no ML-2C: `zsh -c`, `dash -c`, `ksh -c`, `cmd /k`, `BASH -c`,
+`GIT push`, `git.exe push`), `TestMatchSubcommand_AC4_Wrapper_Allowed` (falso positivo ausente),
+`TestRunGitBranch_AC4_WrapperBlocked` (ponta a ponta, rc=2),
+`TestRunGitBranch_AC4_WrapperAllowed` (ponta a ponta, rc=0),
 `TestMatchSubcommand_AC4_Depth3_WrapperNotAnalyzed` (teto de profundidade, fail-closed),
 `TestMatchSubcommand_AC5_LanguageRuntime_Allowed` (python/node não bloqueados),
 e baixo nível: `TestQuoteAwareSplitPOSIX_*`, `TestShellTokenizePOSIX_*`,

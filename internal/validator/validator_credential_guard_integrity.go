@@ -83,8 +83,8 @@ func validateCredentialGuardScriptIntegrity() ([]string, error) {
 // that the validator and the guard converge on exactly the same mode for every
 // input (AC1). The (string, bool) contract is preserved for callers below:
 //   - ok=false: no "credential_guard:" section exists at all.
-//   - ok=true, mode="": section exists but no "mode:" key within the
-//     5-line lookbehind window.
+//   - ok=true, mode="": section exists but no "mode:" key (scan stops at next
+//     top-level YAML key — no fixed line limit; C9 ML-2C).
 //   - ok=true, mode≠"": value extracted by the shared spec.
 func extractCredentialGuardMode(content string) (mode string, ok bool) {
 	return guard.ReadCredentialGuardMode(content)

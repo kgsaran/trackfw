@@ -1,5 +1,4 @@
 // Package guard — credential subcommand.
-// Faithful Go port of scripts/trackfw-credential-guard.sh (152 lines).
 // Project scope: RunCredential. Global scope: RunCredentialGlobal (--global flag).
 package guard
 
@@ -92,12 +91,6 @@ func credScanInput(s string) string {
 }
 
 var (
-	// credJWTRe and credAWSRe are kept as package-level vars for the parts of the
-	// code (credScanFile, credDeepScan) that still reference them directly.
-	// They are the same objects as credPatterns[0].re and credPatterns[1].re.
-	credJWTRe = credPatterns[0].re
-	credAWSRe = credPatterns[1].re
-
 	// credRedirectRe extracts redirect targets from RAW.
 	// Port of grep -oE '[0-9]?>>?[[:space:]]*[^[:space:]|&;,:]+' — BUG-2 fix:
 	// ':' removed from exclusion class so that Windows paths (C:\..., C:/...) are
@@ -1065,14 +1058,12 @@ func ReadCredentialGuardMode(content string) (mode string, ok bool) {
 		return "", false
 	}
 
-	// Scan up to 5 lines after the header.
-	const lookbehind = 5
-	end := headerIdx + 1 + lookbehind
-	if end > len(lines) {
-		end = len(lines)
-	}
-
-	for _, line := range lines[headerIdx+1 : end] {
+	// Scan all lines after the header until the next top-level YAML key.
+	// The stop rule below (non-empty, non-indented, non-comment) bounds the
+	// scan correctly without an artificial line limit. C9 — D1 Wave 2
+	// (REQ-2026-11-05, ML-2C): removing the const lookbehind = 5 so that
+	// mode: on the 6th line (or later) is found.
+	for _, line := range lines[headerIdx+1:] {
 		// Stop rule (cross-block boundary, Achado 11):
 		// a non-empty line whose first character is not a space, tab, or '#' begins
 		// a new top-level YAML key — stop scanning.
