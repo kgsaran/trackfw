@@ -2331,41 +2331,236 @@ func handleShellWrapper(base string, rest []string, depth int) string {
 
 // extractBalancedParenBody extracts the body of a $(…) starting at position
 // start (immediately after the opening '('). Returns (body, index-of-closing-
-// paren) or ("", -1) if parentheses are unbalanced. Single-quoted regions
-// inside are literal. C7 — D4 Wave 2 (REQ-2026-11-05, ML-2C).
+// paren). When the parentheses are unbalanced the body collected so far is
+// returned with end = n-1 so the caller can still analyse the content
+// (fail-closed). Single-quoted regions are written verbatim to body.
+//
+// Handles:
+//   - single-quoted regions ('…'): literal, written verbatim to body.
+//   - double-quoted regions ("…"): $() and backticks expand; ')' and '('
+//     have no structural significance for depth counting inside "…".
+//   - backslash outside quotes: \x is written literally; \) does NOT
+//     decrement depth and \' does NOT open a single-quoted region.
+//   - '#' at word boundary: comment to end-of-line, skipped for depth.
+//   - case…esac constructs: ')' terminating a case pattern does NOT
+//     decrement depth; supports nested case and both parenthesized and
+//     plain patterns. When the optional '(' precedes a pattern, the depth
+//     increment ensures the matching ')' cannot reach zero without
+//     interception. ML-2I (REQ-2026-11-05).
+//
+// C7 — D4 Wave 2 (REQ-2026-11-05, ML-2C/2I).
 func extractBalancedParenBody(runes []rune, start int) (string, int) {
 	depth := 1
 	var body strings.Builder
 	n := len(runes)
 	inSQ := false
+	inDQ := false
+
+	// Case-statement state stack.  Each entry tracks one open case…esac.
+	// Values:
+	//   0 = in case expression (between 'case' keyword and 'in' keyword)
+	//   1 = pattern position (after 'in' or after ';;'/';&'/';;&'):
+	//         the next bare ')' is a pattern terminator, not a depth-decrement
+	//   2 = case body (after the pattern-terminating ')'):
+	//         ')' is handled normally (depth-decrement or early return)
+	// When the optional '(' precedes a pattern the frame is set to 2 on that
+	// '(' so the matching ')' is not mistakenly intercepted.
+	var caseStack []int
+
+	// Word accumulator for keyword detection ('case', 'in', 'esac').
+	var wordBuf strings.Builder
+	wordStartedAtBound := true // did the current word start at a word boundary?
+	atWordBound := true        // is the current position a word boundary?
+
+	// flushWord checks whether the accumulated word is a keyword and updates
+	// caseStack accordingly.
+	flushWord := func() {
+		if wordBuf.Len() == 0 {
+			return
+		}
+		w := wordBuf.String()
+		wordBuf.Reset()
+		if !wordStartedAtBound {
+			return
+		}
+		switch w {
+		case "case":
+			caseStack = append(caseStack, 0)
+		case "in":
+			if len(caseStack) > 0 && caseStack[len(caseStack)-1] == 0 {
+				caseStack[len(caseStack)-1] = 1
+			}
+		case "esac":
+			if len(caseStack) > 0 {
+				caseStack = caseStack[:len(caseStack)-1]
+			}
+		}
+	}
 
 	for i := start; i < n; i++ {
 		c := runes[i]
+
+		// Single-quoted region: entirely literal, written verbatim.
 		if inSQ {
+			body.WriteRune(c)
 			if c == '\'' {
 				inSQ = false
-			} else {
-				body.WriteRune(c)
+				atWordBound = false
 			}
 			continue
 		}
+
+		// Backslash outside any quote: skip the escaped character for depth
+		// purposes (\) does not decrement; \' does not open a SQ region).
+		if !inDQ && c == '\\' && i+1 < n {
+			flushWord()
+			wordBuf.Reset()
+			body.WriteRune(c)
+			body.WriteRune(runes[i+1])
+			i++
+			atWordBound = false
+			wordStartedAtBound = false
+			continue
+		}
+
+		// Double-quoted region: $() and backticks expand, but ')' and '('
+		// have no structural significance for depth counting.
+		if inDQ {
+			body.WriteRune(c)
+			if c == '\\' && i+1 < n {
+				body.WriteRune(runes[i+1])
+				i++
+			} else if c == '"' {
+				inDQ = false
+			}
+			atWordBound = false
+			continue
+		}
+
+		// Not in any quoted region.
+
+		// '#' at word boundary: comment — skip to end of line.
+		if c == '#' && atWordBound {
+			flushWord()
+			body.WriteRune(c)
+			for i+1 < n && runes[i+1] != '\n' {
+				i++
+				body.WriteRune(runes[i])
+			}
+			atWordBound = true
+			wordStartedAtBound = true
+			continue
+		}
+
 		switch c {
-		case '\'':
-			inSQ = true
+		case ' ', '\t', '\n':
+			flushWord()
+			body.WriteRune(c)
+			atWordBound = true
+			wordStartedAtBound = true
+
+		case ';':
+			flushWord()
+			// Detect ;;&, ;;, ;& — case clause terminators.
+			if i+1 < n && runes[i+1] == ';' {
+				body.WriteRune(';')
+				body.WriteRune(';')
+				i++
+				// Optional trailing & makes it ;;& (fall-through + re-test).
+				if i+1 < n && runes[i+1] == '&' {
+					body.WriteRune('&')
+					i++
+				}
+				// Transition innermost case body back to pattern position.
+				if len(caseStack) > 0 && caseStack[len(caseStack)-1] == 2 {
+					caseStack[len(caseStack)-1] = 1
+				}
+			} else if i+1 < n && runes[i+1] == '&' {
+				// ;& fall-through terminator: also back to pattern position.
+				body.WriteRune(';')
+				body.WriteRune('&')
+				i++
+				if len(caseStack) > 0 && caseStack[len(caseStack)-1] == 2 {
+					caseStack[len(caseStack)-1] = 1
+				}
+			} else {
+				body.WriteRune(c)
+			}
+			atWordBound = true
+			wordStartedAtBound = true
+
+		case '|', '&':
+			flushWord()
+			body.WriteRune(c)
+			atWordBound = true
+			wordStartedAtBound = true
+
 		case '(':
+			flushWord()
 			depth++
 			body.WriteRune(c)
+			// If at pattern-start (state 1), the '(' is the optional pattern-open paren.
+			// The matching ')' will decrement depth without reaching zero, so no
+			// interception is needed.  Transition to state 2 so ')' is handled normally.
+			if len(caseStack) > 0 && caseStack[len(caseStack)-1] == 1 {
+				caseStack[len(caseStack)-1] = 2
+			}
+			atWordBound = true
+			wordStartedAtBound = true
+
 		case ')':
+			flushWord()
+			top := -1
+			if len(caseStack) > 0 {
+				top = caseStack[len(caseStack)-1]
+			}
+			if top == 1 {
+				// Pattern terminator: do NOT decrement depth.
+				caseStack[len(caseStack)-1] = 2
+				body.WriteRune(c)
+				atWordBound = true
+				wordStartedAtBound = true
+				continue
+			}
+			// Normal depth tracking.
 			depth--
 			if depth == 0 {
 				return body.String(), i
 			}
 			body.WriteRune(c)
-		default:
+			atWordBound = true
+			wordStartedAtBound = true
+
+		case '\'':
+			flushWord()
+			inSQ = true
 			body.WriteRune(c)
+			atWordBound = false
+			wordStartedAtBound = false
+
+		case '"':
+			flushWord()
+			inDQ = true
+			body.WriteRune(c)
+			atWordBound = false
+			wordStartedAtBound = false
+
+		default:
+			// Regular word character: accumulate for keyword detection.
+			if wordBuf.Len() == 0 {
+				wordStartedAtBound = atWordBound
+			}
+			wordBuf.WriteRune(c)
+			body.WriteRune(c)
+			atWordBound = false
 		}
 	}
-	return "", -1 // unbalanced
+	// Unbalanced: return the body collected so far (fail-closed) so the caller
+	// can still analyse the content for blocked subcommands.
+	if n > 0 && body.Len() > 0 {
+		return body.String(), n - 1
+	}
+	return "", -1
 }
 
 // extractBacktickSubstBody extracts the body of a `…` substitution starting

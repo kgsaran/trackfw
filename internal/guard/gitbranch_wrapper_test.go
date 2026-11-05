@@ -712,6 +712,127 @@ func TestMatchSubcommand_ML2G_Allowed(t *testing.T) {
 	}
 }
 
+// --- ML-2I: case…esac inside $() / <() ---
+
+// TestMatchSubcommand_ML2I_Blocked asserts that case…esac constructs inside
+// command- and process-substitution bodies do not let a blocked git subcommand
+// escape detection. It also covers the SQ-preservation fix that exposed a
+// bypass via $(bash -c 'git push').
+//
+// Reconciliation (one sentence per test, per the Regra Dura de Reconciliação):
+//
+//   - case-plain-push: asserts that $(case x in x) git push ;; esac) is blocked
+//     because extractBalancedParenBody now treats the unparenthesized pattern ')'
+//     as a terminator (not a depth-decrement), extracting the full body for
+//     re-analysis which detects "git push".
+//   - case-wildcard-push: asserts that $(case x in *) git push ;; esac) is
+//     blocked; the wildcard pattern '*' is accumulated as a plain word and its
+//     closing ')' is correctly intercepted as a pattern terminator.
+//   - bash-c-case-push: asserts that bash -c '$(case x in x) git push ;; esac)'
+//     is blocked by composing two fixes: the shell-wrapper extracts the -c
+//     argument, and extractBalancedParenBody then correctly extracts the case body.
+//   - assign-case-commit: asserts that x=$(case a in a) git commit -m y;; esac)
+//     is blocked; the ';;' (without surrounding spaces) is consumed and the
+//     commit subcommand in the case body is detected.
+//   - proc-subst-case-push: asserts that cat <(case x in x) git push ;; esac)
+//     is blocked; the same case-aware extraction applies to process-substitution
+//     bodies (<(...)) as it does to command substitutions ($(...)).
+//   - nested-case-push: asserts that $(case x in x) case y in y) git push ;; esac ;; esac)
+//     is blocked; two nested case frames are pushed and popped independently,
+//     with each bare ')' correctly intercepted at the right frame depth.
+//   - second-pattern-push: asserts that $(case x in a) ;; *) git push ;; esac)
+//     is blocked; after the first ';;' transitions back to pattern-position, the
+//     second pattern '*' and its terminating ')' are correctly handled before
+//     "git push" is exposed in the case body.
+//   - dq-paren-push: asserts that echo $(echo ")"; git push) is blocked; the
+//     new double-quote tracking in extractBalancedParenBody prevents the ')' inside
+//     "…" from decrementing depth prematurely so the full body is extracted.
+//   - bs-paren-push: asserts that echo $(echo \); git push) is blocked; the
+//     new backslash handling prevents '\)' from decrementing depth so the full
+//     body containing "git push" is extracted.
+//   - sq-bypass-bash-c: asserts that echo $(bash -c 'git push') is blocked;
+//     previously the quote-stripping in extractBalancedParenBody produced the
+//     body "bash -c git push" (where the -c argument was just "git", not
+//     "git push"), silently bypassing the shell-wrapper check. Preserving
+//     single quotes in the body now yields "bash -c 'git push'" which
+//     handleShellWrapper correctly analyses as the blocked subcommand "push".
+func TestMatchSubcommand_ML2I_Blocked(t *testing.T) {
+	cases := []struct {
+		name string
+		cmd  string
+		want string
+	}{
+		{"case-plain-push", `echo $(case x in x) git push ;; esac)`, "push"},
+		{"case-wildcard-push", `$(case x in *) git push ;; esac)`, "push"},
+		{"bash-c-case-push", `bash -c '$(case x in x) git push ;; esac)'`, "push"},
+		{"assign-case-commit", `x=$(case a in a) git commit -m y;; esac)`, "commit"},
+		{"proc-subst-case-push", `cat <(case x in x) git push ;; esac)`, "push"},
+		{"nested-case-push", `echo $(case x in x) case y in y) git push ;; esac ;; esac)`, "push"},
+		{"second-pattern-push", `echo $(case x in a) ;; *) git push ;; esac)`, "push"},
+		{"dq-paren-push", `echo $(echo ")"; git push)`, "push"},
+		{"bs-paren-push", `echo $(echo \); git push)`, "push"},
+		{"sq-bypass-bash-c", `echo $(bash -c 'git push')`, "push"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := MatchSubcommand(tc.cmd)
+			if got != tc.want {
+				t.Errorf("MatchSubcommand(%q) = %q, want %q", tc.cmd, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestMatchSubcommand_ML2I_Allowed asserts that the ML-2I case-awareness and
+// SQ-preservation fixes do not introduce false positives for related but
+// benign commands.
+//
+// Reconciliation (one sentence per test, per the Regra Dura de Reconciliação):
+//
+//   - case-echo-ok: asserts that echo $(case x in x) echo ok ;; esac) is NOT
+//     blocked because "echo ok" in the case body contains no blocked git
+//     subcommand; the case-aware extraction returns the full body which is
+//     correctly analysed.
+//   - sq-outer-literal: asserts that echo '$(case x in x) git push ;; esac)' is
+//     NOT blocked because the entire string is single-quoted at the outer level,
+//     so extractRawCmdSubstBodies never extracts any substitution body.
+//   - case-git-status: asserts that echo $(case $v in a|b) git status ;; esac) is
+//     NOT blocked because "git status" is a read-only subcommand not in the
+//     blocked set; the alternation pattern 'a|b' is handled correctly with '|'
+//     as an intra-pattern separator and ')' as the pattern terminator.
+//   - case-assign-ls: asserts that x=$(case a in a) ls;; esac) is NOT blocked
+//     because "ls" is not git; this also confirms that ';;' without surrounding
+//     spaces is consumed as a clause terminator.
+//   - git-describe: asserts that VER=$(git describe --tags) is NOT blocked because
+//     "describe" is a read-only subcommand not in the blocked set, and the
+//     standard $() body extraction is unaffected by the case-awareness change.
+//   - sq-echo-inner: asserts that echo $(echo '$(git push)') is NOT blocked;
+//     previously this was incorrectly blocked because quote-stripping exposed the
+//     inner '$(git push)' to extraction — with SQ preserved in the body, the inner
+//     $() is single-quoted and skipped by extractRawCmdSubstBodies (correct per
+//     POSIX: single-quoted $() is literal and never evaluated).
+func TestMatchSubcommand_ML2I_Allowed(t *testing.T) {
+	cases := []struct {
+		name string
+		cmd  string
+	}{
+		{"case-echo-ok", `echo $(case x in x) echo ok ;; esac)`},
+		{"sq-outer-literal", `echo '$(case x in x) git push ;; esac)'`},
+		{"case-git-status", `echo $(case $v in a|b) git status ;; esac)`},
+		{"case-assign-ls", `x=$(case a in a) ls;; esac)`},
+		{"git-describe", `VER=$(git describe --tags)`},
+		{"sq-echo-inner", `echo $(echo '$(git push)')`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := MatchSubcommand(tc.cmd)
+			if got != "" {
+				t.Errorf("MatchSubcommand(%q) = %q, want %q (allow)", tc.cmd, got, "")
+			}
+		})
+	}
+}
+
 // TestIsDurationArg asserts the helper correctly identifies timeout durations.
 //
 // Reconciliation: asserts the precondition for timeout prefix stripping —

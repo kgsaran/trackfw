@@ -227,9 +227,12 @@ grep -q '^## Prescrições' docs/seguranca/2026-11-05-wave0-guards-primeiro-usua
 - [x] veredito escrito (homologa, homologa com ressalvas, ou reprova) e cada furo novo tem `rc` medido
 
 ### ML-2I — `)` do padrão de `case` não fecha o corpo da substituição (apolo-tf)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado pelo arquiteto em 2026-11-05.
+- **Medido no binário da branch:** os 4 vetores do N-1 mais `cat <(case …)`, o `case` aninhado, `a) ;; *)`, `echo $(echo ")"; git push)`, `echo $(echo \); git push)` e `)` entre aspas dentro do corpo do `case` dão `rc=2`. Continuam com `rc=0`: `case` sem escrita, `echo '$(case …git push…)'`, `case … git status`, `VER=$(git describe --tags)`, `echo $(echo 'a;git push')` e `echo $(printf '%s)' x)`. `f2`, `d2`, `rt2`, `bs`, `fp2c` e `m663` (63 OK) passam sem regressão. Os 16 casos `TestMatchSubcommand_ML2I_*` existem e passam. `make quality` `MQ_RC=0`, lido em `scratchpad/apolo/mq6.txt`.
+- **Mudança de contrato:** parêntese desbalanceado agora é lido até o fim e bloqueia (`echo $(git push` dá `rc=2`). O arquiteto corrigiu o item do README e do cli-parity que ainda dizia "não analisado".
+- **Desvio do executor:** ele editou o roadmap, o que era proibido. O texto dele foi substituído por este.
 **Files affected:** `internal/guard/gitbranch.go`, `internal/guard/gitbranch_wrapper_test.go`, `README.md`, `docs/cli-parity.md`
 **Acceptance criteria:**
-- [ ] `echo $(case x in x) git push ;; esac)`, `$(case x in *) git push ;; esac)`, `bash -c '$(case x in x) git push ;; esac)'`, `x=$(case a in a) git commit -m y;; esac)`, `cat <(case x in x) git push ;; esac)` e o `case` aninhado dentro de `case` dão `rc=2`
-- [ ] `echo $(case x in x) echo ok ;; esac)`, `echo '$(case x in x) git push ;; esac)'` e `echo $(case $v in a|b) git status ;; esac)` continuam com `rc=0`; `f2.sh`, `d2.sh`, `rt2.sh`, `m663.sh`, `fp2c.sh` e `bs.sh` sem regressão
-- [ ] `make quality` com `MQ_RC=0`, lido no arquivo de saída pelo arquiteto
+- [x] `echo $(case x in x) git push ;; esac)`, `$(case x in *) git push ;; esac)`, `bash -c '$(case x in x) git push ;; esac)'`, `x=$(case a in a) git commit -m y;; esac)`, `cat <(case x in x) git push ;; esac)` e o `case` aninhado dentro de `case` dão `rc=2`
+- [x] `echo $(case x in x) echo ok ;; esac)`, `echo '$(case x in x) git push ;; esac)'` e `echo $(case $v in a|b) git status ;; esac)` continuam com `rc=0`; `f2.sh`, `d2.sh`, `rt2.sh`, `m663.sh`, `fp2c.sh` e `bs.sh` sem regressão
+- [x] `make quality` com `MQ_RC=0`, lido no arquivo de saída pelo arquiteto

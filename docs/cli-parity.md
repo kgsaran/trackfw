@@ -6757,7 +6757,7 @@ como o caminho governado. Formas que não apagam branch — `--mirror`, `--prune
 
 ### Detecção de invólucro de shell (D4, ML-1B, REQ-2026-11-05)
 
-<!-- trackfw-contract: gate=internal/guard/gitbranch_wrapper_test.go partial=TestMatchSubcommand_AC4_Wrapper_Blocked, TestMatchSubcommand_AC4_Wrapper_Allowed, TestRunGitBranch_AC4_WrapperBlocked, TestRunGitBranch_AC4_WrapperAllowed, TestMatchSubcommand_AC4_Depth3_WrapperNotAnalyzed (AC4); TestMatchSubcommand_AC5_LanguageRuntime_Allowed (AC5) -->
+<!-- trackfw-contract: gate=internal/guard/gitbranch_wrapper_test.go partial=TestMatchSubcommand_AC4_Wrapper_Blocked, TestMatchSubcommand_AC4_Wrapper_Allowed, TestRunGitBranch_AC4_WrapperBlocked, TestRunGitBranch_AC4_WrapperAllowed, TestMatchSubcommand_AC4_Depth3_WrapperNotAnalyzed (AC4); TestMatchSubcommand_AC5_LanguageRuntime_Allowed (AC5); TestMatchSubcommand_ML2I_Blocked, TestMatchSubcommand_ML2I_Allowed (ML-2I) -->
 
 Desde v11.5.0, o `trackfw guard git-branch` analisa invólucros de shell antes de decidir se o
 comando cria uma branch ou realiza uma operação de escrita. `MatchSubcommand` roda primeiro a
@@ -6793,6 +6793,12 @@ não é analisado.
 **Substituição de comando** (`$(…)` e crase) é detectada em qualquer segmento, inclusive em
 atribuições (`OUT=$(git commit -m x)`) e dentro de aspas duplas. Regiões em aspas simples são
 literais e não são escaneadas. Cada substituição conta como um nível de profundidade.
+
+**`case` dentro de `$(…)`** é analisado corretamente: um constructo `case … in PADRÃO) CORPO ;; esac`
+aninhado dentro de uma substituição de comando é interpretado sem confundir o `)` que encerra cada
+padrão com o `)` de fechamento da substituição. Por isso, `echo $(case x in x) git push ;; esac)` é
+bloqueado. Formas de padrão com parêntese à esquerda (`(x)`) e `case` aninhado também são suportados
+(ML-2I, REQ-2026-11-05).
 
 **Aspas ANSI-C** (`$'…'`) e **aspas de locale** (`$"…"`): o `$` inicial é descartado antes
 que a aspa abra a região correspondente, logo o conteúdo é tokenizado normalmente.
@@ -6835,11 +6841,9 @@ e atribuições nuas de variável shell da forma `NAME=value` (ex.: `FOO=1 git p
 - **`pwsh git push`** (PowerShell 7, posicional): no `pwsh` 7, o primeiro argumento posicional
   é `-File` (caminho de script), não `-Command`; `pwsh git push` não é analisado como comando
   e é residual declarado (ML-2E, REQ-2026-11-05).
-- **`bash -c "$(git push"` (parêntese desbalanceado)**: a expressão
-  `$(git push` não tem `)` de fechamento — é um erro de sintaxe shell. O guard
-  não analisa substituições malformadas; o próprio shell recusa o comando antes
-  de executar qualquer coisa, portanto nada é executado em produção. Residual
-  declarado.
+- **Parêntese desbalanceado** (`bash -c "$(git push"`): é erro de sintaxe e o shell não executa.
+  Mesmo assim, o guard lê o que vem depois do `$(` aberto e bloqueia se encontrar escrita de git
+  (fail-closed, ML-2I).
 - Terceiro invólucro e além: bloqueado (fail-closed, ver acima).
 
 **Cobertura de testes:** `TestMatchSubcommand_AC4_Wrapper_Blocked` (casos bloqueados, incluindo
@@ -6868,6 +6872,14 @@ aninhamento de dois níveis, três níveis → wrapper-not-analyzed; barra inver
 `TestMatchSubcommand_ML2G_Allowed` (falso positivo ausente:
 substituição com subcomando permitido, aspas simples neutralizam a substituição, comentário `#` após
 `ok` neutraliza, `<(git status)` em argumento de diff — 6 casos rc=0),
+`TestMatchSubcommand_ML2I_Blocked` (`case` dentro de substituição de comando: `case` simples com
+escrita, `case` em crase, `case` aninhado, `case` em processo de substituição, forma `(x)`, invólucro
+shell com `case` interno, barra invertida dentro de `case`, aspas duplas dentro de corpo de `case`,
+comentário dentro de corpo de `case`, e `bash -c 'git push'` via preservação de aspas simples —
+10 casos rc=2),
+`TestMatchSubcommand_ML2I_Allowed` (falso positivo ausente: `echo` de string literal com `case`
+sem escrita, aspas simples neutralizam substituição interna, `case` real sem escrita, iteração de
+padrão múltiplo sem escrita, `case` aninhado sem escrita, `case` em avaliação de argumento — 6 casos rc=0),
 e baixo nível: `TestQuoteAwareSplitPOSIX_*`, `TestShellTokenizePOSIX_*`,
 `TestStripShellSuffixPOSIX_*` (`internal/guard/gitbranch_wrapper_test.go`).
 

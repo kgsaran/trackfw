@@ -1154,6 +1154,12 @@ are seen as `git push`. ANSI-C quoting (`$'git push'`) and backtick escapes in P
 an assignment (`OUT=$(git commit -m x)`) or a double-quoted string. Single-quoted regions are
 literal and are not scanned.
 
+**`case` inside `$(...)`** is handled: a `case … in PATTERN) BODY ;; esac` construct nested inside
+a command or process substitution is correctly parsed. The `)` that terminates each case pattern is
+not mistaken for the closing `)` of the substitution, so `echo $(case x in x) git push ;; esac)` is
+blocked. Nested `case` statements and both plain (`x)`) and parenthesized (`(x)`) pattern forms are
+supported.
+
 **These lists are open:** a wrapper or prefix that is not listed here is not analyzed.
 
 Nesting is analyzed up to **two levels** deep (e.g. `bash -c "bash -c 'git push'"`). A
@@ -1188,10 +1194,8 @@ and bare shell variable assignments of the form `NAME=value` (e.g. `FOO=1 git pu
   not analyzed. Use `pwsh -c git push` or `pwsh -Command git push` to have the guard analyze it.
 - **Variable expansion** (`bash -c "$CMD"`): the value of `$CMD` is not known at hook time;
   not analyzed.
-- **`bash -c "$(git push"` (unbalanced parenthesis)**: the `$(git push`
-  expression has no closing `)` — it is a shell syntax error. The guard does
-  not analyze malformed substitutions; the shell itself refuses to execute the
-  command, so nothing runs in production. Declared residual.
+- **Unbalanced parenthesis** (`bash -c "$(git push"`): this is a shell syntax error and never
+  runs. The guard still reads what comes after the open `$(` and blocks if it finds a git write.
 - **Third wrapper and beyond**: blocked outright (fail-closed, see above).
 
 Full contract and exit codes: `docs/cli-parity.md` → `## Git branch guard por runtime`.
