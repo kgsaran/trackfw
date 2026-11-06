@@ -35,6 +35,7 @@ A REQ-2026-08-08 (Done) previa: "se `block` quebrar fluxos legítimos, documenta
 ## Acceptance Criteria
 - [ ] **AC1.** Quando o achado vem de um arquivo referenciado, a mensagem cita o caminho do arquivo e diz que veio do conteúdo, não do payload. Isso vale nos dois escopos (projeto e global) e nos dois modos (`block` e `warn`), e também no sinal de atenção. Achado no payload continua dizendo "in tool payload". Um teste fixa as duas formas.
 - [ ] **AC2.** A segunda camada não lê diretório recursivamente (ADR D2). A limitação fica documentada no `--help` do `trackfw guard credential` e em `docs/cli-parity.md`, com o exemplo medido de glob versus `grep -r`.
+- [ ] **AC5.** Glob relativo é resolvido contra a `cwd` da ferramenta, como já acontece com argumento nomeado (ADR D4).
 - [ ] **AC3.** As fixtures do repositório deixam de conter tokens literais que casem com os padrões: o token é montado em tempo de execução. Depois disso, `grep -n foo internal/guard/*.go` e `grep -n foo internal/generators/*_test.go` dão rc=0 no guard. Os testes continuam afirmando a detecção. As cópias congeladas de corpus (`internal/roadmapdoc/testdata/corpus/`, `scripts/testdata/roadmap-barrier-corpus-snapshot/`) e os documentos históricos (`docs/roadmaps/done/ROADMAP-2026-08-05-*`, `docs/seguranca/2026-11-05-wave0-guards-primeiro-usuario-externo.md`) ficam como estão: o corpus é fixture byte-a-byte de outros testes.
 - [ ] **AC4.** `make quality` verde.
 
