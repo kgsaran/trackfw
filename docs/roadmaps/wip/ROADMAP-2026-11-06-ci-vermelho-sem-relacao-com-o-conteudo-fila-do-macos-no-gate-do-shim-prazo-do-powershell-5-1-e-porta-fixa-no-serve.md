@@ -35,7 +35,7 @@ Três causas, um ML para cada. O diagnóstico está no ADR-2026-11-06. Varredura
 > Dependencies: Wave 0 auditada. ML-1A e ML-1B tocam arquivos disjuntos. O ML-1C vem depois para respeitar o teto de 2 agentes simultâneos.
 
 ### ML-1A — Gate do shim com classificação de diff (ares-tf) — AC1, AC2
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:** `.github/workflows/quality.yml`, `scripts/check-shim-diff-applies.sh`, `docs/cli-parity.md`
 **Requisitos obrigatórios:** os 11 itens do fim do threat model da Wave 0; a matriz `shim-byte-identity` usa `!cancelled()`, não `always()`. Varredura de contrato feita na auditoria: só o próprio `quality.yml` afirma "o gate só aceita `success`"; `scripts/check-workflow-yaml.py` confere que todo `needs` aponta para job existente.
 **Gates:** `bash scripts/check-shim-diff-applies.sh --self-test`, `python3 scripts/check-workflow-yaml.py`, `python3 scripts/check-required-status-checks.py --self-test`, `make parity-rest`.
@@ -45,7 +45,7 @@ Três causas, um ML para cada. O diagnóstico está no ADR-2026-11-06. Varredura
 - [ ] o comentário do ML-4E no `quality.yml` passa a explicar a nova regra
 
 ### ML-1B — Prazo do PowerShell derivado do aquecimento (artemis-tf) — AC3
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:** `internal/generators/guard_line_shell_test.go`
 **Acceptance criteria:**
 - [ ] função de prazo com teste unitário dos três regimes (aquecimento curto → 15 s, médio → 4×, longo → 60 s)
