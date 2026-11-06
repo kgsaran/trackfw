@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-11-06
 req: "docs/req/REQ-2026-11-06-ci-vermelho-sem-relacao-com-o-conteudo-fila-do-macos-no-gate-do-shim-prazo-do-powershell-5-1-e-porta-fixa-no-serve.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: CI vermelho sem relação com o conteúdo: fila do macOS no gate do shim, prazo do PowerShell 5.1 e porta fixa no serve
 
-> Created: 2026-11-06 | Status: wip
+> Created: 2026-11-06 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-11-06-ci-vermelho-sem-relacao-com-o-conteudo-fila-do-macos-no-gate-do-shim-prazo-do-powershell-5-1-e-porta-fixa-no-serve.md
