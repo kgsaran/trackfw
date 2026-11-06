@@ -77,9 +77,27 @@ Três causas, um ML para cada. O diagnóstico está no ADR-2026-11-06. Varredura
 > Dependencies: Wave 1 completa.
 
 ### ML-2A — Red team da classificação de diff (hades-tf)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Files affected:** `docs/seguranca/2026-11-06-redteam-ci-vermelho-por-infraestrutura.md`
 **Acceptance criteria:**
-- [ ] cada modo de evasão da Wave 0 tentado contra o script, com o resultado medido em fixture local (`git write-tree` em diretório temporário, sem PR nem branch)
-- [ ] T8 (retarget) respondido pela lista de gatilhos do `quality.yml`, sem PR real; o primeiro PR só de documentação depois do merge fica declarado como a medição real da dispensa
-- [ ] veredito escrito
+- [x] cada modo de evasão da Wave 0 tentado contra o script, com o resultado medido em fixture local (`git write-tree` em diretório temporário, sem PR nem branch)
+- [x] T8 (retarget) respondido pela lista de gatilhos do `quality.yml`, sem PR real; o primeiro PR só de documentação depois do merge fica declarado como a medição real da dispensa
+- [x] veredito escrito
+**Veredito:** REPROVA, com 3 bloqueantes. Os três viram o ML-2B; o ML-2C reverifica.
+**Auditoria:** o relatório não cita uma entrada `internal/x.go` que apareceu no índice do repositório real durante o ML-2A. Foi removida pelo arquiteto com `git rm --cached`, sem commit nem branch.
+
+### ML-2B — Corretivo dos bloqueantes do red team (ares-tf)
+**Status:** 🔄 Em andamento
+**Files affected:** `.github/workflows/quality.yml`, `.github/workflows/windows-census.yml`, `scripts/check-shim-diff-applies.sh`, `scripts/check-no-grep-q-under-pipefail.sh`
+**Acceptance criteria:**
+- [ ] B1: no job `classify`, a classificação pela BASE roda antes do `--self-test` do HEAD; nenhum passo do HEAD roda antes dela
+- [ ] B2: todo nome de arquivo impresso pelo classificador tem os caracteres de controle trocados por `?`; o self-test prova que nome com `\n` não produz linha começando com `::`
+- [ ] B3: nenhum `| grep -q` resta em bloco `run:` de `.github/workflows/*.yml`, e o gate de `grep -q` passa a varrer os workflows
+- [ ] `make parity-rest` verde
+
+### ML-2C — Reverificação do red team (hades-tf)
+**Status:** ⬜ Pendente
+**Files affected:** `docs/seguranca/2026-11-06-redteam-ci-vermelho-por-infraestrutura.md`
+**Acceptance criteria:**
+- [ ] B1, B2 e B3 reatacados contra o código do ML-2B, com a medição escrita
+- [ ] veredito final escrito
