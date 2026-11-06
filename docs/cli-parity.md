@@ -57,6 +57,59 @@ macOS arm64 and linux x64/arm64: smoke-tested via CI only (no real-machine recor
 fell back to an sdist that installed the Python implementation. The failure is now
 clean and explicit instead of silently installing the wrong thing.
 
+## Gate do shim: classificação de diff (ADR-2026-11-06)
+
+<!-- trackfw-contract: gate=scripts/check-shim-diff-applies.sh -->
+
+O job `shim-byte-identity` (matriz ubuntu-latest e macos-latest) verifica byte-identidade
+entre o binário Go e o shim npm. Para PRs que não tocam código do shim, rodar a matriz
+no macOS era fonte de vermelho sem relação com o conteúdo (fila de runner; ADR-2026-11-06 D1).
+
+### Conjunto inerte
+
+<!-- trackfw-contract: gate=scripts/check-shim-diff-applies.sh partial=--self-test cobre is_inert, o git diff com --no-renames e o --classify completo num repositorio temporario; o diff real de um PR so e medido no CI -->
+
+Um diff de PR é classificado como inerte quando todos os seus arquivos pertencem ao conjunto:
+
+| Prefixo | Critério |
+|---|---|
+| `docs/*` | prefixo ancorado na raiz — `internal/x/docs/y.md` não entra |
+| `vault/*` | notas de knowledge vault |
+| `.claude/agent-memory/*` | memória de agentes |
+| `*.md` sem `/` | Markdown na raiz do repositório |
+
+O critério de inclusão no conjunto é "não altera o que `shim-byte-identity` compara"
+(ADR D1). O shim repassa descritores de arquivo sem interpretar bytes (`spawnSync` com
+`stdio: "inherit"`), então arquivos lidos por `validate --json` em tempo de execução
+alimentam identicamente os dois lados e não produzem divergência nativo-vs-shim.
+
+### Regra de dispensa
+
+<!-- trackfw-contract: gate=scripts/check-shim-diff-applies.sh partial=a regra de dispensa e exercitada pelo job classify no quality.yml; a primeira ativacao real so ocorre num PR de docs-only mergeado apos esta REQ (ver ML-2A) -->
+
+A dispensa dos braços macOS e ubuntu ocorre somente quando:
+
+1. O evento é `pull_request` contra a branch padrão.
+2. Todos os arquivos do diff estão no conjunto inerte acima.
+3. A classificação foi feita pela versão do script na BASE do PR, não no HEAD
+   (ADR-2026-09-17: a severidade não pode vir da fonte verificada).
+
+Em qualquer outro caso (push para main, tag, evento diferente, diff misto, classificador
+indisponível na BASE), evidência positiva de byte-identidade continua obrigatória (D2).
+
+### Fail-closed
+
+<!-- trackfw-contract: gate=scripts/check-shim-diff-applies.sh partial=casos de fail-closed cobertos pelo --self-test (diff vazio, SHA inexistente, evento!=pull_request, base!=default) -->
+
+Diff vazio, SHA de base indisponível, clone raso, evento diferente de `pull_request`,
+ou base diferente da branch padrão resultam em `diff_is_inert=false` (aplicável). O gate
+exige `success` dos braços nesse caso. O erro perigoso é dispensar quando deveria exigir (falso negativo do gate, na nomenclatura
+do threat model da Wave 0); exigir quando poderia dispensar é benigno.
+
+O job `classify` roda sem `if:` condicional em todo evento. Um `--self-test` vermelho do
+classificador torna o `classify` vermelho, o que torna o `shim-byte-identity-gate` vermelho,
+bloqueando o merge.
+
 ## Command contract
 <!-- trackfw-contract: gap reason=command table is a contract surface; configure/discover/metrics/sync and others have no ## section below naming a gate — table completeness is not mechanically gated -->
 
