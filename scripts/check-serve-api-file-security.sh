@@ -115,9 +115,9 @@ open(overlay, 'w', encoding='utf-8').write(json.dumps({'Replace': {src: vuln}}))
 
 VULN_GO_OUT=$(cd "$ROOT_DIR" && go test -overlay="$OVERLAY_JSON" ./internal/serve/... \
     -run "TestFileHandler_SymlinkEscape" -count=1 -timeout 30s 2>&1 || true)
-if echo "$VULN_GO_OUT" | grep -qE "^(FAIL|--- FAIL)"; then
+if echo "$VULN_GO_OUT" | grep -E "^(FAIL|--- FAIL)" >/dev/null; then
   ok "AC6 Go falsificação: sem filePathAllowed(realAbsPath) o teste SymlinkEscape FALHA"
-elif echo "$VULN_GO_OUT" | grep -q "^ok"; then
+elif echo "$VULN_GO_OUT" | grep "^ok" >/dev/null; then
   fail "AC6 Go falsificação: teste passou na versão vulnerável — deve reprovar" \
        "$VULN_GO_OUT"
 else
@@ -126,7 +126,7 @@ fi
 
 CORR_GO_OUT=$(cd "$ROOT_DIR" && go test ./internal/serve/... \
     -run "TestFileHandler_SymlinkEscape" -count=1 -timeout 30s 2>&1 || true)
-if echo "$CORR_GO_OUT" | grep -q "^ok"; then
+if echo "$CORR_GO_OUT" | grep "^ok" >/dev/null; then
   ok "AC6 Go corrigido: TestFileHandler_SymlinkEscape PASSA na versão correta"
 else
   fail "AC6 Go corrigido: TestFileHandler_SymlinkEscape falhou na versão correta" \
@@ -139,7 +139,7 @@ fi
 echo ""
 echo "── AC3: symlink escape — ataque → 403 ───────────────────────────────────"
 echo "   Go:"
-if (cd "$ROOT_DIR" && go test ./internal/serve/... -run "TestFileHandler_SymlinkEscape" -count=1 -timeout 30s 2>&1) | grep -q "^ok"; then
+if (cd "$ROOT_DIR" && go test ./internal/serve/... -run "TestFileHandler_SymlinkEscape" -count=1 -timeout 30s 2>&1) | grep "^ok" >/dev/null; then
   ok "Go TestFileHandler_SymlinkEscape — 403 sem corpo"
 else
   fail "Go TestFileHandler_SymlinkEscape falhou"
@@ -151,7 +151,7 @@ fi
 echo ""
 echo "── AC4 (contra-braço): symlink legítimo → 200 ───────────────────────────"
 echo "   Go:"
-if (cd "$ROOT_DIR" && go test ./internal/serve/... -run "TestFileHandler_SymlinkInsideRoot" -count=1 -timeout 30s 2>&1) | grep -q "^ok"; then
+if (cd "$ROOT_DIR" && go test ./internal/serve/... -run "TestFileHandler_SymlinkInsideRoot" -count=1 -timeout 30s 2>&1) | grep "^ok" >/dev/null; then
   ok "Go TestFileHandler_SymlinkInsideRoot — 200 com conteúdo"
 else
   fail "Go TestFileHandler_SymlinkInsideRoot falhou"

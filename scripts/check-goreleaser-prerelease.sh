@@ -108,7 +108,7 @@ if [[ "${1:-}" == "--self-test" ]]; then
             "fixture is identical to source — sed did not remove any prerelease line; check .goreleaser.yaml"
     else
         OUT_A1=$(GORELEASER_YAML="$WORK/absent.yaml" "$SCRIPT_DIR/check-goreleaser-prerelease.sh" 2>&1 || true)
-        if echo "$OUT_A1" | grep -qF "release.prerelease is absent"; then
+        if echo "$OUT_A1" | grep -F "release.prerelease is absent" >/dev/null; then
             ok "goreleaser-prerelease/direction-a-absent"
         else
             fail "goreleaser-prerelease/direction-a-absent" \
@@ -130,7 +130,7 @@ PYEOF
             "fixture is identical to source — mutation did not change prerelease value"
     else
         OUT_A2=$(GORELEASER_YAML="$WORK/false_val.yaml" "$SCRIPT_DIR/check-goreleaser-prerelease.sh" 2>&1 || true)
-        if echo "$OUT_A2" | grep -qF "release.prerelease is 'False'"; then
+        if echo "$OUT_A2" | grep -F "release.prerelease is 'False'" >/dev/null; then
             ok "goreleaser-prerelease/direction-a-false-value"
         else
             fail "goreleaser-prerelease/direction-a-false-value" \
@@ -142,7 +142,7 @@ PYEOF
 
     # B1: real .goreleaser.yaml passes
     OUT_B1=$(GORELEASER_YAML="$GORELEASER_YAML" "$SCRIPT_DIR/check-goreleaser-prerelease.sh" 2>&1 || true)
-    if echo "$OUT_B1" | grep -q "^OK"; then
+    if echo "$OUT_B1" | grep "^OK" >/dev/null; then
         ok "goreleaser-prerelease/direction-b-correct-config"
     else
         fail "goreleaser-prerelease/direction-b-correct-config" \
@@ -151,7 +151,7 @@ PYEOF
 
     # B2: file absent → FAIL (not silent pass)
     OUT_B2=$(GORELEASER_YAML="$WORK/nonexistent.yaml" "$SCRIPT_DIR/check-goreleaser-prerelease.sh" 2>&1 || true)
-    if echo "$OUT_B2" | grep -q "FAIL"; then
+    if echo "$OUT_B2" | grep "FAIL" >/dev/null; then
         ok "goreleaser-prerelease/direction-b-file-absent"
     else
         fail "goreleaser-prerelease/direction-b-file-absent" \
@@ -168,7 +168,7 @@ with open(sys.argv[2], 'w') as f:
     yaml.dump(doc, f, default_flow_style=False, allow_unicode=True)
 PYEOF
     OUT_B3=$(GORELEASER_YAML="$WORK/no_release_block.yaml" "$SCRIPT_DIR/check-goreleaser-prerelease.sh" 2>&1 || true)
-    if echo "$OUT_B3" | grep -qF "release: block is absent"; then
+    if echo "$OUT_B3" | grep -F "release: block is absent" >/dev/null; then
         ok "goreleaser-prerelease/direction-b-block-absent"
     else
         fail "goreleaser-prerelease/direction-b-block-absent" \

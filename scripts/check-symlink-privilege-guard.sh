@@ -225,7 +225,7 @@ for FILE in "${TEST_FILES[@]}"; do
     END=$(( LINENUM + 5 ))
     [[ $START -lt 1 ]] && START=1
     CONTEXT=$(sed -n "${START},${END}p" "$FILE" 2>/dev/null)
-    if echo "$CONTEXT" | grep -qE "$GUARD_PAT"; then
+    if echo "$CONTEXT" | grep -E "$GUARD_PAT" >/dev/null; then
       continue  # guarda detectada no contexto
     fi
 

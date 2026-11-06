@@ -159,14 +159,14 @@ check_consumer_no_latest() {
   local stripped
   # Strip YAML comment lines before checking to avoid false positives.
   stripped=$({ grep -v '^[[:space:]]*#' "$file" || true; })
-  if echo "$stripped" | grep -qF 'releases/latest'; then
+  if echo "$stripped" | grep -F 'releases/latest' >/dev/null; then
     echo "releases/latest presente em template de consumidor — usar releases/download/v\${TRACKFW_VERSION}/ (AC3)"
     return 1
   fi
   # Single-quotes keep ${TRACKFW_VERSION} as a literal for grep (not shell-expanded).
   # Use $stripped (not $file) so that a commented-out install step does not satisfy
   # this positive check (F2 fix — mirrors nonCommentLines() in the Go test).
-  if ! echo "$stripped" | grep -qF 'releases/download/v${TRACKFW_VERSION}/install.sh'; then
+  if ! echo "$stripped" | grep -F 'releases/download/v${TRACKFW_VERSION}/install.sh' >/dev/null; then
     echo "URL pinada releases/download/v\${TRACKFW_VERSION}/install.sh ausente (AC3)"
     return 1
   fi
@@ -244,7 +244,7 @@ check_gate_producer_no_install() {
   # o padrao proibido, e a checagem seguinte re-le "$file" (nao `stripped`), entao um
   # template todo-comentario continua reprovando com mensagem propria.
   stripped=$({ grep -v '^[[:space:]]*#' "$file" || true; })
-  if echo "$stripped" | grep -qE 'install\.sh[[:space:]]*\|[[:space:]]*sh'; then
+  if echo "$stripped" | grep -E 'install\.sh[[:space:]]*\|[[:space:]]*sh' >/dev/null; then
     echo "template de produtor (gate) contém 'install.sh | sh' — deve compilar do fonte"
     return 1
   fi

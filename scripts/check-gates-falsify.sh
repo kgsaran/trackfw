@@ -151,7 +151,7 @@ resolve_py_bin() {
   local cand
   for cand in python3 python "py -3"; do
     # shellcheck disable=SC2086 -- "py -3" é dois tokens deliberadamente
-    if $cand -c 'import sys; print(sys.version_info[0])' 2>/dev/null | grep -qx 3; then
+    if $cand -c 'import sys; print(sys.version_info[0])' 2>/dev/null | grep -x 3 >/dev/null; then
       echo "$cand"
       return 0
     fi

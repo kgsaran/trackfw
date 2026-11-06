@@ -311,7 +311,7 @@ else
   # Glob em todos os .yml do diretório de workflows, filtrando linhas de comentário.
   for wf in "$CI_WORKFLOWS_DIR"/*.yml "$CI_WORKFLOWS_DIR"/*.yaml; do
     [[ -f "$wf" ]] || continue
-    if grep -F 'make self-governance' "$wf" | grep -vqE '^[[:space:]]*#'; then
+    if grep -F 'make self-governance' "$wf" | grep -vE '^[[:space:]]*#' >/dev/null; then
       self_gov_invoked="$wf"
       break
     fi

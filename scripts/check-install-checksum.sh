@@ -306,7 +306,7 @@ assert_fail_with() {
     echo "  output: $OUT"
     GATE_FAIL=1; return
   fi
-  if ! echo "$OUT" | grep -qi "$pattern"; then
+  if ! echo "$OUT" | grep -i "$pattern" >/dev/null; then
     echo "FAIL [$label]: saiu com $RC mas mensagem nao contem '$pattern'"
     echo "  output: $OUT"
     GATE_FAIL=1; return
@@ -430,7 +430,7 @@ if [ "$RC_C6" -eq 0 ]; then
   echo "FAIL [C6/sem-ferramenta-hash]: esperava falha, saiu com 0"
   echo "  output: $OUT_C6"
   GATE_FAIL=1
-elif ! echo "$OUT_C6" | grep -qF "nem sha256sum nem shasum"; then
+elif ! echo "$OUT_C6" | grep -F "nem sha256sum nem shasum" >/dev/null; then
   echo "FAIL [C6/sem-ferramenta-hash]: saiu com $RC_C6 mas mensagem nao contem 'nem sha256sum nem shasum'"
   echo "  output: $OUT_C6"
   GATE_FAIL=1
@@ -556,7 +556,7 @@ if [ "$STRIP_OK" = "1" ]; then
   set -e
 
   MALICIOUS_INSTALLED=0
-  if [ -f "$INSTALL_DIR_TMP/trackfw" ] && "$INSTALL_DIR_TMP/trackfw" 2>&1 | grep -q "MALICIOUS"; then
+  if [ -f "$INSTALL_DIR_TMP/trackfw" ] && "$INSTALL_DIR_TMP/trackfw" 2>&1 | grep "MALICIOUS" >/dev/null; then
     MALICIOUS_INSTALLED=1
   fi
 
@@ -647,7 +647,7 @@ else
   SCENARIOS_RUN=$((SCENARIOS_RUN + 1))
 fi
 
-if ! echo "$OUT_C8" | grep -q "outra copia do trackfw"; then
+if ! echo "$OUT_C8" | grep "outra copia do trackfw" >/dev/null; then
   echo "FAIL [C8/warning-presente]: output nao contem 'outra copia do trackfw'"
   echo "  output: $OUT_C8"
   GATE_FAIL=1
@@ -656,7 +656,7 @@ else
   SCENARIOS_RUN=$((SCENARIOS_RUN + 1))
 fi
 
-if ! echo "$OUT_C8" | grep -qF "$EXTRA_BIN_C8/trackfw"; then
+if ! echo "$OUT_C8" | grep -F "$EXTRA_BIN_C8/trackfw" >/dev/null; then
   echo "FAIL [C8/warning-caminho]: output nao contem o caminho do trackfw falso ($EXTRA_BIN_C8/trackfw)"
   echo "  output: $OUT_C8"
   GATE_FAIL=1
@@ -700,7 +700,7 @@ else
   SCENARIOS_RUN=$((SCENARIOS_RUN + 1))
 fi
 
-if echo "$OUT_C9" | grep -q "outra copia do trackfw"; then
+if echo "$OUT_C9" | grep "outra copia do trackfw" >/dev/null; then
   echo "FAIL [C9/sem-warning]: output contem 'outra copia do trackfw' mas nao deveria"
   echo "  output: $OUT_C9"
   GATE_FAIL=1

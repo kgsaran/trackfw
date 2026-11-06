@@ -365,7 +365,7 @@ GOEOF
   arm1_rc=0
   arm1_out=$(GATE_VALIDATOR_GO="$go_no_guard" GATE_VALIDATOR_TRACEID="$traceid_correct" \
     bash "$SCRIPT_DIR/check-req-roadmap-rule-is-status-aware.sh" 2>&1) || arm1_rc=$?
-  if [ "$arm1_rc" -ne 0 ] && echo "$arm1_out" | grep -q 'req_has_roadmap'; then
+  if [ "$arm1_rc" -ne 0 ] && echo "$arm1_out" | grep 'req_has_roadmap' >/dev/null; then
     echo "OK   [self-test/arm1] gate FAILs naming req_has_roadmap (no guard): rc=$arm1_rc"
   else
     echo "FAIL [self-test/arm1] expected FAIL naming req_has_roadmap; got rc=$arm1_rc"
@@ -393,7 +393,7 @@ GOEOF
   arm3a_rc=0
   arm3a_out=$(GATE_VALIDATOR_GO="$go_trailing_comment" GATE_VALIDATOR_TRACEID="$traceid_correct" \
     bash "$SCRIPT_DIR/check-req-roadmap-rule-is-status-aware.sh" 2>&1) || arm3a_rc=$?
-  if [ "$arm3a_rc" -ne 0 ] && echo "$arm3a_out" | grep -q 'req_has_roadmap'; then
+  if [ "$arm3a_rc" -ne 0 ] && echo "$arm3a_out" | grep 'req_has_roadmap' >/dev/null; then
     echo "OK   [self-test/arm3a] trailing-comment reqStatusIsDone correctly rejected: rc=$arm3a_rc"
   else
     echo "FAIL [self-test/arm3a] expected FAIL for trailing-comment-only reqStatusIsDone; got rc=$arm3a_rc"
@@ -407,7 +407,7 @@ GOEOF
   arm3b_rc=0
   arm3b_out=$(GATE_VALIDATOR_GO="$go_fullline_comment" GATE_VALIDATOR_TRACEID="$traceid_correct" \
     bash "$SCRIPT_DIR/check-req-roadmap-rule-is-status-aware.sh" 2>&1) || arm3b_rc=$?
-  if [ "$arm3b_rc" -ne 0 ] && echo "$arm3b_out" | grep -qi 'anti-vacuity\|not found'; then
+  if [ "$arm3b_rc" -ne 0 ] && echo "$arm3b_out" | grep -i 'anti-vacuity\|not found' >/dev/null; then
     echo "OK   [self-test/arm3b] full-line-comment readFileForRule triggers anti-vacuity: rc=$arm3b_rc"
   else
     echo "FAIL [self-test/arm3b] expected anti-vacuity FAIL for commented readFileForRule; got rc=$arm3b_rc"
@@ -423,7 +423,7 @@ GOEOF
   arm4_rc=0
   arm4_out=$(GATE_VALIDATOR_GO="$go_with_guard" GATE_VALIDATOR_TRACEID="$traceid_decoy" \
     bash "$SCRIPT_DIR/check-req-roadmap-rule-is-status-aware.sh" 2>&1) || arm4_rc=$?
-  if [ "$arm4_rc" -ne 0 ] && echo "$arm4_out" | grep -q 'traceid_orphan_req'; then
+  if [ "$arm4_rc" -ne 0 ] && echo "$arm4_out" | grep 'traceid_orphan_req' >/dev/null; then
     echo "OK   [self-test/arm4] narrowing is load-bearing: decoy in orphan_roadmap block does not satisfy orphan_req check: rc=$arm4_rc"
   else
     echo "FAIL [self-test/arm4] expected FAIL for decoy-before-anchor (narrowing check); got rc=$arm4_rc"

@@ -116,7 +116,7 @@ MODE="${1:-}"
 # and ~329 s. 900 s = max-age + 300 s safety margin.
 # Source: docs/seguranca/2026-10-09-wave0-verificacao-canais-indice-pypi.md §4
 VERIFY_CONTENT_DEADLINE="${VERIFY_CONTENT_DEADLINE:-900}"
-if ! printf '%s' "${VERIFY_CONTENT_DEADLINE}" | grep -qE '^[0-9]+$' \
+if ! printf '%s' "${VERIFY_CONTENT_DEADLINE}" | grep -E '^[0-9]+$' >/dev/null \
     || [[ "${VERIFY_CONTENT_DEADLINE}" -le 0 ]]; then
     echo "check-channels-content: VERIFY_CONTENT_DEADLINE must be a positive integer" \
          "(got '${VERIFY_CONTENT_DEADLINE}'); using 900" >&2
@@ -464,7 +464,7 @@ except Exception:
                 esac
 
                 # sha256 must be present and exactly 64 lowercase hex characters.
-                if ! printf '%s' "$_wsha" | grep -qE '^[0-9a-f]{64}$'; then
+                if ! printf '%s' "$_wsha" | grep -E '^[0-9a-f]{64}$' >/dev/null; then
                     echo "FAIL: missing or invalid sha256 for $(basename "$_wurl") (got: '${_wsha:-empty}')" >&2
                     security_fail=1
                     break
@@ -1068,7 +1068,7 @@ STUBEOF
     )
     arm6_exit=$?
     set -e
-    if [[ "$arm6_exit" -ne 0 ]] && printf '%s' "$arm6_out" | grep -qi "deadline"; then
+    if [[ "$arm6_exit" -ne 0 ]] && printf '%s' "$arm6_out" | grep -i "deadline" >/dev/null; then
         ok "arm6: PyPI retry negativo — exit 1 with 'deadline' message"
     elif [[ "$arm6_exit" -ne 0 ]]; then
         fail "arm6: PyPI retry negativo — exit 1 but no 'deadline' in output (wrong failure path?)"
@@ -1096,7 +1096,7 @@ STUBEOF
     )
     arm7_exit=$?
     set -e
-    if [[ "$arm7_exit" -ne 0 ]] && printf '%s' "$arm7_out" | grep -q "win_arm64"; then
+    if [[ "$arm7_exit" -ne 0 ]] && printf '%s' "$arm7_out" | grep "win_arm64" >/dev/null; then
         ok "arm7: 7 wheels → exit 1, missing tag 'win_arm64' named"
     elif [[ "$arm7_exit" -ne 0 ]]; then
         fail "arm7: 7 wheels → exit 1 but missing tag not named in output"
@@ -1193,7 +1193,7 @@ STUBEOF
     set -e
     arm10_clock=$(cat "$CLOCK10" 2>/dev/null | tr -d '[:space:]' || echo 0)
     if [[ "$arm10_exit" -ne 0 ]] && [[ "${arm10_clock:-0}" -eq 0 ]] \
-       && printf '%s' "$arm10_out" | grep -qi "sha256"; then
+       && printf '%s' "$arm10_out" | grep -i "sha256" >/dev/null; then
         ok "arm10: sha256 mismatch → exit 1, 'sha256' in output, sleep never called (clock=0)"
     elif [[ "$arm10_exit" -ne 0 ]] && [[ "${arm10_clock:-0}" -eq 0 ]]; then
         fail "arm10: sha256 mismatch → exit 1, no sleep, but 'sha256' not found in output"
@@ -1228,7 +1228,7 @@ STUBEOF
     set -e
     arm11_clock=$(cat "$CLOCK11" 2>/dev/null | tr -d '[:space:]' || echo 0)
     if [[ "$arm11_exit" -ne 0 ]] && [[ "${arm11_clock:-0}" -eq 0 ]] \
-       && printf '%s' "$arm11_out" | grep -qi "disallowed host\|not allowed\|host"; then
+       && printf '%s' "$arm11_out" | grep -i "disallowed host\|not allowed\|host" >/dev/null; then
         ok "arm11: wrong host URL → exit 1, 'host' in output, sleep never called (clock=0)"
     elif [[ "$arm11_exit" -ne 0 ]] && [[ "${arm11_clock:-0}" -eq 0 ]]; then
         fail "arm11: wrong host URL → exit 1, no sleep, but host mention not found in output"
@@ -1297,7 +1297,7 @@ STUBEOF
     )
     arm13_exit=$?
     set -e
-    if [[ "$arm13_exit" -ne 0 ]] && printf '%s' "$arm13_out" | grep -q "linux_riscv64"; then
+    if [[ "$arm13_exit" -ne 0 ]] && printf '%s' "$arm13_out" | grep "linux_riscv64" >/dev/null; then
         ok "arm13: extra tag linux_riscv64 → exit 1 with unexpected tag named"
     elif [[ "$arm13_exit" -ne 0 ]]; then
         fail "arm13: extra tag → exit 1 but 'linux_riscv64' not named in output"

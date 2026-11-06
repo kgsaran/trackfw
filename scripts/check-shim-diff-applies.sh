@@ -299,7 +299,7 @@ run_self_test() {
   else
     local out_classify
     out_classify=$(classify_tmpfile "$diffout" && true)
-    if echo "$out_classify" | grep -q "diff_is_inert=true"; then
+    if echo "$out_classify" | grep "diff_is_inert=true" >/dev/null; then
       st_pass "T1-git: inerte puro (docs/a.md) → true"
     else
       st_fail "T1-git" "esperava diff_is_inert=true, got: $out_classify"
@@ -319,7 +319,7 @@ run_self_test() {
     st_fail "T2-git" "fetch_diff_to_file falhou (rc=$diff_rc)"
   else
     out_classify=$(classify_tmpfile "$diffout" && true)
-    if echo "$out_classify" | grep -q "diff_is_inert=false"; then
+    if echo "$out_classify" | grep "diff_is_inert=false" >/dev/null; then
       st_pass "T2-git: internal/x.go → false"
     else
       st_fail "T2-git" "esperava diff_is_inert=false, got: $out_classify"
@@ -333,7 +333,7 @@ run_self_test() {
     st_fail "T3-git" "fetch_diff_to_file falhou (rc=$diff_rc)"
   else
     out_classify=$(classify_tmpfile "$diffout" && true)
-    if echo "$out_classify" | grep -q "diff_is_inert=false"; then
+    if echo "$out_classify" | grep "diff_is_inert=false" >/dev/null; then
       st_pass "T3-git: diff vazio → false (fail-closed)"
     else
       st_fail "T3-git" "esperava diff_is_inert=false para diff vazio, got: $out_classify"
@@ -371,7 +371,7 @@ run_self_test() {
   else
     # --no-renames mostra ambos; src/y.go é não-inerte → false
     out_classify=$(classify_tmpfile "$diffout" && true)
-    if echo "$out_classify" | grep -q "diff_is_inert=false"; then
+    if echo "$out_classify" | grep "diff_is_inert=false" >/dev/null; then
       st_pass "T4-git: rename vault/x.md→src/y.go, --no-renames mostra src/y.go → false"
     else
       st_fail "T4-git" "esperava diff_is_inert=false (src/y.go não inerte), got: $out_classify"
@@ -402,7 +402,7 @@ run_self_test() {
     # --no-renames mostra: internal/xr.go (delete) + docs/xr.go (add)
     # internal/xr.go não é inerte → false
     out_classify=$(classify_tmpfile "$diffout" && true)
-    if echo "$out_classify" | grep -q "diff_is_inert=false"; then
+    if echo "$out_classify" | grep "diff_is_inert=false" >/dev/null; then
       st_pass "T5-git: rename internal/xr.go→docs/xr.go, --no-renames mostra internal/xr.go → false"
     else
       st_fail "T5-git" "esperava diff_is_inert=false (internal/xr.go aparece), got: $out_classify"
@@ -434,7 +434,7 @@ run_self_test() {
     GITHUB_OUTPUT="" \
     bash "${BASH_SOURCE[0]}" --classify 2>&1 || true
   )
-  if echo "$classify_out" | grep -q "diff_is_inert=false"; then
+  if echo "$classify_out" | grep "diff_is_inert=false" >/dev/null; then
     st_pass "8: base != default branch → false"
   else
     st_fail "8" "esperava diff_is_inert=false para base≠default, got: $classify_out"
@@ -450,7 +450,7 @@ run_self_test() {
     GITHUB_OUTPUT="" \
     bash "${BASH_SOURCE[0]}" --classify 2>&1 || true
   )
-  if echo "$classify_out" | grep -q "diff_is_inert=false"; then
+  if echo "$classify_out" | grep "diff_is_inert=false" >/dev/null; then
     st_pass "9: event=push → false"
   else
     st_fail "9" "esperava diff_is_inert=false para evento!=pull_request, got: $classify_out"
@@ -466,7 +466,7 @@ run_self_test() {
     GITHUB_OUTPUT="" \
     bash "${BASH_SOURCE[0]}" --classify 2>&1 || true
   )
-  if echo "$classify_out" | grep -q "diff_is_inert=false"; then
+  if echo "$classify_out" | grep "diff_is_inert=false" >/dev/null; then
     st_pass "7: base SHA inexistente em --classify → false (merge-base falha)"
   else
     st_fail "7" "esperava diff_is_inert=false para SHA inexistente, got: $classify_out"
@@ -531,7 +531,7 @@ run_self_test() {
     GITHUB_OUTPUT="" \
     bash "$script_copy_dir/classifier-base.sh" --classify 2>&1 || true
   )
-  if echo "$classify_out" | grep -q "diff_is_inert=true"; then
+  if echo "$classify_out" | grep "diff_is_inert=true" >/dev/null; then
     st_pass "T10a: script fora do repo, cwd=repo, diff inerte (docs/a.md) → true"
   else
     st_fail "T10a" "esperava diff_is_inert=true, got: $classify_out"
@@ -563,7 +563,7 @@ run_self_test() {
     GITHUB_OUTPUT="" \
     bash "$script_copy_dir/classifier-base.sh" --classify 2>&1 || true
   )
-  if echo "$classify_out" | grep -q "diff_is_inert=false"; then
+  if echo "$classify_out" | grep "diff_is_inert=false" >/dev/null; then
     st_pass "T10b: script fora do repo, cwd=repo, diff não inerte (internal/y.go) → false"
   else
     st_fail "T10b" "esperava diff_is_inert=false, got: $classify_out"

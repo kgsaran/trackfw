@@ -63,14 +63,15 @@ Três causas, um ML para cada. O diagnóstico está no ADR-2026-11-06. Varredura
 - [x] `make parity-rest` verde
 
 ### ML-1D — `grep -q` sob `pipefail` dá 141 intermitente (ares-tf) — AC6
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Origem:** achado na auditoria do ML-1A. Em `set -o pipefail`, `produtor | grep -q P` reprova com 141 quando o `grep -q` sai cedo e o produtor ainda escreve (SIGPIPE). Medido: `grep -v '^\s*#' .github/workflows/quality.yml | grep -q check-shim-diff-applies` deu `141 141 0 0 0 0 141 141` em 8 execuções. É o mesmo efeito desta REQ (vermelho sem relação com o conteúdo), por isso entra aqui. Paralelo ao ML-1C: arquivos disjuntos.
-**Files affected:** `scripts/check-adr-enumeration-single-point.sh`, `scripts/check-channels-content.sh`, `scripts/check-ci-workflow-pin-parity.sh`, `scripts/check-crlf-normalize-capture.sh`, `scripts/check-falsify-shard-coverage.sh`, `scripts/check-gates-falsify.sh`, `scripts/check-git-branch-guard-hook-schema.sh`, `scripts/check-goreleaser-prerelease.sh`, `scripts/check-init-preserves-user-config.sh`, `scripts/check-install-checksum.sh`, `scripts/check-orphan-gates.sh`, `scripts/check-platform-matrix-parity.sh`, `scripts/check-raw-read-ban.sh`, `scripts/check-release-tag-parity.sh`, `scripts/check-req-roadmap-rule-is-status-aware.sh`, `scripts/check-roadmap-slug-matching.sh`, `scripts/check-serve-api-file-security.sh`, `scripts/check-serve-browser-security.sh`, `scripts/check-shim-diff-applies.sh`, `scripts/check-symlink-privilege-guard.sh`, `scripts/check-update-parity.sh`, `scripts/check-wheel-metadata-readme.sh`, `scripts/check-write-containment.sh`, `scripts/run-gates-falsify-parallel.sh`, `scripts/run-gates-falsify-shard.sh`, `scripts/check-no-grep-q-under-pipefail.sh`, `Makefile`
+**Files affected:** `scripts/check-adr-enumeration-single-point.sh`, `scripts/check-channels-content.sh`, `scripts/check-ci-workflow-pin-parity.sh`, `scripts/check-crlf-normalize-capture.sh`, `scripts/check-falsify-shard-coverage.sh`, `scripts/check-gates-falsify.sh`, `scripts/check-git-branch-guard-hook-schema.sh`, `scripts/check-goreleaser-prerelease.sh`, `scripts/check-init-preserves-user-config.sh`, `scripts/check-install-checksum.sh`, `scripts/check-orphan-gates.sh`, `scripts/check-platform-matrix-parity.sh`, `scripts/check-raw-read-ban.sh`, `scripts/check-release-tag-parity.sh`, `scripts/check-req-roadmap-rule-is-status-aware.sh`, `scripts/check-roadmap-slug-matching.sh`, `scripts/check-serve-api-file-security.sh`, `scripts/check-serve-browser-security.sh`, `scripts/check-shim-diff-applies.sh`, `scripts/check-symlink-privilege-guard.sh`, `scripts/check-update-parity.sh`, `scripts/check-wheel-metadata-readme.sh`, `scripts/check-write-containment.sh`, `scripts/run-gates-falsify-parallel.sh`, `scripts/run-gates-falsify-shard.sh`, `scripts/check-parity-call-site-pins.sh`, `scripts/check-usage-silencing.sh`, `scripts/check-no-grep-q-under-pipefail.sh`, `Makefile`
 **Acceptance criteria:**
-- [ ] nenhum `| grep -q` resta nos scripts com `pipefail`; a troca é `| grep P >/dev/null` (lê a entrada inteira, mesmo código de saída)
-- [ ] `scripts/check-no-grep-q-under-pipefail.sh` reprova script com `pipefail` e `| grep -q`, tem `--self-test` com contra-braço, e roda no `parity-rest`
-- [ ] o laço de 20 execuções do pipeline medido acima dá 0 em todas depois da troca no `check-orphan-gates.sh`
-- [ ] `make parity-rest` verde
+- [x] nenhum `| grep -q` resta nos scripts com `pipefail`; a troca é `| grep P >/dev/null` (lê a entrada inteira, mesmo código de saída)
+- [x] `scripts/check-no-grep-q-under-pipefail.sh` reprova script com `pipefail` e `| grep -q`, tem `--self-test` com contra-braço, e roda no `parity-rest`
+- [x] o laço de 20 execuções do pipeline medido acima dá 0 em todas depois da troca no `check-orphan-gates.sh`
+- [x] `make parity-rest` verde
+**Auditoria:** 96 trocas, só em linhas de `grep`. Dois arquivos entraram fora da lista inicial pela mesma causa: `check-parity-call-site-pins.sh` (`| grep -vqE`, que a varredura por `| *grep -q` não casava) e `check-usage-silencing.sh` (sem `pipefail`, troca preventiva). Medido: forma antiga 18/20 com 141, forma nova 0/20.
 
 ## Wave 2 — Red team
 > Dependencies: Wave 1 completa.

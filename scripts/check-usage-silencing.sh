@@ -113,7 +113,7 @@ STUB
   for braco in sempre-usage nunca-usage; do
     BIN_SOB_TESTE="$tmp/$braco"
     saida=$(FAIL=0; EXEC_RUNTIME=0; EXEC_USO=0; rodar_cenarios 2>&1; echo "FAIL=$FAIL")
-    if printf '%s' "$saida" | grep -q "FAIL \["; then
+    if printf '%s' "$saida" | grep "FAIL \[" >/dev/null; then
       echo "OK   [self-test/$braco] o gate REPROVA como deveria"
     else
       echo "FAIL [self-test/$braco] o gate passou num binario que quebra esta direcao"
