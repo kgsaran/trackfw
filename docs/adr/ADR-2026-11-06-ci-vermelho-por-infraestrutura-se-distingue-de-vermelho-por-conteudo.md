@@ -32,6 +32,18 @@ Três vermelhos recentes não tinham relação com o conteúdo do PR:
 
 - **D5 (acrescentada na auditoria do ML-1A).** `produtor | grep -q` sob `pipefail` é vermelho intermitente sem relação com o conteúdo: o `grep -q` sai no primeiro casamento e o produtor recebe SIGPIPE (141). A forma `| grep P >/dev/null` lê a entrada inteira e tem o mesmo código de saída. Um gate impede a volta.
 
+- **D3, segunda emenda (2026-11-06, CI do PR #669).** A premissa de que uma amostra de aquecimento prevê as chamadas seguintes foi falsificada. O código de teste era o mesmo nas duas execuções:
+  - na execução verde (42237249669), o pwsh aqueceu em 0,26 s e a primeira chamada levou 0,81 s; o PowerShell 5.1 aqueceu em 3,24 s;
+  - na vermelha (42253593127), o pwsh aqueceu em 0,42 s e a primeira chamada passou de 15 s; o aquecimento do 5.1 passou de 60 s.
+
+  A máquina parou depois do aquecimento. Por isso:
+  - depois de um estouro, uma sonda nova de `exit 0`, sem cache, decide. Se ela também for lenta, a máquina parou: a chamada é repetida uma vez, com prazo derivado da sonda nova. Se a sonda for rápida, quem travou foi o guard: a chamada reprova sem nova tentativa;
+  - o binário só é marcado no fail-fast depois que a nova tentativa também estoura;
+  - um aquecimento que estoura tem uma nova tentativa. Se ela também estourar, a mensagem diz "máquina", não "guard";
+  - o limiar de "sonda lenta" é palpite, como o fator 4.
+
+  Pior caso por binário: aquecimento 60 + 60, chamada 60, sonda 60, nova tentativa 60, cerca de 300 s. Com dois binários, cerca de 600 s, abaixo do `-timeout 20m`. Uma corrida verde depois desta correção não prova a nova tentativa, porque a parada pode não se repetir. A prova são os testes com dublês.
+
 ## Consequences
 
 - **Positivas:**
