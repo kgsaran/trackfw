@@ -15,7 +15,7 @@ REQ: docs/req/REQ-2026-11-06-ci-vermelho-sem-relacao-com-o-conteudo-fila-do-maco
 Três causas, um ML para cada. O diagnóstico está no ADR-2026-11-06. Varredura de issues: a única aberta é a #665, absorvida aqui; a #664 é Discussion.
 
 ## Acceptance Criteria
-- [ ] AC1–AC5 da REQ
+- [x] AC1–AC6 da REQ
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado

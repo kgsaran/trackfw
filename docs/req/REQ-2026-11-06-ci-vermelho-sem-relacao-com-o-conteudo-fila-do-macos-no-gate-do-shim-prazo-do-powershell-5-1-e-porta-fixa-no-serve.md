@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Done
 date: 2026-11-06
 author: "Zeus (trackfw_architect)"
 adr: "docs/adr/ADR-2026-11-06-ci-vermelho-por-infraestrutura-se-distingue-de-vermelho-por-conteudo.md"
@@ -16,7 +16,7 @@ Os relatos de lourivalgarciajunior (Discussion #664 e issue #665) e a falha de p
 
 ## Acceptance Criteria
 
-- [ ] **AC1 (#664).** Num PR cujo diff só toca caminhos do conjunto inerte, o `shim-byte-identity-gate` passa mesmo com o braço macOS `cancelled` ou `skipped`, e escreve `não aplicável` com a lista de arquivos no log. Num PR com qualquer arquivo fora do conjunto, inclusive arquivo novo, desconhecido ou renomeado, o gate continua exigindo `success` dos dois braços. No `push` e na tag, também. Se o diff não puder ser calculado, o gate exige `success`. Como a classificação usa o script da BASE (emenda D1 do ADR), a dispensa só dispara em PR aberto depois do merge; antes do merge, a lógica é verificada pelo autoteste e pela leitura do workflow, e o primeiro PR só de documentação contra a `main` depois do merge é a medição real.
+- [x] **AC1 (#664).** Num PR cujo diff só toca caminhos do conjunto inerte, o `shim-byte-identity-gate` passa mesmo com o braço macOS `cancelled` ou `skipped`, e escreve `não aplicável` com a lista de arquivos no log. Num PR com qualquer arquivo fora do conjunto, inclusive arquivo novo, desconhecido ou renomeado, o gate continua exigindo `success` dos dois braços. No `push` e na tag, também. Se o diff não puder ser calculado, o gate exige `success`. Como a classificação usa o script da BASE (emenda D1 do ADR), a dispensa só dispara em PR aberto depois do merge; antes do merge, a lógica é verificada pelo autoteste e pela leitura do workflow, e o primeiro PR só de documentação contra a `main` depois do merge é a medição real. **Medido no PR #670 (run 42265834234):** `classify` com "todos 4 arquivo(s) são inertes", `shim-byte-identity` pulado e gate com "não aplicável: o diff só toca caminhos inertes".
 - [x] **AC2 (#664).** A classificação do diff é um script com autoteste que roda no CI. O autoteste cobre os dois sentidos:
   - diff só de caminhos inertes dá não aplicável;
   - dá aplicável: um arquivo em `internal/`, `npm/` ou `cmd/`, um arquivo na raiz que não é `.md`, um caminho novo desconhecido, um rename de inerte para fora e de fora para inerte, e base ausente.
