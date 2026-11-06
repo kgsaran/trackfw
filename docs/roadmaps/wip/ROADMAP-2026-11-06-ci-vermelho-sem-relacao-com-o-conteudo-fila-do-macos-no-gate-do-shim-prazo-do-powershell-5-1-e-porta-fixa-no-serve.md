@@ -114,12 +114,14 @@ Três causas, um ML para cada. O diagnóstico está no ADR-2026-11-06. Varredura
 - [x] `make parity-rest` verde
 
 ### ML-2E — Nova tentativa do PowerShell só com sinal de máquina parada (artemis-tf) — AC3
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Origem:** CI do PR #669, run 42253593127. A premissa da D3 foi falsificada; ver a segunda emenda da D3 no ADR. É a mesma causa da #665.
 **Files affected:** `internal/generators/guard_line_shell_test.go`
 **Acceptance criteria:**
-- [ ] depois de um estouro, uma sonda `exit 0` sem cache decide: sonda lenta leva a uma nova tentativa com prazo derivado dela; sonda rápida reprova sem nova tentativa
-- [ ] o registro de fail-fast só marca o binário depois que a nova tentativa também estoura
-- [ ] um aquecimento que estoura tem uma nova tentativa; se ela também estourar, a mensagem atribui a falha à máquina
-- [ ] testes com dublês, sem PowerShell: estouro + sonda lenta + nova tentativa que passa; estouro + sonda rápida reprova com `run` chamado uma vez; estouro + sonda lenta + nova tentativa que estoura reprova e registra; contra-braço sem a condição reprova o caso da sonda rápida
-- [ ] `go test ./internal/generators/` verde
+- [x] depois de um estouro, uma sonda `exit 0` sem cache decide: sonda lenta leva a uma nova tentativa com prazo derivado dela; sonda rápida reprova sem nova tentativa
+- [x] o registro de fail-fast só marca o binário depois que a nova tentativa também estoura
+- [x] orçamento de uma nova tentativa por binário por processo; esgotado o orçamento, o próximo estouro reprova e marca o binário
+- [x] um aquecimento que estoura tem uma nova tentativa; se ela também estourar, a mensagem atribui a falha à máquina
+- [x] testes com dublês, sem PowerShell: estouro + sonda lenta + nova tentativa que passa; estouro + sonda rápida reprova com `run` chamado uma vez; estouro + sonda lenta + nova tentativa que estoura reprova e registra; contra-braço sem a condição reprova o caso da sonda rápida
+- [x] `go test ./internal/generators/` verde
+**Auditoria:** o executor apontou que a nova tentativa que passa não marcava o binário, o que dava pior caso de cerca de 48 min com paradas repetidas. Entrou o orçamento de uma nova tentativa por binário, e o ADR foi emendado. Contra-braços: sem a condição da sonda, sem a nova tentativa e sem o consumo do orçamento, cada um reprova o seu teste.
