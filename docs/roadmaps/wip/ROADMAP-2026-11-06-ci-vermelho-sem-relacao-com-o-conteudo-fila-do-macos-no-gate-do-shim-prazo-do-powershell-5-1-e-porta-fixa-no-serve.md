@@ -97,8 +97,18 @@ Três causas, um ML para cada. O diagnóstico está no ADR-2026-11-06. Varredura
 **Auditoria:** a premissa "o bash do Actions é `-eo pipefail` por padrão", que veio do handoff do arquiteto, era falsa: sem `shell:` o padrão é `bash -e {0}`. A regra do gate continua uniforme em workflow, e a justificativa nos comentários foi corrigida. `release.yml:83` entrou pela mesma causa.
 
 ### ML-2C — Reverificação do red team (hades-tf)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Files affected:** `docs/seguranca/2026-11-06-redteam-ci-vermelho-por-infraestrutura.md`
 **Acceptance criteria:**
-- [ ] B1, B2 e B3 reatacados contra o código do ML-2B, com a medição escrita
-- [ ] veredito final escrito
+- [x] B1, B2 e B3 reatacados contra o código do ML-2B, com a medição escrita
+- [x] veredito final escrito
+**Veredito:** APROVA COM RESSALVAS. B1, B2 e B3 fechados por medição independente; dois residuais LOW declarados (R11: ::set-output root *.md com 2 espaços no inert_list; R12: braço YAML do gate sem anti-vacuidade). `make parity-rest` rc=0, shim self-test 27/27.
+**Auditoria:** o executor marcou o próprio ML no roadmap, que estava fora do escopo dele. O texto foi conferido e mantido. O índice do repositório estava limpo nos três pontos medidos. O R11 é benigno: o valor seria `true.md`, com indentação, e o runner ignora `::set-output`. O R12 é defeito do gate e vira o ML-2D.
+
+### ML-2D — Guarda de vacuidade no braço YAML do gate de `grep -q` (ares-tf)
+**Status:** 🔄 Em andamento
+**Files affected:** `scripts/check-no-grep-q-under-pipefail.sh`
+**Acceptance criteria:**
+- [ ] o gate reprova quando não encontra nenhum `*.yml` no diretório de workflows varrido, como já faz com `scripts/*.sh`
+- [ ] o `--self-test` tem um caso para diretório de workflows vazio, que reprova
+- [ ] `make parity-rest` verde

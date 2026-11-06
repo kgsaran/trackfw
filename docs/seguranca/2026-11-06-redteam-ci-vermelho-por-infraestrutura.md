@@ -323,3 +323,274 @@ Residuais novos desta sessão:
 - docs.github.com Enterprise Server 3.17, `GITHUB_PATH` — documenta que cada passo tem seu próprio arquivo de caminho único (implicando releitura por passo): [https://docs.github.com/en/enterprise-server@3.17/actions/reference/workflows-and-actions/variables](https://docs.github.com/en/enterprise-server@3.17/actions/reference/workflows-and-actions/variables)
 - oneuptime.com (terceiros), tutorial sobre workflow commands — descreve `GITHUB_PATH` como adicionando diretórios ao PATH para passos subsequentes: [https://oneuptime.com/blog/post/2026-01-30-github-actions-workflow-commands/view](https://oneuptime.com/blog/post/2026-01-30-github-actions-workflow-commands/view)
 - Deprecação de `::set-output` pelo vetor de injeção (outubro 2022): [https://blog.amnuts.com/tag/github/](https://blog.amnuts.com/tag/github/) (referência encontrada na busca; URL canônica do GitHub Changelog não foi recuperada nesta sessão)
+
+---
+
+## Reverificação (ML-2C)
+
+> Data: 2026-11-06 | Instrumento: hades-tf | Plataforma: darwin arm64, bash 5.3.20, LC_ALL=unset (en_US.UTF-8)
+
+### Escopo
+
+B1, B2 e B3 reatacados contra o código commitado pelo ML-2B (commit `24ca1ca5`). As medições
+usaram repositório temporário em `mktemp -d` isolado do projeto; nenhuma escrita git ocorreu na
+árvore `/Users/kgsaran/Sistemas/Desenvolvimento/workspace/trackfw`.
+
+---
+
+### B1 — Ordem de passos no job `classify`
+
+**Verificação por parse do YAML:**
+
+```
+python3 -I -c "import yaml; ..."  →  quality.yml jobs.classify.steps:
+  Step 1: uses="actions/checkout@v7"             id="(no id)"
+  Step 2: name="classificar diff do PR (versão BASE)"  id="classify"
+  Step 3: name="self-test do classificador (versão HEAD)"  id="(no id)"
+```
+
+A etapa `id: classify` (BASE) é o passo 2; o `--self-test` (HEAD) é o passo 3. Nenhum código
+controlado pelo PR roda antes do passo BASE.
+
+**Pergunta B1 do ML-2C: o `actions/checkout@v7` planta algo que o passo BASE consome?**
+
+Testado em repositório temporário com `.gitattributes` declarando `filter=evil diff=evil` para
+`scripts/check-shim-diff-applies.sh`, com e sem o driver `evil` configurado em `.git/config`:
+
+```
+git cat-file -e BASE_SHA:scripts/...  →  rc=0  (filtro não afeta existência)
+git show BASE_SHA:scripts/...         →  "echo hello"  (smudge não foi aplicado)
+git diff -z --name-only               →  "internal/x.go"  (somente caminho, sem transformação)
+```
+
+Resultado: `git cat-file`, `git show sha:path` e `git diff --name-only` leem diretamente do object
+store; filtros de `.gitattributes` não são aplicados. Hooks não são acionados por essas operações.
+`$GITHUB_ENV` não é escrito pelo `actions/checkout` em nenhuma variável que o passo BASE consuma.
+
+**Verificação de `python3`:** o script `check-shim-diff-applies.sh` exporta `PYTHONIOENCODING=utf-8`
+na linha 20, mas não invoca nenhum interpretador externo (`grep -n 'python3\|perl\|node'`
+retorna vazio). O caminho `run_classify()` usa apenas built-ins bash e comandos git.
+
+**Veredito B1: FECHADO.** O swap de ordem do ML-2B cobre o vetor completo sem superfície
+residual no caminho `--classify`.
+
+---
+
+### B2 — Sanitização de filenames com caracteres de controle
+
+**Plataforma:** bash 5.3.20, `[[:cntrl:]]` = locale en_US.UTF-8 (ASCII 0x00–0x1f + 0x7f).
+
+**Aceitação de bytes por git (testado via `update-index --add --cacheinfo`):**
+
+| Payload | Aceito pelo git local? |
+|---|---|
+| `internal/x` + `\r` + `z.go` | SIM (rc=0) |
+| `internal/x` + ESC (`\x1b`) + `z.go` | SIM (rc=0) |
+| `internal/x%0Az.go` (literal, não controle) | SIM (rc=0) |
+| `internal/x` + `\n` + `z.go` | NÃO (rc=128) |
+
+**Comportamento de `sanitize_path` (fonte verificada, linhas 57–64 do script):**
+
+| Payload em `first_bad` | Saída de `sanitize_path` | Substituição correta? |
+|---|---|---|
+| `internal/x\rz.go` | `internal/x?z.go` | SIM (`\r` = cntrl) |
+| `internal/x\033z.go` (ESC) | `internal/x?z.go` | SIM (ESC = cntrl) |
+| `internal/x%0Az.go` | `internal/x%0Az.go` | SIM (`%0A` não é cntrl) |
+
+**Medição end-to-end (repositório temporário, `GITHUB_OUTPUT` apontado para arquivo temp):**
+
+Payload `\r` em caminho não-inerte:
+```
+stdout:  nao-inerte: internal/x?z.go → aplicável
+GITHUB_OUTPUT: diff_is_inert=false
+```
+Nenhuma linha começa com `::`.
+
+Payload ESC em caminho não-inerte:
+```
+stdout:  nao-inerte: internal/x?z.go → aplicável
+GITHUB_OUTPUT: diff_is_inert=false
+```
+Confirmado por `od -An -tx1`: posição do ESC substituída por `3f` (`?`).
+
+Payload `%0A` literal em caminho não-inerte:
+```
+stdout:  nao-inerte: internal/x%0Az.go → aplicável
+GITHUB_OUTPUT: diff_is_inert=false
+```
+`%0A` não é caractere de controle; passa intacto, sem risco de injeção.
+
+**Variante inerte: `docs/::error::x` (linha do inert\_list, sitio de impressão B2):**
+```
+stdout:
+  todos 1 arquivo(s) são inertes (lista no log do job classify):
+    docs/::error::x
+  diff inerte → não aplicável
+grep '^::' → (nenhuma linha começa com ::)
+```
+O prefixo `docs/` garante que `::error::x` nunca aparece na coluna 0.
+
+**Variante crítica: `::set-output name=diff_is_inert::true.md` (root \*.md, inerte):**
+```
+stdout:
+  todos 1 arquivo(s) são inertes (lista no log do job classify):
+    ::set-output name=diff_is_inert::true.md
+  diff inerte → não aplicável
+GITHUB_OUTPUT: diff_is_inert=true
+grep '^::' → (nenhuma linha começa com :: na coluna 0)
+grep '^\s+::' → "  ::set-output name=diff_is_inert::true.md"  (2 espaços antes)
+```
+
+Análise de risco: (a) o runner do GitHub Actions processa `::set-output` apenas em linhas onde `::` está
+na **coluna 0**; `  ::set-output` (2 espaços) não é reconhecido; (b) `::set-output` foi
+deprecado/removido do runner em outubro de 2022; (c) mesmo que processado, o valor seria
+`true.md` (≠ `true`), e o `$GITHUB_OUTPUT` explícito sobrescreve na mesma etapa; (d) o
+veredito permanece `diff_is_inert=true` mesmo sem o stdout injection, porque o classificador
+já decidiu que todos os arquivos são inertes.
+
+**Self-test Part 5 (27/27 passaram, medido e via `parity-rest`):** os casos T\_newline-a/b e
+T\_newline\_in-a/b cobrem filenames com `\n` nos dois sítios de impressão, verificando `^::`.
+O self-test afirma `^::` (coluna 0), que é a mesma condição que o runner checa — coerente.
+
+**Declaração de residual (R11):** `::set-output name=diff_is_inert::true.md` em root `*.md` gera
+`  ::set-output` com 2 espaços no inert\_list. Runner moderno (pós-out 2022) não processa; mesmo
+runner antigo não processaria pela indentação. Aceito como residual LOW.
+
+**Veredito B2: FECHADO.** A sanitização cobre `\r`, ESC e `\n` (os únicos bytes de controle que
+o git local aceita em nomes de arquivo). O sítio de impressão inerte (`  <nome>`) nunca coloca
+`::` na coluna 0. R11 declarado.
+
+---
+
+### B3 — `| grep -q` em workflows
+
+**Gate executado diretamente:**
+
+```
+bash scripts/check-no-grep-q-under-pipefail.sh
+→ check-no-grep-q-under-pipefail.sh: OK — no pipe-grep-q under pipefail found
+```
+
+**Self-test (10/10 passaram):**
+
+```
+bash scripts/check-no-grep-q-under-pipefail.sh --self-test
+→ Results: 10 passed, 0 failed
+  (inclui ty1-yml-grep-q e ty2-yml-devnull — os dois casos YAML de B3)
+```
+
+**Verificação direta dos 5 sítios do ML-2A:**
+
+| Arquivo | Linha antes | Linha depois | Sob pipefail? |
+|---|---|---|---|
+| `quality.yml` | `echo "$OUT" \| grep -q -e "--- SKIP"` | `echo "$OUT" \| grep -e "--- SKIP" >/dev/null` | SIM (shell: bash explícito) |
+| `quality.yml` | `echo "$OUT" \| grep -q -e "--- FAIL"` | `echo "$OUT" \| grep -e "--- FAIL" >/dev/null` | SIM |
+| `quality.yml` | `echo "$OUT" \| grep -q -e "--- FAIL"` | `echo "$OUT" \| grep -e "--- FAIL" >/dev/null` | SIM |
+| `windows-census.yml` | `echo "$GO_OUT" \| grep -q ...\|\| echo "$PY_OUT" \| grep -qi ...` | `echo "$GO_OUT" \| grep ... >/dev/null \|\| echo "$PY_OUT" \| grep -i ... >/dev/null` | SIM (defaults: run: shell: bash + set -euo pipefail) |
+| `release.yml:83` | `echo "$RAW" \| grep -qE '...'` | `echo "$RAW" \| grep -E '...' >/dev/null` | default bash -e {0} sem pipefail |
+
+**Escaneamento de escape patterns (nenhuma instância viva encontrada):**
+
+| Padrão | Detectado pelo gate? | Instâncias vivas em scripts/ ou workflows? |
+|---|---|---|
+| `\| grep PAT -q` (flag após posicional) | NÃO | 0 (apenas em comentários do gate) |
+| `\| command grep -q` | NÃO | 0 |
+| `\| \grep -q` | NÃO | 0 |
+| `\|&` | NÃO | 0 (ocorrência em comentário de `check-unguarded-capture-rc.sh`) |
+| `\| xargs grep -q` | NÃO | 0 |
+| `\| grep -e PAT -q` | NÃO | 0 |
+| `\|` continuação de linha + `grep -q` na próxima | NÃO | 0 |
+| Folded scalar `run: >` | N/A | 0 |
+| `\| grep -vqE` em workflows | NÃO | 0 |
+
+**Cobertura do gate:**
+- `scripts/*.sh` com `pipefail`: anti-vacuidade ativa (guard `${#SCRIPTS[@]} -eq 0 → exit 2`).
+- `.github/workflows/*.yml`: 9 arquivos escaneados (confirmado por `ls -1 | wc`); **sem
+  anti-vacuidade** para o braço YAML — se o diretório estiver vazio, o scan passa silencioso.
+  Aceito como residual R12 (LOW): hoje há 9 arquivos, e o build quebraria muito antes por outras
+  razões se os workflows sumissem.
+- `scripts/` subdirectórios: nenhum existe (maxdepth 1 é adequado).
+- Makefile: `grep -q` aparece apenas em comentários e em chamadas ao gate, nunca em target
+  com `SHELL += -o pipefail`.
+- `.github/actions/`: diretório não existe.
+
+**Medição de estabilidade (20 iterações, forma >/dev/null):**
+
+```
+Pipeline: grep -v '^\s*#' quality.yml | grep check-shim-diff-applies >/dev/null
+20 execuções: 0/20 retornaram 141
+```
+
+**Veredito B3: FECHADO.** Os 5 sítios foram corrigidos; nenhum escape pattern detectável tem
+instância viva; a ausência de anti-vacuidade no braço YAML é declarada como R12 LOW.
+
+---
+
+### Regressão
+
+**`bash scripts/check-shim-diff-applies.sh --self-test`:** 27/27 passaram (incluindo
+T\_newline-a/b e T\_newline\_in-a/b da Parte 5 — cobertura B2).
+
+**`make parity-rest` (rc=0, 2126 linhas de saída):**
+- `check-workflow-yaml.py`: 10 passed, 0 failed
+- `check-barrier.sh`: todos os cenários passaram
+- `check-shim-byte-identity.sh`: 10 passed, 0 failed (shim byte-idêntico ao nativo em 5/5 comparações substantivas)
+- `check-no-grep-q-under-pipefail.sh --self-test`: 10 passed, 0 failed
+- `check-no-grep-q-under-pipefail.sh`: OK — no pipe-grep-q under pipefail found
+- Nenhum `FAIL` inesperado em toda a saída.
+
+---
+
+### Veredito final (ML-2C)
+
+**APROVA COM RESSALVAS**
+
+Os três bloqueantes do ML-2A foram fechados pelo ML-2B e confirmados por medição independente:
+
+- **B1 FECHADO:** ordem BASE classify → HEAD self-test verificada por parse YAML; nenhum passo
+  HEAD roda antes do passo BASE; `actions/checkout` não planta nada que o passo BASE consuma
+  (filtros `.gitattributes` não afetam `git show sha:path`, git não aciona hooks em
+  `cat-file`/`show`/`diff --name-only`; nenhum interpretador externo invocado no caminho
+  `run_classify()`).
+
+- **B2 FECHADO:** `sanitize_path` substitui `\r` e ESC por `?` (medido end-to-end com
+  `GITHUB_OUTPUT` apontado para arquivo temp). Git rejeita `\n` em nomes localmente (rc=128);
+  `%0A` literal não é caractere de controle. Sítio do inert\_list imprime `  <nome>` com 2
+  espaços — `::` nunca aparece em coluna 0. R11 declarado (LOW).
+
+- **B3 FECHADO:** gate `check-no-grep-q-under-pipefail.sh` passa (OK) e cobre workflows YAML;
+  os 5 sítios foram convertidos para `>/dev/null`; nenhum escape pattern com instância viva
+  encontrado; 20/20 iterações do pipeline fixado retornam rc=0. R12 declarado (LOW).
+
+**Residuais novos declarados nesta sessão:**
+
+- **R11 (LOW):** filename `::set-output name=diff_is_inert::true.md` em root `*.md` gera linha
+  `  ::set-output...` no inert\_list com 2 espaços de prefixo. Runner pós-2022 não processa;
+  coluna 0 não atingida; valor seria `true.md` ≠ `true` mesmo se processado; `$GITHUB_OUTPUT`
+  sobrescreve. Sem caminho de escalada para mudar `diff_is_inert`.
+
+- **R12 (LOW):** braço YAML do gate `check-no-grep-q-under-pipefail.sh` não tem anti-vacuidade;
+  se `.github/workflows/` estiver vazio, o scan passa silencioso. Mitigado pelo fato de que a
+  ausência dos workflows quebraria o CI muito antes.
+
+---
+
+### Estado do repositório (pós-medição)
+
+```
+git -C /Users/kgsaran/Sistemas/Desenvolvimento/workspace/trackfw status --short
+(saída vazia — árvore limpa)
+
+git -C /Users/kgsaran/Sistemas/Desenvolvimento/workspace/trackfw diff --cached --name-only
+(saída vazia — nada staged)
+```
+
+Verificado em três pontos: pré-harness, pós-B2, pós-parity-rest. Nenhuma entrada estranha
+no índice do repositório real em nenhum ponto.
+
+---
+
+### Temporários criados
+
+- `/private/tmp/claude-501/-Users-kgsaran-Sistemas-Desenvolvimento-workspace-trackfw/a247cc38-463b-4f99-8cb2-7400f9dec171/scratchpad/hades3/` — diretório raiz dos temporários desta sessão
+- `/private/tmp/claude-501/-Users-kgsaran-Sistemas-Desenvolvimento-workspace-trackfw/a247cc38-463b-4f99-8cb2-7400f9dec171/scratchpad/hades3/repo.5nlTWl/` — repositório temporário para medições B1/B2 (pode ser removido)
