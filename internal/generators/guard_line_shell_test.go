@@ -47,12 +47,92 @@ const emulatePrefix = "emulate -R sh 2>${null-/dev/null}; "
 // Nunca chegou a ser publicada; mantida aqui só como referência para TestGuardLineShellMatrix_UnsetoptInsuficiente.
 const unsetoptOldPrefix = "unsetopt EQUALS NOMATCH 2>${null-/dev/null}; "
 
-// prazos e delays das chamadas PS (REQ-2026-11-01, AC1, AC2, P-5).
+// prazos e delays das chamadas PS (REQ-2026-11-01, REQ-2026-11-06, AC1, AC2, AC3, D3, P-5).
 const (
-	psAssertedTimeout = 15 * time.Second // prazo de cada chamada afirmada na matriz
-	psWarmupTimeout   = 60 * time.Second // prazo do aquecimento por binário (AC1)
-	psWaitDelay       = 5 * time.Second  // WaitDelay para drenar pipes após kill de grandchild (P-5)
+	// psCallDeadlineFactor é o multiplicador do aquecimento para o prazo de cada chamada PS.
+	// Fator 4 é palpite — ADR-2026-11-06 D3.
+	psCallDeadlineFactor = 4
+	// psCallDeadlineFloor é o prazo mínimo de cada chamada PS; fator 4 é palpite — ADR-2026-11-06 D3.
+	psCallDeadlineFloor = 15 * time.Second
+	// psCallDeadlineCeil é o prazo máximo de cada chamada PS; fator 4 é palpite — ADR-2026-11-06 D3.
+	psCallDeadlineCeil = 60 * time.Second
+	psWarmupTimeout    = 60 * time.Second // prazo do aquecimento por binário (AC1)
+	psWaitDelay        = 5 * time.Second  // WaitDelay para drenar pipes após kill de grandchild (P-5)
 )
+
+// psCallDeadline calcula o prazo de cada chamada PS a partir do tempo de aquecimento medido.
+// Retorna clamp(psCallDeadlineFactor × warmup, psCallDeadlineFloor, psCallDeadlineCeil).
+func psCallDeadline(warmup time.Duration) time.Duration {
+	d := time.Duration(psCallDeadlineFactor) * warmup
+	if d < psCallDeadlineFloor {
+		return psCallDeadlineFloor
+	}
+	if d > psCallDeadlineCeil {
+		return psCallDeadlineCeil
+	}
+	return d
+}
+
+// psTimeoutRegistry guarda, por binário, o nome do primeiro teste que estourou o prazo.
+// Usada pelo mecanismo fail-fast por binário (AC3, emenda D3).
+type psTimeoutRegistry struct {
+	mu sync.Mutex
+	m  map[string]string // psBin → nome do teste que estourou
+}
+
+// register marca psBin como tendo estourado o prazo em testName.
+// Idempotente: a segunda chamada não sobrescreve o culpado original.
+func (r *psTimeoutRegistry) register(psBin, testName string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.m[psBin]; !ok {
+		r.m[psBin] = testName
+	}
+}
+
+// query retorna (culprit, true) se psBin foi marcado; ("", false) caso contrário.
+func (r *psTimeoutRegistry) query(psBin string) (culprit string, timed bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	culprit, timed = r.m[psBin]
+	return
+}
+
+// psTimeouts é o registro global de binários PS que estouraram o prazo nesta execução.
+var psTimeouts = &psTimeoutRegistry{m: map[string]string{}}
+
+// psGuardedCall executa run(deadline) para psBin, aplicando fail-fast e registro de estouro.
+// Retorna (result, fatalMsg); se fatalMsg != "" o chamador deve invocar t.Fatalf(fatalMsg).
+// O prazo é derivado de warmup via psCallDeadline.
+//
+// Fail-fast por binário (AC3, emenda D3): se psBin já estourou o prazo nesta execução,
+// run NÃO é chamado e fatalMsg cita o teste que causou o primeiro estouro.
+// Isso limita o pior caso a um único timeout por binário (~60 s), mantendo a execução
+// total dentro do -timeout 20m do CI.
+func psGuardedCall(
+	reg *psTimeoutRegistry,
+	psBin, testName string,
+	warmup time.Duration,
+	run func(time.Duration) psExecResult,
+) (psExecResult, string) {
+	// Fail-fast: binário já estourou o prazo — não executar.
+	if culprit, timed := reg.query(psBin); timed {
+		return psExecResult{}, fmt.Sprintf("não executado: %s já estourou o prazo em %s", psBin, culprit)
+	}
+
+	deadline := psCallDeadline(warmup)
+	r := run(deadline)
+
+	if r.timedOut {
+		reg.register(psBin, testName)
+		return r, fmt.Sprintf(
+			"timeout: %s após %.0fs — prazo derivado do aquecimento (%.2fs × %d, limitado a [%.0fs, %.0fs]) esgotado",
+			filepath.Base(psBin), deadline.Seconds(), warmup.Seconds(), psCallDeadlineFactor,
+			psCallDeadlineFloor.Seconds(), psCallDeadlineCeil.Seconds(),
+		)
+	}
+	return r, ""
+}
 
 // guardShellMatrix mapeia nome legível → constante gerada.
 // Deve conter exactamente as 4 formas PS/POSIX do registry (credential, git-branch,
@@ -370,9 +450,14 @@ func ensurePSWarmup(t *testing.T, psBin string) {
 // -NoProfile -NonInteractive -Command <linha>.
 // Retorna (exitCode, stderr, stdinCaptured).
 //
-// Delega a execução para execPSCommand (AC2):
-//   - Se timedOut: t.Fatalf com "timeout", o binário e o prazo.
+// Delega a execução para psGuardedCall, que aplica fail-fast por binário (AC3, emenda D3)
+// e deriva o prazo via psCallDeadline(aquecimento) (AC3, D3).
+//   - Se timedOut: registra o binário no psTimeouts e t.Fatalf com binário, aquecimento e prazo.
+//   - Se o binário já estourou: t.Fatalf "não executado", sem chamar execPSCommand.
 //   - Se runErr: t.Fatalf com o erro (ex: ErrWaitDelay de grandchild).
+//
+// O aquecimento é obtido do cache de psWarmup (não executa de novo).
+// Se o aquecimento falhou, não inventa prazo: t.Fatalf antes de derivar deadline.
 //
 // PATH construído via buildPSPath:
 //   - Windows: stub-dir + %SystemRoot%\System32 (necessário para cmd.exe/powershell.exe).
@@ -389,10 +474,18 @@ func runGuardLinePS(
 ) (exitCode int, stderr string, stdinCaptured string) {
 	t.Helper()
 
-	r := execPSCommand(psBin, line, fakeDir, fakeRC, psAssertedTimeout)
+	// Obter aquecimento do cache; ensurePSWarmup já reprovou se falhou.
+	// Verificação defensiva: não derivar prazo de aquecimento fracassado.
+	warmup, warmupErr, _ := psWarmup(psBin)
+	if warmupErr != nil {
+		t.Fatalf("aquecimento de %s falhou; prazo não pode ser derivado: %v", psBin, warmupErr)
+	}
 
-	if r.timedOut {
-		t.Fatalf("timeout: %s após %.0fs — prazo da chamada afirmada esgotado", psBin, psAssertedTimeout.Seconds())
+	r, fatal := psGuardedCall(psTimeouts, psBin, t.Name(), warmup, func(d time.Duration) psExecResult {
+		return execPSCommand(psBin, line, fakeDir, fakeRC, d)
+	})
+	if fatal != "" {
+		t.Fatalf("%s", fatal)
 	}
 	if r.runErr != nil {
 		t.Fatalf("erro de execução em %s: %v", psBin, r.runErr)
@@ -790,4 +883,102 @@ func TestRunGuardLinePS_TimeoutDiscriminado(t *testing.T) {
 			t.Errorf("braço normal: esperado exitCode=1, obteve %d", r.exitCode)
 		}
 	})
+}
+
+// TestPSCallDeadline verifica que psCallDeadline implementa clamp(4×warmup, 15s, 60s)
+// nos três regimes e nas fronteiras exactas dos regimes (REQ-2026-11-06, AC3, D3).
+//
+// Reconciliação — AC3: afirma que a função de prazo deriva corretamente o deadline a
+// partir do aquecimento, garantindo que o piso e o teto são respeitados.
+func TestPSCallDeadline(t *testing.T) {
+	cases := []struct {
+		name   string
+		warmup time.Duration
+		want   time.Duration
+	}{
+		{"zero->piso", 0, 15 * time.Second},
+		{"1s->piso", 1 * time.Second, 15 * time.Second},
+		{"3.75s->piso(fronteira)", 3750 * time.Millisecond, 15 * time.Second},
+		{"8s->32s(meio)", 8 * time.Second, 32 * time.Second},
+		{"15s->teto(fronteira)", 15 * time.Second, 60 * time.Second},
+		{"20s->teto", 20 * time.Second, 60 * time.Second},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got := psCallDeadline(tc.warmup)
+			if got != tc.want {
+				t.Errorf("psCallDeadline(%v) = %v; want %v", tc.warmup, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRunGuardLinePS_FailFastPorBinario verifica que psGuardedCall implementa o mecanismo
+// fail-fast por binário: após o primeiro estouro, chamadas subsequentes para o mesmo binário
+// não invocam run; para binário diferente, run é invocado normalmente (REQ-2026-11-06, AC3, emenda D3).
+//
+// Usa um registro isolado (não o psTimeouts global) e uma função run fake, sem PowerShell instalado.
+//
+// Reconciliação — AC3 (emenda D3): afirma que o fail-fast impede execuções desnecessárias após
+// o primeiro estouro, limitando o pior caso a ~60 s por binário dentro do -timeout 20m do CI.
+func TestRunGuardLinePS_FailFastPorBinario(t *testing.T) {
+	reg := &psTimeoutRegistry{m: map[string]string{}}
+	fakeBinA := "/nonexistent/fake-ps-a-" + t.Name()
+	fakeBinB := "/nonexistent/fake-ps-b-" + t.Name()
+
+	var callCount int
+
+	// Chamada 1: bin A com aquecimento de 8 s → prazo derivado 32 s, estoura.
+	callCount = 0
+	_, msg1 := psGuardedCall(reg, fakeBinA, "TestX/case1", 8*time.Second, func(d time.Duration) psExecResult {
+		callCount++
+		if d != 32*time.Second {
+			t.Errorf("chamada 1: prazo esperado 32s, obteve %v", d)
+		}
+		return psExecResult{timedOut: true}
+	})
+	if callCount != 1 {
+		t.Errorf("chamada 1: run deve ser chamada uma vez; chamada %d vezes", callCount)
+	}
+	if !strings.Contains(msg1, "timeout") {
+		t.Errorf("chamada 1: msg deve conter 'timeout'; got %q", msg1)
+	}
+	if !strings.Contains(msg1, "32s") {
+		t.Errorf("chamada 1: msg deve citar prazo '32s'; got %q", msg1)
+	}
+
+	// Chamada 2: mesmo bin A — fail-fast, run NÃO deve ser chamada.
+	// Afirma: após estouro, execução é bloqueada e a mensagem cita o culpado original.
+	callCount = 0
+	_, msg2 := psGuardedCall(reg, fakeBinA, "TestX/case2", 8*time.Second, func(d time.Duration) psExecResult {
+		callCount++
+		return psExecResult{}
+	})
+	if callCount != 0 {
+		t.Errorf("chamada 2 (fail-fast): run não deve ser chamada; chamada %d vezes", callCount)
+	}
+	if !strings.Contains(msg2, "não executado") {
+		t.Errorf("chamada 2: msg deve conter 'não executado'; got %q", msg2)
+	}
+	if !strings.Contains(msg2, "TestX/case1") {
+		t.Errorf("chamada 2: msg deve citar culpado 'TestX/case1'; got %q", msg2)
+	}
+
+	// Chamada 3: bin B diferente — fail-fast NÃO se aplica; run deve ser chamada.
+	// Afirma: o fail-fast é por binário, não global.
+	callCount = 0
+	_, msg3 := psGuardedCall(reg, fakeBinB, "TestX/case3", 4*time.Second, func(d time.Duration) psExecResult {
+		callCount++
+		if d != 16*time.Second {
+			t.Errorf("chamada 3: prazo esperado 16s, obteve %v", d)
+		}
+		return psExecResult{exitCode: 0}
+	})
+	if callCount != 1 {
+		t.Errorf("chamada 3 (binário diferente): run deve ser chamada uma vez; chamada %d vezes", callCount)
+	}
+	if msg3 != "" {
+		t.Errorf("chamada 3: mensagem fatal inesperada: %q", msg3)
+	}
 }

@@ -45,13 +45,13 @@ Três causas, um ML para cada. O diagnóstico está no ADR-2026-11-06. Varredura
 - [ ] o comentário do ML-4E no `quality.yml` passa a explicar a nova regra
 
 ### ML-1B — Prazo do PowerShell derivado do aquecimento (artemis-tf) — AC3
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Files affected:** `internal/generators/guard_line_shell_test.go`
 **Acceptance criteria:**
-- [ ] função de prazo com teste unitário dos três regimes (aquecimento curto → 15 s, médio → 4×, longo → 60 s)
-- [ ] mensagem de estouro cita o aquecimento e o prazo
-- [ ] depois do primeiro estouro de prazo de um binário, as chamadas seguintes desse binário reprovam sem executar, citando a chamada que estourou (emenda D3); pior caso de cerca de 60 s por binário, dentro do `-timeout 20m`
-- [ ] `go test ./internal/generators/` verde
+- [x] função de prazo com teste unitário dos três regimes (aquecimento curto → 15 s, médio → 4×, longo → 60 s)
+- [x] mensagem de estouro cita o aquecimento e o prazo
+- [x] depois do primeiro estouro de prazo de um binário, as chamadas seguintes desse binário reprovam sem executar, citando a chamada que estourou (emenda D3); pior caso de cerca de 60 s por binário, dentro do `-timeout 20m`
+- [x] `go test ./internal/generators/` verde
 
 ### ML-1C — Porta livre no teste de endereço do serve (apolo-tf) — AC4
 **Status:** ⬜ Pendente
