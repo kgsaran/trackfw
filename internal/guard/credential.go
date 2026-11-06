@@ -442,6 +442,8 @@ func RunCredentialGlobal(stdin io.Reader, stdout, stderr io.Writer) int {
 // baseCwd is the working directory from tool_info.cwd in the payload. When non-empty
 // and the pattern is relative, it is resolved against baseCwd before expansion (D4 fix:
 // aligns glob behaviour with credResolveArg which already uses tool_info.cwd).
+// baseCwd is treated as a literal path — its metacharacters are escaped by
+// credGlobEscapeLiteral before the join (A-1 corretivo, 2026-11-06).
 // When baseCwd is empty, filepath.Glob runs with the pattern as-is, which is equivalent
 // to expanding against the process working directory (pre-D4 behaviour, preserved as the
 // fallback for payloads without tool_info.cwd).
@@ -458,8 +460,10 @@ func credGlobToken(token, toolName, baseCwd string) []string {
 	pattern := credNormalizeWindowsPath(strings.ReplaceAll(token, "[!", "[^"), runtime.GOOS, toolName)
 	// D4: resolve relative glob patterns against baseCwd (tool_info.cwd), just as
 	// credResolveArg does for named arguments. Absolute patterns are unchanged.
+	// A-1: escape metacharacters in baseCwd so only the token is treated as a
+	// glob — the cwd is always a literal path prefix. See credGlobEscapeLiteral.
 	if baseCwd != "" && !filepath.IsAbs(pattern) {
-		pattern = filepath.Join(baseCwd, pattern)
+		pattern = filepath.Join(credGlobEscapeLiteral(baseCwd), pattern)
 	}
 	matches, err := filepath.Glob(pattern)
 	if err != nil || len(matches) == 0 {
@@ -480,6 +484,37 @@ func credGlobToken(token, toolName, baseCwd string) []string {
 		return []string{token}
 	}
 	return matches
+}
+
+// credGlobEscapeLiteral escapes glob metacharacters in a filesystem path so that
+// it is treated as a literal prefix, not a pattern, when joined with a user-supplied
+// token and passed to filepath.Glob.
+//
+// A-1 (red team 2026-11-06): without this, baseCwd metacharacters leak into the
+// composed pattern:
+//   • cwd="…/d[1]" + token="*.txt" → pattern "…/d[1]/*.txt" — "[1]" is a char
+//     class, matches nothing that exists, → false negative (rc=0).
+//   • cwd="…/d[1" → ErrBadPattern → false negative (rc=0).
+//   • cwd="…/a*b" with token="*.txt" → pattern "…/a*b/*.txt" — "*" matches sibling
+//     dirs, e.g. "…/axb/*.txt" → false positive (rc=2 on the wrong file).
+//
+// Only the token (from the command) is interpreted as a glob; the cwd is always
+// literal. On non-Windows systems, a literal backslash is escaped first (before
+// the bracket substitution that would introduce new backslashes) to avoid
+// corrupting the escaped form. On Windows, filepath.Glob treats "\" as a path
+// separator, not an escape character, so it is left untouched.
+func credGlobEscapeLiteral(cwd string) string {
+	escaped := cwd
+	if runtime.GOOS != "windows" {
+		// Escape literal backslashes before introducing "[…]" sequences that
+		// contain no backslashes — ordering matters.
+		escaped = strings.ReplaceAll(escaped, `\`, `\\`)
+	}
+	// Single-pass replacement: order within NewReplacer does not affect the
+	// result because it matches from left to right without revisiting replaced
+	// text. This prevents sequential-replace bugs where "[*]" → "[[]*]".
+	escaped = strings.NewReplacer("[", "[[]", "*", "[*]", "?", "[?]").Replace(escaped)
+	return escaped
 }
 
 // credIsEphemeralTarget reports whether target is an ephemeral redirect destination.

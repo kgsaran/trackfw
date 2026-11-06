@@ -80,11 +80,13 @@ REQ: docs/req/REQ-2026-11-06-guard-de-credencial-atribui-ao-payload-o-achado-que
 **Auditoria:** índice limpo, só o relatório novo na árvore. A-1 confirmado por leitura: `credGlobToken` faz `filepath.Join(baseCwd, pattern)` sem escapar os metacaracteres da própria `cwd`. Uma `cwd` com `[`, `*` ou `?` vira parte do padrão: `d[1]` não casa nada (falso negativo), `d[1` dá `ErrBadPattern` e volta ao token cru (falso negativo), `a*b` casa diretórios irmãos (falso positivo com atribuição errada — o defeito que D1 corrige). Antes do D4 o glob rodava relativo à cwd do processo e a `cwd` nunca entrava no padrão. Mesma causa (D4), mesma REQ: vira ML-2B. O guard instalado bloqueou o red team cinco vezes por literal PEM no texto dos próprios comandos; os dados do A-1 não dependem desses passos.
 
 ### ML-2B — Corretivo do A-1: escapar a `cwd` antes de juntar ao glob (apolo-tf) — AC5
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Files affected:** `internal/guard/credential.go`, `internal/guard/credential_test.go`, `docs/cli-parity.md`
 **Acceptance criteria:**
-- [ ] `credGlobToken` escapa `[`, `*`, `?` de `baseCwd` (e `\` fora do Windows) antes do `filepath.Join`; só o token do comando é interpretado como padrão
-- [ ] testes: `cwd=d[1]` com `*.txt` detecta; `cwd=d[1` detecta; `cwd=a*b` com token em `axb/` não detecta; arg nomeado com `cwd=d[1]` continua detectando; vetores `*`/`?` com skip no Windows, `[` roda em todas as plataformas
-- [ ] contra-braço: sem o escape, os três primeiros testes reprovam
-- [ ] `docs/cli-parity.md`: remover "não verificada" da cwd raiz do Claude Code (coberta por `TestRunCredential_D4_GlobRootLevelCwd`) e declarar que a `cwd` é tratada como literal
-- [ ] `go test ./internal/guard/` verde; `make quality` verde
+- [x] `credGlobToken` escapa `[`, `*`, `?` de `baseCwd` (e `\` fora do Windows) antes do `filepath.Join`; só o token do comando é interpretado como padrão
+- [x] testes: `cwd=d[1]` com `*.txt` detecta; `cwd=d[1` detecta; `cwd=a*b` com token em `axb/` não detecta; arg nomeado com `cwd=d[1]` continua detectando; vetores `*`/`?` com skip no Windows, `[` roda em todas as plataformas
+- [x] contra-braço: sem o escape, os três primeiros testes reprovam
+- [x] `docs/cli-parity.md`: remover "não verificada" da cwd raiz do Claude Code (coberta por `TestRunCredential_D4_GlobRootLevelCwd`) e declarar que a `cwd` é tratada como literal
+- [x] `go test ./internal/guard/` verde; `make quality` verde
+
+**Auditoria:** correção num ponto só (`credGlobEscapeLiteral` antes do `filepath.Join`); o executor procurou outros `filepath.Glob`/`Match` em `internal/guard` e não achou, e o oráculo `.sh` não expande glob pela cwd. Contra-braço: sem o escape, os testes `CwdBracket`, `CwdUnclosedBracket` e `CwdStarSiblingNoFalsePositive` reprovam e o controle por arg nomeado passa; restauração conferida com `cmp` rc=0. Reexecutado pelo arquiteto: os 5 testes novos PASS. `make quality` rc=0 (executor). O executor marcou o ML como 🔄 no roadmap, arquivo que não estava na lista fechada; o arquiteto sobrescreveu o status.

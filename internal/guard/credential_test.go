@@ -2110,6 +2110,188 @@ func TestRunCredential_D4_NamedArgRootLevelCwd_NoMatch(t *testing.T) {
 	}
 }
 
+// --------------------------------------------------------------------------
+// A-1 corretivo (ML-2B): credGlobEscapeLiteral — metacharacters in baseCwd
+// --------------------------------------------------------------------------
+
+// TestCredGlobEscapeLiteral_UnitVectors asserts the escape helper produces
+// correct output for each metacharacter class and their combinations.
+//
+// Assertion: credGlobEscapeLiteral treats "[", "*" and "?" as literal characters
+// in a cwd path, and on non-Windows it also escapes literal backslashes before
+// introducing bracket-escape sequences — no sequential-replace corruption occurs.
+func TestCredGlobEscapeLiteral_UnitVectors(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  string
+		skip  string // non-empty → t.Skip on that GOOS
+	}{
+		{
+			name:  "bracket",
+			input: "/tmp/d[1]",
+			// "[" → "[[]"; "]" is not a glob metacharacter in Go's filepath.Glob
+			// (only "[" opens a class). The trailing "]" closes the "[[]" class,
+			// making "[[]" match a literal "[", and the remaining "]" is literal.
+			want: "/tmp/d[[]1]",
+		},
+		{
+			name:  "star",
+			input: "/tmp/a*b",
+			want:  "/tmp/a[*]b",
+		},
+		{
+			name:  "question",
+			input: "/tmp/a?b",
+			want:  "/tmp/a[?]b",
+		},
+		{
+			name:  "mixed bracket-star-question",
+			input: "/tmp/a[*?b",
+			want:  "/tmp/a[[][*][?]b",
+		},
+		{
+			name:  "backslash then bracket (non-windows only)",
+			input: `a\[b`,
+			want:  `a\\[[]b`,
+			skip:  "windows",
+		},
+		{
+			name:  "clean path without metacharacters",
+			input: "/tmp/clean/path",
+			want:  "/tmp/clean/path",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.skip != "" && runtime.GOOS == tc.skip {
+				t.Skipf("skipped on %s: filesystem does not allow this path component", tc.skip)
+			}
+			got := credGlobEscapeLiteral(tc.input)
+			if got != tc.want {
+				t.Errorf("credGlobEscapeLiteral(%q) = %q; want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRunCredential_A1_CwdBracket asserts that when baseCwd contains a bracket
+// character (e.g. "d[1]"), the glob token is expanded against that literal directory,
+// not misinterpreted as a character class.
+//
+// Assertion: cwd="<tmp>/d[1]" containing secret.txt with a JWT, command "cat *.txt"
+// → RC=2 and stderr contains "in file". Without credGlobEscapeLiteral, "[1]" is
+// parsed as a char class matching "1", no directory named that way exists, so
+// filepath.Glob returns no matches and the token passes unchecked (rc=0).
+func TestRunCredential_A1_CwdBracket(t *testing.T) {
+	projDir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	base := t.TempDir()
+	tokenDir := filepath.Join(base, "d[1]")
+	if err := os.Mkdir(tokenDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tokenDir, "secret.txt"), []byte(jwtToken), 0644); err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"tool_name":"Bash","tool_input":{"command":"cat *.txt"},"cwd":"` + jsonStr(tokenDir) + `"}`
+	code, _, errOut := runCred(t, projDir, payload)
+	if code != 2 {
+		t.Fatalf("A1 bracket cwd: expected RC=2, got %d (stderr=%q)", code, errOut)
+	}
+	if !strings.Contains(errOut, "in file") {
+		t.Errorf("A1 bracket cwd: expected 'in file' in stderr, got %q", errOut)
+	}
+}
+
+// TestRunCredential_A1_CwdUnclosedBracket asserts that when baseCwd contains an
+// unclosed bracket (which makes ErrBadPattern in filepath.Glob), the guard still
+// detects the credential in the file — it does not silently pass.
+//
+// Assertion: cwd="<tmp>/d[1" containing secret.txt with a JWT, command "cat *.txt"
+// → RC=2. Without credGlobEscapeLiteral, filepath.Glob returns ErrBadPattern and
+// credGlobToken falls back to the literal token "*.txt", which is not a path that
+// exists on disk, so the scan is skipped and RC=0 (false negative).
+func TestRunCredential_A1_CwdUnclosedBracket(t *testing.T) {
+	projDir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	base := t.TempDir()
+	tokenDir := filepath.Join(base, "d[1")
+	if err := os.Mkdir(tokenDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tokenDir, "secret.txt"), []byte(jwtToken), 0644); err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"tool_name":"Bash","tool_input":{"command":"cat *.txt"},"cwd":"` + jsonStr(tokenDir) + `"}`
+	code, _, errOut := runCred(t, projDir, payload)
+	if code != 2 {
+		t.Fatalf("A1 unclosed bracket cwd: expected RC=2, got %d (stderr=%q)", code, errOut)
+	}
+	if !strings.Contains(errOut, "in file") {
+		t.Errorf("A1 unclosed bracket cwd: expected 'in file' in stderr, got %q", errOut)
+	}
+}
+
+// TestRunCredential_A1_CwdStarSiblingNoFalsePositive asserts that when baseCwd
+// contains a star (e.g. "a*b"), the glob does not expand to a sibling directory
+// (e.g. "axb") that happens to match the star pattern.
+//
+// Assertion: cwd="<tmp>/a*b" (empty), sibling "<tmp>/axb/secret.txt" contains JWT,
+// command "cat *.txt" → RC=0. Without credGlobEscapeLiteral, "a*b" in the prefix
+// expands to "axb", which contains the credential file, producing a false positive
+// (rc=2 on the wrong file).
+func TestRunCredential_A1_CwdStarSiblingNoFalsePositive(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("NTFS does not allow '*' in directory names")
+	}
+	projDir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	base := t.TempDir()
+	// cwd that the tool reports: a*b (empty — no credential here)
+	tokenDir := filepath.Join(base, "a*b")
+	if err := os.Mkdir(tokenDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// sibling directory that the star would accidentally match
+	siblingDir := filepath.Join(base, "axb")
+	if err := os.MkdirAll(siblingDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(siblingDir, "secret.txt"), []byte(jwtToken), 0644); err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"tool_name":"Bash","tool_input":{"command":"cat *.txt"},"cwd":"` + jsonStr(tokenDir) + `"}`
+	code, _, errOut := runCred(t, projDir, payload)
+	if code != 0 {
+		t.Fatalf("A1 star sibling: expected RC=0 (no credential in reported cwd), got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_A1_CwdBracket_NamedArgControl asserts that the named-arg path
+// (credResolveArg, not credGlobToken) also works correctly when baseCwd contains a
+// bracket character.
+//
+// Assertion: cwd="<tmp>/d[1]" containing secret.txt, command "cat secret.txt" →
+// RC=2. This tests that credResolveArg (which uses filepath.Join without escaping,
+// but passes the joined path to os.Stat, not to filepath.Glob) still resolves the
+// file correctly. This is the control arm confirming the bracket-cwd fix does not
+// break named-arg resolution.
+func TestRunCredential_A1_CwdBracket_NamedArgControl(t *testing.T) {
+	projDir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	base := t.TempDir()
+	tokenDir := filepath.Join(base, "d[1]")
+	if err := os.Mkdir(tokenDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tokenDir, "secret.txt"), []byte(jwtToken), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Named arg — resolved via credResolveArg (os.Stat, not filepath.Glob).
+	payload := `{"tool_name":"Bash","tool_input":{"command":"cat secret.txt"},"cwd":"` + jsonStr(tokenDir) + `"}`
+	code, _, errOut := runCred(t, projDir, payload)
+	if code != 2 {
+		t.Fatalf("A1 bracket cwd named arg: expected RC=2, got %d (stderr=%q)", code, errOut)
+	}
+}
+
 // TestRunCredential_D1_F2_EphemeralStillPasses asserts that the F2 ephemeral
 // exemption continues to work correctly after the D1 refactor — the finding.typ
 // is still used (not the path) when checking credCmdHasTypeMatch.

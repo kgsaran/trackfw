@@ -6284,8 +6284,10 @@ grep -rn foo secrets/      → passa (leitura recursiva de diretório não é co
 O glob `*.cfg` é expandido contra a `cwd` da ferramenta (campo `tool_info.cwd` para
 payloads Windsurf, ou campo `"cwd"` de nível raiz para payloads Kiro — ver linha 4155
 deste documento). O mesmo cwd resolve argumentos nomeados relativos via `credResolveArg`.
-A aplicabilidade ao payload do Claude Code (hook PreToolUse com `"cwd"` na raiz) está
-marcada como não verificada — ver nota de relatório.
+O campo `"cwd"` de nível raiz do payload do Claude Code (hook PreToolUse) também é
+usado para resolver globs relativos — coberto por `TestRunCredential_D4_GlobRootLevelCwd`.
+A `cwd` é sempre tratada como literal: os metacaracteres do caminho dela (`[`, `*`, `?`) não são
+expandidos pelo glob — ver `credGlobEscapeLiteral` (A-1 corretivo, 2026-11-06).
 
 ### Mensagem de saída por origem
 
