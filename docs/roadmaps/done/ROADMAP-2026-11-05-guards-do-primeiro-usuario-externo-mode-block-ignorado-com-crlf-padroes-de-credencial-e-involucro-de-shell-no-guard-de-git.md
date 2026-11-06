@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-11-05
 req: "docs/req/REQ-2026-11-05-guards-do-primeiro-usuario-externo-mode-block-ignorado-com-crlf-padroes-de-credencial-e-involucro-de-shell-no-guard-de-git.md"
 squad: "hades-tf, apolo-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf"
 
 # Roadmap: Guards do primeiro usuário externo: mode block ignorado com CRLF, padrões de credencial e invólucro de shell no guard de git
 
-> Created: 2026-11-05 | Status: wip
+> Created: 2026-11-05 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-11-05-guards-do-primeiro-usuario-externo-mode-block-ignorado-com-crlf-padroes-de-credencial-e-involucro-de-shell-no-guard-de-git.md
@@ -22,7 +22,7 @@ guard de git desta sessão bloqueia um comando inline que contenha o texto de um
 credencial bloqueia `grep` com glob que alcance arquivos de teste com JWT de exemplo.
 
 ## Acceptance Criteria
-- [ ] AC1–AC6 da REQ
+- [x] AC1–AC6 da REQ
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -252,4 +252,4 @@ grep -q '^## Prescrições' docs/seguranca/2026-11-05-wave0-guards-primeiro-usua
 **Acceptance criteria:**
 - [x] o caso afirma `""` fora do Windows e `"push"` no Windows (`runtime.GOOS`), com a frase de reconciliação
 - [x] `go test ./internal/guard/` verde no macOS, e `GOOS=windows go vet ./internal/guard/` sem erro
-- [ ] `windows-full-suites` verde no PR #668
+- [x] `windows-full-suites` verde no PR #668 (21/21 checks em d91ae665)
