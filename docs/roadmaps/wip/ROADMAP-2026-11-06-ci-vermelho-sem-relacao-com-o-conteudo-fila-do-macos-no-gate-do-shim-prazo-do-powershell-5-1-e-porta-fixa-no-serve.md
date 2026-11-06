@@ -55,12 +55,12 @@ Três causas, um ML para cada. O diagnóstico está no ADR-2026-11-06. Varredura
 - [x] `go test ./internal/generators/` verde
 
 ### ML-1C — Porta livre no teste de endereço do serve (apolo-tf) — AC4
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Files affected:** `scripts/check-serve-address-parity.sh`
 **Acceptance criteria:**
-- [ ] porta obtida do sistema; retry só em `address already in use`, até 3 vezes
-- [ ] contra-braço: com a porta ocupada de propósito, o cenário passa; com o retry desligado, reprova
-- [ ] `make parity-rest` verde
+- [x] porta obtida do sistema; retry só em `address already in use`, até 3 vezes
+- [x] contra-braço: com a porta ocupada de propósito, o cenário passa; com o retry desligado, reprova
+- [x] `make parity-rest` verde
 
 ### ML-1D — `grep -q` sob `pipefail` dá 141 intermitente (ares-tf) — AC6
 **Status:** 🔄 Em andamento
