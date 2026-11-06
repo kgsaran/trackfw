@@ -246,10 +246,10 @@ grep -q '^## Prescrições' docs/seguranca/2026-11-05-wave0-guards-primeiro-usua
 - [x] `make quality` com `MQ_RC=0`, lido no arquivo de saída pelo arquiteto
 
 ### ML-2K — Teste `\\git push` reprova no Windows (apolo-tf)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado pelo arquiteto em 2026-11-05. Só o teste mudou: o caso saiu da tabela e virou `TestMatchSubcommand_AC4_DoubleBackslash_PerPlatform`. `go test ./internal/guard/` passa e `GOOS=windows go vet` também. O terceiro critério se confirma no CI do PR #668.
 **Contexto:** no PR #668, o job `windows-full-suites` (run 42135516141) reprovou em `TestMatchSubcommand_AC4_Wrapper_Allowed/double-backslash-not-bypass`, com `MatchSubcommand("\\\\git push") = "push", want ""`. No Windows, `filepath.Base` trata `\` como separador, então `\\git` termina em `git`, e o guard bloqueia (fail-closed). No POSIX, `\\git` é o comando `\git`, que não é git. O guard está certo nas duas plataformas; o teste é que só valia para o POSIX.
 **Files affected:** `internal/guard/gitbranch_wrapper_test.go`
 **Acceptance criteria:**
-- [ ] o caso afirma `""` fora do Windows e `"push"` no Windows (`runtime.GOOS`), com a frase de reconciliação
-- [ ] `go test ./internal/guard/` verde no macOS, e `GOOS=windows go vet ./internal/guard/` sem erro
+- [x] o caso afirma `""` fora do Windows e `"push"` no Windows (`runtime.GOOS`), com a frase de reconciliação
+- [x] `go test ./internal/guard/` verde no macOS, e `GOOS=windows go vet ./internal/guard/` sem erro
 - [ ] `windows-full-suites` verde no PR #668

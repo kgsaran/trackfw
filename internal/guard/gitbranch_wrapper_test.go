@@ -7,6 +7,7 @@ package guard
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -128,9 +129,6 @@ func TestMatchSubcommand_AC4_Wrapper_Allowed(t *testing.T) {
 		{"bash-c-echo-not-git", `bash -c "echo 'git push done'"`},
 		// depth=2 with inner allowed:
 		{"bash-c-bash-c-git-status", `bash -c "bash -c 'git status'"`},
-		// Two double-backslashes: POSIX \\g → \g → token \git ≠ git → allowed.
-		// (This is NOT the bypass; the bypass is single-backslash \git.)
-		{"double-backslash-not-bypass", `\\git push`},
 		// ML-2E: powershell false-positive checks — allowed git reads and non-git.
 		{"powershell-get-childitem", `powershell Get-ChildItem`},
 		{"powershell-file-build-ps1", `powershell -File build.ps1`},
@@ -148,6 +146,41 @@ func TestMatchSubcommand_AC4_Wrapper_Allowed(t *testing.T) {
 				t.Errorf("MatchSubcommand(%q) = %q, want %q (allow)", tc.cmd, got, "")
 			}
 		})
+	}
+}
+
+// TestMatchSubcommand_AC4_DoubleBackslash_PerPlatform asserts the per-platform
+// behaviour of `\\git push` (the Go raw string literal contains TWO backslashes
+// before "git", so the actual string is \\git push).
+//
+// On POSIX: `\\git` is POSIX-decoded as `\git` (the first backslash quotes the
+// second, yielding a single-backslash literal before "git"); the resulting token
+// is `\git`, which is NOT the literal token "git", so the guard allows the
+// command and returns "".
+//
+// On Windows: filepath.Base treats `\` as a path separator (Windows semantics),
+// so filepath.Base("\\git") == "git"; the guard sees "git push" and returns
+// "push" (fail-closed — a path-qualified git binary must be blocked exactly like
+// C:\Program Files\Git\bin\git.exe push).
+//
+// Reconciliation (Regra Dura de Reconciliação): asserts that `\\git push` is
+// platform-specific — allowed on POSIX (double-backslash POSIX-decodes to a
+// non-git token `\git`) and blocked on Windows (filepath.Base with Windows path
+// separators yields "git", fail-closed), because the guard uses filepath.Base to
+// normalise the first token before comparison.
+func TestMatchSubcommand_AC4_DoubleBackslash_PerPlatform(t *testing.T) {
+	cmd := `\\git push`
+	got := MatchSubcommand(cmd)
+	if runtime.GOOS == "windows" {
+		// Windows: filepath.Base("\\git") == "git"; guard sees "git push" → blocked.
+		if got != "push" {
+			t.Errorf("Windows: MatchSubcommand(%q) = %q, want %q (fail-closed)", cmd, got, "push")
+		}
+	} else {
+		// POSIX: \\g is POSIX-decoded to \g; token \git ≠ git → allowed.
+		if got != "" {
+			t.Errorf("POSIX: MatchSubcommand(%q) = %q, want %q (allow)", cmd, got, "")
+		}
 	}
 }
 
