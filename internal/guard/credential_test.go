@@ -1804,3 +1804,457 @@ func windowsPathToGitBash(winPath string) string {
 	}
 	return p
 }
+
+// --------------------------------------------------------------------------
+// ML-1A tests (D1, D4): origin message, path sanitization, D4 glob cwd fix
+// --------------------------------------------------------------------------
+
+// TestCredSanitizePath_ControlChars asserts that credSanitizePath replaces control
+// characters, bidi controls and invalid UTF-8 bytes with '?'.
+//
+// Assertion: credSanitizePath substitutes chars where unicode.IsControl or
+// unicode.Is(unicode.Bidi_Control) is true, and also invalid UTF-8 bytes, with '?'.
+// This prevents file names containing LF (0x0A), raw C1 bytes (0x9B) or bidi
+// controls from injecting content into the guard's stderr line.
+func TestCredSanitizePath_ControlChars(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"LF newline", "/path/a\nb.txt", "/path/a?b.txt"},
+		{"CR", "/path/a\rb.txt", "/path/a?b.txt"},
+		{"ESC (0x1B)", "/path/a\x1bb.txt", "/path/a?b.txt"},
+		{"DEL (0x7F)", "/path/a\x7fb.txt", "/path/a?b.txt"},
+		{"raw C1 byte (0x9B)", "/path/a\x9bb.txt", "/path/a?b.txt"},
+		{"bidi RLO (U+202E)", "/path/a\u202eb.txt", "/path/a?b.txt"},
+		{"bidi LRE (U+202A)", "/path/a\u202ab.txt", "/path/a?b.txt"},
+		{"valid ASCII unchanged", "/path/to/file.go", "/path/to/file.go"},
+		{"empty string", "", ""},
+	}
+	for _, tc := range cases {
+		got := credSanitizePath(tc.input)
+		if got != tc.want {
+			t.Errorf("[%s] credSanitizePath(%q) = %q; want %q", tc.name, tc.input, got, tc.want)
+		}
+	}
+}
+
+// TestRunCredential_D1_PayloadMessage asserts that a credential found in the tool
+// payload itself produces the "in tool payload." suffix in the blocked message.
+//
+// Assertion: layer 1 finds the JWT in the payload (no file reference); the message
+// must say "in tool payload." and not contain "in file". This confirms that the
+// payload-origin form is preserved after the D1 refactor.
+func TestRunCredential_D1_PayloadMessage(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	payload := `{"tool_input":{"command":"echo ` + jwtToken + `"}}`
+	_, _, errOut := runCred(t, dir, payload)
+	if !strings.Contains(errOut, "in tool payload.") {
+		t.Errorf("payload origin: expected 'in tool payload.' in stderr, got %q", errOut)
+	}
+	if strings.Contains(errOut, "in file") {
+		t.Errorf("payload origin: stderr must not contain 'in file', got %q", errOut)
+	}
+}
+
+// TestRunCredential_D1_FileMessage_ProjectScope asserts that a credential found in a
+// file referenced by a "cat" command produces "in file <path> referenced by the command."
+// in block mode, project scope.
+//
+// Assertion: credSecondLayer finds JWT in token.txt via Layer 2b; the message contains
+// the file path and the "referenced by the command." suffix. Payload origin is NOT used.
+// This is the primary fix for the REQ-2026-11-06 misdiagnosis.
+func TestRunCredential_D1_FileMessage_ProjectScope(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	tokenFile := filepath.Join(dir, "token.txt")
+	if err := os.WriteFile(tokenFile, []byte(jwtToken), 0644); err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"tool_input":{"command":"cat ` + jsonStr(tokenFile) + `"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("file origin: expected RC=2, got %d (stderr=%q)", code, errOut)
+	}
+	if !strings.Contains(errOut, "in file") {
+		t.Errorf("file origin: expected 'in file' in stderr, got %q", errOut)
+	}
+	if !strings.Contains(errOut, "referenced by the command.") {
+		t.Errorf("file origin: expected 'referenced by the command.' in stderr, got %q", errOut)
+	}
+	if strings.Contains(errOut, "in tool payload.") {
+		t.Errorf("file origin: stderr must not contain 'in tool payload.', got %q", errOut)
+	}
+}
+
+// TestRunCredential_D1_FileMessage_WarnMode asserts that in warn mode the stderr
+// message also uses the file-origin form, and the attention JSON does NOT contain
+// the file path (ADR D1: path leakage prevention).
+//
+// Assertion: credSecondLayer finds JWT in token.txt; mode=warn produces the
+// "in file ... referenced by the command." message on stderr; the attention JSON
+// field "message" contains "in a file referenced by the command" and does NOT
+// contain the file path basename.
+func TestRunCredential_D1_FileMessage_WarnMode(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: warn\nroadmap_dir: docs/roadmaps\n")
+	rdDir := filepath.Join(dir, "docs", "roadmaps")
+	if err := os.MkdirAll(rdDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Use a distinctive file name to verify it does NOT appear in the JSON.
+	tokenFile := filepath.Join(dir, "distinctive-secret-file.txt")
+	if err := os.WriteFile(tokenFile, []byte(jwtToken), 0644); err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"tool_input":{"command":"cat ` + jsonStr(tokenFile) + `"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 0 {
+		t.Fatalf("warn mode: expected RC=0, got %d (stderr=%q)", code, errOut)
+	}
+	if !strings.Contains(errOut, "in file") {
+		t.Errorf("warn mode: expected 'in file' in stderr, got %q", errOut)
+	}
+	// Attention JSON must round-trip and must NOT contain the file path.
+	jsonPath := filepath.Join(rdDir, ".trackfw-credential-guard.json")
+	raw, err := os.ReadFile(jsonPath)
+	if err != nil {
+		t.Fatalf("attention JSON not written: %v", err)
+	}
+	var obj map[string]string
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		t.Fatalf("attention JSON not valid JSON: %v (raw=%q)", err, raw)
+	}
+	if !strings.Contains(obj["message"], "in a file referenced by the command") {
+		t.Errorf("attention JSON message: expected 'in a file referenced by the command', got %q", obj["message"])
+	}
+	// The distinctive file basename must NOT appear in the JSON bytes.
+	if strings.Contains(string(raw), "distinctive-secret-file") {
+		t.Errorf("attention JSON must NOT contain the file path, but got %q", string(raw))
+	}
+}
+
+// TestRunCredential_D1_FileMessage_GlobalScope asserts that the global scope also
+// produces the file-origin message form.
+//
+// Assertion: RunCredentialGlobal uses credFinding from credSecondLayer; the blocked
+// message contains "in file ... referenced by the command." (not "in tool payload.").
+func TestRunCredential_D1_FileMessage_GlobalScope(t *testing.T) {
+	dir := t.TempDir() // no trackfw.yaml, default mode = block
+	tokenFile := filepath.Join(dir, "token.txt")
+	if err := os.WriteFile(tokenFile, []byte(jwtToken), 0644); err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"tool_input":{"command":"cat ` + jsonStr(tokenFile) + `"}}`
+	code, _, errOut := runCredGlobal(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("global file origin: expected RC=2, got %d (stderr=%q)", code, errOut)
+	}
+	if !strings.Contains(errOut, "in file") {
+		t.Errorf("global file origin: expected 'in file' in stderr, got %q", errOut)
+	}
+	if strings.Contains(errOut, "in tool payload.") {
+		t.Errorf("global file origin: stderr must not contain 'in tool payload.', got %q", errOut)
+	}
+}
+
+// TestRunCredential_D1_ControlCharInFilename asserts that a file with a newline
+// and "::error::" in its name produces exactly one line of stderr and that no line
+// starts with "::" (which would be interpreted as a workflow command in GitHub Actions).
+//
+// Assertion: credSanitizePath replaces the '\n' with '?', ensuring the blocked
+// message is a single line. Without sanitization, the second line would start with
+// "::error::", poisoning the CI log.
+func TestRunCredential_D1_ControlCharInFilename(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("filename with newline is not supported on Windows")
+	}
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+
+	// Create a file whose name contains "\n::error::x" — only achievable as a
+	// real filesystem name on POSIX.
+	evilName := "a\n::error::x.txt"
+	evilFile := filepath.Join(dir, evilName)
+	if err := os.WriteFile(evilFile, []byte(jwtToken), 0644); err != nil {
+		t.Fatalf("create evil filename: %v", err)
+	}
+
+	// Use a glob payload so that credGlobToken expands the wildcard and returns
+	// the file name from filepath.Glob (the name comes from the filesystem, not
+	// from the command string).
+	payload := `{"tool_input":{"command":"cat *.txt"},"tool_info":{"cwd":"` + jsonStr(dir) + `"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("evil filename: expected RC=2 (JWT in file), got %d (stderr=%q)", code, errOut)
+	}
+	// Exactly one newline in stderr = exactly one line.
+	lineCount := strings.Count(errOut, "\n")
+	if lineCount != 1 {
+		t.Errorf("evil filename: expected exactly 1 newline in stderr, got %d (stderr=%q)", lineCount, errOut)
+	}
+	// No line may start with "::".
+	for _, line := range strings.Split(errOut, "\n") {
+		if strings.HasPrefix(line, "::") {
+			t.Errorf("evil filename: stderr line starts with '::' (workflow command injection risk): %q", line)
+		}
+	}
+}
+
+// TestRunCredential_D4_GlobRelativeCwd asserts that a relative glob token ("*.txt")
+// is expanded against tool_info.cwd when it differs from the process working directory.
+//
+// Assertion: credGlobToken now receives baseCwd (tool_info.cwd) and uses it to
+// resolve the relative glob. Without D4, credGlobToken expanded relative globs
+// against the process cwd, missing files in a different tool cwd. With D4, "*.txt"
+// in tokenDir is found even though the process cwd is projDir.
+func TestRunCredential_D4_GlobRelativeCwd(t *testing.T) {
+	projDir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	// tokenDir is different from projDir (the process cwd during the test).
+	tokenDir := t.TempDir()
+	tokenFile := filepath.Join(tokenDir, "secret.txt")
+	if err := os.WriteFile(tokenFile, []byte(jwtToken), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Payload: command is "cat *.txt" with tool_info.cwd = tokenDir.
+	// Pre-D4: credGlobToken expanded "*.txt" against projDir → no match → RC=0.
+	// Post-D4: credGlobToken expands "*.txt" against tokenDir → secret.txt found → RC=2.
+	payload := `{"tool_input":{"command":"cat *.txt"},"tool_info":{"cwd":"` + jsonStr(tokenDir) + `"}}`
+	code, _, errOut := runCred(t, projDir, payload)
+	if code != 2 {
+		t.Fatalf("D4 glob cwd: expected RC=2 (glob resolved against tool_info.cwd), got %d (stderr=%q)", code, errOut)
+	}
+	if !strings.Contains(errOut, "in file") {
+		t.Errorf("D4 glob cwd: expected 'in file' in stderr, got %q", errOut)
+	}
+}
+
+// TestRunCredential_D4_GlobRelativeCwd_NoMatch asserts that when tool_info.cwd does
+// NOT contain a matching file, the glob yields no match and the guard allows (RC=0).
+//
+// Assertion: this is the control arm for TestRunCredential_D4_GlobRelativeCwd.
+// Without a credential file in tokenDir, the glob expands to nothing → RC=0.
+// This confirms that the D4 fix produces the detection, not an accidental match.
+func TestRunCredential_D4_GlobRelativeCwd_NoMatch(t *testing.T) {
+	projDir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	emptyDir := t.TempDir()
+	// No files in emptyDir — glob *.txt matches nothing.
+	payload := `{"tool_input":{"command":"cat *.txt"},"tool_info":{"cwd":"` + jsonStr(emptyDir) + `"}}`
+	code, _, errOut := runCred(t, projDir, payload)
+	if code != 0 {
+		t.Fatalf("D4 glob cwd no match: expected RC=0, got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_D4_GlobRootLevelCwd asserts that a root-level "cwd" field
+// (Kiro PreToolUse schema, documented at cli-parity.md §"Kiro wiring") is used
+// to resolve relative glob patterns, same as tool_info.cwd is used for Windsurf.
+//
+// Assertion: payload `{"tool_name":"Bash","tool_input":{"command":"cat *.txt"},"cwd":<tokenDir>}`.
+// credExtractCmdAndCwd falls back to root-level "cwd" when tool_info.cwd is absent.
+// credGlobToken expands "*.txt" against tokenDir → finds the credential file → RC=2.
+func TestRunCredential_D4_GlobRootLevelCwd(t *testing.T) {
+	projDir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	tokenDir := t.TempDir()
+	tokenFile := filepath.Join(tokenDir, "secret.txt")
+	if err := os.WriteFile(tokenFile, []byte(jwtToken), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Claude Code / Kiro PreToolUse: "cwd" is a root-level field (not tool_info.cwd).
+	payload := `{"tool_name":"Bash","tool_input":{"command":"cat *.txt"},"cwd":"` + jsonStr(tokenDir) + `"}`
+	code, _, errOut := runCred(t, projDir, payload)
+	if code != 2 {
+		t.Fatalf("D4 root-level cwd: expected RC=2 (glob resolved against root cwd), got %d (stderr=%q)", code, errOut)
+	}
+	if !strings.Contains(errOut, "in file") {
+		t.Errorf("D4 root-level cwd: expected 'in file' in stderr, got %q", errOut)
+	}
+}
+
+// TestRunCredential_D4_NamedArgRootLevelCwd asserts that a root-level "cwd" field
+// (Kiro PreToolUse schema) also resolves NAMED arguments, not only globs.
+//
+// Assertion: `{"tool_input":{"command":"cat token.txt"},"cwd":<tokenDir>}`.
+// credResolveArg resolves the relative "token.txt" against baseCwd (now populated
+// from the root "cwd" field). Without the fallback, the file is not found (RC=0).
+// This is the control arm for TestRunCredential_D4_GlobRootLevelCwd, confirming
+// that the cwd fallback applies to both named args and globs.
+func TestRunCredential_D4_NamedArgRootLevelCwd(t *testing.T) {
+	projDir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	tokenDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tokenDir, "token.txt"), []byte(jwtToken), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Named arg resolved via root-level "cwd".
+	payload := `{"tool_name":"Bash","tool_input":{"command":"cat token.txt"},"cwd":"` + jsonStr(tokenDir) + `"}`
+	code, _, errOut := runCred(t, projDir, payload)
+	if code != 2 {
+		t.Fatalf("D4 named arg root-cwd: expected RC=2, got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_D4_NamedArgRootLevelCwd_NoMatch is the control arm: without a
+// root "cwd", the relative "token.txt" is not found in the process cwd (projDir).
+//
+// Assertion: when "cwd" is absent, credResolveArg uses process cwd (projDir); since
+// token.txt lives only in tokenDir, credScanFile finds nothing → RC=0.
+func TestRunCredential_D4_NamedArgRootLevelCwd_NoMatch(t *testing.T) {
+	projDir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	tokenDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tokenDir, "token.txt"), []byte(jwtToken), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// No "cwd" field — relative path resolves against process cwd (projDir), not tokenDir.
+	payload := `{"tool_name":"Bash","tool_input":{"command":"cat token.txt"}}`
+	code, _, _ := runCred(t, projDir, payload)
+	if code != 0 {
+		t.Fatalf("D4 named arg no root-cwd: expected RC=0, got %d", code)
+	}
+}
+
+// TestRunCredential_D1_F2_EphemeralStillPasses asserts that the F2 ephemeral
+// exemption continues to work correctly after the D1 refactor — the finding.typ
+// is still used (not the path) when checking credCmdHasTypeMatch.
+//
+// Assertion: "echo <jwt> > /dev/null" with a JWT in the payload; Layer 1 matches;
+// the exemption fires because argv0=echo, all targets are /dev/null, and the
+// finding carries typ="JWT" (not a file path). RC=0 after D1 refactor.
+func TestRunCredential_D1_F2_EphemeralStillPasses(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	payload := `{"tool_input":{"command":"echo ` + jwtToken + ` > /dev/null"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 0 {
+		t.Fatalf("D1 F2 regression: expected RC=0 (ephemeral exemption), got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// --------------------------------------------------------------------------
+// D1 coverage: five arrival paths
+// --------------------------------------------------------------------------
+
+// TestRunCredential_D1_FileMessage_L2a asserts that a credential found via Layer 2a
+// (non-ephemeral redirect target scan) produces the "detected in file ... referenced
+// by the command." message, not "detected in tool payload.".
+//
+// Arrival path: L2a (credSecondLayer, redirect target).
+// Assertion: a file containing a JWT, referenced via output redirect in the payload,
+// produces "detected in file <path> referenced by the command." in stderr.
+// Counter-arm: changing credFindingMessage to always return "detected in tool payload."
+// makes this test fail (the wrong message is emitted).
+func TestRunCredential_D1_FileMessage_L2a(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	tokenFile := filepath.Join(dir, "redirect-target.txt")
+	if err := os.WriteFile(tokenFile, []byte(jwtToken), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Command redirects to tokenFile; tokenFile already contains a JWT.
+	// Layer 2a scans the redirect target file and finds the credential.
+	// No credential appears in the payload itself — only in the file.
+	payload := `{"tool_input":{"command":"cat secret > ` + jsonStr(tokenFile) + `"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("L2a file origin: expected RC=2, got %d (stderr=%q)", code, errOut)
+	}
+	if !strings.Contains(errOut, "detected in file") {
+		t.Errorf("L2a file origin: expected 'detected in file' in stderr, got %q", errOut)
+	}
+	if !strings.Contains(errOut, "referenced by the command.") {
+		t.Errorf("L2a file origin: expected 'referenced by the command.' in stderr, got %q", errOut)
+	}
+	if strings.Contains(errOut, "detected in tool payload.") {
+		t.Errorf("L2a file origin: stderr must not say 'detected in tool payload.', got %q", errOut)
+	}
+}
+
+// TestRunCredential_D1_FileMessage_L2bNonJSON asserts that a credential found via
+// Layer 2b for a non-JSON payload produces the "detected in file ... referenced by
+// the command." message.
+//
+// Arrival path: L2b-nonJSON (credNonJSONLayerTwoB via credCmdLineRe extraction).
+// Assertion: a non-JSON payload containing a "command" key with "cat <file>" where
+// the file contains a JWT → RC=2 and "detected in file" in stderr.
+// Counter-arm: commenting out credNonJSONLayerTwoB call → RC=0.
+func TestRunCredential_D1_FileMessage_L2bNonJSON(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	tokenFile := filepath.Join(dir, "token-nonjson.txt")
+	if err := os.WriteFile(tokenFile, []byte(jwtToken), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Invalid JSON: trailing comma after the value makes json.Unmarshal fail.
+	// credNonJSONLayerTwoB extracts "cat <tokenFile>" via credCmdLineRe and
+	// runs credSecondLayer on it, finding the JWT in the file.
+	payload := `{"command":"cat ` + jsonStr(tokenFile) + `",}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("L2b-nonJSON file origin: expected RC=2, got %d (stderr=%q)", code, errOut)
+	}
+	if !strings.Contains(errOut, "detected in file") {
+		t.Errorf("L2b-nonJSON file origin: expected 'detected in file' in stderr, got %q", errOut)
+	}
+	if !strings.Contains(errOut, "referenced by the command.") {
+		t.Errorf("L2b-nonJSON file origin: expected 'referenced by the command.' in stderr, got %q", errOut)
+	}
+	if strings.Contains(errOut, "detected in tool payload.") {
+		t.Errorf("L2b-nonJSON file origin: stderr must not say 'detected in tool payload.', got %q", errOut)
+	}
+}
+
+// TestRunCredential_D1_FileMessage_L4Deep asserts that a credential found via Layer 4
+// deep scan (non-standard schema) produces the "detected in file ... referenced by
+// the command." message.
+//
+// Arrival path: L4-deep (credDeepScan, non-standard JSON schema params.command).
+// Assertion: a payload with {"params":{"command":"cat <file>"}} where the file
+// contains a JWT → RC=2 and "detected in file" in stderr.
+// Counter-arm: commenting out credDeepScan call → RC=0.
+func TestRunCredential_D1_FileMessage_L4Deep(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	tokenFile := filepath.Join(dir, "token-deep.txt")
+	if err := os.WriteFile(tokenFile, []byte(jwtToken), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Non-standard schema: credDeepScan walks all "command" keys recursively.
+	// params.command is not a recognized top-level field, so only credDeepScan finds it.
+	payload := `{"params":{"command":"cat ` + jsonStr(tokenFile) + `"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("L4-deep file origin: expected RC=2, got %d (stderr=%q)", code, errOut)
+	}
+	if !strings.Contains(errOut, "detected in file") {
+		t.Errorf("L4-deep file origin: expected 'detected in file' in stderr, got %q", errOut)
+	}
+	if !strings.Contains(errOut, "referenced by the command.") {
+		t.Errorf("L4-deep file origin: expected 'referenced by the command.' in stderr, got %q", errOut)
+	}
+	if strings.Contains(errOut, "detected in tool payload.") {
+		t.Errorf("L4-deep file origin: stderr must not say 'detected in tool payload.', got %q", errOut)
+	}
+}
+
+// TestRunCredential_D1_FileMessage_L2aADS_Windows asserts that a credential found via
+// Layer 2a-ADS (Windows NTFS ADS fallback) produces the "detected in file" message.
+//
+// Arrival path: L2a-ADS (credWindowsADSBase fallback, Windows only).
+// Skipped on non-Windows: NTFS ADS only exists on Windows.
+func TestRunCredential_D1_FileMessage_L2aADS_Windows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("L2a-ADS test only runs on Windows (NTFS ADS)")
+	}
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	// On Windows, the ADS fallback scans "arq.txt" when "arq.txt:stream" stat fails.
+	// Set up arq.txt with JWT content; the redirect target in the payload is "arq.txt:stream".
+	baseFile := filepath.Join(dir, "arq.txt")
+	if err := os.WriteFile(baseFile, []byte(jwtToken), 0644); err != nil {
+		t.Fatal(err)
+	}
+	adsTarget := jsonStr(filepath.Join(dir, "arq.txt:stream"))
+	payload := `{"tool_input":{"command":"echo data > ` + adsTarget + `"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("L2a-ADS file origin: expected RC=2, got %d (stderr=%q)", code, errOut)
+	}
+	if !strings.Contains(errOut, "detected in file") {
+		t.Errorf("L2a-ADS file origin: expected 'detected in file' in stderr, got %q", errOut)
+	}
+	if strings.Contains(errOut, "detected in tool payload.") {
+		t.Errorf("L2a-ADS file origin: stderr must not say 'detected in tool payload.', got %q", errOut)
+	}
+}

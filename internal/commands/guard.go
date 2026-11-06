@@ -121,6 +121,28 @@ Allowed/warn  → exit 0 (nothing printed on stdout)
 Blocked       → exit 2, message to stderr
 No-op         → exit 0 (no credential found; project scope: also outside a trackfw project)
 
+Layer 2 (second layer) scans the content of files referenced by the command.
+When a finding comes from a file, the message names the file and says
+"detected in file <path> referenced by the command." instead of
+"detected in tool payload."
+
+What the second layer covers:
+  - named file arguments to cat, head, tail, jq, grep when that verb is the
+    first word of the command
+  - one-level glob expansion (e.g. dir/*.go) for the same verbs
+  - non-ephemeral redirect targets (e.g. cat secret > out.txt)
+
+What the second layer does NOT cover:
+  - recursive directory reads (grep -r, grep -R): unbounded cost on large repos
+  - verbs outside the list above, including rg, even with a named file argument
+  - ** globs (** matches one level like *; no recursion)
+  - dotfiles: cat * does not scan .env (Bash dotglob is off)
+  - find -exec, xargs, cp followed by a read
+
+Example (second layer covers file arguments, not recursive dirs):
+  grep -n foo secrets/*.cfg  → flagged if any non-hidden .cfg file contains a credential
+  grep -rn foo secrets/      → passes (recursive directory read is not covered)
+
 Use --global for the global scope variant:
   - runs in any directory (no trackfw.yaml required)
   - default mode is "block" (vs "warn" in project scope)

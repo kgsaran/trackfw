@@ -1,9 +1,13 @@
 // Package guard contains pattern tests for the 12 credential types (AC2, ML-1A).
 // All credential literals are built by concatenation so this source file never
 // contains a matchable credential that would trigger the credential guard hook.
+// ADR D3, REQ AC3: tokens are assembled at runtime; no source literal matches credPatterns.
 package guard
 
 import (
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -206,8 +210,9 @@ var credEphemeralTable = []struct {
 //   (b) for each i, the first j where credPatterns[j].re.MatchString(tok[i]) equals i —
 //       prevents a token from silently exercising the wrong (earlier) pattern
 //
-// PEM note: the PEM header "-----BEGIN RSA PRIVATE KEY-----" contains spaces but no
-// shell metacharacters; credIsSimpleCmd accepts it, the exemption fires normally (rc=0).
+// PEM note: the PEM private key header token (credEphemeralTable row 13) contains
+// spaces but no shell metacharacters; credIsSimpleCmd accepts it, the exemption fires normally (rc=0).
+// The header is built from fragments — no source literal here matches the PEM pattern (ADR D3, REQ AC3).
 //
 // Assertion: credCmdHasTypeMatch correctly matches all sub-patterns sharing a type name,
 // ensuring the ephemeral exemption fires for every pattern variant, not just the first.
@@ -258,6 +263,53 @@ func TestCredEphemeralExemption_AllPatterns(t *testing.T) {
 			if code != 2 {
 				t.Errorf("credEphemeralTable[%d] label=%q: arm B (>out.txt): expected rc=2 (block mode, non-ephemeral), got %d (stderr=%q)",
 					i, entry.label, code, errOut)
+			}
+		})
+	}
+}
+
+// TestFixturesSemTokenLiteral is the AC3 census gate (ADR D3, ML-1B).
+//
+// It reads the two source files that formerly held credential literals and applies
+// every pattern in credPatterns.  The test fails if any pattern matches — which means
+// a full credential was re-introduced as a source literal.  This is the gate that
+// prevents regression: once it passes, CI re-runs it on every commit.
+//
+// Files checked:
+//   - this file (credential_patterns_test.go)
+//   - internal/generators/credential_guard_test.go
+//   - internal/guard/credential_test.go (clean at ML-1B; included to catch regressions from ML-1A)
+//
+// Assertion: no source literal in the three files matches any credential pattern in
+// credPatterns; tokens in those files are assembled at runtime from fragments (ADR D3, REQ AC3).
+func TestFixturesSemTokenLiteral(t *testing.T) {
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller(0) failed — cannot locate source files")
+	}
+	guardDir := filepath.Dir(thisFile)
+	internalDir := filepath.Dir(guardDir)
+
+	filesToCheck := []string{
+		thisFile, // credential_patterns_test.go
+		filepath.Join(internalDir, "generators", "credential_guard_test.go"),
+		filepath.Join(guardDir, "credential_test.go"),
+	}
+
+	for _, path := range filesToCheck {
+		path := path
+		t.Run(filepath.Base(path), func(t *testing.T) {
+			content, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("os.ReadFile(%s): %v", path, err)
+			}
+			if len(content) == 0 {
+				t.Fatalf("file is empty: %s — census cannot prove absence", path)
+			}
+			for _, p := range credPatterns {
+				if p.re.Match(content) {
+					t.Errorf("pattern %q matched in %s — file contains a credential literal; build fragments instead (ADR D3, REQ AC3)", p.name, path)
+				}
 			}
 		})
 	}

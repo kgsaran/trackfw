@@ -13,9 +13,74 @@ import (
 	"runtime"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/kgsaran/trackfw/internal/pathguard"
 )
+
+// credFinding carries the result of a detection: the credential type name and the
+// origin. When path is empty the credential was found in the tool payload itself;
+// when path is non-empty it names the file that was opened and contained the match.
+// The path stored here has already been cleaned by credScanFile (strip of quotes and
+// trailing "},) but has NOT yet been sanitized for printing — callers must pass it
+// through credSanitizePath before including it in any output.
+type credFinding struct {
+	typ  string // credential type name, e.g. "JWT"
+	path string // empty = payload; non-empty = file path as passed to os.Stat
+}
+
+// credSanitizePath returns s with every character that must not appear in a printed
+// path replaced by '?'. The goal is to guarantee that each call to the guard emits
+// exactly one line on stderr, even when a file name contains a newline or an ANSI
+// escape sequence.
+//
+// Rules (applied character by character via utf8.DecodeRuneInString):
+//   - unicode.IsControl(r)          — covers C0 (0x00–0x1F, including 0x0A LF and 0x0D CR),
+//     DEL (0x7F), and C1 (0x80–0x9F when decoded as Unicode, e.g. U+0085 NEL, U+009B CSI).
+//   - unicode.Is(unicode.Bidi_Control, r) — U+200E, U+200F, U+061C, U+202A–U+202E,
+//     U+2066–U+2069.
+//   - utf8.DecodeRuneInString returns (utf8.RuneError, 1) for an invalid byte sequence;
+//     those bytes are replaced by '?' (not U+FFFD, which IsControl returns false for).
+//
+// Raw C1 bytes (0x80–0x9F as individual bytes, not as UTF-8 encoded Unicode) are
+// handled by the RuneError branch because they are invalid UTF-8.
+func credSanitizePath(s string) string {
+	if s == "" {
+		return s
+	}
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r == utf8.RuneError && size == 1 {
+			// Invalid UTF-8 byte.
+			b.WriteByte('?')
+			i++
+			continue
+		}
+		if unicode.IsControl(r) || unicode.Is(unicode.Bidi_Control, r) {
+			b.WriteByte('?')
+		} else {
+			b.WriteRune(r)
+		}
+		i += size
+	}
+	return b.String()
+}
+
+// credFindingMessage returns the "detected in <origin>" suffix for a guard message.
+// When f.path is empty: "detected in tool payload."
+// When f.path is non-empty: "detected in file <sanitized-path> referenced by the command."
+//
+// The word "detected" is kept so the full message reads
+// "possible <type> detected in tool payload." — the same form used before D1 for
+// payload findings, and the form used for file findings per ADR-2026-11-06 D1.
+func credFindingMessage(f credFinding) string {
+	if f.path == "" {
+		return "detected in tool payload."
+	}
+	return "detected in file " + credSanitizePath(f.path) + " referenced by the command."
+}
 
 // credPattern pairs a human-readable type name with a compiled pattern.
 // The name appears in guard messages: "possible <name> detected in tool payload."
@@ -155,7 +220,7 @@ func RunCredential(stdin io.Reader, stdout, stderr io.Writer) int {
 
 	// Step 3: Layer 1 — scan all patterns in order.
 	inputStr := string(data)
-	match := credScanInput(inputStr)
+	layer1Match := credScanInput(inputStr)
 
 	// Steps 4–8: Extract shell command, scan for redirects, run Layer 2, apply
 	// ephemeral exemption.
@@ -175,8 +240,14 @@ func RunCredential(stdin io.Reader, stdout, stderr io.Writer) int {
 		redirectMatches = credRedirectRe.FindAllString(contextStr, -1)
 	}
 
-	if match == "" {
-		match = credSecondLayer(shellCmd, shellCwd, contextStr, toolName, redirectMatches)
+	// finding accumulates the first detection result (layer 1 = payload, layer 2+ = file).
+	var finding credFinding
+	if layer1Match != "" {
+		finding = credFinding{typ: layer1Match}
+	}
+
+	if finding.typ == "" {
+		finding = credSecondLayer(shellCmd, shellCwd, contextStr, toolName, redirectMatches)
 	}
 
 	// Non-JSON fallback: restore Layer 2b via legacy credCmdLineRe extraction.
@@ -185,18 +256,18 @@ func RunCredential(stdin io.Reader, stdout, stderr io.Writer) int {
 	// extracts "command" field values from the raw text and runs Layer 2b on each,
 	// matching main's credCmdLineRe behaviour. Does not cover "command_line" keys —
 	// Windsurf/Amazon-Q payloads require valid JSON for full coverage.
-	if match == "" && !isJSON {
-		match = credNonJSONLayerTwoB(contextStr, "")
+	if finding.typ == "" && !isJSON {
+		finding = credNonJSONLayerTwoB(contextStr, "")
 	}
 
 	// F4: if Layer 1 + primary Layer 2 found nothing, deep-scan all command/command_line
 	// values at any depth in the JSON payload (catches non-standard schemas like
 	// {"params":{"command":"cat secret.txt"}} used by Cursor/Copilot/Kiro/Gemini).
-	if match == "" && isJSON {
-		match = credDeepScan(data, shellCwd)
+	if finding.typ == "" && isJSON {
+		finding = credDeepScan(data, shellCwd)
 	}
 
-	if match == "" {
+	if finding.typ == "" {
 		return 0
 	}
 
@@ -208,7 +279,7 @@ func RunCredential(stdin io.Reader, stdout, stderr io.Writer) int {
 	// regex-extracted "command" value (never to the raw contextStr as a whole,
 	// because argv0 of the full raw payload is always '{').
 	if isJSON {
-		cmdHasMatch := credCmdHasTypeMatch(match, shellCmd)
+		cmdHasMatch := credCmdHasTypeMatch(finding.typ, shellCmd)
 		if cmdHasMatch && credIsAllEphemeral(contextStr, redirectMatches) &&
 			credIsSimpleCmd(shellCmd) && credAllTargetsAreDevNull(redirectMatches) {
 			return 0
@@ -219,7 +290,7 @@ func RunCredential(stdin io.Reader, stdout, stderr io.Writer) int {
 			if cmd == "" {
 				continue
 			}
-			cmdHasMatch := credCmdHasTypeMatch(match, cmd)
+			cmdHasMatch := credCmdHasTypeMatch(finding.typ, cmd)
 			cmdRedirects := credRedirectRe.FindAllString(cmd, -1)
 			if cmdHasMatch && credIsAllEphemeral(cmd, cmdRedirects) &&
 				credIsSimpleCmd(cmd) && credAllTargetsAreDevNull(cmdRedirects) {
@@ -232,14 +303,15 @@ func RunCredential(stdin io.Reader, stdout, stderr io.Writer) int {
 	mode := credReadModeWithDefault(filepath.Join(cwd, "trackfw.yaml"), "warn")
 
 	// Step 10: Block or warn.
+	origin := credFindingMessage(finding)
 	if mode == "block" {
-		fmt.Fprintf(stderr, "trackfw-credential-guard: blocked - possible %s detected in tool payload.\n", match)
+		fmt.Fprintf(stderr, "trackfw-credential-guard: blocked - possible %s %s\n", finding.typ, origin)
 		return 2
 	}
 
-	fmt.Fprintf(stderr, "trackfw-credential-guard: warning - possible %s detected in tool payload.\n", match)
+	fmt.Fprintf(stderr, "trackfw-credential-guard: warning - possible %s %s\n", finding.typ, origin)
 	roadmapDir := credReadRoadmapDir(filepath.Join(cwd, "trackfw.yaml"))
-	credWriteAttention(cwd, roadmapDir, match)
+	credWriteAttention(cwd, roadmapDir, finding)
 
 	return 0
 }
@@ -263,7 +335,7 @@ func RunCredentialGlobal(stdin io.Reader, stdout, stderr io.Writer) int {
 
 	// Step 3: Layer 1 — scan all patterns in order.
 	inputStr := string(data)
-	match := credScanInput(inputStr)
+	layer1Match := credScanInput(inputStr)
 
 	// Steps 4–8: same logic as RunCredential (JSON-aware extraction and exemption).
 	shellCmd, shellCwd, toolName, isJSON := credExtractCmdAndCwd(data)
@@ -278,27 +350,32 @@ func RunCredentialGlobal(stdin io.Reader, stdout, stderr io.Writer) int {
 		redirectMatches = credRedirectRe.FindAllString(contextStr, -1)
 	}
 
-	if match == "" {
-		match = credSecondLayer(shellCmd, shellCwd, contextStr, toolName, redirectMatches)
+	var finding credFinding
+	if layer1Match != "" {
+		finding = credFinding{typ: layer1Match}
+	}
+
+	if finding.typ == "" {
+		finding = credSecondLayer(shellCmd, shellCwd, contextStr, toolName, redirectMatches)
 	}
 
 	// Non-JSON fallback: same as RunCredential — restore Layer 2b via credCmdLineRe.
-	if match == "" && !isJSON {
-		match = credNonJSONLayerTwoB(contextStr, "")
+	if finding.typ == "" && !isJSON {
+		finding = credNonJSONLayerTwoB(contextStr, "")
 	}
 
 	// F4: deep-scan all command/command_line values (same as RunCredential).
-	if match == "" && isJSON {
-		match = credDeepScan(data, shellCwd)
+	if finding.typ == "" && isJSON {
+		finding = credDeepScan(data, shellCwd)
 	}
 
-	if match == "" {
+	if finding.typ == "" {
 		return 0
 	}
 
 	// F2 shape-based exemption (same conditions as RunCredential).
 	if isJSON {
-		cmdHasMatch := credCmdHasTypeMatch(match, shellCmd)
+		cmdHasMatch := credCmdHasTypeMatch(finding.typ, shellCmd)
 		if cmdHasMatch && credIsAllEphemeral(contextStr, redirectMatches) &&
 			credIsSimpleCmd(shellCmd) && credAllTargetsAreDevNull(redirectMatches) {
 			return 0
@@ -309,7 +386,7 @@ func RunCredentialGlobal(stdin io.Reader, stdout, stderr io.Writer) int {
 			if cmd == "" {
 				continue
 			}
-			cmdHasMatch := credCmdHasTypeMatch(match, cmd)
+			cmdHasMatch := credCmdHasTypeMatch(finding.typ, cmd)
 			cmdRedirects := credRedirectRe.FindAllString(cmd, -1)
 			if cmdHasMatch && credIsAllEphemeral(cmd, cmdRedirects) &&
 				credIsSimpleCmd(cmd) && credAllTargetsAreDevNull(cmdRedirects) {
@@ -328,12 +405,13 @@ func RunCredentialGlobal(stdin io.Reader, stdout, stderr io.Writer) int {
 	mode := credReadModeWithDefault(filepath.Join(cwd, "trackfw.yaml"), "block")
 
 	// Step 10: Block or warn.
+	origin := credFindingMessage(finding)
 	if mode == "block" {
-		fmt.Fprintf(stderr, "trackfw-credential-guard: blocked - possible %s detected in tool payload.\n", match)
+		fmt.Fprintf(stderr, "trackfw-credential-guard: blocked - possible %s %s\n", finding.typ, origin)
 		return 2
 	}
 
-	fmt.Fprintf(stderr, "trackfw-credential-guard: warning - possible %s detected in tool payload.\n", match)
+	fmt.Fprintf(stderr, "trackfw-credential-guard: warning - possible %s %s\n", finding.typ, origin)
 
 	// Global scope: write attention JSON only if docs/roadmaps already exists as a directory.
 	// Faithful port of: ROADMAP_DIR="docs/roadmaps"; if [ ! -d "$ROADMAP_DIR" ]; then exit 0; fi
@@ -342,7 +420,7 @@ func RunCredentialGlobal(stdin io.Reader, stdout, stderr io.Writer) int {
 	if statErr != nil || !fi.IsDir() {
 		return 0
 	}
-	credWriteAttention(cwd, roadmapDir, match)
+	credWriteAttention(cwd, roadmapDir, finding)
 
 	return 0
 }
@@ -361,16 +439,28 @@ func RunCredentialGlobal(stdin io.Reader, stdout, stderr io.Writer) int {
 // Normalization is applied AFTER the early ContainsAny return so that tokens without
 // glob metacharacters are handled by credResolveArg further downstream.
 //
+// baseCwd is the working directory from tool_info.cwd in the payload. When non-empty
+// and the pattern is relative, it is resolved against baseCwd before expansion (D4 fix:
+// aligns glob behaviour with credResolveArg which already uses tool_info.cwd).
+// When baseCwd is empty, filepath.Glob runs with the pattern as-is, which is equivalent
+// to expanding against the process working directory (pre-D4 behaviour, preserved as the
+// fallback for payloads without tool_info.cwd).
+//
 // Declared residual: POSIX character classes such as [[:alpha:]] are not supported by
 // Go's filepath.Glob and return ErrBadPattern; such patterns keep the literal token.
 //
 // Returns a slice of >= 1 element (always at least the original token).
-func credGlobToken(token, toolName string) []string {
+func credGlobToken(token, toolName, baseCwd string) []string {
 	if !strings.ContainsAny(token, "*?[") {
 		return []string{token}
 	}
 	// Translate POSIX [! negation to Go [^ negation, then normalize drive path.
 	pattern := credNormalizeWindowsPath(strings.ReplaceAll(token, "[!", "[^"), runtime.GOOS, toolName)
+	// D4: resolve relative glob patterns against baseCwd (tool_info.cwd), just as
+	// credResolveArg does for named arguments. Absolute patterns are unchanged.
+	if baseCwd != "" && !filepath.IsAbs(pattern) {
+		pattern = filepath.Join(baseCwd, pattern)
+	}
 	matches, err := filepath.Glob(pattern)
 	if err != nil || len(matches) == 0 {
 		return []string{token}
@@ -433,10 +523,15 @@ func credRedirectTarget(match string) string {
 	return credRedirectPfxRe.ReplaceAllString(match, "")
 }
 
-// credScanFile reads the file at path and returns "JWT", "AWS access key", or ""
-// if no pattern found, file absent, or file too large.
+// credScanFile reads the file at path and returns the credential type name and the
+// cleaned path that was passed to os.Stat. Returns ("", "") if no pattern was found,
+// the file is absent, or the file is too large.
 // Faithful port of scan_file_for_pattern() in .sh L53–69.
-func credScanFile(path string) string {
+//
+// The returned cleanedPath is the path after quote-stripping and trailing "},
+// removal — it is the exact string passed to os.Stat. Callers must sanitize it
+// via credSanitizePath before including it in any output (D1).
+func credScanFile(path string) (typ, cleanedPath string) {
 	// tr -d "\"'" | sed -E 's/[},]+$//'
 	path = strings.Map(func(r rune) rune {
 		if r == '"' || r == '\'' {
@@ -447,21 +542,25 @@ func credScanFile(path string) string {
 	path = strings.TrimRight(path, "},")
 
 	if path == "" {
-		return ""
+		return "", ""
 	}
 	fi, err := os.Stat(path)
 	if err != nil || !fi.Mode().IsRegular() {
-		return ""
+		return "", ""
 	}
 	if fi.Size() >= credMaxFileSize {
-		return ""
+		return "", ""
 	}
 
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return ""
+		return "", ""
 	}
-	return credScanInput(string(content))
+	t := credScanInput(string(content))
+	if t == "" {
+		return "", ""
+	}
+	return t, path
 }
 
 // credIsPowerShellTool reports whether toolName is any spelling of PowerShell
@@ -623,6 +722,18 @@ func credExtractCmdAndCwd(data []byte) (shellCmd, cwd, toolName string, isJSON b
 	}
 
 	cwd = credExtractToolInfoCwd(root, toolName)
+	// D4-fallback: Kiro PreToolUse uses a root-level "cwd" field instead of tool_info.cwd
+	// (documented at cli-parity.md §"Kiro wiring"). Fall back to it when tool_info.cwd is
+	// absent, so that relative glob patterns in Kiro payloads resolve against the declared
+	// working directory. Claude Code's PreToolUse schema is not confirmed to use this field.
+	if cwd == "" {
+		if rawCwd, ok := root["cwd"]; ok && !isJSONNull(rawCwd) {
+			var c string
+			if err := json.Unmarshal(rawCwd, &c); err == nil && c != "" {
+				cwd = credNormalizeWindowsPath(c, runtime.GOOS, toolName)
+			}
+		}
+	}
 
 	// Priority 1: tool_input.command
 	if cmd, found, _ := extractNested(root, "tool_input", "command"); found && cmd != "" && !strings.ContainsRune(cmd, '\x00') {
@@ -722,7 +833,11 @@ func credResolveArg(arg, baseCwd, toolName string) string {
 //   resolve relative paths (e.g. "cat token.txt" when cwd="/project").
 // toolName is forwarded to credResolveArg and credGlobToken for Windows path
 //   normalization — prevents incorrect translation for PowerShell payloads.
-func credSecondLayer(shellCmd, shellCwd, contextStr, toolName string, redirectMatches []string) string {
+//
+// Returns a credFinding with the credential type and origin path. The path is the
+// file that was opened and found to contain the credential; it is empty when no
+// file-origin match was found (which means no match at all from this layer).
+func credSecondLayer(shellCmd, shellCwd, contextStr, toolName string, redirectMatches []string) credFinding {
 	// 2a — scan non-ephemeral redirect targets.
 	for _, rm := range redirectMatches {
 		if rm == "" {
@@ -734,8 +849,8 @@ func credSecondLayer(shellCmd, shellCwd, contextStr, toolName string, redirectMa
 		}
 		if !credIsEphemeralTarget(contextStr, target) {
 			resolved := credResolveArg(target, shellCwd, toolName)
-			if m := credScanFile(resolved); m != "" {
-				return m
+			if typ, cleanedPath := credScanFile(resolved); typ != "" {
+				return credFinding{typ: typ, path: cleanedPath}
 			}
 			// F1: NTFS ADS fallback — when the redirect target is a named ADS
 			// ("arq.txt:stream") and os.Stat fails, scan the base file instead.
@@ -746,8 +861,8 @@ func credSecondLayer(shellCmd, shellCwd, contextStr, toolName string, redirectMa
 			if runtime.GOOS == "windows" {
 				if _, statErr := os.Stat(resolved); statErr != nil {
 					if base, ok := credWindowsADSBase(resolved, runtime.GOOS); ok {
-						if m := credScanFile(base); m != "" {
-							return m
+						if typ, cleanedPath := credScanFile(base); typ != "" {
+							return credFinding{typ: typ, path: cleanedPath}
 						}
 					}
 				}
@@ -758,30 +873,31 @@ func credSecondLayer(shellCmd, shellCwd, contextStr, toolName string, redirectMa
 	// 2b — tokenise shellCmd, glob-expand, scan file arguments.
 	// shellCmd is "" for payloads without a shell command (Write/Edit/fs_write).
 	if shellCmd == "" {
-		return ""
+		return credFinding{}
 	}
 	rawTokens := strings.Fields(shellCmd)
 	if len(rawTokens) == 0 {
-		return ""
+		return credFinding{}
 	}
 	// Apply glob expansion per token, matching bash `set -- $CMD_LINE` without set -f.
+	// D4: pass shellCwd so that relative glob patterns are resolved against tool_info.cwd.
 	var tokens []string
 	for _, t := range rawTokens {
-		tokens = append(tokens, credGlobToken(t, toolName)...)
+		tokens = append(tokens, credGlobToken(t, toolName, shellCwd)...)
 	}
 	if len(tokens) == 0 {
-		return ""
+		return credFinding{}
 	}
 	switch tokens[0] {
 	case "cat", "head", "tail", "jq", "grep":
 		for _, tok := range tokens[1:] {
-			if m := credScanFile(credResolveArg(tok, shellCwd, toolName)); m != "" {
-				return m
+			if typ, cleanedPath := credScanFile(credResolveArg(tok, shellCwd, toolName)); typ != "" {
+				return credFinding{typ: typ, path: cleanedPath}
 			}
 		}
 	}
 
-	return ""
+	return credFinding{}
 }
 
 // credIsAllEphemeral reports true when all redirect targets are ephemeral.
@@ -913,7 +1029,7 @@ const (
 
 // credDeepScan walks all string values at "command" or "command_line" keys at any
 // depth in the decoded JSON payload and runs credSecondLayer on each unique value.
-// Returns the first credential match found, or "" if none.
+// Returns the first credFinding found, or zero value if none.
 //
 // Exclusion: when tool_name == "fs_write", tool_input is removed from the walk
 // tree (its "command" value is an enum tag, not a shell command).
@@ -921,11 +1037,11 @@ const (
 // Depth limit: credDeepWalkMaxDepth. Count limit: credDeepWalkMaxCount.
 // Exceeding a limit is fail-open for scanning (we stop early) but fail-closed
 // for the exemption (exemption is based on primary shellCmd, never on deep walk).
-func credDeepScan(data []byte, shellCwd string) string {
+func credDeepScan(data []byte, shellCwd string) credFinding {
 	stripped := bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF})
 	var iface interface{}
 	if json.Unmarshal(stripped, &iface) != nil {
-		return ""
+		return credFinding{}
 	}
 
 	// For fs_write payloads, remove tool_input (its "command" is an enum tag).
@@ -974,11 +1090,11 @@ func credDeepScan(data []byte, shellCwd string) string {
 
 	for _, cmd := range cmds {
 		redirects := credRedirectRe.FindAllString(cmd, -1)
-		if m := credSecondLayer(cmd, shellCwd, cmd, deepToolName, redirects); m != "" {
-			return m
+		if f := credSecondLayer(cmd, shellCwd, cmd, deepToolName, redirects); f.typ != "" {
+			return f
 		}
 	}
-	return ""
+	return credFinding{}
 }
 
 // credNonJSONLayerTwoB runs Layer 2b for non-JSON (or invalid-JSON) payloads.
@@ -997,7 +1113,7 @@ func credDeepScan(data []byte, shellCwd string) string {
 // contextStr is the raw payload after `\"` → `"` substitution.
 // shellCwd is typically "" for non-JSON payloads (tool_info.cwd is unavailable
 // without successful JSON parsing).
-func credNonJSONLayerTwoB(contextStr, shellCwd string) string {
+func credNonJSONLayerTwoB(contextStr, shellCwd string) credFinding {
 	for _, m := range credCmdLineRe.FindAllStringSubmatch(contextStr, -1) {
 		cmd := m[1]
 		if cmd == "" {
@@ -1006,11 +1122,11 @@ func credNonJSONLayerTwoB(contextStr, shellCwd string) string {
 		// Pass nil for redirectMatches: Layer 2a already ran in the caller.
 		// toolName="" — non-JSON payloads have no parseable tool_name; deny-list
 		// skips PowerShell only when toolName=="PowerShell" (EqualFold); "" is safe.
-		if match := credSecondLayer(cmd, shellCwd, contextStr, "", nil); match != "" {
-			return match
+		if f := credSecondLayer(cmd, shellCwd, contextStr, "", nil); f.typ != "" {
+			return f
 		}
 	}
-	return ""
+	return credFinding{}
 }
 
 // ReadCredentialGuardMode extracts the credential_guard.mode value from YAML
@@ -1178,17 +1294,35 @@ func credReadRoadmapDir(yamlPath string) string {
 // roadmapDir is a symlink pointing outside the project) is silently ignored.
 // The guard and rc are NOT affected.
 //
+// f carries the type name and origin of the detected credential. The attention
+// message describes the origin WITHOUT the file path (D1 — ADR-2026-11-06):
+//   - file origin:    "Possible <typ> detected in a file referenced by the command - ..."
+//   - payload origin: "Possible <typ> detected in tool payload - ..."
+// The file path is intentionally omitted from the attention JSON because the file
+// is committed in consumers using mode:warn and would leak the path persistently.
+//
 // Hardening beyond the .sh: pathguard.RejectAndReport refuses a roadmapDir
 // whose resolved path escapes the project root via a symlink — the .sh wrote
 // to a relative path with no such check.
-func credWriteAttention(cwd, roadmapDir, match string) {
+func credWriteAttention(cwd, roadmapDir string, f credFinding) {
 	ts := time.Now().UTC().Format("2006-01-02T15:04:05Z")
-	msg := "Possible " + match + " detected in tool payload - review before materializing credentials in plain text."
+	var msg string
+	if f.path != "" {
+		msg = "Possible " + f.typ + " detected in a file referenced by the command - review before materializing credentials in plain text."
+	} else {
+		msg = "Possible " + f.typ + " detected in tool payload - review before materializing credentials in plain text."
+	}
 
-	// MSG_ESC: tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g'
+	// MSG_ESC: replace control chars with '?' (not discard — T2 ADR fix), then
+	// JSON-escape backslash and double-quote.
+	// Using range over the string processes valid UTF-8 runes; invalid bytes
+	// produce U+FFFD which is not a control char and passes through. This is safe
+	// because msg is built from credPattern.name (ASCII) and the literal strings
+	// above, so no invalid UTF-8 can appear in msg.
 	var msgEsc strings.Builder
 	for _, r := range msg {
 		if r < 0x20 {
+			msgEsc.WriteByte('?')
 			continue
 		}
 		switch r {

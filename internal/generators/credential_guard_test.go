@@ -335,8 +335,12 @@ func TestGlobalCredentialGuardScript_WritesAttentionOnlyWhenRoadmapsDirExists(t 
 // modos de credential_guard.mode.
 // ---------------------------------------------------------------------------
 
-const syntheticJWT = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.abc123def456ghi789"
-const syntheticAWSKey = "AKIAABCDEFGHIJKLMNOP"
+// syntheticJWT and syntheticAWSKey are assembled from fragments so that no source
+// literal matches a credential pattern when the guard scans this file (ADR D3, REQ AC3).
+// Each fragment alone produces credScanInput("") — verified by TestSyntheticTokenFragments_NoneMatchCredentials.
+// The assembled value is a syntactically valid JWT / AWS access key detected by the guard.
+const syntheticJWT = "eyJ" + "hbGciOiJIUzI1NiJ9" + "." + "eyJzdWIiOiJ0ZXN0In0" + "." + "abc123def456ghi789"
+const syntheticAWSKey = "AKIA" + "ABCDEFGHIJKLMNOP"
 
 func setupCredentialGuardFixture(t *testing.T, trackfwYAML string) (dir, scriptPath string) {
 	t.Helper()
@@ -790,5 +794,98 @@ func TestCredentialGuardScript_GeneratedScript_WindowsPathRedirectDetectsJWTInFi
 	}
 	if !strings.Contains(stderr, "JWT") {
 		t.Errorf("esperava menção de JWT em stderr (segunda camada detectou via redirect), got: %s", stderr)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ML-1B: AC3 counter-arm tests (ADR D3, REQ AC3).
+// ---------------------------------------------------------------------------
+
+// TestSyntheticTokenFragments_NoneMatchCredentials verifies that each individual
+// fragment used to build syntheticJWT and syntheticAWSKey does NOT trigger the
+// credential guard when echoed as a command payload.
+//
+// Assertion: each source fragment that makes up syntheticJWT or syntheticAWSKey is
+// individually safe — only the assembled token matches a credential pattern.
+// This is the counter-arm that validates the fragmentation strategy (ADR D3, REQ AC3).
+func TestSyntheticTokenFragments_NoneMatchCredentials(t *testing.T) {
+	dir, _ := setupCredentialGuardFixture(t, "credential_guard:\n  mode: block\n")
+
+	// JWT fragments — each part alone must NOT match the JWT pattern.
+	// The JWT pattern requires eyJ<base64url>.<base64url>.<base64url>.
+	// No single fragment satisfies the full three-part structure.
+	jwtFragments := []string{
+		"eyJ",                  // just the eyJ prefix — no dot-separated parts
+		"hbGciOiJIUzI1NiJ9",   // header body — no eyJ prefix
+		".",                    // dot separator alone
+		"eyJzdWIiOiJ0ZXN0In0", // payload segment — no sig or header
+		"abc123def456ghi789",   // sig segment — no eyJ prefix or dots
+	}
+
+	// AWS access key fragments — each part alone must NOT match AKIA[0-9A-Z]{16}.
+	// The first fragment lacks the 16-char suffix; the second lacks the AKIA prefix.
+	awsFragments := []string{
+		"AKIA",             // prefix only — missing the 16-char body
+		"ABCDEFGHIJKLMNOP", // 16-char body — no AKIA prefix
+	}
+
+	allFragments := append(jwtFragments, awsFragments...)
+
+	for _, frag := range allFragments {
+		frag := frag
+		t.Run("fragment/"+frag, func(t *testing.T) {
+			t.Parallel()
+			payload := `{"tool_name":"Bash","tool_input":{"command":"echo ` + frag + `"}}`
+			code, _, stderr := runGuardBinaryCredential(t, dir, payload, false)
+			if code != 0 {
+				t.Errorf("fragment %q should not match any credential pattern (ADR D3), got rc=%d (stderr=%q)",
+					frag, code, stderr)
+			}
+		})
+	}
+}
+
+// TestSyntheticTokenAssembled_Detected verifies that the assembled syntheticJWT and
+// syntheticAWSKey constants ARE detected by the guard after fragmentation.
+//
+// Assertion: the token assembled at runtime from fragments is detected by the JWT
+// pattern (syntheticJWT) and the AWS access key pattern (syntheticAWSKey). The
+// mutation counter-arm (run in scratchpad per ML-1B protocol, not committed) confirms
+// that detection depends on each specific pattern — altering the pattern causes the
+// corresponding detection to fail.
+func TestSyntheticTokenAssembled_Detected(t *testing.T) {
+	dir, _ := setupCredentialGuardFixture(t, "credential_guard:\n  mode: block\n")
+
+	cases := []struct {
+		label   string
+		token   string
+		wantMsg string
+	}{
+		{
+			label:   "JWT assembled from fragments detected",
+			token:   syntheticJWT,
+			wantMsg: "JWT",
+		},
+		{
+			label:   "AWS key assembled from fragments detected",
+			token:   syntheticAWSKey,
+			wantMsg: "AWS",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.label, func(t *testing.T) {
+			payload := `{"tool_name":"Bash","tool_input":{"command":"echo ` + tc.token + `"}}`
+			code, _, stderr := runGuardBinaryCredential(t, dir, payload, false)
+			if code != 2 {
+				t.Errorf("%s: want rc=2 (credential detected), got rc=%d (stderr=%q)",
+					tc.label, code, stderr)
+			}
+			if !strings.Contains(stderr, tc.wantMsg) {
+				t.Errorf("%s: want stderr containing %q, got %q",
+					tc.label, tc.wantMsg, stderr)
+			}
+		})
 	}
 }

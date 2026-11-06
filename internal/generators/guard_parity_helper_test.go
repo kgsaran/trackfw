@@ -422,8 +422,8 @@ func TestGuardShReferenceFixtures_Sha256(t *testing.T) {
 	// the original full scripts so the parity comparison stays meaningful.
 	expected := map[string]string{
 		"git-branch-guard.sh":         "75b71725732b504cf58b1e9317cfe158b9d1a82ab9c281551ecf7ab6b057c78a",
-		"credential-guard-project.sh": "e73d6502f851fee4ca304c1e8e8a60485f1339714734fb09d89a514dea65a4f7",
-		"credential-guard-global.sh":  "af21a5772a2edeba738db454771e8347b6300b4272a17c447f68a921b9c3cc43",
+		"credential-guard-project.sh": "20aa07f9f9000b3c774b895338af7138321cdcc0d9b8c31040985bf169d15586",
+		"credential-guard-global.sh":  "d0ab82630c5cc4a9f9171eb1d7b5fc686ce889b593a9bf7c6349be57c9d3f610",
 	}
 
 	dir := testdataGuardRefDir()
