@@ -30,6 +30,8 @@ Três vermelhos recentes não tinham relação com o conteúdo do PR:
 - **D1, quem classifica.** A classificação usa a versão do script na BASE do PR, não a do HEAD (ADR-2026-09-17: a severidade não vem de fonte que o objeto verificado controla). O `--self-test` roda a versão do HEAD e reprova o job se falhar. Script ausente na BASE ou base indisponível conta como D2: aplicável, com o job de classificação em `success`. A dispensa só é possível com base igual à branch padrão. Consequência: a dispensa só pode disparar em PRs abertos depois do merge da REQ; o primeiro PR só de documentação contra a `main` depois disso é a primeira medição real.
 - **D3, onde o estouro cai.** O `timeout-minutes: 60` do job `windows-full-suites` é o mesmo job do `-timeout 20m`, e são 32 chamadas afirmadas (4 guards × 2 binários × 4 cenários). Subir o `-timeout` só transfere o estouro para o cancelamento do job. Por isso, depois do primeiro estouro de prazo de um binário, as chamadas seguintes desse binário reprovam na hora, sem executar, citando a chamada que estourou. Pior caso: cerca de 60 s por binário.
 
+- **D5 (acrescentada na auditoria do ML-1A).** `produtor | grep -q` sob `pipefail` é vermelho intermitente sem relação com o conteúdo: o `grep -q` sai no primeiro casamento e o produtor recebe SIGPIPE (141). A forma `| grep P >/dev/null` lê a entrada inteira e tem o mesmo código de saída. Um gate impede a volta.
+
 ## Consequences
 
 - **Positivas:**

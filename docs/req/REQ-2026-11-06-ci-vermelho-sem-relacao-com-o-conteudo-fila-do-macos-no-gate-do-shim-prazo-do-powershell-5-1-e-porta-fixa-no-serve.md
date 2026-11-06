@@ -22,6 +22,7 @@ Os relatos de lourivalgarciajunior (Discussion #664 e issue #665) e a falha de p
   - dá aplicável: um arquivo em `internal/`, `npm/` ou `cmd/`, um arquivo na raiz que não é `.md`, um caminho novo desconhecido, um rename de inerte para fora e de fora para inerte, e base ausente.
 - [ ] **AC3 (#665).** O prazo da chamada afirmada do PowerShell é `clamp(4 × aquecimento, 15 s, 60 s)`. Um teste unitário da função de prazo fixa os três regimes. A mensagem de estouro cita o aquecimento e o prazo. Depois do primeiro estouro de um binário, as chamadas seguintes desse binário reprovam sem executar.
 - [ ] **AC4.** O `check-serve-address-parity.sh` usa porta livre do sistema e tenta de novo só em `address already in use`, até 3 vezes. Com a porta ocupada de propósito, o cenário passa; com outro erro de bind, reprova.
+- [ ] **AC6.** Nenhum script de `scripts/` com `pipefail` usa `| grep -q`; um gate no `parity-rest` impede a volta. Origem: o `check-orphan-gates.sh` reprovava com 141 de forma intermitente (SIGPIPE), achado na auditoria do ML-1A.
 - [ ] **AC5.** `make quality` verde, CI verde no PR, e a Discussion #664 e a issue #665 recebem resposta com o que mudou.
 
 ## Negative Scope
