@@ -37,12 +37,13 @@
 - [make quality com máquina ociosa](feedback_make_quality_com_maquina_ociosa.md) — #504: 5/5 limpas ociosa; as 3 "penduradas" tinham concorrência; capture ps antes de matar
 - [req new já cria a roadmap](project_req_new_ja_cria_roadmap.md) — `roadmap new` depois sobrescreve sem vínculo; só o push pega; não rode os dois
 - [Defeito conhecido se corrige agora](feedback_defeito_conhecido_corrige_agora.md) — residual de red-team ou inconsistência vista na auditoria vira ML no mesmo PR (KG 2x em 2026-10-09)
-- [Mudar contrato: auditar quem afirma o antigo](feedback_mudar_contrato_auditar_quem_afirma_o_antigo.md) — enumerar consumidores não basta; os TESTES deles fixam a forma antiga
+- [Mudar contrato: auditar quem afirma o antigo](feedback_mudar_contrato_auditar_quem_afirma_o_antigo.md) — testes E cenários de `scripts/check-gates-falsify.sh` fixam a forma antiga; 2x no #663
 - [Proibir sem rota legítima vira contorno](feedback_proibir_sem_rota_legitima_vira_contorno.md) — medição git que escreve: dê a rota (teste Go em t.TempDir); hades contornou o guard por script
+- [Red team executou interpretador real](feedback_red_team_executa_interprete_real.md) — 🔴 Hades rodou `pwsh -EncodedCommand` com git push no repo após 2 negações; handoff proíbe executar interpretador
 - [Agentes escrevem o working context](project_agentes_escrevem_working_context.md) — 5/9 ignoraram a proibição; a instrução do arquivo do agente vence o handoff; corrigir no gerador
 - [PR incompleto abre como draft](feedback_pr_incompleto_abre_como_draft.md) — wave pendente → `gh pr create --draft`; aviso em prosa não segurou o merge do #598
 - [Mover escrita roda o pathguard](feedback_mover_escrita_roda_pathguard.md) — escrita movida de função/pacote → `go test ./internal/pathguard/`; só o make quality pegou (#602)
-- [PATH local mascara a sonda de binário](project_path_local_mascara_sonda_de_binario.md) — 2x (#623, #655): teste que roda validate após init → go test com PATH sem trackfw antes do push
+- [PATH local mascara a sonda de binário](project_path_local_mascara_sonda_de_binario.md) — 2x (#623, #655): PATH sem trackfw só no go test; restrito vira bash 3.2 e quebra make parity-rest
 - [Direção: A+C, B congelado](project_direcao_consolidar_e_adocao.md) — 2026-10-28: consolidar + adoção; radar é do Lourival; open source sempre
 - [Parser de roadmap mede o corpus](feedback_parser_de_roadmap_mede_o_corpus.md) — máscara HTML passou em 4 rodadas e quebrou o próprio roadmap; medir main×branch em docs/roadmaps
 - [Inglês primeiro](project_ingles_primeiro.md) — 2026-11-02: produto em inglês; status bilíngue; docs/ segue em PT; REQ de idioma em backlog

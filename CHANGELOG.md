@@ -7,6 +7,38 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [11.5.0] - 2026-11-05
+
+Guards relatados pelo primeiro usuário externo (#662, #663).
+
+### Breaking Changes
+
+Nenhum na interface. O guard de git passa a bloquear comandos que antes deixava passar por estarem dentro
+de um invólucro de shell. Se algum fluxo seu dependia disso, use `trackfw push`, `trackfw commit` ou
+`trackfw branch new`.
+
+### Added
+
+- **O guard de credencial reconhece mais tipos** (#662): PAT fine-grained do GitHub (`github_pat_`),
+  tokens `gho_`/`ghu_`/`ghs_`/`ghr_`, chaves da Anthropic (`sk-ant-`), da OpenAI (`sk-proj-` e `sk-`),
+  do Google (`AIza`), do Slack (`xox?-`) e chave privada PEM, além de JWT e AWS. A mensagem diz o tipo.
+  O README lista o que é detectado e o que não é (caminho de arquivo, atribuição genérica).
+
+### Fixed
+
+- **`credential_guard.mode: block` era ignorado com `trackfw.yaml` em CRLF** (#662). O guard e o
+  `trackfw validate` agora usam o mesmo leitor do `mode`, que também trata BOM, tab e comentário.
+- **O guard de git deixava passar `git push` e os demais subcomandos bloqueados quando envolvidos por um
+  shell** (#663). Passam a ser bloqueados:
+  - `bash -c`, `sh -c`, `zsh -c`, `eval`, `pwsh -c` (e abreviações), `powershell -Command` e `cmd /c`;
+  - prefixos como `env`, `command -p`, `nohup`, `time`, `timeout`, `nice`, `doas`, `stdbuf` e atribuição
+    `FOO=1`;
+  - substituição `$( )`, crase e `<( )`, inclusive com `|`, `&&` ou `case` dentro;
+  - `\git` e `g\it`.
+
+  Profundidade acima de 2 é negada. Os limites declarados estão no README: shell lendo stdin,
+  `-EncodedCommand`, expansão de variável, `python -c`/`node -e` e `pwsh git push`.
+
 ## [11.4.0] - 2026-11-04
 
 Relatos do primeiro usuário externo (#657 a #661), com 11.3.0 no Windows 11.

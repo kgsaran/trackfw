@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/guard"
 )
 
 // ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A.
@@ -75,54 +76,18 @@ func validateCredentialGuardScriptIntegrity() ([]string, error) {
 	)}, nil
 }
 
-// credentialGuardModeBlockLookbehindLines mirrors the shell script's own resolution of
-// credential_guard.mode (credentialGuardModeResolution in internal/generators/scaffold.go, `grep
-// -A 5 '^credential_guard:'`): the block value key is found on the same line as, or within the 5
-// lines following, a line that starts with "credential_guard:". Deliberately the SAME lightweight
-// line-scan the shipped script itself uses to read this value — not a full YAML parser — so this
-// rule's notion of "what credential_guard.mode resolves to" matches what actually runs at hook
-// time, rather than diverging on some YAML edge case a real parser would handle differently.
-const credentialGuardModeBlockLookbehindLines = 5
-
-// extractCredentialGuardMode scans content for a top-level "credential_guard:" line and returns
-// the value of the "mode:" key found within it (own line, or one of the next
-// credentialGuardModeBlockLookbehindLines lines). ok is false when no "credential_guard:" line
-// exists at all, OR when it exists but no "mode:" key is found within the lookbehind window — both
-// cases mean "no explicit mode value to reason about", which the two callers below treat
-// identically (no anchor / not a block value).
+// extractCredentialGuardMode scans content for a top-level "credential_guard:"
+// line and returns the value of the "mode:" key found within it.
+//
+// Delegates entirely to guard.ReadCredentialGuardMode (D1 — shared reader) so
+// that the validator and the guard converge on exactly the same mode for every
+// input (AC1). The (string, bool) contract is preserved for callers below:
+//   - ok=false: no "credential_guard:" section exists at all.
+//   - ok=true, mode="": section exists but no "mode:" key (scan stops at next
+//     top-level YAML key — no fixed line limit; C9 ML-2C).
+//   - ok=true, mode≠"": value extracted by the shared spec.
 func extractCredentialGuardMode(content string) (mode string, ok bool) {
-	lines := strings.Split(content, "\n")
-
-	start := -1
-	for i, l := range lines {
-		if strings.HasPrefix(l, "credential_guard:") {
-			start = i
-			break
-		}
-	}
-	if start == -1 {
-		return "", false
-	}
-
-	end := start + 1 + credentialGuardModeBlockLookbehindLines
-	if end > len(lines) {
-		end = len(lines)
-	}
-
-	for _, l := range lines[start:end] {
-		trimmed := strings.TrimSpace(l)
-		if !strings.Contains(trimmed, "mode:") {
-			continue
-		}
-		rest := strings.TrimSpace(strings.TrimPrefix(trimmed, "mode:"))
-		if h := strings.Index(rest, "#"); h >= 0 {
-			rest = strings.TrimSpace(rest[:h])
-		}
-		rest = strings.Trim(rest, `"'`)
-		return rest, true
-	}
-
-	return "", false
+	return guard.ReadCredentialGuardMode(content)
 }
 
 // headTrackfwYAML returns the content of trackfw.yaml as committed at HEAD, resolved relative to
@@ -150,8 +115,7 @@ func headTrackfwYAML() (content string, ok bool) {
 // validateCredentialGuardModeDowngrade is the "credential_guard_mode_downgrade" rule: fires only
 // when credential_guard.mode was explicitly "block" at HEAD and the current on-disk trackfw.yaml
 // no longer resolves to "block" (explicit "warn", an unrecognized value, or the key/file missing
-// altogether — all of which the shipped script itself would fall back to "warn" for, per
-// credentialGuardModeResolution's DEFAULT_MODE="warn" for the project variant).
+// altogether — all of which the guard falls back to "warn" for, per the project variant default).
 //
 // Silent (no violation) whenever HEAD is not "block": that is "no anchor to detect a downgrade
 // from", not "nothing wrong" — see the file-level comment above for why this is the correct

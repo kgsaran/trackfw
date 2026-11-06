@@ -289,10 +289,10 @@ func TestRunCredential_RoadmapDirDotDotFallback(t *testing.T) {
 	}
 }
 
-// TestRunCredential_CRLFYamlModeNoBlock asserts that a trackfw.yaml with CRLF
-// line endings causes mode "block\r" to NOT match "block", falling back to "warn".
-// Assertion: CRLF mode value → does not match "block" → default warn → exit 0.
-func TestRunCredential_CRLFYamlModeNoBlock(t *testing.T) {
+// TestRunCredential_CRLFYamlModeBlock asserts that a trackfw.yaml with CRLF
+// line endings and mode: block correctly reads as "block" (AC1 fix: \r is now stripped).
+// Assertion: CRLF mode value "block\r" → \r stripped → "block" → exit 2.
+func TestRunCredential_CRLFYamlModeBlock(t *testing.T) {
 	// Write trackfw.yaml with CRLF line endings, mode: block\r.
 	crlf := "credential_guard:\r\n  mode: block\r\nroadmap_dir: docs/roadmaps\r\n"
 	dir := makeCredProjectDir(t, crlf)
@@ -303,12 +303,12 @@ func TestRunCredential_CRLFYamlModeNoBlock(t *testing.T) {
 	payload := `{"tool_input":{"command":"echo ` + jwtToken + `"}}`
 	code, _, errOut := runCred(t, dir, payload)
 
-	// CRLF mode: "block\r" does not match "block" → falls through to default "warn" → exit 0.
-	if code != 0 {
-		t.Fatalf("CRLF yaml: expected exit 0 (warn fallback), got %d (stderr=%q)", code, errOut)
+	// AC1 (ML-1A): ReadCredentialGuardMode strips \r, so "block\r" → "block" → exit 2.
+	if code != 2 {
+		t.Fatalf("CRLF yaml: expected exit 2 (block), got %d (stderr=%q)", code, errOut)
 	}
-	if !strings.Contains(errOut, "warning") {
-		t.Errorf("expected warning message for CRLF yaml, got %q", errOut)
+	if !strings.Contains(errOut, "blocked") {
+		t.Errorf("expected blocked message for CRLF yaml, got %q", errOut)
 	}
 }
 

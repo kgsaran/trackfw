@@ -3621,7 +3621,7 @@ Before v8.0.0, Node.js used `cfg.credentialGuard.mode` and Python used `cfg["cre
 
 | Field (YAML key) | Type | Default (absent) | Consumed by |
 |---|---|---|---|
-| `credential_guard.mode` | `warn` \| `block` | `warn` | `scripts/trackfw-credential-guard.sh` — decides whether a detected JWT/AWS-key pattern only logs an attention signal (`warn`) or aborts the tool call with exit code 2 (`block`) |
+| `credential_guard.mode` | `warn` \| `block` | `warn` | `trackfw guard credential` (and the thin shell shim) — decides whether a detected credential pattern only logs an attention signal (`warn`) or aborts the tool call with exit code 2 (`block`) |
 
 ```yaml
 credential_guard:
@@ -5877,14 +5877,13 @@ no Codex.
   que sai `exit 0` (`echo '#!/bin/bash' > scripts/trackfw-credential-guard.sh && echo 'exit 0' >>
   scripts/trackfw-credential-guard.sh`) é estritamente pior que apagar: produz `hook: PreToolUse
   Completed` — o **mesmo rótulo de sucesso normal** medido no controle positivo do ML-1A — zero sinal
-  distinguível de execução legítima. E o próprio comando de escrita não contém JWT nem chave AWS, não
-  casando com o padrão de detecção do credential-guard.
+  distinguível de execução legítima. E o próprio comando de escrita não contém um padrão de
+  credencial detectável, não casando com a detecção do credential-guard.
 - **Downgrade de `credential_guard.mode` via `trackfw.yaml`.** O modo (`warn`/`block`) é lido em
-  **runtime**, por `grep` simples do `trackfw.yaml` no cwd (`internal/generators/scaffold.go:1005`,
-  `credentialGuardModeResolution`) — não embutido no script. Uma edição de uma linha derruba o
-  controle para não-bloqueante sem tocar no script em absoluto (bit-idêntico), derrotando até uma
-  eventual verificação de integridade que cubra só o script. Mesmo mecanismo no escopo global
-  (`~/.trackfw/scripts/trackfw-credential-guard.sh`, `internal/generators/scaffold.go:1047-1051`).
+  **runtime** por `ReadCredentialGuardMode` (`internal/guard/credential.go`) — não embutido no
+  script. Uma edição de uma linha derruba o controle para não-bloqueante sem tocar no script em
+  absoluto (bit-idêntico), derrotando até uma eventual verificação de integridade que cubra só o
+  script. Mesmo mecanismo no escopo global.
 
 **Hipótese não medida, rotulada como tal (não usada para sustentar severidade sozinha):**
 
@@ -6010,10 +6009,9 @@ como as demais regras do validador — `applyRule`/`applyRuleTagged`, `internal/
   sucesso normal** de uma execução legítima — zero sinal observável em qualquer um dos dois lugares
   (validador e log de hook). Ver §"Semântica de falha de hook por CLI", §5, "Achado 2.1".
 - **Não cobre downgrade de `credential_guard.mode` no `trackfw.yaml`.** O modo (`warn`/`block`) é lido
-  em **runtime**, por leitura direta do `trackfw.yaml` no cwd (`internal/generators/scaffold.go:1005`,
-  `credentialGuardModeResolution`) — não embutido no script nem verificado por esta regra. Uma edição
-  de uma linha de YAML derruba o controle para não-bloqueante sem tocar no script em absoluto
-  (bit-idêntico ao script legítimo).
+  em **runtime** por `ReadCredentialGuardMode` (`internal/guard/credential.go`) — não embutido no
+  script nem verificado por esta regra. Uma edição de uma linha de YAML derruba o controle para
+  não-bloqueante sem tocar no script em absoluto (bit-idêntico ao script legítimo).
 - **Comando com formato de caminho desconhecido é ignorado de propósito.** Evita falso positivo em
   wiring próprio do usuário fora dos 3 formatos que o trackfw gera hoje — mas, como consequência
   direta, a regra **não cobre wiring que o trackfw não gerou**, mesmo que aponte para um script
@@ -6146,39 +6144,41 @@ opt-in que nunca bloqueia por padrão é uma falsa sensação de proteção — 
 `trackfw update harness --targets <tool>-credential-guard` demonstrou intenção explícita de ter o
 mecanismo ativo.
 
-`scripts/trackfw-credential-guard.sh` tem duas variantes de texto — **escopo de projeto** (gerado
-por `trackfw init`/`discover`/`update` dentro do repositório) e **escopo global**
-(`~/.trackfw/scripts/trackfw-credential-guard.sh`, gerado por `trackfw update harness`) — que
-compartilham a mesma leitura de `credential_guard.mode` (`credentialGuardModeResolution` em Go;
-pré-v8: equivalentes em Node/Python) mas divergem no **fallback** quando essa chave não está presente:
+`scripts/trackfw-credential-guard.sh` é um thin shim que chama `trackfw guard credential` (projeto)
+ou `trackfw guard credential --global` (global). A lógica de detecção e leitura de `mode` vive
+inteiramente em Go (`internal/guard/credential.go`). Os dois escopos divergem no **fallback** quando
+`credential_guard.mode` não está presente no `trackfw.yaml`:
 
-| Escopo | Constante (Go) | Fallback (`DEFAULT_MODE`) sem `trackfw.yaml`/sem a chave | `trackfw.yaml` com `credential_guard.mode` explícito no cwd |
+| Escopo | Função Go | Fallback sem `trackfw.yaml`/sem a chave | `trackfw.yaml` com `credential_guard.mode` explícito no cwd |
 |---|---|---|---|
-| Projeto | `credentialGuardProjectTail` | `warn` — **inalterado** | Respeitado (`warn` ou `block`) — inalterado |
-| Global | `credentialGuardGlobalTail` | `block` — **mudança de comportamento** (era `warn`) | Respeitado (`warn` ou `block`) — mesma leitura da variante de projeto |
+| Projeto | `RunCredential` | `warn` | Respeitado (`warn` ou `block`) |
+| Global | `RunCredentialGlobal` | `block` | Respeitado (`warn` ou `block`) |
 
 Pontos pinados:
 
-- **A leitura de `credential_guard.mode` é a mesma nos dois escopos** — o script global lê
-  `trackfw.yaml` **do cwd de onde o hook disparou** (o projeto atual), não de um arquivo de config
-  global (`~/.trackfw/config.yaml` continua não existindo — decisão mantida do ML-1A original: não
-  vale a complexidade de uma segunda fonte de configuração só para isto). Um usuário que já
+- **A leitura de `credential_guard.mode` é a mesma nos dois escopos** via `ReadCredentialGuardMode`
+  (`internal/guard/credential.go`) — lê `trackfw.yaml` **do cwd de onde o hook disparou** (o projeto
+  atual), não de um arquivo de config global (`~/.trackfw/config.yaml` não existe — decisão mantida:
+  não vale a complexidade de uma segunda fonte de configuração só para isto). Um usuário que já
   configurou `credential_guard.mode: warn` explicitamente em `trackfw.yaml` **não vê nenhuma
-  mudança de comportamento** com esta REQ.
-- **Só o fallback (ausência de `trackfw.yaml`, ou `trackfw.yaml` sem a chave) muda**, e só no
-  escopo global: passa de `warn` para `block` — abortar a tool call (exit 2) em vez de apenas
-  logar um attention signal.
+  mudança de comportamento**.
+- **Comportamento do leitor** (spec de 8 passos, D1 ADR-2026-11-05, emendado pelo ML-2C/C9):
+  cabeçalho `credential_guard:` na coluna 0 (BOM removido); a varredura continua até a próxima
+  chave de topo (linha não-indentada, não comentada, não-vazia) — sem limite fixo de linhas (C9:
+  `mode:` na 6ª linha ou além é encontrado); chave `mode:` exata (não `ci_mode:`, não comentada);
+  aspas e `\r` removidos. Testado por `TestReadCredentialGuardMode_UnitVectors`
+  (`internal/guard/credential_mode_test.go`) e
+  `TestConvergence_ExtractCredentialGuardMode_ValidatorEqualsGuard`
+  (`internal/validator/validator_credential_guard_integrity_test.go`).
+- **Só o fallback (ausência de `trackfw.yaml`, ou `trackfw.yaml` sem a chave) diverge entre escopos**:
+  projeto → `warn`; global → `block` (abortar a tool call, exit 2).
 - **`ROADMAP_DIR` em escopo global permanece o caminho fixo `docs/roadmaps`** (sem ler
   `roadmap_dir:` de `trackfw.yaml`, já que não há garantia de o arquivo existir) e o attention
-  signal só é gravado se esse diretório já existir — inalterado por esta REQ, documentado aqui só
-  para não confundir com a resolução de `MODE`, que é independente.
-- Implementado byte-idêntico nos 3 stacks: `credentialGuardProjectTail`/`credentialGuardGlobalTail`
-  (Go, `internal/generators/scaffold.go`), as constantes homônimas em
-  `npm/src/generators/hooks.js`, e `_CG_PROJECT_TAIL`/`_CG_GLOBAL_TAIL` (Python,
-  `pypi/trackfw/generators/init_gen.py`) — cada bloco de resolução de `MODE` replicado como texto
-  literal idêntico em vez de extraído para uma constante compartilhada concatenada, por causa da
-  restrição do gate de paridade documentada em
-  `vault/notes/credential-guard-parity-test-extractor-rejects-string-concatenation-2026-08-08.md`.
+  signal só é gravado se esse diretório já existir.
+- **v8 tem implementação única em Go** — as constantes `credentialGuardProjectTail`,
+  `credentialGuardGlobalTail` e `credentialGuardModeResolution` foram removidas do
+  `internal/generators/scaffold.go` em ML-1A (ADR-2026-11-05): eram código morto, pois o script
+  gerado é um thin shim que delega ao binário.
 
 ## Cobertura de matchers Read/Write/Edit do credential-guard por CLI (ADR-2026-08-06 emenda 7, ROADMAP-2026-08-08 Wave 2)
 
@@ -6673,7 +6673,7 @@ dos 7 runtimes sem precisar de uma variante de script por runtime:
 1. **Argumentos de linha de comando** (`$1..$N`) — o comando git cru passado como argv.
 2. **Payload JSON via stdin** — tenta `.tool_input.command`, `.command` e `.hook_input.command`,
    nessa ordem; usa `jq` quando disponível, com fallback awk (sem exigir `jq` no PATH, mesmo
-   espírito de `credentialGuardDetectionCore`).
+   mesmo espírito do credential-guard: sem parser JSON completo, sem dependência de `jq`).
 3. **Texto cru via stdin**, ou `$TRACKFW_GIT_COMMAND` como último fallback.
 
 Padrão casado: `^git (commit|push|checkout -b|switch -c)\b`, aceitando flags globais antes do
@@ -6754,6 +6754,134 @@ como o caminho governado. Formas que não apagam branch — `--mirror`, `--prune
 (`:refs/tags/…`), refspec de src vazio (`:` sozinho), ou push normal — continuam recebendo
 `reasonPush` e apontando para `trackfw ship`/`trackfw push`/`trackfw release tag`. Coberto por
 `TestRunGitBranch_PushDelete_BranchDeleteForms` (`internal/guard/gitbranch_test.go`) e `TestGitBranchGuard_PushDelete_ParityBranchDeleteForms` (`internal/generators/git_branch_guard_test.go`, ML-1C, REQ-2026-10-10).
+
+### Detecção de invólucro de shell (D4, ML-1B, REQ-2026-11-05)
+
+<!-- trackfw-contract: gate=internal/guard/gitbranch_wrapper_test.go partial=TestMatchSubcommand_AC4_Wrapper_Blocked, TestMatchSubcommand_AC4_Wrapper_Allowed, TestRunGitBranch_AC4_WrapperBlocked, TestRunGitBranch_AC4_WrapperAllowed, TestMatchSubcommand_AC4_Depth3_WrapperNotAnalyzed (AC4); TestMatchSubcommand_AC5_LanguageRuntime_Allowed (AC5); TestMatchSubcommand_ML2I_Blocked, TestMatchSubcommand_ML2I_Allowed (ML-2I) -->
+
+Desde v11.5.0, o `trackfw guard git-branch` analisa invólucros de shell antes de decidir se o
+comando cria uma branch ou realiza uma operação de escrita. `MatchSubcommand` roda primeiro a
+análise existente (`quoteAwareSplit` e `shellTokenize`, que tratam a barra invertida como literal
+por causa dos caminhos do Windows). Se ela não acha nada, roda uma segunda análise, POSIX
+(`matchSubcommandPOSIX`). O guard bloqueia se **qualquer uma** das duas achar uma escrita. A
+segunda análise só acrescenta bloqueios: comandos como `bash -c "git push"`, que a 11.4.0 deixava
+passar, passam a ser bloqueados de propósito.
+
+A emenda da Wave 2 (ML-2C, REQ-2026-11-05) fecha formas de mesma causa:
+abreviações de flag PS, forma fundida `cmd /c"…"`, aspas ANSI-C `$'…'`, substituição de
+comando `$(…)` e crase, e escapes (`g^it push`, `` g`it push ``).
+
+**Interpretadores reconhecidos**, pelo basename, sem diferenciar maiúsculas e sem `.exe`:
+
+- `bash`, `sh`, `zsh`, `dash` e `ksh` com `-c`, incluindo flags combinadas (`-lc`, `-ec`);
+- `pwsh` e `powershell` com `-c`, `-Command`, qualquer prefixo unívoco de `-Command` (`-co`,
+  `-com`, …), `--command`, `-CommandWithArgs`/`-cwa`. Flags que consomem argumento antes do
+  flag de comando (`-ExecutionPolicy`/`-ep`/`-ex`, `-WorkingDirectory`/`-wd`,
+  `-WindowStyle`/`-w`, `-OutputFormat`/`-o`, `-InputFormat`/`-if`, etc.) são puladas com seu
+  valor. No Windows PowerShell 5.1 (`powershell`/`powershell.exe`), o primeiro argumento
+  posicional é tratado como `-Command`: `powershell git push` e `powershell "git push"` são
+  bloqueados (ML-2E, REQ-2026-11-05). No PowerShell 7 (`pwsh`), o primeiro posicional é
+  `-File` (caminho de script); `pwsh git push` é residual declarado — não analisado (ver
+  Limites). `-File`/`-EncodedCommand` não são analisados (ver Limites).
+- `cmd` com `/c` ou `/k`, incluindo a forma fundida `/c"…"` (sem espaço após o switch).
+  Escapes com circunflexo (`g^it push`) são removidos antes da análise.
+- `eval`, cujo argumento é o resto do trecho.
+
+As listas de interpretadores e de prefixos são **abertas** (denylist): o que não está listado
+não é analisado.
+
+**Substituição de comando** (`$(…)` e crase) é detectada em qualquer segmento, inclusive em
+atribuições (`OUT=$(git commit -m x)`) e dentro de aspas duplas. Regiões em aspas simples são
+literais e não são escaneadas. Cada substituição conta como um nível de profundidade.
+
+**`case` dentro de `$(…)`** é analisado corretamente: um constructo `case … in PADRÃO) CORPO ;; esac`
+aninhado dentro de uma substituição de comando é interpretado sem confundir o `)` que encerra cada
+padrão com o `)` de fechamento da substituição. Por isso, `echo $(case x in x) git push ;; esac)` é
+bloqueado. Formas de padrão com parêntese à esquerda (`(x)`) e `case` aninhado também são suportados
+(ML-2I, REQ-2026-11-05).
+
+**Aspas ANSI-C** (`$'…'`) e **aspas de locale** (`$"…"`): o `$` inicial é descartado antes
+que a aspa abra a região correspondente, logo o conteúdo é tokenizado normalmente.
+
+**Profundidade máxima:** dois níveis (ex.: `bash -c "bash -c 'git push'"`). Um terceiro invólucro
+em profundidade 3 retorna `wrapper-not-analyzed` e é **bloqueado** (fail-closed). Implementado
+em `handleShellWrapper` (`internal/guard/gitbranch.go`) com guarda `depth >= maxWrapperDepth`
+(`maxWrapperDepth = 2`). Substituição de comando também conta como nível.
+
+**Prefixos removidos antes do interpretador ou do `git`:**
+
+`env` (com `-i`/`--ignore-environment`, `-u`/`--unset=`, `-P`/`--path=`, `-C`/`--chdir=`,
+`-S`/`--split-string=`, e prefixos inequívocos de `--split-string` como `--s=`, `--sp`, etc.
+— GNU getopt_long aceita qualquer prefixo inequívoco; `--split-string` é a única opção longa de
+`env` iniciada por `--s`, portanto qualquer prefixo de comprimento ≥ 3 é aceito), `command` (com `-p`, `-v`, `-V`),
+`nohup`, `time`, `exec` (com `-a NAME`, `-c`, `-l`), `nice` (com `-n ADJUSTMENT`),
+`doas` (com `-u USER`, `-C CONFIG`), `timeout` (posicional DURATION + `--foreground`,
+`--kill-after`, `--preserve-status`, `--verbose`), `stdbuf` (com `-i/-o/-e SIZE`),
+e atribuições nuas de variável shell da forma `NAME=value` (ex.: `FOO=1 git push`).
+
+**Escape POSIX de barra invertida:**
+
+- Fora de aspas: `\x` → `x` (evita que `\git push` chegue ao `filepath.Base` como não-git).
+- Dentro de `"..."`: conjunto especial `\"` → `"`, `\\` → `\`, `\$` → `$`,
+  `` \` `` → `` ` `` (unescape); outros `\x` → `\x` (mantém os dois, POSIX §2.2.3).
+- Dentro de `'...'`: tudo literal (POSIX — sem escape).
+
+**Limites (não detectados):**
+
+- `python -c`, `node -e`, `ruby -e` e similares: não analisados (residual D5). A string pode
+  construir um comando git em tempo de execução; essa análise está fora do escopo.
+- Shell lido de stdin (`bash -s <<'EOF'`, `bash <<< "git push"`, `echo git push | sh`,
+  `bash < script.sh`, `xargs git push`): não analisado (residual R1 da Wave 0).
+- Prefixos fora da lista acima (`ionice`, `taskset`, `nsenter`): não são removidos, então o
+  `git` depois deles não é visto (residual R6).
+- `-EncodedCommand`/`-File` (PowerShell): payload em Base64 ou caminho de arquivo; não
+  decodificado nem lido (residual R3). Abreviações `-e`, `-en`, `-enc`, `-f`, `-fi`, etc.
+  também excluem a análise.
+- Expansão de variável (`bash -c "$CMD"`): o valor de `$CMD` não é conhecido em hook-time.
+- **`pwsh git push`** (PowerShell 7, posicional): no `pwsh` 7, o primeiro argumento posicional
+  é `-File` (caminho de script), não `-Command`; `pwsh git push` não é analisado como comando
+  e é residual declarado (ML-2E, REQ-2026-11-05).
+- **Parêntese desbalanceado** (`bash -c "$(git push"`): é erro de sintaxe e o shell não executa.
+  Mesmo assim, o guard lê o que vem depois do `$(` aberto e bloqueia se encontrar escrita de git
+  (fail-closed, ML-2I).
+- Terceiro invólucro e além: bloqueado (fail-closed, ver acima).
+
+**Cobertura de testes:** `TestMatchSubcommand_AC4_Wrapper_Blocked` (casos bloqueados, incluindo
+vetores F7 adicionados no ML-2C: `zsh -c`, `dash -c`, `ksh -c`, `cmd /k`, `BASH -c`,
+`GIT push`, `git.exe push`; vetores B1 ML-2E: `powershell -co`, `powershell -com`,
+`powershell --command`; vetores posicional ML-2E: `powershell git push`,
+`powershell "git push"`, `powershell -NoProfile git push`,
+`powershell.exe -ExecutionPolicy Bypass git push`), `TestMatchSubcommand_AC4_Wrapper_Allowed`
+(falso positivo ausente, incluindo `powershell Get-ChildItem`, `powershell -File build.ps1`,
+`powershell .\build.ps1`, `pwsh git push` residual declarado), `TestMatchSubcommand_C7_CmdSubst_Blocked`
+(substituição de comando), `TestMatchSubcommand_C7_CmdSubst_Allowed` (falso positivo ausente),
+`TestRunGitBranch_AC4_WrapperBlocked` (ponta a ponta, rc=2),
+`TestRunGitBranch_AC4_WrapperAllowed` (ponta a ponta, rc=0),
+`TestMatchSubcommand_AC4_Depth3_WrapperNotAnalyzed` (teto de profundidade, fail-closed),
+`TestMatchSubcommand_AC5_LanguageRuntime_Allowed` (python/node não bloqueados),
+`TestMatchSubcommand_ML2F_Blocked` (D-1 `-ConfigurationFile`, D-2 `--split-string=` combinado,
+substituição de processo `<(…)`/`>(…)`, e substituição de comando com redirecionamento
+`$(cmd 2>&1)`), `TestMatchSubcommand_ML2F_Allowed` (falso positivo ausente: `diff <(git status) x`,
+aspas simples/duplas, subcomando permitido com redirecionamento), `TestMatchSubcommand_ML2F_PsOfBlocked`
+(`-of` alias de `-OutputFormat` consome argumento),
+`TestMatchSubcommand_ML2G_Blocked` (corpos de substituição com operadores dentro: `$(git push | cat)`,
+`$(git push && echo x)`, `<(git push | cat)`, invólucro shell com corpo contendo pipe, abreviações
+de `--split-string`: `--split=`, `--sp`, `--s=`, `--s`; aspas duplas em torno de `$(…)`,
+aninhamento de dois níveis, três níveis → wrapper-not-analyzed; barra invertida antes de aspas:
+`echo \'$(git push)\'`, `cat \" <(git push)` — 13 casos rc=2),
+`TestMatchSubcommand_ML2G_Allowed` (falso positivo ausente:
+substituição com subcomando permitido, aspas simples neutralizam a substituição, comentário `#` após
+`ok` neutraliza, `<(git status)` em argumento de diff — 6 casos rc=0),
+`TestMatchSubcommand_ML2I_Blocked` (`case` dentro de substituição de comando: `case` simples com
+escrita, `case` em crase, `case` aninhado, `case` em processo de substituição, forma `(x)`, invólucro
+shell com `case` interno, barra invertida dentro de `case`, aspas duplas dentro de corpo de `case`,
+comentário dentro de corpo de `case`, e `bash -c 'git push'` via preservação de aspas simples —
+10 casos rc=2),
+`TestMatchSubcommand_ML2I_Allowed` (falso positivo ausente: `echo` de string literal com `case`
+sem escrita, aspas simples neutralizam substituição interna, `case` real sem escrita, iteração de
+padrão múltiplo sem escrita, `case` aninhado sem escrita, `case` em avaliação de argumento — 6 casos rc=0),
+e baixo nível: `TestQuoteAwareSplitPOSIX_*`, `TestShellTokenizePOSIX_*`,
+`TestStripShellSuffixPOSIX_*` (`internal/guard/gitbranch_wrapper_test.go`).
 
 ### Invólucro `.sh` — contrato do thin wrapper (ML-2A, ADR-2026-10-04)
 

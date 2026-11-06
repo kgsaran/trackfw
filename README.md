@@ -1020,10 +1020,31 @@ The Codex integration is repository-scoped: `AGENTS.md` carries persistent instr
 
 ## Credential guard: detection, not prevention
 
-trackfw can generate **guard hooks** that block agents from materializing real credentials,
-creating raw git branches, or writing to frozen paths. Since v9.3.0, guard hooks call the
-trackfw binary directly (`trackfw guard credential`, `trackfw guard git-branch`,
+trackfw can generate **guard hooks** that help block agents from materializing real credentials
+in plain text, creating raw git branches, or writing to frozen paths. Since v9.3.0, guard hooks
+call the trackfw binary directly (`trackfw guard credential`, `trackfw guard git-branch`,
 `trackfw guard write-scope`) — no `.sh` script is required.
+
+The credential guard scans each hook payload for the following pattern types and reports the type
+in the warning or block message:
+
+| Type | Pattern |
+|---|---|
+| JWT | `eyJ…` (three-part base64url) |
+| AWS access key | `AKIA` + 16 uppercase alphanumerics |
+| GitHub classic PAT | `ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_` + 36+ chars |
+| GitHub fine-grained PAT | `github_pat_` + 82+ alphanumeric/underscore chars |
+| Anthropic API key | `sk-ant-` + 20+ chars |
+| OpenAI project key | `sk-proj-` + 20+ chars |
+| OpenAI API key | `sk-` + 48+ chars |
+| Google API key | `AIza` + 35+ chars |
+| Slack token | `xox[abprs]-` + 20+ chars |
+| PEM private key | `-----BEGIN … PRIVATE KEY-----` |
+
+**Not detected** (by design): file paths that may contain credentials (`.env`, `.aws/credentials`,
+`.ssh/id_rsa` — a file *read* of that path is not the credential itself), generic key-value
+assignments (`password = "…"`), and language interpreter calls (`python -c`, `node -e`,
+`ruby -e`) where the credential might be in a variable or file read at runtime.
 
 `trackfw validate` reports when a guard looks compromised (`credential_guard_hook_resolvable`,
 `git_branch_guard_hook_resolvable`):
@@ -1097,6 +1118,87 @@ including these. Closing that is tracked separately.
 The strongest protection remains the ordinary one: the guard script and `trackfw.yaml` are
 **versioned files**. Review their diffs like you review any other code. Every limitation above has
 the same escape hatch: the change is *visible* in `git diff`.
+
+## Git-branch guard: shell wrapper detection
+
+Since v11.5.0, `trackfw guard git-branch` looks through shell wrappers before deciding whether
+a command creates a branch or performs a write operation. When the existing analysis finds
+nothing, a second, POSIX-aware analysis runs, and the guard blocks if either one finds a write.
+Commands such as `bash -c "git push"`, which earlier versions allowed, are now blocked on purpose.
+
+### Recognized wrappers and interpreters
+
+A shell interpreter is recognized by its basename, case-insensitively and without `.exe`, when
+it is invoked with its command flag:
+
+- `bash`, `sh`, `zsh`, `dash` and `ksh` with `-c`, including combined flags such as `-lc` or `-ec`;
+- `pwsh` and `powershell` with `-c`, `-Command`, any unambiguous prefix of `-Command` (`-co`,
+  `-com`, …), `--command`, `-CommandWithArgs`/`-cwa`, or any argument-consuming flag
+  (`-ExecutionPolicy`/`-ep`/`-ex`, `-WorkingDirectory`/`-wd`, `-WindowStyle`/`-w`, etc.)
+  followed by its value before the command flag (e.g. `-ExecutionPolicy Bypass -Command "…"`).
+  In Windows PowerShell 5.1 (`powershell`/`powershell.exe`), the first positional argument is
+  treated as `-Command`, so `powershell git push` and `powershell "git push"` are also blocked.
+  In PowerShell 7 (`pwsh`), the first positional is `-File` (a script path); `pwsh git push`
+  is a declared residual and is not analyzed (see Limits below).
+  `-File`/`-EncodedCommand` are not analyzed (see Limits below).
+- `cmd` with `/c` or `/k`, including the fused form `/c"…"` (no space after the switch).
+  Caret escapes (`g^it push`) are stripped before analysis.
+
+`eval` is a wrapper too: its command string is the rest of the segment.
+
+A leading backslash or one inside a word is read the POSIX way, so `\git push` and `g\it push`
+are seen as `git push`. ANSI-C quoting (`$'git push'`) and backtick escapes in PowerShell
+(`` g`it push ``) are also normalized before analysis.
+
+**Command substitution** (`$(git push)` and `` `git push` ``) is detected even when nested inside
+an assignment (`OUT=$(git commit -m x)`) or a double-quoted string. Single-quoted regions are
+literal and are not scanned.
+
+**`case` inside `$(...)`** is handled: a `case … in PATTERN) BODY ;; esac` construct nested inside
+a command or process substitution is correctly parsed. The `)` that terminates each case pattern is
+not mistaken for the closing `)` of the substitution, so `echo $(case x in x) git push ;; esac)` is
+blocked. Nested `case` statements and both plain (`x)`) and parenthesized (`(x)`) pattern forms are
+supported.
+
+**These lists are open:** a wrapper or prefix that is not listed here is not analyzed.
+
+Nesting is analyzed up to **two levels** deep (e.g. `bash -c "bash -c 'git push'"`). A
+third shell wrapper at depth 3 returns `wrapper-not-analyzed` and is **blocked** (fail-closed).
+Command substitution also counts as a depth level.
+
+### Recognized prefixes (stripped before the interpreter or git check)
+
+Command modifiers that precede the actual command are stripped:
+
+`env` (with `-i`/`--ignore-environment`, `-u`/`--unset=`, `-P`/`--path=`, `-C`/`--chdir=`,
+`-S`/`--split-string=`), `command` (with `-p`, `-v`, `-V`),
+`nohup`, `time`, `exec` (with `-a NAME`, `-c`, `-l`), `nice` (with `-n ADJUSTMENT`),
+`doas` (with `-u USER`, `-C CONFIG`), `timeout` (DURATION positional + `--foreground`,
+`--kill-after`, `--preserve-status`, `--verbose`), `stdbuf` (with `-i`, `-o`, `-e SIZE`),
+and bare shell variable assignments of the form `NAME=value` (e.g. `FOO=1 git push`).
+
+### Limits (what is not detected)
+
+- **Language runtime calls** (`python -c`, `node -e`, `ruby -e`): not analyzed. The command
+  string may contain a credential or construct a git command at runtime; that analysis is out
+  of scope (see `python -c` in the credential guard table above).
+- **Shell read from stdin** (`bash -s <<'EOF'`, `bash <<< "git push"`, `echo git push | sh`,
+  `bash < script.sh`, `xargs git push`): not analyzed.
+- **Prefixes outside the list above** (`ionice`, `taskset`, `nsenter`, …): not stripped, so a
+  `git` command behind them is not seen.
+- **`-EncodedCommand`/`-File` (PowerShell)**: the payload is Base64-encoded or a file path;
+  not decoded or read. The `-File` and `-EncodedCommand` flags (and their abbreviations `-f`,
+  `-e`, `-en`, `-enc`) are explicitly excluded from command-string analysis.
+- **`pwsh git push` (PowerShell 7 positional)**: in `pwsh` 7, the first positional argument
+  is `-File` (a script path), not `-Command`; `pwsh git push` is a declared residual and is
+  not analyzed. Use `pwsh -c git push` or `pwsh -Command git push` to have the guard analyze it.
+- **Variable expansion** (`bash -c "$CMD"`): the value of `$CMD` is not known at hook time;
+  not analyzed.
+- **Unbalanced parenthesis** (`bash -c "$(git push"`): this is a shell syntax error and never
+  runs. The guard still reads what comes after the open `$(` and blocks if it finds a git write.
+- **Third wrapper and beyond**: blocked outright (fail-closed, see above).
+
+Full contract and exit codes: `docs/cli-parity.md` → `## Git branch guard por runtime`.
 
 ## What trackfw is not
 

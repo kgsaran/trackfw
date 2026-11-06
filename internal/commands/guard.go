@@ -104,9 +104,16 @@ func newGuardCredentialCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "credential",
 		Short: "Guard that blocks credential patterns in tool payloads",
-		Long: `credential reads a hook payload from stdin, scans for JWT or AWS access key
-patterns, and either blocks (exit 2) or emits a warning (exit 0 with attention signal)
+		Long: `credential reads a hook payload from stdin, scans for credential patterns,
+and either blocks (exit 2) or emits a warning (exit 0 with attention signal)
 depending on credential_guard.mode in trackfw.yaml.
+
+Detected credential types: JWT, AWS access key, GitHub tokens (ghp_, gho_, ghu_,
+ghs_, ghr_, github_pat_), Anthropic API key (sk-ant-), OpenAI keys (sk-proj-,
+sk-), Google API key (AIza), Slack tokens (xoxb-, xoxp-, etc.), PEM private key.
+
+Not detected: file paths (.env, .aws/credentials, id_rsa), generic assignments
+(password = "..."), language interpreter calls (python -c, node -e).
 
 Install as a pre-tool-use or post-tool-use hook (see docs/cli-parity.md).
 

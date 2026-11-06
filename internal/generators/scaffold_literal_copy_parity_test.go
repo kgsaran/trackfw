@@ -78,8 +78,7 @@ func TestScripts_LiteralMatchesVersionedCopy(t *testing.T) {
 		{
 			"credential-guard",
 			"trackfw-credential-guard.sh",
-			"credentialGuardScript (= credentialGuardHeader + credentialGuardProjectGuardBlock + " +
-				"credentialGuardDetectionCore + credentialGuardProjectTail) in internal/generators/scaffold.go",
+			"credentialGuardScript (thin shim delegating to `trackfw guard credential`) in internal/generators/scaffold.go",
 		},
 		{
 			"git-branch-guard",

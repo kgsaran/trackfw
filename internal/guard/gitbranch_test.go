@@ -1664,6 +1664,7 @@ func TestAllReasonsProduceValidJSON(t *testing.T) {
 		"rm-force":                 reasonRmForce,
 		"add-implicit":             reasonAddImplicit,
 		"worktree-add-implicit":    reasonWorktreeAddImplicit,
+		"wrapper-not-analyzed":     reasonWrapperNotAnalyzed,
 	}
 
 	// --- JSON-validity check (one sub-test per reason) ---
