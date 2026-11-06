@@ -24,12 +24,12 @@ Três causas, um ML para cada. O diagnóstico está no ADR-2026-11-06. Varredura
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model (hades-tf)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Files affected:** `docs/seguranca/2026-11-06-wave0-ci-vermelho-por-infraestrutura.md`
 **Acceptance criteria:**
-- [ ] o conjunto fechado de caminhos inertes definido e justificado: nenhum deles entra no build, no `go:embed`, no shim npm, no wheel nem em script que algum gate execute
-- [ ] os modos de evasão da classificação de diff analisados (rename, symlink, base forjada, `pull_request_target`, clone raso, evento diferente), cada um com a defesa correspondente
-- [ ] o retry de porta e o prazo derivado analisados quanto a mascarar defeito real
+- [x] o conjunto fechado de caminhos inertes definido e justificado: nenhum deles altera o que o `shim-byte-identity` compara (critério do ADR D1; o critério original, "nenhum entra no wheel nem em script de gate", encolheria o conjunto a `.claude/agent-memory/` e foi emendado na auditoria da Wave 0)
+- [x] os modos de evasão da classificação de diff analisados (rename, symlink, base forjada, `pull_request_target`, clone raso, evento diferente), cada um com a defesa correspondente
+- [x] o retry de porta e o prazo derivado analisados quanto a mascarar defeito real
 
 ## Wave 1 — Implementação (ML-1A e ML-1B em paralelo; ML-1C depois)
 > Dependencies: Wave 0 auditada. ML-1A e ML-1B tocam arquivos disjuntos. O ML-1C vem depois para respeitar o teto de 2 agentes simultâneos.
@@ -37,9 +37,11 @@ Três causas, um ML para cada. O diagnóstico está no ADR-2026-11-06. Varredura
 ### ML-1A — Gate do shim com classificação de diff (ares-tf) — AC1, AC2
 **Status:** ⬜ Pendente
 **Files affected:** `.github/workflows/quality.yml`, `scripts/check-shim-diff-applies.sh`, `docs/cli-parity.md`
+**Requisitos obrigatórios:** os 11 itens do fim do threat model da Wave 0; a matriz `shim-byte-identity` usa `!cancelled()`, não `always()`. Varredura de contrato feita na auditoria: só o próprio `quality.yml` afirma "o gate só aceita `success`"; `scripts/check-workflow-yaml.py` confere que todo `needs` aponta para job existente.
+**Gates:** `bash scripts/check-shim-diff-applies.sh --self-test`, `python3 scripts/check-workflow-yaml.py`, `python3 scripts/check-required-status-checks.py --self-test`, `make parity-rest`.
 **Acceptance criteria:**
 - [ ] o script classifica o diff do PR por lista fechada de caminhos inertes, com `git diff --name-only --no-renames` contra o merge-base e checkout `fetch-depth: 0`, e tem `--self-test` cobrindo os casos do AC2; o self-test roda no CI
-- [ ] o gate passa com `não aplicável` só em `pull_request` com diff fora do conjunto, e exige `success` em todos os outros casos
+- [ ] o gate passa com `não aplicável` só em `pull_request` contra a branch padrão com diff inteiramente dentro do conjunto, e exige `success` em todos os outros casos
 - [ ] o comentário do ML-4E no `quality.yml` passa a explicar a nova regra
 
 ### ML-1B — Prazo do PowerShell derivado do aquecimento (artemis-tf) — AC3
@@ -48,7 +50,7 @@ Três causas, um ML para cada. O diagnóstico está no ADR-2026-11-06. Varredura
 **Acceptance criteria:**
 - [ ] função de prazo com teste unitário dos três regimes (aquecimento curto → 15 s, médio → 4×, longo → 60 s)
 - [ ] mensagem de estouro cita o aquecimento e o prazo
-- [ ] o relatório conta as chamadas afirmadas do PowerShell, multiplica pelo teto de 60 s e compara com o `-timeout` do `go test` no `windows-full-suites`
+- [ ] depois do primeiro estouro de prazo de um binário, as chamadas seguintes desse binário reprovam sem executar, citando a chamada que estourou (emenda D3); pior caso de cerca de 60 s por binário, dentro do `-timeout 20m`
 - [ ] `go test ./internal/generators/` verde
 
 ### ML-1C — Porta livre no teste de endereço do serve (apolo-tf) — AC4
@@ -66,5 +68,6 @@ Três causas, um ML para cada. O diagnóstico está no ADR-2026-11-06. Varredura
 **Status:** ⬜ Pendente
 **Files affected:** `docs/seguranca/2026-11-06-redteam-ci-vermelho-por-infraestrutura.md`
 **Acceptance criteria:**
-- [ ] cada modo de evasão da Wave 0 tentado contra o script, com o resultado medido
+- [ ] cada modo de evasão da Wave 0 tentado contra o script, com o resultado medido em fixture local (`git write-tree` em diretório temporário, sem PR nem branch)
+- [ ] T8 (retarget) respondido pela lista de gatilhos do `quality.yml`, sem PR real; o primeiro PR só de documentação depois do merge fica declarado como a medição real da dispensa
 - [ ] veredito escrito
