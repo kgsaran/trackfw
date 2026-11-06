@@ -87,16 +87,17 @@ Três causas, um ML para cada. O diagnóstico está no ADR-2026-11-06. Varredura
 **Auditoria:** o relatório não cita uma entrada `internal/x.go` que apareceu no índice do repositório real durante o ML-2A. Foi removida pelo arquiteto com `git rm --cached`, sem commit nem branch.
 
 ### ML-2B — Corretivo dos bloqueantes do red team (ares-tf)
-**Status:** 🔄 Em andamento
-**Files affected:** `.github/workflows/quality.yml`, `.github/workflows/windows-census.yml`, `scripts/check-shim-diff-applies.sh`, `scripts/check-no-grep-q-under-pipefail.sh`
+**Status:** ✅ Concluído
+**Files affected:** `.github/workflows/quality.yml`, `.github/workflows/windows-census.yml`, `.github/workflows/release.yml`, `scripts/check-shim-diff-applies.sh`, `scripts/check-no-grep-q-under-pipefail.sh`
 **Acceptance criteria:**
-- [ ] B1: no job `classify`, a classificação pela BASE roda antes do `--self-test` do HEAD; nenhum passo do HEAD roda antes dela
-- [ ] B2: todo nome de arquivo impresso pelo classificador tem os caracteres de controle trocados por `?`; o self-test prova que nome com `\n` não produz linha começando com `::`
-- [ ] B3: nenhum `| grep -q` resta em bloco `run:` de `.github/workflows/*.yml`, e o gate de `grep -q` passa a varrer os workflows
-- [ ] `make parity-rest` verde
+- [x] B1: no job `classify`, a classificação pela BASE roda antes do `--self-test` do HEAD; nenhum passo do HEAD roda antes dela
+- [x] B2: todo nome de arquivo impresso pelo classificador tem os caracteres de controle trocados por `?`; o self-test prova que nome com `\n` não produz linha começando com `::`
+- [x] B3: nenhum `| grep -q` resta em bloco `run:` de `.github/workflows/*.yml`, e o gate de `grep -q` passa a varrer os workflows
+- [x] `make parity-rest` verde
+**Auditoria:** a premissa "o bash do Actions é `-eo pipefail` por padrão", que veio do handoff do arquiteto, era falsa: sem `shell:` o padrão é `bash -e {0}`. A regra do gate continua uniforme em workflow, e a justificativa nos comentários foi corrigida. `release.yml:83` entrou pela mesma causa.
 
 ### ML-2C — Reverificação do red team (hades-tf)
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:** `docs/seguranca/2026-11-06-redteam-ci-vermelho-por-infraestrutura.md`
 **Acceptance criteria:**
 - [ ] B1, B2 e B3 reatacados contra o código do ML-2B, com a medição escrita

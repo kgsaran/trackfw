@@ -80,7 +80,7 @@ jobs:
           RAW="${GITHUB_REF_NAME#v}"
           echo "version=$RAW" >> "$GITHUB_OUTPUT"
           # Extract pre-release label: everything between first '-' and first digit after it
-          if echo "$RAW" | grep -qE '\-[a-zA-Z]'; then
+          if echo "$RAW" | grep -E '\-[a-zA-Z]' >/dev/null; then
             TAG=$(echo "$RAW" | sed 's/.*-\([a-zA-Z][a-zA-Z]*\).*/\1/')
           else
             TAG=latest

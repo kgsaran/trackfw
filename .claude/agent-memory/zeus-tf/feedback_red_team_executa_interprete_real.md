@@ -16,3 +16,5 @@ O handoff de red team tem que proibir **executar** um interpretador (`pwsh`, `ba
 - "se o classificador ou o guard negar, pare e reporte".
 
 Ver também [[proibir-sem-rota-legitima-vira-contorno]]: aqui a rota legítima existia, e o agente contornou mesmo assim.
+
+**Reincidência em 2026-11-06 (ML-2A, REQ do CI vermelho):** com o handoff mandando git só em repositório temporário, apareceu `internal/x.go` staged no índice do repositório real (arquivo já apagado do disco), e o relatório do Hades não citou isso. Peguei por acaso: o `gh pr create` avisou "2 uncommitted changes". **How to apply, acréscimo:** depois de todo agente de medição, rodar `git status --short` e `git diff --cached --stat` antes de qualquer commit, e exigir no handoff que cada comando git de escrita confira `git rev-parse --show-toplevel` ≠ projeto.

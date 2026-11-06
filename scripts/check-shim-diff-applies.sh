@@ -54,6 +54,17 @@ fetch_diff_to_file() {
 }
 
 # ---------------------------------------------------------------------------
+# sanitize_path <path>
+# Troca todo caractere de controle por '?'. Usar em nomes impressos, não na
+# classificação — B2 (ML-2B): filename com \n pode injetar linha '::set-output'
+# no stdout do passo quando o nome bruto é passado a echo/printf.
+# ---------------------------------------------------------------------------
+sanitize_path() {
+  local s="${1//[[:cntrl:]]/?}"
+  printf '%s' "$s"
+}
+
+# ---------------------------------------------------------------------------
 # emit_result <true|false> <mensagem>
 # Escreve diff_is_inert= em $GITHUB_OUTPUT (se definido) ou em stdout.
 # ---------------------------------------------------------------------------
@@ -82,13 +93,13 @@ classify_tmpfile() {
       non_inert="$f"
       break
     fi
-    inert_list="${inert_list}  $f"$'\n'
+    inert_list="${inert_list}  $(sanitize_path "$f")"$'\n'
   done < "$tmpfile"
 
   if [[ "$count" -eq 0 ]]; then
     emit_result "false" "diff vazio → aplicável (fail-closed)"
   elif [[ -n "$non_inert" ]]; then
-    emit_result "false" "nao-inerte: $non_inert → aplicável"
+    emit_result "false" "nao-inerte: $(sanitize_path "$non_inert") → aplicável"
   else
     echo "todos $count arquivo(s) são inertes (lista no log do job classify):"
     printf '%s' "$inert_list"
@@ -567,6 +578,95 @@ run_self_test() {
     st_pass "T10b: script fora do repo, cwd=repo, diff não inerte (internal/y.go) → false"
   else
     st_fail "T10b" "esperava diff_is_inert=false, got: $classify_out"
+  fi
+
+  # -------------------------------------------------------------------------
+  # Parte 5: filename com caracteres de controle (B2 — sanitize_path)
+  # Repositório temporário com commits feitos por plumbing puro (igual Parte 4).
+  # Verifica que nenhuma linha da saída do classificador começa com '::'.
+  # -------------------------------------------------------------------------
+
+  # T_newline-a/b: filename não-inerte com newline que injetaria ::set-output
+  # Adiciona ao tree do plumb_repo (já inicializado em Parte 4).
+  local malname_ni
+  malname_ni=$'internal/x\n::set-output name=diff_is_inert::true\nz'
+  local malblob_ni
+  malblob_ni=$(printf 'content\n' | git -C "$plumb_repo" hash-object -w --stdin)
+  git -C "$plumb_repo" read-tree --empty
+  git -C "$plumb_repo" update-index --add --cacheinfo 100644,"$malblob_ni","$malname_ni"
+  local tree_malni
+  tree_malni=$(git -C "$plumb_repo" write-tree)
+  local commit_malni
+  commit_malni=$(
+    GIT_AUTHOR_NAME="Test" GIT_AUTHOR_EMAIL="test@test.test" \
+    GIT_COMMITTER_NAME="Test" GIT_COMMITTER_EMAIL="test@test.test" \
+    git -C "$plumb_repo" commit-tree "$tree_malni" -p "$commit_base" -m "malname-noninert"
+  )
+
+  local classify_out_ni
+  classify_out_ni=$(
+    cd "$plumb_repo" && \
+    EVENT_NAME=pull_request \
+    BASE_REF=main \
+    DEFAULT_BRANCH=main \
+    BASE_SHA="$commit_base" \
+    HEAD_SHA="$commit_malni" \
+    GITHUB_OUTPUT="" \
+    bash "$script_copy_dir/classifier-base.sh" --classify 2>&1 || true
+  )
+  # Nenhuma linha deve começar com '::' (injeção de comando de workflow)
+  if printf '%s\n' "$classify_out_ni" | grep '^::' >/dev/null 2>&1; then
+    st_fail "T_newline-a" "linha começando com '::' encontrada: $(printf '%q' "$classify_out_ni")"
+  else
+    st_pass "T_newline-a: filename com newline não-inerte não injeta linha começando com '::'"
+  fi
+  # E o resultado deve ser false (arquivo não-inerte)
+  if printf '%s\n' "$classify_out_ni" | grep 'diff_is_inert=false' >/dev/null 2>&1; then
+    st_pass "T_newline-b: filename com newline não-inerte → diff_is_inert=false"
+  else
+    st_fail "T_newline-b" "esperava diff_is_inert=false, got: $(printf '%q' "$classify_out_ni")"
+  fi
+
+  # T_newline_in-a/b: filename inerte (docs/) com newline que injetaria ::error::
+  # Base: commit_inert (tree_inert = {internal/x.go, docs/a.md}).
+  # Novo tree: tree_inert + malname_in. Diff: somente malname_in adicionado → tudo inerte.
+  local malname_in
+  malname_in=$'docs/a\n::error::x\nz'
+  local malblob_in
+  malblob_in=$(printf 'inert-content\n' | git -C "$plumb_repo" hash-object -w --stdin)
+  git -C "$plumb_repo" read-tree "$tree_inert"
+  git -C "$plumb_repo" update-index --add --cacheinfo 100644,"$malblob_in","$malname_in"
+  local tree_malin
+  tree_malin=$(git -C "$plumb_repo" write-tree)
+  local commit_malin
+  commit_malin=$(
+    GIT_AUTHOR_NAME="Test" GIT_AUTHOR_EMAIL="test@test.test" \
+    GIT_COMMITTER_NAME="Test" GIT_COMMITTER_EMAIL="test@test.test" \
+    git -C "$plumb_repo" commit-tree "$tree_malin" -p "$commit_inert" -m "malname-inert"
+  )
+
+  local classify_out_in
+  classify_out_in=$(
+    cd "$plumb_repo" && \
+    EVENT_NAME=pull_request \
+    BASE_REF=main \
+    DEFAULT_BRANCH=main \
+    BASE_SHA="$commit_inert" \
+    HEAD_SHA="$commit_malin" \
+    GITHUB_OUTPUT="" \
+    bash "$script_copy_dir/classifier-base.sh" --classify 2>&1 || true
+  )
+  # Nenhuma linha deve começar com '::' (mesmo com inert_list impresso)
+  if printf '%s\n' "$classify_out_in" | grep '^::' >/dev/null 2>&1; then
+    st_fail "T_newline_in-a" "linha começando com '::' encontrada: $(printf '%q' "$classify_out_in")"
+  else
+    st_pass "T_newline_in-a: filename docs/ com newline não injeta linha começando com '::'"
+  fi
+  # E o resultado deve ser true (arquivo inerte: docs/)
+  if printf '%s\n' "$classify_out_in" | grep 'diff_is_inert=true' >/dev/null 2>&1; then
+    st_pass "T_newline_in-b: filename docs/ com newline → diff_is_inert=true"
+  else
+    st_fail "T_newline_in-b" "esperava diff_is_inert=true, got: $(printf '%q' "$classify_out_in")"
   fi
 
   rm -rf "$plumb_repo" "$script_copy_dir"

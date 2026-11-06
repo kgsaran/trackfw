@@ -885,14 +885,20 @@ jobs:
   # ML-1A (REQ-2026-11-06-ci-vermelho-sem-relacao-com-o-conteudo): job de CLASSIFICAÇÃO
   # do diff do PR. Decide se o shim-byte-identity é aplicável ao PR.
   #
-  # Dois passos obrigatórios em ordem:
-  #   1. --self-test (versão HEAD): garante que a lógica introduzida pelo PR está
-  #      correta. Se falhar, o job falha → gate falha → PR bloqueado (defesa T6 do
-  #      threat model: PR não controla sua própria cobertura via versão BASE).
-  #   2. --classify (versão BASE): classifica o diff usando o script da BASE do PR,
+  # Dois passos obrigatórios em ordem — B1 (ML-2B, REQ-2026-11-06):
+  #   1. --classify (versão BASE): classifica o diff usando o script da BASE do PR,
   #      não do HEAD — ADR-2026-09-17: a severidade não pode vir da fonte verificada.
   #      Se o script não existir na BASE (caso do próprio PR de ML-1A) ou BASE_SHA
   #      estiver vazio, escreve diff_is_inert=false e termina com sucesso (D2).
+  #   2. --self-test (versão HEAD): garante que a lógica introduzida pelo PR está
+  #      correta. Se falhar, o job falha → gate falha → PR bloqueado (defesa T6 do
+  #      threat model: PR não controla sua própria cobertura via versão BASE).
+  #
+  # B1: --classify ANTES do --self-test. Motivo: $GITHUB_PATH e $GITHUB_ENV persistem
+  # entre passos do mesmo job. Um passo HEAD (--self-test) pode injetar um git falso em
+  # $GITHUB_PATH antes que a classificação BASE rode — derrotando a defesa ADR-2026-09-17
+  # pelo caminho fora do sítio que D1 manda inspecionar. Com --classify primeiro, o PATH
+  # não está contaminado no momento da classificação.
   #
   # Sem `if:` — roda em todo evento (push e pull_request), inclusive quando
   # shim-byte-identity é pulado. O gate lê a saída deste job para distinguir
@@ -905,9 +911,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-
-      - name: self-test do classificador (versão HEAD)
-        run: bash scripts/check-shim-diff-applies.sh --self-test
 
       - name: classificar diff do PR (versão BASE)
         id: classify
@@ -929,6 +932,9 @@ jobs:
             echo "classificador ausente na BASE ou BASE_SHA vazio → aplicável (D2)"
             echo "diff_is_inert=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: self-test do classificador (versão HEAD)
+        run: bash scripts/check-shim-diff-applies.sh --self-test
 
   # ML-4E / ML-1A: job de RECOLHIMENTO do shim-byte-identity.
   #
@@ -1243,13 +1249,13 @@ jobs:
             -run "TestUpdateNeverWritesThrough" -v -count=1 -timeout 60s 2>&1 || true)
           echo "$OUT"
 
-          if echo "$OUT" | grep -q -e "--- SKIP"; then
+          if echo "$OUT" | grep -e "--- SKIP" >/dev/null; then
             echo "PASS: Go substituto -- symlinkOrSkip pulou com errno 1314 (isSymlinkPrivilegeError + t.Skipf reais exercitados)"
           else
             echo "::error::Go substituto FALHOU: teste nao pulou com errno 1314 injetado"
             exit 1
           fi
-          if echo "$OUT" | grep -q -e "--- FAIL"; then
+          if echo "$OUT" | grep -e "--- FAIL" >/dev/null; then
             echo "::error::Go substituto: teste FALHOU em vez de PULAR"
             exit 1
           fi
@@ -1292,7 +1298,7 @@ jobs:
             -run "TestUpdateNeverWritesThrough" -v -count=1 -timeout 60s 2>&1 || true)
           echo "$OUT"
 
-          if echo "$OUT" | grep -q -e "--- FAIL"; then
+          if echo "$OUT" | grep -e "--- FAIL" >/dev/null; then
             echo "PASS: Go falsificacao -- sem a guarda, errno 1314 causa FAIL (guarda é carga-sustentante)"
           else
             echo "::error::Go falsificacao FALHOU: esperava --- FAIL sem a guarda, got: $OUT"

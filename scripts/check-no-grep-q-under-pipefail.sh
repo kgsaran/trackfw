@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# check-no-grep-q-under-pipefail.sh — no pipe-grep-q in scripts that use pipefail.
+# check-no-grep-q-under-pipefail.sh — no pipe-grep-q em scripts que usam pipefail,
+# e no pipe-grep-q em arquivos de workflow do GitHub Actions (passos com shell: bash
+# rodam sob pipefail; acrescentar shell: bash a um passo sem ele ativa o 141 sem aviso).
 # Linked to: make parity-rest (ADR-2026-11-06 D5)
 #
 # WHY THIS EXISTS — D5 (ADR-2026-11-06):
@@ -9,10 +11,16 @@
 #   Measured: 141 141 0 0 0 0 141 141 in 8 runs of the same pipeline.
 #   This gate prevents the pattern from returning.
 #
+# B3 (ML-2B): extendido para varrer .github/workflows/*.yml. Passos com shell: bash
+# rodam sob pipefail (bash --noprofile --norc -eo pipefail {0}); acrescentar shell: bash
+# a um passo sem shell ativa o 141 sem aviso. Por isso a regra e uniforme em workflow:
+# todo | grep -q e reprovado independentemente de o passo declarar shell: ou nao.
+#
 # USAGE
-#   bash scripts/check-no-grep-q-under-pipefail.sh           # check scripts/
+#   bash scripts/check-no-grep-q-under-pipefail.sh           # check scripts/ + .github/workflows/
 #   bash scripts/check-no-grep-q-under-pipefail.sh --self-test
 #   bash scripts/check-no-grep-q-under-pipefail.sh --scan-root /path/to/dir
+#   # --scan-root DIR: scans DIR/*.sh AND DIR/*.yml (flat, used by --self-test)
 
 set -euo pipefail
 
@@ -24,11 +32,14 @@ SCRIPTS_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # ---------------------------------------------------------------------------
 MODE=scan
 SCAN_DIR="$SCRIPTS_DIR"
+# WORKFLOW_DIR: for default scan, the actual .github/workflows directory.
+# For --scan-root, set to the same dir as SCAN_DIR (flat: yml files live directly there).
+WORKFLOW_DIR="$(cd "$SCRIPTS_DIR/.." && pwd)/.github/workflows"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --self-test)  MODE=self-test; shift ;;
-    --scan-root)  SCAN_DIR="$2"; shift 2 ;;
+    --scan-root)  SCAN_DIR="$2"; WORKFLOW_DIR="$2"; shift 2 ;;
     *) printf '%s: unknown argument: %s\n' "$SELF" "$1" >&2; exit 2 ;;
   esac
 done
@@ -44,8 +55,8 @@ if [[ "$MODE" == "self-test" ]]; then
   FAIL=0
 
   run_test() {
-    local name="$1" script_content="$2" expect_pass="$3"
-    local f="$tmpdir/${name}.sh"
+    local name="$1" script_content="$2" expect_pass="$3" ext="${4:-sh}"
+    local f="$tmpdir/${name}.${ext}"
     printf '%s\n' "$script_content" > "$f"
     local out rc=0
     out=$(bash "${BASH_SOURCE[0]}" --scan-root "$tmpdir" 2>&1) || rc=$?
@@ -127,6 +138,27 @@ if [[ "$MODE" == "self-test" ]]; then
     "$(printf '#!/usr/bin/env bash\nset -euo pipefail\necho test | egrep -%s foo' "$_q")" \
     "fail"
 
+  # --- Casos YAML: B3 (ML-2B) ---
+  # Arquivo .sh benigno no tmpdir para satisfazer a guarda de vacuidade do scan de .sh
+  printf '#!/usr/bin/env bash\necho ok\n' > "$tmpdir/__benign__.sh"
+
+  # T_yml_fail: workflow yml com | grep -q → REPROVA
+  # Reconciliação: o gate detecta | grep -q em workflow YAML pois passos com shell: bash
+  # rodam sob pipefail; a regra e uniforme para evitar que shell: bash seja adicionado depois
+  run_test "ty1-yml-grep-q" \
+    "$(printf 'steps:\n  - run: echo x | grep -%s y' "$_q")" \
+    "fail" \
+    "yml"
+
+  # T_yml_pass: workflow yml com | grep y >/dev/null → PASSA
+  # Reconciliação: a forma correta (>/dev/null) não é bloqueada em arquivos yml
+  run_test "ty2-yml-devnull" \
+    "$(printf 'steps:\n  - run: echo x | grep y >/dev/null')" \
+    "pass" \
+    "yml"
+
+  rm -f "$tmpdir/__benign__.sh"
+
   echo "---"
   echo "Results: $PASS passed, $FAIL failed"
   if [[ $FAIL -gt 0 ]]; then
@@ -180,6 +212,36 @@ for script in "${SCRIPTS[@]}"; do
       (( VIOLATIONS++ )) || true
     fi
   done < <(grep -n '.' "$script" | grep -E '\| *[ef]*grep')
+done
+
+# ---------------------------------------------------------------------------
+# B3 (ML-2B): varre .github/workflows/*.yml em busca de pipe-grep-q.
+# Passos com shell: bash rodam sob pipefail (bash --noprofile --norc -eo pipefail {0});
+# passos sem shell: (Linux/macOS) rodam sob bash -e {0}, sem pipefail. Porem acrescentar
+# shell: bash a um passo sem ele ativa o 141 sem aviso. Por isso a regra e uniforme:
+# todo | grep -q em workflow e reprovado independentemente do shell: declarado.
+# ---------------------------------------------------------------------------
+mapfile -t WORKFLOWS < <(find "$WORKFLOW_DIR" -maxdepth 1 \( -name '*.yml' -o -name '*.yaml' \) -type f 2>/dev/null | sort)
+
+for wf in "${WORKFLOWS[@]}"; do
+  while IFS= read -r lineno_and_line; do
+    lineno="${lineno_and_line%%:*}"
+    content="${lineno_and_line#*:}"
+
+    # Skip pure comment lines
+    trimmed="${content#"${content%%[! ]*}"}"
+    [[ "$trimmed" == \#* ]] && continue
+
+    # Strip <<< portions
+    stripped_heredoc="${content//<<<*/}"
+
+    # Same detection pattern as for .sh files
+    if grep -E '\| *[ef]*grep([[:space:]]+-[a-zA-Z]+)*[[:space:]]+-[a-zA-Z]*q[a-zA-Z]*|\| *[ef]*grep[[:space:]].*--(quiet|silent)' \
+        <<<"$stripped_heredoc" >/dev/null 2>&1; then
+      echo "${wf}:${lineno}: ${content}"
+      (( VIOLATIONS++ )) || true
+    fi
+  done < <(grep -n '.' "$wf" | grep -E '\| *[ef]*grep')
 done
 
 if [[ $VIOLATIONS -gt 0 ]]; then
