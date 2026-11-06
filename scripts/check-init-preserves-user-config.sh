@@ -170,7 +170,7 @@ check_scaffold() {
             [[ $prevno -ge 1 ]] && prev_line=$(sed -n "${prevno}p" "$scaffold")
 
             local has_marker=0
-            if echo "$write_line" | grep -qF "$MARKER" || echo "$prev_line" | grep -qF "$MARKER"; then
+            if echo "$write_line" | grep -F "$MARKER" >/dev/null || echo "$prev_line" | grep -F "$MARKER" >/dev/null; then
                 has_marker=1
             fi
 
@@ -248,7 +248,7 @@ GOEOF
     arm1_out=$(SCAFFOLD_FILE="$TMPDIR_ST/arm1.go" bash "${BASH_SOURCE[0]}" 2>&1) || arm1_rc=$?
     echo "$arm1_out"
     # Gate must exit non-zero AND name trackfw.yaml
-    if [[ $arm1_rc -ne 0 ]] && echo "$arm1_out" | grep -q "FAIL \[trackfw.yaml\]"; then
+    if [[ $arm1_rc -ne 0 ]] && echo "$arm1_out" | grep "FAIL \[trackfw.yaml\]" >/dev/null; then
         echo "SELF-TEST arm1: PASS (gate correctly failed naming trackfw.yaml; rc=$arm1_rc)"
     else
         echo "SELF-TEST arm1: FAIL — expected gate to fail naming trackfw.yaml (rc=$arm1_rc)" >&2
@@ -374,8 +374,8 @@ GOEOF
     echo "$arm3_out"
     # Gate must exit non-zero AND name lefthook.yml[literal] as FAIL AND also emit OK for lefthook.yml[literal]
     if [[ $arm3_rc -ne 0 ]] \
-        && echo "$arm3_out" | grep -q "FAIL \[lefthook.yml\[literal\]\]" \
-        && echo "$arm3_out" | grep -q "OK   \[lefthook.yml\[literal\]\]"; then
+        && echo "$arm3_out" | grep "FAIL \[lefthook.yml\[literal\]\]" >/dev/null \
+        && echo "$arm3_out" | grep "OK   \[lefthook.yml\[literal\]\]" >/dev/null; then
         echo "SELF-TEST arm3: PASS (gate failed naming comment-only site; real-guard site accepted; rc=$arm3_rc)"
     else
         echo "SELF-TEST arm3: FAIL — expected FAIL for comment-only site AND OK for real-guard site (rc=$arm3_rc)" >&2

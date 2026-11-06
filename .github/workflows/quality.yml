@@ -882,7 +882,61 @@ jobs:
       - name: ML-4B verificacao D\W — declared vs workflow checks (scope dw, sem token)
         run: python3 scripts/check-required-status-checks.py --scope dw
 
-  # ML-4E: job de RECOLHIMENTO do shim-byte-identity.
+  # ML-1A (REQ-2026-11-06-ci-vermelho-sem-relacao-com-o-conteudo): job de CLASSIFICAÇÃO
+  # do diff do PR. Decide se o shim-byte-identity é aplicável ao PR.
+  #
+  # Dois passos obrigatórios em ordem — B1 (ML-2B, REQ-2026-11-06):
+  #   1. --classify (versão BASE): classifica o diff usando o script da BASE do PR,
+  #      não do HEAD — ADR-2026-09-17: a severidade não pode vir da fonte verificada.
+  #      Se o script não existir na BASE (caso do próprio PR de ML-1A) ou BASE_SHA
+  #      estiver vazio, escreve diff_is_inert=false e termina com sucesso (D2).
+  #   2. --self-test (versão HEAD): garante que a lógica introduzida pelo PR está
+  #      correta. Se falhar, o job falha → gate falha → PR bloqueado (defesa T6 do
+  #      threat model: PR não controla sua própria cobertura via versão BASE).
+  #
+  # B1: --classify ANTES do --self-test. Motivo: $GITHUB_PATH e $GITHUB_ENV persistem
+  # entre passos do mesmo job. Um passo HEAD (--self-test) pode injetar um git falso em
+  # $GITHUB_PATH antes que a classificação BASE rode — derrotando a defesa ADR-2026-09-17
+  # pelo caminho fora do sítio que D1 manda inspecionar. Com --classify primeiro, o PATH
+  # não está contaminado no momento da classificação.
+  #
+  # Sem `if:` — roda em todo evento (push e pull_request), inclusive quando
+  # shim-byte-identity é pulado. O gate lê a saída deste job para distinguir
+  # "dispensa intencional" de "pulado inesperadamente".
+  classify:
+    runs-on: ubuntu-latest
+    outputs:
+      diff_is_inert: ${{ steps.classify.outputs.diff_is_inert }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: classificar diff do PR (versão BASE)
+        id: classify
+        env:
+          EVENT_NAME:     ${{ github.event_name }}
+          BASE_REF:       ${{ github.base_ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          BASE_SHA:       ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA:       ${{ github.event.pull_request.head.sha }}
+        run: |
+          # Classificar usando a versão do script na BASE — defesa ADR-2026-09-17.
+          if [[ -n "${BASE_SHA:-}" ]] && \
+             git cat-file -e "${BASE_SHA}:scripts/check-shim-diff-applies.sh" 2>/dev/null; then
+            git show "${BASE_SHA}:scripts/check-shim-diff-applies.sh" \
+              > "$RUNNER_TEMP/classifier-base.sh"
+            bash "$RUNNER_TEMP/classifier-base.sh" --classify
+          else
+            # Script ausente na BASE ou BASE_SHA vazio: D2 — aplicável, job sucede.
+            echo "classificador ausente na BASE ou BASE_SHA vazio → aplicável (D2)"
+            echo "diff_is_inert=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: self-test do classificador (versão HEAD)
+        run: bash scripts/check-shim-diff-applies.sh --self-test
+
+  # ML-4E / ML-1A: job de RECOLHIMENTO do shim-byte-identity.
   #
   # Por que existe: shim-byte-identity é MATRIZ (macos-latest, ubuntu-latest) e os
   # nomes de check que ela emite são "shim-byte-identity (macos-latest)" e
@@ -898,24 +952,54 @@ jobs:
   # por artefato no passo seguinte. O parity está protegido por uma segunda
   # linha de defesa que ESTE job não tem — então aqui a guarda precisa ser
   # completa, e exigir evidência POSITIVA, não só ausência de falha.
+  #
+  # Regra de dispensa (ADR-2026-11-06 D1/D2): os braços são pulados SOMENTE
+  # quando o job classify passou com diff_is_inert=true, o que exige:
+  #   • evento pull_request contra a branch padrão;
+  #   • TODOS os arquivos do diff dentro do conjunto inerte (docs/, vault/,
+  #     .claude/agent-memory/, *.md raiz — ver check-shim-diff-applies.sh);
+  #   • classificação feita pela versão BASE do script (ADR-2026-09-17).
+  # Em todo o resto — push para main, tag, evento diferente, diff misto,
+  # classify falhando — evidência positiva continua obrigatória.
+  # Execução cancelada (!cancelled()) não enfileira runner macOS.
   shim-byte-identity-gate:
     runs-on: ubuntu-latest
-    needs: [shim-byte-identity]
+    needs: [classify, shim-byte-identity]
     if: always()
     steps:
-      - name: Todos os braços da matriz têm de ter tido SUCESSO
+      - name: Avaliar gate
         env:
-          RESULT: ${{ needs.shim-byte-identity.result }}
+          EVENT_NAME:      ${{ github.event_name }}
+          BASE_REF:        ${{ github.base_ref }}
+          DEFAULT_BRANCH:  ${{ github.event.repository.default_branch }}
+          CLASSIFY_RESULT: ${{ needs.classify.result }}
+          DIFF_IS_INERT:   ${{ needs.classify.outputs.diff_is_inert }}
+          SHIM_RESULT:     ${{ needs.shim-byte-identity.result }}
         run: |
-          # Evidência positiva: o único valor aceito é 'success'.
-          # 'skipped', 'failure' e 'cancelled' reprovam — um braço pulado não
-          # prova byte-identidade, e um required check verde sobre nada
-          # verificado é pior que check nenhum.
-          if [ "$RESULT" != "success" ]; then
-            echo "::error::shim-byte-identity resultou '$RESULT' (esperado: success) — a byte-identidade do shim NÃO foi verificada nesta corrida."
+          # 1) classify DEVE ter sucedido — sem isso o gate sempre falha.
+          #    Garante que --self-test vermelho bloqueia o merge (defesa T6).
+          if [[ "$CLASSIFY_RESULT" != "success" ]]; then
+            echo "::error::classify result=$CLASSIFY_RESULT — o classificador de diff não concluiu com sucesso."
             exit 1
           fi
-          echo "shim-byte-identity: todos os braços da matriz com sucesso."
+          # 2) Condição de dispensa: PR + base padrão + diff inerte
+          if [[ "$EVENT_NAME" == "pull_request" &&
+                -n "$BASE_REF" &&
+                "$BASE_REF" == "$DEFAULT_BRANCH" &&
+                "$DIFF_IS_INERT" == "true" ]]; then
+            echo "não aplicável: o diff só toca caminhos inertes (lista no job classify)"
+            exit 0
+          fi
+          # 3) Em todo o resto: exige braços com sucesso.
+          #    'skipped', 'failure' e 'cancelled' reprovam — um braço pulado não
+          #    prova byte-identidade, e um required check verde sobre nada
+          #    verificado é pior que check nenhum.
+          if [[ "$SHIM_RESULT" == "success" ]]; then
+            echo "shim-byte-identity: todos os braços da matriz com sucesso."
+            exit 0
+          fi
+          echo "::error::shim-byte-identity resultou '$SHIM_RESULT' (esperado: success) — a byte-identidade do shim NÃO foi verificada nesta corrida."
+          exit 1
 
   parity:
     runs-on: ubuntu-latest
@@ -1165,13 +1249,13 @@ jobs:
             -run "TestUpdateNeverWritesThrough" -v -count=1 -timeout 60s 2>&1 || true)
           echo "$OUT"
 
-          if echo "$OUT" | grep -q -e "--- SKIP"; then
+          if echo "$OUT" | grep -e "--- SKIP" >/dev/null; then
             echo "PASS: Go substituto -- symlinkOrSkip pulou com errno 1314 (isSymlinkPrivilegeError + t.Skipf reais exercitados)"
           else
             echo "::error::Go substituto FALHOU: teste nao pulou com errno 1314 injetado"
             exit 1
           fi
-          if echo "$OUT" | grep -q -e "--- FAIL"; then
+          if echo "$OUT" | grep -e "--- FAIL" >/dev/null; then
             echo "::error::Go substituto: teste FALHOU em vez de PULAR"
             exit 1
           fi
@@ -1214,7 +1298,7 @@ jobs:
             -run "TestUpdateNeverWritesThrough" -v -count=1 -timeout 60s 2>&1 || true)
           echo "$OUT"
 
-          if echo "$OUT" | grep -q -e "--- FAIL"; then
+          if echo "$OUT" | grep -e "--- FAIL" >/dev/null; then
             echo "PASS: Go falsificacao -- sem a guarda, errno 1314 causa FAIL (guarda é carga-sustentante)"
           else
             echo "::error::Go falsificacao FALHOU: esperava --- FAIL sem a guarda, got: $OUT"
@@ -1266,6 +1350,11 @@ jobs:
   # Windows: Pergunta 15 do windows-probe.yml (PowerShell, mantido separado).
   # ---------------------------------------------------------------------------
   shim-byte-identity:
+    needs: [classify]
+    if: >-
+      !cancelled() &&
+      !(needs.classify.result == 'success' &&
+        needs.classify.outputs.diff_is_inert == 'true')
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]

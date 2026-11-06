@@ -23,6 +23,20 @@
 # BASH_SOURCE-relative ROOT_DIR, GO_BIN resolution (builds a throwaway binary
 # if unset), ok()/fail() accumulating FAIL, and diff -u for byte-level
 # comparisons.
+#
+# ML-1C (REQ-2026-11-06) — porta livre e retry (ADR D4):
+#   Cada cenário obtém uma porta livre do sistema via python3 fazendo bind em
+#   porta 0 no endereço do próprio cenário, lendo getsockname() e fechando.
+#   Se o serve falhar com "address already in use" antes de imprimir a URL,
+#   o cenário tenta de novo com outra porta, até 3 vezes. Qualquer outro erro
+#   (timeout sem URL, permission denied, etc.) reprova na primeira tentativa.
+#   SERVE_PARITY_FIRST_PORT: se definido, a primeira tentativa de cada
+#   cenário usa esse valor em vez de pedir ao SO — útil em contra-braços
+#   determinísticos (veja scratchpad/ml1c/counter-arm.sh).
+#   Fallback sem python3: porta aleatória em 49152–65535 via $RANDOM.
+#   python3 já é exigido por todos os outros gates de parity-rest, então o
+#   fallback cobre apenas ambientes de CI não-padrão; a correção depende do
+#   retry quando o fallback é usado.
 set -euo pipefail
 
 # Codificacao de saida (ML-1B, ROADMAP-2026-09-02-saida-nao-ascii-declara-
@@ -42,6 +56,9 @@ export TERM=dumb
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-serve-address-parity.XXXXXX")
+
+# shellcheck source=scripts/lib-crlf-normalize.sh
+. "$ROOT_DIR/scripts/lib-crlf-normalize.sh"
 
 PIDS=()
 cleanup() {
@@ -88,12 +105,33 @@ if [[ "$HAVE_LSOF" -eq 0 ]]; then
        "and is SKIPPED, not silently passed." >&2
 fi
 
-# next_port sets PORT to a fresh value — a plain assignment, not a
-# command-substitution function, so the increment survives across calls
-# (command substitution would run in a subshell and lose it).
-PORT=46199
+# next_port ADDR — sets the global PORT to a free port on ADDR by asking the
+# OS (python3 bind+getsockname+close). The address is passed via sys.argv[1]
+# (not interpolated inside the Python source) to avoid MSYS path conversion.
+# Fallback when python3 is unavailable: a random port in 49152–65535 via
+# $RANDOM. python3 is already required by every other gate in parity-rest, so
+# the fallback only fires in non-standard CI environments; correctness then
+# rests on the retry (up to 3 attempts).
+# Note: a plain `PORT=$((PORT+1))` counter would also work but brings back the
+# fixed-port bug that ML-1C exists to fix (#666).
+PORT=49152  # fallback base; not used when python3 is available
 next_port() {
-  PORT=$((PORT + 1))
+  local addr="${1:-127.0.0.1}"
+  if command -v python3 >/dev/null 2>&1; then
+    PORT=$(python3 -I -c "
+import socket, sys
+addr = sys.argv[1]
+family = socket.AF_INET6 if ':' in addr else socket.AF_INET
+s = socket.socket(family, socket.SOCK_STREAM)
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
+s.bind((addr, 0))
+print(s.getsockname()[1])
+s.close()
+" "$addr" | strip_cr)
+  else
+    PORT=$((49152 + RANDOM % 16384))
+    echo "WARN [serve-address-parity]: python3 not available — using random fallback port $PORT; correctness rests on retry" >&2
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -120,7 +158,10 @@ start_serve() {
 # wait_ready PID OUT_FILE TIMEOUT_SECONDS — polls until OUT_FILE carries a
 # printed URL (proof the listener is actually up, per all 3 runtimes' "print
 # only after bind succeeds" contract) or the process exits (bind failed).
-# Returns 1 on timeout or early exit.
+# Returns:
+#   0 — URL found in stdout (ready)
+#   1 — process exited before printing URL (early exit — check stderr)
+#   2 — timeout: process still alive but no URL in timeout seconds
 wait_ready() {
   local pid=$1 out=$2 timeout=$3
   local i=0
@@ -134,7 +175,7 @@ wait_ready() {
     sleep 0.1
     i=$((i + 1))
   done
-  return 1
+  return 2
 }
 
 # listen_addr_for_pid PID — the bound address as lsof reports it
@@ -151,16 +192,84 @@ stop_pid() {
 }
 
 # ---------------------------------------------------------------------------
+# attempt_serve LABEL ADDR RUNTIME [EXTRA_ARGS...]
+#   Tries to start `trackfw serve` for RUNTIME at a free port on ADDR.
+#   Retries up to 3 times, but ONLY when the serve exits before printing a URL
+#   AND its stderr contains "address already in use". Any other failure
+#   (timeout, permission denied, etc.) reproves immediately on the first
+#   attempt.
+#   On success:  sets _serve_ok=1, LAST_PORT, LAST_PID, LAST_OUT, LAST_ERR.
+#   On failure:  calls fail(LABEL, ...) and sets _serve_ok=0.
+#   SERVE_PARITY_FIRST_PORT: if set, the first attempt uses that port instead
+#   of asking the OS — allows deterministic counter-arms.
+# ---------------------------------------------------------------------------
+_serve_ok=0
+LAST_PORT=0
+attempt_serve() {
+  local label=$1 addr=$2 runtime=$3
+  shift 3
+  local tries=1 tried_ports=() port rc lasterr lasterrmsg
+  _serve_ok=0
+  LAST_PORT=0
+
+  while (( tries <= 3 )); do
+    # On the first attempt, honour SERVE_PARITY_FIRST_PORT when set.
+    if [[ -n "${SERVE_PARITY_FIRST_PORT:-}" ]] && (( tries == 1 )); then
+      PORT=$SERVE_PARITY_FIRST_PORT
+    else
+      next_port "$addr"
+    fi
+    port=$PORT
+    tried_ports+=("$port")
+
+    start_serve "$runtime" "$port" "$@"
+
+    # Capture wait_ready exit code safely under set -e.
+    rc=0; wait_ready "$LAST_PID" "$LAST_OUT" 8 || rc=$?
+
+    if [[ "$rc" -eq 0 ]]; then
+      # Server is up and printed a URL.
+      LAST_PORT=$port
+      _serve_ok=1
+      return 0
+    fi
+
+    lasterr="$LAST_ERR"
+    stop_pid "$LAST_PID"
+
+    if [[ "$rc" -eq 1 ]] && grep -F 'address already in use' "$lasterr" >/dev/null 2>&1; then
+      # Port collision: schedule a retry.
+      tries=$((tries + 1))
+      if (( tries <= 3 )); then
+        echo "retry: porta $port ocupada (address already in use), tentativa $tries/3" >&2
+      fi
+    else
+      # Any other failure (timeout rc=2, permission denied, etc.): fail fast.
+      lasterrmsg=$(cat "$lasterr" 2>/dev/null)
+      if [[ "$rc" -eq 2 ]]; then
+        fail "$label" "process did not become ready in time (timeout); stderr: $lasterrmsg"
+      else
+        fail "$label" "process did not become ready in time; stderr: $lasterrmsg"
+      fi
+      return 1
+    fi
+  done
+
+  # Exhausted 3 attempts, all collisions.
+  local ports_str
+  ports_str=$(printf '%s, ' "${tried_ports[@]}")
+  ports_str="${ports_str%, }"
+  fail "$label" "3 colisões de porta (address already in use): $ports_str"
+  return 1
+}
+
+# ---------------------------------------------------------------------------
 # 1 — Default bind (no --host): all 3 listen on loopback, never on a wildcard.
 # ---------------------------------------------------------------------------
 for runtime in go; do  # ML-3A (v8): node py removed
-  next_port; port=$PORT
-  start_serve "$runtime" "$port"
-  if ! wait_ready "$LAST_PID" "$LAST_OUT" 8; then
-    fail "default-bind/$runtime" "process did not become ready in time; stderr: $(cat "$LAST_ERR" 2>/dev/null)"
-    stop_pid "$LAST_PID"
-    continue
-  fi
+  attempt_serve "default-bind/$runtime" "127.0.0.1" "$runtime"
+  [[ "$_serve_ok" -eq 0 ]] && continue
+  port=$LAST_PORT
   if [[ "$HAVE_LSOF" -eq 1 ]]; then
     addr=$(listen_addr_for_pid "$LAST_PID")
     stop_pid "$LAST_PID"
@@ -183,13 +292,9 @@ done
 # 2 — --host ::1: all 3 listen on [::1].
 # ---------------------------------------------------------------------------
 for runtime in go; do  # ML-3A (v8): node py removed
-  next_port; port=$PORT
-  start_serve "$runtime" "$port" --host ::1
-  if ! wait_ready "$LAST_PID" "$LAST_OUT" 8; then
-    fail "host-ipv6-loopback/$runtime" "process did not become ready in time; stderr: $(cat "$LAST_ERR" 2>/dev/null)"
-    stop_pid "$LAST_PID"
-    continue
-  fi
+  attempt_serve "host-ipv6-loopback/$runtime" "::1" "$runtime" --host ::1
+  [[ "$_serve_ok" -eq 0 ]] && continue
+  port=$LAST_PORT
   if [[ "$HAVE_LSOF" -eq 1 ]]; then
     addr=$(listen_addr_for_pid "$LAST_PID")
     stop_pid "$LAST_PID"
@@ -217,13 +322,9 @@ done
 declare -A EXPOSURE_ERR
 declare -A EXPOSURE_URL
 for runtime in go; do  # ML-3A (v8): node py removed
-  next_port; port=$PORT
-  start_serve "$runtime" "$port" --host 0.0.0.0
-  if ! wait_ready "$LAST_PID" "$LAST_OUT" 8; then
-    fail "host-wildcard-exposure/$runtime" "process did not become ready in time; stderr: $(cat "$LAST_ERR" 2>/dev/null)"
-    stop_pid "$LAST_PID"
-    continue
-  fi
+  attempt_serve "host-wildcard-exposure/$runtime" "0.0.0.0" "$runtime" --host 0.0.0.0
+  [[ "$_serve_ok" -eq 0 ]] && continue
+  port=$LAST_PORT
   stop_pid "$LAST_PID"
 
   # `{ grep … || true; }`: stdout SEM URL é o resultado que o `if [[ -z "$url" ]]`

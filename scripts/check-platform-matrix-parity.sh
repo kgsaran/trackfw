@@ -162,7 +162,7 @@ ok "gen-platform-manifests.sh: parsed $MANIFEST_COUNT platform slugs"
 # ── Compare: A \ B (in goreleaser but not in manifests) ──────────────────
 FAIL_COUNT_BEFORE=$FAIL
 while IFS= read -r slug; do
-    if ! echo "$MANIFEST_SLUGS" | grep -qxF "$slug"; then
+    if ! echo "$MANIFEST_SLUGS" | grep -xF "$slug" >/dev/null; then
         fail "goreleaser builds \"$slug\" but gen-platform-manifests.sh does not list it — add it to PLATFORMS"
     fi
 done <<EOF
@@ -171,7 +171,7 @@ EOF
 
 # ── Compare: B \ A (in manifests but not in goreleaser) ──────────────────
 while IFS= read -r slug; do
-    if ! echo "$GORELEASER_SLUGS" | grep -qxF "$slug"; then
+    if ! echo "$GORELEASER_SLUGS" | grep -xF "$slug" >/dev/null; then
         fail "gen-platform-manifests.sh lists \"$slug\" but .goreleaser.yaml does not build it — publishing this package would have no binary"
     fi
 done <<EOF

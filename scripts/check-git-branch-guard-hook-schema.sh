@@ -560,7 +560,7 @@ if [[ "$SITE_COUNT" -eq 0 ]]; then
   echo "check-git-branch-guard-hook-schema: nenhum sítio encontrado com 'permissionDecisionReason' sob $ROOT_DIR — recusando aprovar em silêncio (vacuidade)" >&2
   exit 1
 fi
-if ! printf '%s\n' "$SITES" | grep -q '\.go$'; then
+if ! printf '%s\n' "$SITES" | grep '\.go$' >/dev/null; then
   echo "check-git-branch-guard-hook-schema: nenhum sítio Go (.go) encontrado — recusando aprovar em silêncio (vacuidade parcial)" >&2
   exit 1
 fi

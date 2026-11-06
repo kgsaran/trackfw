@@ -166,7 +166,7 @@ for FILE in "${GO_PROD_FILES[@]}"; do
 
     # Check the site's own line for the marker
     JUSTIFIED=0
-    if printf '%s' "$CONTENT" | grep -q "write-containment-allowed:"; then
+    if printf '%s' "$CONTENT" | grep "write-containment-allowed:" >/dev/null; then
       JUSTIFIED=1
     fi
 
@@ -174,7 +174,7 @@ for FILE in "${GO_PROD_FILES[@]}"; do
     if [[ "$JUSTIFIED" -eq 0 ]] && [[ "$LINENUM" -gt 1 ]]; then
       PREVNO=$((LINENUM - 1))
       PREVLINE=$(sed -n "${PREVNO}p" "$FILE" 2>/dev/null || true)
-      if printf '%s' "$PREVLINE" | grep -q "write-containment-allowed:"; then
+      if printf '%s' "$PREVLINE" | grep "write-containment-allowed:" >/dev/null; then
         JUSTIFIED=1
       fi
     fi

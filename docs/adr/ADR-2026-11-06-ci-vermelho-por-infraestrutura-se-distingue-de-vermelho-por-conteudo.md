@@ -1,0 +1,65 @@
+---
+status: Accepted
+date: 2026-11-06
+author: "Zeus (trackfw_architect)"
+---
+
+# ADR: CI vermelho por infraestrutura se distingue de vermelho por conteúdo
+
+> Date: 2026-11-06 | Status: Accepted
+
+## Context
+
+Três vermelhos recentes não tinham relação com o conteúdo do PR:
+
+1. **Fila do macOS (Discussion #664).** Em 03/11, no fork `lourivalgarciajunior/trackfw`, o braço `shim-byte-identity (macos-latest)` foi cancelado 13 vezes seguidas, sem runner, no limite de fila de cerca de 902 s, durante 8 h 46 min. No mesmo período, o braço `ubuntu-latest` passou. O `shim-byte-identity-gate` (required, ML-4E) só aceita `success`, então todo PR ficou vermelho, inclusive os que só mexiam em documentação. Os dois vermelhos esperados treinaram quem lia a ignorá-los e esconderam um achado real, o #665.
+2. **Prazo do PowerShell 5.1 (#665).** O aquecimento do `powershell.exe` levou 8,00 s, dentro da faixa verde que o #652 mediu (2,91 a 9,86 s). Mesmo assim, a chamada afirmada de `RC0-allow` estourou o prazo fixo de 15 s. No re-run, com o mesmo `head`, o aquecimento levou 1,91 s e a chamada 1,50 s. O aquecimento mede a lentidão da máquina e não a absorve.
+3. **Porta fixa (PR #666).** O `check-serve-address-parity.sh` usa portas fixas a partir de 46199. Em 04/11, `0.0.0.0:46202` estava ocupada no runner (`bind: address already in use`), e o cenário reprovou sem relação com o código.
+
+## Decision
+
+- **D1 — O gate do shim distingue "não aplicável" de "não verificado", por lista fechada de caminhos inertes.** Em evento `pull_request`, o `shim-byte-identity-gate` calcula o diff do PR contra a base com `git diff --name-only --no-renames <merge-base>..<head>` (um rename lista os dois caminhos). O gate só dispensa os braços quando **todos** os arquivos do diff estão num conjunto fechado de caminhos que não entram no build nem no shim. Nesse caso ele passa e escreve no log `não aplicável: o diff só toca caminhos inertes`, com a lista. Um arquivo fora do conjunto, mesmo novo ou desconhecido, torna o gate aplicável. Assim, se o build ganhar uma entrada nova, o gate continua exigindo os braços. Os candidatos ao conjunto inerte são `docs/`, `vault/`, `.claude/agent-memory/` e os `*.md` da raiz; a Wave 0 fecha o conjunto.
+- **Emenda.** Este ADR emenda o ML-1D (AC9 da REQ-2026-09-12-v8, "byte-identidade nos três SOs") e o ML-4E (`shim-byte-identity` vira required) do `ROADMAP-2026-09-12-v8-um-binario-muitos-canais`. O AC9 passa a ser afirmado em todo PR que toca algo fora do conjunto inerte, em todo push para a `main` e em toda tag. Em PR só com caminhos inertes, ele não é medido, porque não há o que medir.
+- **D2 — Fail-closed.** Se o diff não puder ser calculado (base ausente, clone raso, evento diferente de `pull_request`), o gate exige `success` dos dois braços, como hoje. No `push` para a `main` e na tag, o braço macOS continua obrigatório. O nome do check no conjunto R não muda.
+- **D3 — O prazo da chamada afirmada do PowerShell deriva do aquecimento medido.** O prazo passa a ser `clamp(4 × aquecimento, 15 s, 60 s)`. A asserção continua sendo o `exit 0` e o stdin preservado; o prazo é orçamento do instrumento. A mensagem de estouro passa a citar o aquecimento e o prazo efetivo. **O fator 4 é palpite:** ele se apoia em dois pontos medidos (8,00 s com estouro e 1,91 s com 1,50 s) e no intervalo verde do #652. Também é preciso que o `-timeout` do `go test` no `windows-full-suites` comporte o novo teto multiplicado pelo número de chamadas afirmadas, senão o estouro só muda de lugar.
+- **D4 — O `check-serve-address-parity.sh` não depende de porta fixa.** O `trackfw serve --port 0` não serve aqui, porque imprime `localhost:0` em vez da porta real (medido em 2026-11-06). Por isso, cada cenário escolhe uma porta livre fora da faixa fixa. Se o `serve` falhar com `address already in use`, o cenário tenta outra porta, até 3 vezes. Qualquer outro erro continua reprovando na primeira tentativa. A colisão do PR #666 foi no endereço curinga (`0.0.0.0`), então a porta livre tem de ser verificada no endereço do próprio cenário, e não só em `127.0.0.1`. Nenhum outro script ou teste do repositório usa porta fixa na faixa 46xxx; a varredura foi feita em `scripts/`, `.github/` e `internal/`.
+
+### Emendas da Wave 0 (2026-11-06, threat model `docs/seguranca/2026-11-06-wave0-ci-vermelho-por-infraestrutura.md`)
+
+- **D1, critério do conjunto inerte.** O conjunto é fechado pelo critério "não altera o que o `shim-byte-identity` compara". Arquivos de `docs/`, `vault/` e `*.md` da raiz são lidos pelo `validate --json`, mas o shim repassa os descritores ao binário (`spawnSync` com `stdio: "inherit"`), então os dois lados leem o mesmo byte. Nenhum `//go:embed` aponta para o conjunto. O conjunto final é `docs/`, `vault/`, `.claude/agent-memory/` e os `*.md` da raiz, sempre por prefixo ancorado.
+- **D1, quem classifica.** A classificação usa a versão do script na BASE do PR, não a do HEAD (ADR-2026-09-17: a severidade não vem de fonte que o objeto verificado controla). O `--self-test` roda a versão do HEAD e reprova o job se falhar. Script ausente na BASE ou base indisponível conta como D2: aplicável, com o job de classificação em `success`. A dispensa só é possível com base igual à branch padrão. Consequência: a dispensa só pode disparar em PRs abertos depois do merge da REQ; o primeiro PR só de documentação contra a `main` depois disso é a primeira medição real.
+- **D3, onde o estouro cai.** O `timeout-minutes: 60` do job `windows-full-suites` é o mesmo job do `-timeout 20m`, e são 32 chamadas afirmadas (4 guards × 2 binários × 4 cenários). Subir o `-timeout` só transfere o estouro para o cancelamento do job. Por isso, depois do primeiro estouro de prazo de um binário, as chamadas seguintes desse binário reprovam na hora, sem executar, citando a chamada que estourou. Pior caso: cerca de 60 s por binário (substituído pela segunda emenda: cerca de 420 s por binário).
+
+- **D5 (acrescentada na auditoria do ML-1A).** `produtor | grep -q` sob `pipefail` é vermelho intermitente sem relação com o conteúdo: o `grep -q` sai no primeiro casamento e o produtor recebe SIGPIPE (141). A forma `| grep P >/dev/null` lê a entrada inteira e tem o mesmo código de saída. Um gate impede a volta.
+
+- **D3, segunda emenda (2026-11-06, CI do PR #669).** A premissa de que uma amostra de aquecimento prevê as chamadas seguintes foi falsificada. O código de teste era o mesmo nas duas execuções:
+  - na execução verde (42237249669), o pwsh aqueceu em 0,26 s e a primeira chamada levou 0,81 s; o PowerShell 5.1 aqueceu em 3,24 s;
+  - na vermelha (42253593127), o pwsh aqueceu em 0,42 s e a primeira chamada passou de 15 s; o aquecimento do 5.1 passou de 60 s.
+
+  A máquina parou depois do aquecimento. Por isso:
+  - depois de um estouro, uma sonda nova de `exit 0`, sem cache, decide. Se ela também for lenta, a máquina parou: a chamada é repetida uma vez, com prazo derivado da sonda nova. Se a sonda for rápida, quem travou foi o guard: a chamada reprova sem nova tentativa;
+  - o binário só é marcado no fail-fast depois que a nova tentativa também estoura;
+  - um aquecimento que estoura tem uma nova tentativa. Se ela também estourar, a mensagem diz "máquina", não "guard";
+  - o limiar de "sonda lenta" é palpite, como o fator 4.
+
+  Cada binário tem orçamento de **uma** nova tentativa por processo. Esgotado o orçamento, o próximo estouro reprova e marca o binário, seja qual for a sonda. Sem esse orçamento, uma nova tentativa que passa não marca o binário, e paradas repetidas somariam 16 × 180 s, cerca de 48 min (achado do executor no ML-2E). Pior caso por binário com o orçamento: aquecimento 60 + 60, chamada 60, sonda 60, nova tentativa 60, mais uma chamada 60 e uma sonda 60 até o fail-fast, cerca de 420 s. Com dois binários, cerca de 840 s, abaixo do `-timeout 20m`. Uma corrida verde depois desta correção não prova a nova tentativa, porque a parada pode não se repetir. A prova são os testes com dublês.
+
+## Consequences
+
+- **Positivas:**
+  - PR de documentação e governança deixa de ficar vermelho por falta de máquina macOS;
+  - vermelho volta a significar defeito;
+  - o teste do PowerShell 5.1 se adapta à máquina sem deixar de afirmar o resultado;
+  - colisão de porta deixa de reprovar o `parity-rest`.
+- **Negativas:**
+  - num PR que não toca o shim, a byte-identidade no macOS só é medida no push para a `main`;
+  - se a máquina estiver lenta de verdade, o prazo do PowerShell pode chegar a 60 s;
+  - o novo retry de porta é código de teste a mais.
+
+## Alternatives Considered
+
+- **Não mudar nada (opção 1 da #664).** O custo de esperar volta a cada episódio de fila, e os vermelhos esperados escondem achado real. Rejeitada.
+- **Tirar o macOS do PR (opção 3 da #664).** Muda o que a AC9 afirma em cada PR, inclusive nos que tocam o shim. Rejeitada.
+- **`continue-on-error` ou aceitar `cancelled`.** Seria verde sobre nada verificado, exatamente o que o comentário do ML-4E recusa. Rejeitada.
+- **Subir o prazo fixo do PowerShell.** É um número escolhido para a máquina de hoje, como foram os 15 s. Rejeitada.
+- **Ratchet do Windows distinguir estouro de prazo de asserção (candidato 2 da #665).** O ratchet seguiria sem remédio para o consumidor. Fica fora deste ADR.

@@ -153,7 +153,7 @@ if [ "$arm_c_rc" -eq 0 ]; then
     echo "FAIL [wheel-metadata-readme/arm-c]: build_wheel.py deveria sair com erro para README ausente, mas saiu 0" >&2
     exit 1
 fi
-if ls "$ARM_C_OUT"/*.whl 2>/dev/null | head -1 | grep -q .; then
+if ls "$ARM_C_OUT"/*.whl 2>/dev/null | head -1 | grep . >/dev/null; then
     echo "FAIL [wheel-metadata-readme/arm-c]: build_wheel.py produziu .whl mesmo com README ausente" >&2
     exit 1
 fi
@@ -178,7 +178,7 @@ if [ "$arm_c2_rc" -eq 0 ]; then
     echo "FAIL [wheel-metadata-readme/arm-c2]: build_wheel.py deveria sair com erro para README vazio, mas saiu 0" >&2
     exit 1
 fi
-if ls "$ARM_C2_OUT"/*.whl 2>/dev/null | head -1 | grep -q .; then
+if ls "$ARM_C2_OUT"/*.whl 2>/dev/null | head -1 | grep . >/dev/null; then
     echo "FAIL [wheel-metadata-readme/arm-c2]: build_wheel.py produziu .whl mesmo com README vazio" >&2
     exit 1
 fi
@@ -242,7 +242,7 @@ with zipfile.ZipFile(whl_path) as zf:
         print("FAIL-AS-EXPECTED: Description-Content-Type ausente")
 PYEOF
 )
-if echo "$d1_result" | grep -q "FAIL-AS-EXPECTED"; then
+if echo "$d1_result" | grep "FAIL-AS-EXPECTED" >/dev/null; then
     echo "OK   [wheel-metadata-readme/arm-d1]: sabotagem (Content-Type removido) detectada pela asserção (a)"
 else
     echo "FAIL [wheel-metadata-readme/arm-d1]: sabotagem não detectada; resultado: $d1_result" >&2
@@ -311,7 +311,7 @@ with zipfile.ZipFile(whl_path) as zf:
         print("PASS-UNEXPECTED: corpo coincide — sabotagem não funcionou")
 PYEOF
 )
-if echo "$d2_result" | grep -q "FAIL-AS-EXPECTED"; then
+if echo "$d2_result" | grep "FAIL-AS-EXPECTED" >/dev/null; then
     echo "OK   [wheel-metadata-readme/arm-d2]: sabotagem (corpo neutralizado) detectada pela asserção (b)"
 else
     echo "FAIL [wheel-metadata-readme/arm-d2]: sabotagem não detectada; resultado: $d2_result" >&2

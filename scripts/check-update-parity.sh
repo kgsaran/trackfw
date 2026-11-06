@@ -714,10 +714,10 @@ fi
 if [[ "$s13_path" == "PARSE_ERROR"* ]]; then
   diag "sandbox/gap-ab/parse" "output unparseable: $s13_path"
 else
-  if ! echo "$s13_path" | grep -qF '.windsurf/hooks.json'; then
+  if ! echo "$s13_path" | grep -F '.windsurf/hooks.json' >/dev/null; then
     diag "sandbox/gap-a/declared-path" ".windsurf/hooks.json absent from agent-hooks path field: $s13_path"
   fi
-  if ! echo "$s13_path" | grep -qF '.amazonq/cli-agents/q_cli_default.json'; then
+  if ! echo "$s13_path" | grep -F '.amazonq/cli-agents/q_cli_default.json' >/dev/null; then
     diag "sandbox/gap-b/declared-path" ".amazonq/cli-agents/q_cli_default.json absent from agent-hooks path field: $s13_path"
   fi
 fi

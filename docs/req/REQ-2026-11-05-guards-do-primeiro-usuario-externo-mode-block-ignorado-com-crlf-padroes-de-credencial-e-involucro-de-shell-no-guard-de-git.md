@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-11-05
 author: "Zeus (trackfw_architect)"
 adr: "docs/adr/ADR-2026-11-05-guards-cumprem-o-que-o-readme-promete-mode-lido-com-crlf-padroes-de-credencial-ampliados-e-involucro-de-shell-analisado.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-11-05-guards-do-primeiro-usuario-externo-mode-block-ignorado-com-crlf-padroes-de-credencial-e-involucro-de-shell-no-guard-de-git.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-11-05-guards-do-primeiro-usuario-externo-mode-block-ignorado-com-crlf-padroes-de-credencial-e-involucro-de-shell-no-guard-de-git.md"
 ---
 
 # REQ: Guards do primeiro usuário externo: mode block ignorado com CRLF, padrões de credencial e invólucro de shell no guard de git
 
-> Date: 2026-11-05 | Status: Open
+> Date: 2026-11-05 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -63,7 +63,7 @@ e fazer os guards antes da REQ de CI. O desenho está no ADR.
 - [x] **AC5 (#663).** O limite (interpretador de linguagem, como `python -c` e `node -e`) fica declarado no
   README e no `docs/cli-parity.md`, com um teste que fixa o `rc=0` atual como limite conhecido, não como
   garantia.
-- [ ] **AC6.** Os issues #662 e #663 recebem comentário com o que mudou e a versão. O PR fecha os dois com
+- [x] **AC6.** Os issues #662 e #663 recebem comentário com o que mudou e a versão. O PR fecha os dois com
   `Closes`.
 
 ## Negative scope
@@ -87,4 +87,4 @@ ADR: docs/adr/ADR-2026-11-05-guards-cumprem-o-que-o-readme-promete-mode-lido-com
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-11-05-guards-do-primeiro-usuario-externo-mode-block-ignorado-com-crlf-padroes-de-credencial-e-involucro-de-shell-no-guard-de-git.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-11-05-guards-do-primeiro-usuario-externo-mode-block-ignorado-com-crlf-padroes-de-credencial-e-involucro-de-shell-no-guard-de-git.md

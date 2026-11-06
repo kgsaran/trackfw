@@ -70,9 +70,9 @@ check_file() {
         prevline=$(sed -n "${prevno}p" "$file")
       fi
       justified=0
-      if printf '%s' "$content" | grep -q "raw-read-allowed:"; then
+      if printf '%s' "$content" | grep "raw-read-allowed:" >/dev/null; then
         justified=1
-      elif printf '%s' "$prevline" | grep -q "raw-read-allowed:"; then
+      elif printf '%s' "$prevline" | grep "raw-read-allowed:" >/dev/null; then
         justified=1
       fi
       if [ "$justified" -eq 1 ]; then

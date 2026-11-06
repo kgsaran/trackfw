@@ -178,13 +178,13 @@ has_exempt_marker() {
     local lineno="$2"
     local line
     line=$(sed -n "${lineno}p" "$file")
-    if echo "$line" | grep -qF "$EXEMPT_MARKER"; then
+    if echo "$line" | grep -F "$EXEMPT_MARKER" >/dev/null; then
         return 0
     fi
     if [[ $lineno -gt 1 ]]; then
         local prev
         prev=$(sed -n "$((lineno - 1))p" "$file")
-        echo "$prev" | grep -qF "$EXEMPT_MARKER" && return 0
+        echo "$prev" | grep -F "$EXEMPT_MARKER" >/dev/null && return 0
     fi
     return 1
 }
@@ -226,7 +226,7 @@ run_scan() {
             local clean
             clean=$(strip_inline_comment "$content")
             # Check for "adr" (case-insensitive) in the ReadDir argument
-            if echo "$clean" | grep -qiE 'os\.ReadDir\([^)]*[Aa][Dd][Rr]'; then
+            if echo "$clean" | grep -iE 'os\.ReadDir\([^)]*[Aa][Dd][Rr]' >/dev/null; then
                 has_exempt_marker "$f" "$lineno" && continue
                 echo "FAIL $f:$lineno [Pattern A] os.ReadDir with ADR-dir argument — use walkADRFilePaths or ResolveADRFiles"
                 echo "     line: $content"
@@ -298,9 +298,9 @@ run_scan() {
                 local clean
                 clean=$(strip_inline_comment "$content")
                 # Only flag if clean line still contains the ReadDir call
-                if echo "$clean" | grep -qE "os\.ReadDir\\($lv\\)"; then
+                if echo "$clean" | grep -E "os\.ReadDir\\($lv\\)" >/dev/null; then
                     # Skip if already caught by Pattern A (avoid double-counting)
-                    if echo "$clean" | grep -qiE 'os\.ReadDir\([^)]*[Aa][Dd][Rr]'; then
+                    if echo "$clean" | grep -iE 'os\.ReadDir\([^)]*[Aa][Dd][Rr]' >/dev/null; then
                         continue
                     fi
                     has_exempt_marker "$f" "$lineno" && continue
@@ -344,7 +344,7 @@ run_scan() {
             is_pure_comment "$content" && continue
             local clean
             clean=$(strip_inline_comment "$content")
-            if echo "$clean" | grep -q 'ADR-'; then
+            if echo "$clean" | grep 'ADR-' >/dev/null; then
                 has_exempt_marker "$f" "$lineno" && continue
                 echo "FAIL $f:$lineno [Pattern C] filepath.Glob with ADR- pattern — use walkADRFilePaths instead"
                 echo "     line: $content"
@@ -400,7 +400,7 @@ GOEOF
     arm1_rc=0
     arm1_out=$(ADR_ENUM_SCAN_DIR="$TMPDIR_ST/arm1" bash "${BASH_SOURCE[0]}" 2>&1) || arm1_rc=$?
     echo "$arm1_out"
-    if [[ $arm1_rc -ne 0 ]] && echo "$arm1_out" | grep -q "FAIL.*enumerate_test_fixture.go"; then
+    if [[ $arm1_rc -ne 0 ]] && echo "$arm1_out" | grep "FAIL.*enumerate_test_fixture.go" >/dev/null; then
         echo "SELF-TEST arm1: PASS (gate correctly failed naming the file; rc=$arm1_rc)"
     else
         echo "SELF-TEST arm1: FAIL — expected gate to fail naming enumerate_test_fixture.go (rc=$arm1_rc)" >&2
@@ -521,11 +521,11 @@ GOEOF
     arm3b_ok=0
 
     # 3a: "OLD:" comment line must NOT produce a FAIL
-    if ! echo "$arm3_out" | grep "FAIL" | grep -q "OLD:"; then
+    if ! echo "$arm3_out" | grep "FAIL" | grep "OLD:" >/dev/null; then
         arm3a_ok=1
     fi
     # 3b: the real call must be named
-    if [[ $arm3_rc -ne 0 ]] && echo "$arm3_out" | grep "FAIL" | grep -q "comment_fixture.go"; then
+    if [[ $arm3_rc -ne 0 ]] && echo "$arm3_out" | grep "FAIL" | grep "comment_fixture.go" >/dev/null; then
         arm3b_ok=1
     fi
 
@@ -565,7 +565,7 @@ GOEOF
     arm4_rc=0
     arm4_out=$(ADR_ENUM_SCAN_DIR="$TMPDIR_ST/arm4" bash "${BASH_SOURCE[0]}" 2>&1) || arm4_rc=$?
     echo "$arm4_out"
-    if [[ $arm4_rc -ne 0 ]] && echo "$arm4_out" | grep -q "FAIL.*adr.go"; then
+    if [[ $arm4_rc -ne 0 ]] && echo "$arm4_out" | grep "FAIL.*adr.go" >/dev/null; then
         echo "SELF-TEST arm4: PASS (gate correctly failed naming adr.go; rc=$arm4_rc)"
     else
         echo "SELF-TEST arm4: FAIL — expected gate to fail naming adr.go (rc=$arm4_rc)" >&2
@@ -621,7 +621,7 @@ for f in "${go_files[@]}"; do
     lineno="${hit%%:*}"; content="${hit#*:}"
     stripped="${content#"${content%%[![:space:]]*}"}"; [[ "$stripped" == //* ]] && continue
     clean="${content%%//*}"
-    echo "$clean" | grep -qiE 'os\.ReadDir\([^)]*[Aa][Dd][Rr]' || continue
+    echo "$clean" | grep -iE 'os\.ReadDir\([^)]*[Aa][Dd][Rr]' >/dev/null || continue
     echo "FAIL $f:$lineno [Pattern A]"; violations=$((violations+1))
   done < <(grep -n 'os\.ReadDir(' "$f" || true)
   # Pattern A' DIRECT only — no indirect var detection (pre-fix behavior)
@@ -631,8 +631,8 @@ for f in "${go_files[@]}"; do
       lineno="${hit%%:*}"; content="${hit#*:}"
       stripped="${content#"${content%%[![:space:]]*}"}"; [[ "$stripped" == //* ]] && continue
       clean="${content%%//*}"
-      echo "$clean" | grep -qE "os\.ReadDir\\($lv\\)" || continue
-      echo "$clean" | grep -qiE 'os\.ReadDir\([^)]*[Aa][Dd][Rr]' && continue
+      echo "$clean" | grep -E "os\.ReadDir\\($lv\\)" >/dev/null || continue
+      echo "$clean" | grep -iE 'os\.ReadDir\([^)]*[Aa][Dd][Rr]' >/dev/null && continue
       echo "FAIL $f:$lineno [Pattern A' direct]"; violations=$((violations+1))
     done < <(grep -n "os\.ReadDir($lv)" "$f" || true)
   done < <(sed -n 's/.*for[[:space:]]*_[[:space:]]*,[[:space:]]*\([A-Za-z_][A-Za-z0-9_]*\)[[:space:]]*:=[[:space:]]*range[[:space:]].*ADRDirs.*/\1/p' "$f" | sort -u || true)
@@ -656,7 +656,7 @@ SHELLEOF
     arm5a_ok=0
     arm5b_ok=0
     [[ $arm5a_rc -eq 0 ]] && arm5a_ok=1
-    if [[ $arm5b_rc -ne 0 ]] && echo "$arm5b_out" | grep -q "FAIL.*indirect_var_fixture.go"; then
+    if [[ $arm5b_rc -ne 0 ]] && echo "$arm5b_out" | grep "FAIL.*indirect_var_fixture.go" >/dev/null; then
         arm5b_ok=1
     fi
 

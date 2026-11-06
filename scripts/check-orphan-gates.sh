@@ -76,7 +76,7 @@ has_consumer() {
     # Grep for tab-prefixed lines; exclude comment-only recipe lines (^\t#)
     if grep $'^\t' "$makefile" \
         | grep -v $'^\t#' \
-        | grep -q "$basename"; then
+        | grep "$basename" >/dev/null; then
       return 0
     fi
   fi
@@ -92,7 +92,7 @@ has_consumer() {
     # Skip the gate script itself
     [ "$(realpath "$f" 2>/dev/null || echo "$f")" = "$(realpath "$selffile" 2>/dev/null || echo "$selffile")" ] && continue
     # Filter comment lines (lines where first non-space character is #)
-    if grep -v '^\s*#' "$f" 2>/dev/null | grep -q "$basename"; then
+    if grep -v '^\s*#' "$f" 2>/dev/null | grep "$basename" >/dev/null; then
       return 0
     fi
   done
@@ -101,7 +101,7 @@ has_consumer() {
   local yml_files
   yml_files=$(find "$root/.github" -name "*.yml" 2>/dev/null)
   for f in $yml_files; do
-    if grep -v '^\s*#' "$f" 2>/dev/null | grep -q "$basename"; then
+    if grep -v '^\s*#' "$f" 2>/dev/null | grep "$basename" >/dev/null; then
       return 0
     fi
   done
@@ -154,7 +154,7 @@ self_test() {
   local arm1_out arm1_rc
   arm1_rc=0
   arm1_out=$(bash "$SCRIPT_DIR/check-orphan-gates.sh" --scan-root "$arm1" 2>&1) || arm1_rc=$?
-  if [ "$arm1_rc" -ne 0 ] && echo "$arm1_out" | grep -q "check-arm1-orphan"; then
+  if [ "$arm1_rc" -ne 0 ] && echo "$arm1_out" | grep "check-arm1-orphan" >/dev/null; then
     echo "OK   [self-test/arm1] orphan correctly named and gate fails: rc=$arm1_rc"
   else
     echo "FAIL [self-test/arm1] expected non-zero rc naming 'check-arm1-orphan'; got rc=$arm1_rc output: $arm1_out"
@@ -200,7 +200,7 @@ self_test() {
   local arm3_out arm3_rc
   arm3_rc=0
   arm3_out=$(bash "$SCRIPT_DIR/check-orphan-gates.sh" --scan-root "$arm3" 2>&1) || arm3_rc=$?
-  if [ "$arm3_rc" -ne 0 ] && echo "$arm3_out" | grep -q "check-arm3-testdata"; then
+  if [ "$arm3_rc" -ne 0 ] && echo "$arm3_out" | grep "check-arm3-testdata" >/dev/null; then
     echo "OK   [self-test/arm3] testdata-only citation correctly rejected: rc=$arm3_rc"
   else
     echo "FAIL [self-test/arm3] expected non-zero rc naming 'check-arm3-testdata'; got rc=$arm3_rc output: $arm3_out"
@@ -244,7 +244,7 @@ self_test() {
   arm4b_rc=0
   arm4b_out=$(ORPHAN_GATE_EXTRA_EXCEPTIONS="check-arm4b-no-reason.sh" \
     bash "$SCRIPT_DIR/check-orphan-gates.sh" --scan-root "$arm4a" 2>&1) || arm4b_rc=$?
-  if [ "$arm4b_rc" -ne 0 ] && echo "$arm4b_out" | grep -q "malformed\|empty reason"; then
+  if [ "$arm4b_rc" -ne 0 ] && echo "$arm4b_out" | grep "malformed\|empty reason" >/dev/null; then
     echo "OK   [self-test/arm4b] exception without reason correctly fails gate: rc=$arm4b_rc"
   else
     echo "FAIL [self-test/arm4b] expected non-zero rc for exception without reason; got rc=$arm4b_rc output: $arm4b_out"
@@ -365,7 +365,7 @@ for script_path in "$SCAN_ROOT/scripts"/check-*.sh; do
   if [ -f "$makefile" ]; then
     if grep $'^\t' "$makefile" \
         | grep -v $'^\t#' \
-        | grep -q "$bname"; then
+        | grep "$bname" >/dev/null; then
       local_found=1
     fi
   fi
@@ -380,7 +380,7 @@ for script_path in "$SCAN_ROOT/scripts"/check-*.sh; do
     while IFS= read -r f; do
       # Skip self
       [ "$(basename "$f")" = "check-orphan-gates.sh" ] && [ "$SCAN_ROOT" = "$REPO_ROOT" ] && continue
-      if grep -v '^\s*#' "$f" 2>/dev/null | grep -q "$bname"; then
+      if grep -v '^\s*#' "$f" 2>/dev/null | grep "$bname" >/dev/null; then
         local_found=1
         break
       fi
@@ -392,7 +392,7 @@ for script_path in "$SCAN_ROOT/scripts"/check-*.sh; do
   # (c) .yml workflow files, non-comment lines
   if [ "$local_found" -eq 0 ]; then
     while IFS= read -r f; do
-      if grep -v '^\s*#' "$f" 2>/dev/null | grep -q "$bname"; then
+      if grep -v '^\s*#' "$f" 2>/dev/null | grep "$bname" >/dev/null; then
         local_found=1
         break
       fi

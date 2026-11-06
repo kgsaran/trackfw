@@ -1623,11 +1623,11 @@ for runtime in go; do  # ML-3A (v8): node py removed
   # "HEAD" instead of objectSHA → P4 still passes → exit 0, but message =
   # "head-only" → this assertion fires.
   tags_message_s16=$(json_field "$call_log/01-tags-request.json" message)
-  if ! echo "$tags_message_s16" | grep -qF 'forge-only'; then
+  if ! echo "$tags_message_s16" | grep -F 'forge-only' >/dev/null; then
     fail "release-tag-parity/$RT_LABEL/$runtime" "provenance: tag message must contain 'forge-only' (from forge commit CHANGELOG); got: $tags_message_s16"
     continue
   fi
-  if echo "$tags_message_s16" | grep -qF 'head-only'; then
+  if echo "$tags_message_s16" | grep -F 'head-only' >/dev/null; then
     fail "release-tag-parity/$RT_LABEL/$runtime" "provenance: tag message must NOT contain 'head-only' (from working-tree CHANGELOG); got: $tags_message_s16"
     continue
   fi
@@ -1784,14 +1784,14 @@ fi
 # If this fails, the replace ref is broken and the scenario proves nothing.
 _v2_content=$(env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "HOME=$dest" \
   git -C "$fixture" show "${FORGE_ONLY_SHA_S17}:CHANGELOG.md" 2>/dev/null || true)
-if ! echo "$_v2_content" | grep -qF "refs-replace-forged"; then
+if ! echo "$_v2_content" | grep -F "refs-replace-forged" >/dev/null; then
   fail "release-tag-parity/$RT_LABEL/setup" "vacuity guard V2: raw git show (no flag) returned '$_v2_content' — replace ref not working, attack not genuine"
 fi
 # Vacuity guard V3: fix works — git --no-replace-objects show must return "forge-only".
 # If this fails, --no-replace-objects does not suppress the redirect on this git version.
 _v3_content=$(env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "HOME=$dest" \
   git -C "$fixture" --no-replace-objects show "${FORGE_ONLY_SHA_S17}:CHANGELOG.md" 2>/dev/null || true)
-if ! echo "$_v3_content" | grep -qF "forge-only"; then
+if ! echo "$_v3_content" | grep -F "forge-only" >/dev/null; then
   fail "release-tag-parity/$RT_LABEL/setup" "vacuity guard V3: git --no-replace-objects show returned '$_v3_content' — flag does not suppress replace redirect"
 fi
 # Working-tree version check: main must have 9.9.7 (not 9.9.9) — proves version came from forge commit.
@@ -1820,11 +1820,11 @@ for runtime in go; do  # ML-3A (v8): node py removed
   # --no-replace-objects, each runtime fires independently; assert_three_way catches
   # the single-stack revert. (Scenario 158 in check-gates-falsify.sh proves P4.)
   tags_message_s17=$(json_field "$call_log/01-tags-request.json" message)
-  if ! echo "$tags_message_s17" | grep -qF 'forge-only'; then
+  if ! echo "$tags_message_s17" | grep -F 'forge-only' >/dev/null; then
     fail "release-tag-parity/$RT_LABEL/$runtime" "provenance: tag message must contain 'forge-only' (--no-replace-objects reads forge commit); got: $tags_message_s17"
     continue
   fi
-  if echo "$tags_message_s17" | grep -qF 'refs-replace-forged'; then
+  if echo "$tags_message_s17" | grep -F 'refs-replace-forged' >/dev/null; then
     fail "release-tag-parity/$RT_LABEL/$runtime" "provenance: tag message must NOT contain 'refs-replace-forged' (attacker content must be blocked); got: $tags_message_s17"
     continue
   fi
@@ -1841,12 +1841,12 @@ if [[ ! -f "$fixture/.git/refs/replace/$FORGE_ONLY_SHA_S17" ]]; then
   fail "release-tag-parity/$RT_LABEL/post-run" "post-run guard: .git/refs/replace/$FORGE_ONLY_SHA_S17 was removed during CLI invocations — scenario result may be vacuous"
 fi
 _postrun_ref_content=$(cat "$fixture/.git/refs/replace/$FORGE_ONLY_SHA_S17")
-if ! echo "$_postrun_ref_content" | grep -qF "$ATTACKER_SHA_S17"; then
+if ! echo "$_postrun_ref_content" | grep -F "$ATTACKER_SHA_S17" >/dev/null; then
   fail "release-tag-parity/$RT_LABEL/post-run" "post-run guard: replace ref content changed (expected $ATTACKER_SHA_S17, got $_postrun_ref_content)"
 fi
 _postrun_content=$(env "GIT_CONFIG_GLOBAL=$dest/empty-gitconfig" "GIT_CONFIG_SYSTEM=/dev/null" "HOME=$dest" \
   git -C "$fixture" show "${FORGE_ONLY_SHA_S17}:CHANGELOG.md" 2>/dev/null || true)
-if ! echo "$_postrun_content" | grep -qF "refs-replace-forged"; then
+if ! echo "$_postrun_content" | grep -F "refs-replace-forged" >/dev/null; then
   fail "release-tag-parity/$RT_LABEL/post-run" "post-run guard: raw git show (no flag) no longer returns 'refs-replace-forged' after CLI invocations — attack vector vanished, scenario may be vacuous"
 fi
 assert_three_way "$RT_LABEL"

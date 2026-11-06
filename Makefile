@@ -222,6 +222,10 @@ parity-rest: build
 	# de mordida (S1: guarda do fork; S2: guarda do shard ausente). Sem RUN real:
 	# usa gh falso em $SCRATCH, nao chama a API do GitHub.
 	scripts/check-falsify-recalibrate.sh
+	# ML-1D (ADR-2026-11-06 D5): | grep -q sob pipefail causa 141 (SIGPIPE) intermitente.
+	# A forma correta é | grep ... >/dev/null. Este gate impede a reintrodução do padrão.
+	bash scripts/check-no-grep-q-under-pipefail.sh --self-test
+	bash scripts/check-no-grep-q-under-pipefail.sh
 
 parity-falsify: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/run-gates-falsify-parallel.sh

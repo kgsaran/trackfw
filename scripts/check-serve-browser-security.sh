@@ -101,7 +101,7 @@ print(subprocess.list2cmdline(argv))
 
 if [[ -z "$ZONE_CMDLINE" ]]; then
   fail "zone-id-injection/vulnerable-arm" "list2cmdline check failed — cannot measure the attack vector (fail-closed)"
-elif echo "$ZONE_CMDLINE" | grep -q '&' && ! echo "$ZONE_CMDLINE" | grep -q '"&"'; then
+elif echo "$ZONE_CMDLINE" | grep '&' >/dev/null && ! echo "$ZONE_CMDLINE" | grep '"&"' >/dev/null; then
   ok "zone-id-injection/vulnerable-arm (list2cmdline leaves & unquoted — attack vector confirmed real, gate discriminates)"
 else
   fail "zone-id-injection/vulnerable-arm" "expected unquoted & in list2cmdline output but got: $ZONE_CMDLINE"

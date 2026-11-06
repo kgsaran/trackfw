@@ -315,7 +315,7 @@ jobs:
 
           # Discriminar mecanismo de falha
           DLL_EXIT_CODE=-1073741515
-          if echo "$GO_OUT" | grep -q "executable file not found" || echo "$PY_OUT" | grep -qi "WinError 2\|FileNotFoundError\|No such file"; then
+          if echo "$GO_OUT" | grep "executable file not found" >/dev/null || echo "$PY_OUT" | grep -i "WinError 2\|FileNotFoundError\|No such file" >/dev/null; then
             echo "  B2 mecanismo: PATHEXT miss — processo nunca foi lançado (esperado)"
           elif [[ $GO_RC -eq $DLL_EXIT_CODE || $PY_RC -eq $DLL_EXIT_CODE ]]; then
             echo "  B2 mecanismo: DLL ausente (0xC0000135) — processo foi lançado mas morreu sem DLLs"
