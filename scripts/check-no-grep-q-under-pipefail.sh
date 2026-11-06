@@ -21,6 +21,7 @@
 #   bash scripts/check-no-grep-q-under-pipefail.sh --self-test
 #   bash scripts/check-no-grep-q-under-pipefail.sh --scan-root /path/to/dir
 #   # --scan-root DIR: scans DIR/*.sh AND DIR/*.yml (flat, used by --self-test)
+#   #   Both must have at least one file; the gate fails (rc=2) if either set is empty.
 
 set -euo pipefail
 
@@ -84,6 +85,9 @@ if [[ "$MODE" == "self-test" ]]; then
   }
 
   echo "--- self-test: check-no-grep-q-under-pipefail ---"
+
+  # Persistent benign .yml so the yml anti-vacuity guard does not trip on .sh tests.
+  printf '# benign workflow\n' > "$tmpdir/__benign__.yml"
 
   # Flags built via variables so the script source contains no literal pipe-grep-q.
   _q=q
@@ -158,6 +162,14 @@ if [[ "$MODE" == "self-test" ]]; then
     "yml"
 
   rm -f "$tmpdir/__benign__.sh"
+  rm -f "$tmpdir/__benign__.yml"
+
+  # T_no_yml: diretório sem *.yml/*.yaml mas com *.sh válido → REPROVA (guarda de vacuidade yml)
+  # Reconciliação: com .sh presente e nenhum .yml no --scan-root, o gate sai com rc!=0;
+  # o contra-braço (cópia sem a guarda) mostra que, sem ela, o scan sairia rc=0 no mesmo cenário.
+  run_test "t-no-yml-vacuity" \
+    "$(printf '#!/usr/bin/env bash\necho ok')" \
+    "fail"
 
   echo "---"
   echo "Results: $PASS passed, $FAIL failed"
@@ -222,6 +234,12 @@ done
 # todo | grep -q em workflow e reprovado independentemente do shell: declarado.
 # ---------------------------------------------------------------------------
 mapfile -t WORKFLOWS < <(find "$WORKFLOW_DIR" -maxdepth 1 \( -name '*.yml' -o -name '*.yaml' \) -type f 2>/dev/null | sort)
+
+# Anti-vacuity guard: fail if no workflow files found (R12 — ML-2D)
+if [[ ${#WORKFLOWS[@]} -eq 0 ]]; then
+  echo "$SELF: ERROR: no *.yml/*.yaml files found in $WORKFLOW_DIR" >&2
+  exit 2
+fi
 
 for wf in "${WORKFLOWS[@]}"; do
   while IFS= read -r lineno_and_line; do
