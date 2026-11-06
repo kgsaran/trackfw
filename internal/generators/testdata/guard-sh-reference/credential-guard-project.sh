@@ -152,7 +152,11 @@ case "$ROADMAP_DIR" in
 esac
 
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-MSG="Possible $MATCH detected in tool payload - review before materializing credentials in plain text."
+if [ -n "$MATCH_FILE" ]; then
+  MSG="Possible $MATCH detected in a file referenced by the command - review before materializing credentials in plain text."
+else
+  MSG="Possible $MATCH detected in tool payload - review before materializing credentials in plain text."
+fi
 MSG_ESC=$(echo "$MSG" | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')
 
 mkdir -p "$ROADMAP_DIR"

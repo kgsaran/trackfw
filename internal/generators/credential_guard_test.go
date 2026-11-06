@@ -853,6 +853,123 @@ func TestSyntheticTokenFragments_NoneMatchCredentials(t *testing.T) {
 // mutation counter-arm (run in scratchpad per ML-1B protocol, not committed) confirms
 // that detection depends on each specific pattern — altering the pattern causes the
 // corresponding detection to fail.
+// TestCredentialGuardScript_SecondLayer_AttentionMessageParityNoPath asserts that
+// when a JWT is found via the second detection layer (cat <file>) in warn mode,
+// both the .sh fixture and the Go binary write the same attention JSON message,
+// and neither message contains the fixture file path (D1 — ADR-2026-11-06).
+//
+// Assertion: with a finding from a referenced file in warn mode (both project and
+// global scopes), the .sh oracle's attention signal and the Go binary's attention signal
+// carry the same origin ("in a file referenced by the command") and neither exposes
+// the file path (D1 — ADR-2026-11-06).
+func TestCredentialGuardScript_SecondLayer_AttentionMessageParityNoPath(t *testing.T) {
+	cases := []struct {
+		name   string
+		global bool
+	}{
+		{"project", false},
+		{"global", true},
+	}
+
+	payload := `{"tool_name":"Bash","tool_input":{"command":"cat token-fixture.txt"}}`
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			// --- Bash arm ---
+			dirBash := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dirBash, "trackfw.yaml"), []byte("credential_guard:\n  mode: warn\n"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Join(dirBash, "docs", "roadmaps"), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dirBash, "token-fixture.txt"), []byte(syntheticJWT+"\n"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			scriptBash := copyFrozenCredentialGuardFixture(t, dirBash, tc.global)
+
+			var errBuf strings.Builder
+			bashCmd := exec.Command("bash", scriptBash)
+			bashCmd.Dir = dirBash
+			bashCmd.Stdin = strings.NewReader(payload)
+			bashCmd.Env = injectGuardBinaryPath(t, os.Environ())
+			bashCmd.Stderr = &errBuf
+			var rcBash int
+			if err := bashCmd.Run(); err != nil {
+				if exitErr, ok := err.(*exec.ExitError); ok {
+					rcBash = exitErr.ExitCode()
+				} else {
+					t.Fatalf("bash arm falhou: %v", err)
+				}
+			}
+			if rcBash != 0 {
+				t.Errorf("bash arm: rc want 0, got %d (stderr: %s)", rcBash, errBuf.String())
+			}
+
+			rawBash, err := os.ReadFile(filepath.Join(dirBash, "docs", "roadmaps", ".trackfw-credential-guard.json"))
+			if err != nil {
+				t.Fatalf("bash: arquivo de atenção não encontrado: %v", err)
+			}
+			var attBash map[string]interface{}
+			if err := json.Unmarshal(rawBash, &attBash); err != nil {
+				t.Fatalf("bash: JSON de atenção inválido: %v (%s)", err, rawBash)
+			}
+			msgBash, _ := attBash["message"].(string)
+			if msgBash == "" {
+				t.Fatal("bash: mensagem de atenção vazia")
+			}
+			if !strings.Contains(msgBash, "detected in a file referenced by the command") {
+				t.Errorf("bash: esperava 'detected in a file referenced by the command', got %q", msgBash)
+			}
+
+			// --- Go arm (dir separado para não sobrescrever o arquivo do braço bash) ---
+			dirGo := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dirGo, "trackfw.yaml"), []byte("credential_guard:\n  mode: warn\n"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Join(dirGo, "docs", "roadmaps"), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dirGo, "token-fixture.txt"), []byte(syntheticJWT+"\n"), 0644); err != nil {
+				t.Fatal(err)
+			}
+
+			rcGo, _, _ := runGuardBinaryCredential(t, dirGo, payload, tc.global)
+			if rcGo != 0 {
+				t.Errorf("Go arm: rc want 0, got %d", rcGo)
+			}
+			rawGo, err := os.ReadFile(filepath.Join(dirGo, "docs", "roadmaps", ".trackfw-credential-guard.json"))
+			if err != nil {
+				t.Fatalf("Go: arquivo de atenção não encontrado: %v", err)
+			}
+			var attGo map[string]interface{}
+			if err := json.Unmarshal(rawGo, &attGo); err != nil {
+				t.Fatalf("Go: JSON de atenção inválido: %v (%s)", err, rawGo)
+			}
+			msgGo, _ := attGo["message"].(string)
+			if msgGo == "" {
+				t.Fatal("Go: mensagem de atenção vazia")
+			}
+			if !strings.Contains(msgGo, "detected in a file referenced by the command") {
+				t.Errorf("Go: esperava 'detected in a file referenced by the command', got %q", msgGo)
+			}
+
+			// Parity — only message; timestamps differ.
+			if msgBash != msgGo {
+				t.Errorf("mensagem de atenção diverge:\n  bash: %q\n  go:   %q", msgBash, msgGo)
+			}
+			// D1: nem o caminho absoluto nem o basename devem aparecer.
+			if strings.Contains(msgBash, "token-fixture.txt") {
+				t.Errorf("bash: mensagem contém o caminho do arquivo: %q", msgBash)
+			}
+			if strings.Contains(msgGo, "token-fixture.txt") {
+				t.Errorf("Go: mensagem contém o caminho do arquivo: %q", msgGo)
+			}
+		})
+	}
+}
+
 func TestSyntheticTokenAssembled_Detected(t *testing.T) {
 	dir, _ := setupCredentialGuardFixture(t, "credential_guard:\n  mode: block\n")
 

@@ -60,18 +60,18 @@ REQ: docs/req/REQ-2026-11-06-guard-de-credencial-atribui-ao-payload-o-achado-que
 **Auditoria:** o executor chamou de "pré-existentes" 15 falhas em `internal/generators` que vinham do ML-1A em curso; com os dois MLs juntos, a suíte passa. O executor escreveu uma nota de vault fora do escopo, e a própria nota trazia o cabeçalho PEM literal num bloco de código; o arquiteto removeu o literal.
 
 ### ML-1C — Oráculo `.sh` com a mensagem de atenção nova (apolo-tf) — AC1
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Files affected:** `internal/generators/testdata/guard-sh-reference/credential-guard-project.sh`, `internal/generators/testdata/guard-sh-reference/credential-guard-global.sh`, `internal/generators/guard_parity_helper_test.go`, `internal/generators/credential_guard_test.go`
 **Acceptance criteria:**
-- [ ] a mensagem de atenção dos dois scripts de referência distingue a origem como o Go (`in a file referenced by the command`, sem caminho)
-- [ ] um teste de paridade exercita o sinal de atenção com achado de arquivo no modo warn, comparando Go com `.sh`
-- [ ] `go test ./internal/generators/` verde
+- [x] a mensagem de atenção dos dois scripts de referência distingue a origem como o Go (`in a file referenced by the command`, sem caminho)
+- [x] um teste de paridade exercita o sinal de atenção com achado de arquivo no modo warn, comparando Go com `.sh`
+- [x] `go test ./internal/generators/` verde
 
 ## Wave 2 — Red team
 > Dependencies: Wave 1 completa.
 
 ### ML-2A — Red team (hades-tf)
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:** `docs/seguranca/2026-11-06-redteam-guard-credencial-origem-do-achado.md`
 **Acceptance criteria:**
 - [ ] cada risco da Wave 0 atacado com medição
