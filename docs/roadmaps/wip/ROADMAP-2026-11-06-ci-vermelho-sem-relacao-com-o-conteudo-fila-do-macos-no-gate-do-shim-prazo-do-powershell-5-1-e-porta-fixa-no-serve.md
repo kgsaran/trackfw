@@ -77,7 +77,7 @@ Três causas, um ML para cada. O diagnóstico está no ADR-2026-11-06. Varredura
 > Dependencies: Wave 1 completa.
 
 ### ML-2A — Red team da classificação de diff (hades-tf)
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:** `docs/seguranca/2026-11-06-redteam-ci-vermelho-por-infraestrutura.md`
 **Acceptance criteria:**
 - [ ] cada modo de evasão da Wave 0 tentado contra o script, com o resultado medido em fixture local (`git write-tree` em diretório temporário, sem PR nem branch)
