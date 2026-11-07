@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-11-06
 req: "docs/req/REQ-2026-11-06-guard-de-credencial-atribui-ao-payload-o-achado-que-veio-de-arquivo-referenciado-e-trata-glob-e-leitura-recursiva-de-forma-diferente.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: guard de credencial atribui ao payload o achado que veio de arquivo referenciado e trata glob e leitura recursiva de forma diferente
 
-> Created: 2026-11-06 | Status: wip
+> Created: 2026-11-06 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-11-06-guard-de-credencial-atribui-ao-payload-o-achado-que-veio-de-arquivo-referenciado-e-trata-glob-e-leitura-recursiva-de-forma-diferente.md -->
