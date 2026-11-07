@@ -152,6 +152,9 @@ in_heredoc == 1 {
     # --- Within function ---
     brace_depth += brace_net(line)
     if (brace_depth <= 0) {
+        # Process this line's locals and trap before flushing (handles one-liner functions)
+        collect_lvars(line)
+        store_trap(line, FNR)
         # Function exit: check all deferred traps against full locals set
         flush_traps(FILENAME)
         in_func = 0; brace_depth = 0
@@ -200,10 +203,10 @@ function brace_net(s,    n, i, c, in_sq, in_dq, net) {
 
 # Parse local/declare/typeset declarations and add var names to lvars[]
 function collect_lvars(line,    flags_r, n, i, t, v) {
-    # Match keyword at start of line (optional whitespace) or after semicolon
+    # Match keyword at start of line (optional whitespace), after semicolon, or after { (one-liner)
     if (match(line, /^[[:space:]]*(local|declare|typeset)[[:space:]]+/)) {
         flags_r = substr(line, RSTART + RLENGTH)
-    } else if (match(line, /;[[:space:]]*(local|declare|typeset)[[:space:]]+/)) {
+    } else if (match(line, /[;{][[:space:]]*(local|declare|typeset)[[:space:]]+/)) {
         flags_r = substr(line, RSTART + RLENGTH)
     } else {
         return
@@ -230,11 +233,15 @@ function collect_lvars(line,    flags_r, n, i, t, v) {
 }
 
 # Store a single-quoted EXIT/0 trap for deferred checking at function exit
-function store_trap(line, lineno,    rest, bdy_end, bdy, after, sigs, n, i, has_exit) {
+function store_trap(line, lineno,    rest, bdy_end, bdy, after, sigs, n, i, has_exit, sig) {
     if (!match(line, /trap[[:space:]]+/)) return
     pos = RSTART
     if (pos > 1 && substr(line, pos-1, 1) ~ /[A-Za-z0-9_]/) return
     rest = substr(line, pos + RLENGTH)
+    # Consume optional end-of-options separator: trap -- 'body' SIG
+    if (substr(rest, 1, 2) == "--") {
+        sub(/^--[[:space:]]+/, "", rest)
+    }
     if (substr(rest, 1, 1) != sq) return
 
     bdy_end = index(substr(rest, 2), sq)
@@ -246,7 +253,10 @@ function store_trap(line, lineno,    rest, bdy_end, bdy, after, sigs, n, i, has_
     n = split(after, sigs, /[[:space:]]+/)
     has_exit = 0
     for (i = 1; i <= n; i++) {
-        if (sigs[i] == "EXIT" || sigs[i] == "0") { has_exit = 1; break }
+        # Strip trailing non-alphanumeric (e.g. semicolon in one-liner: EXIT; })
+        sig = sigs[i]
+        sub(/[^A-Za-z0-9].*$/, "", sig)
+        if (sig == "EXIT" || sig == "0") { has_exit = 1; break }
     }
     if (!has_exit) return
 
@@ -547,6 +557,46 @@ sentinel_trap() { trap '"'"'echo ok'"'"' EXIT; }' 0
   trap "rm -rf -- $q" EXIT
 }
 sentinel_trap() { trap '"'"'echo ok'"'"' EXIT; }' 0
+
+  # P14: trap -- 'body' EXIT with local var — end-of-options separator consumed
+  # Reconciliation: affirms that `trap --` with single-quoted body citing a local variable
+  # is correctly detected after consuming the `--` end-of-options separator in store_trap
+  run_case "P14-trap-double-dash" \
+'f() {
+  local x
+  x=$(mktemp -d)
+  trap -- '"'"'rm -rf "$x"'"'"' EXIT
+}
+sentinel_trap() { trap '"'"'echo ok'"'"' EXIT; }' 1 "x"
+
+  # P15: one-liner function with local and single-quoted trap — flush after collect
+  # Reconciliation: affirms that a function with signature and entire body on one line is
+  # detected; collect_lvars and store_trap process the line before flush_traps at brace_depth=0
+  run_case "P15-oneliner-local-trap" \
+'f() { local x; x=$(mktemp -d); trap '"'"'rm -rf "$x"'"'"' EXIT; }
+sentinel_trap() { trap '"'"'echo ok'"'"' EXIT; }' 1 "x"
+
+  # N8: one-liner function with EXIT trap but no local variable — empty lvars, no violation
+  # Reconciliation: affirms that a one-liner function with an EXIT trap that references no
+  # local variable is not flagged; empty lvars set after collect_lvars produces no violation
+  run_case "N8-oneliner-no-local" \
+'f() { trap '"'"'echo hi'"'"' EXIT; }
+sentinel_trap() { trap '"'"'echo ok'"'"' EXIT; }' 0
+
+  # N9: one-liner function in fixed form (double-quoted body with printf -v q) — not flagged
+  # Reconciliation: affirms that the corrected form in a one-liner is not flagged;
+  # store_trap only tracks single-quoted bodies, so double-quoted trap body is skipped
+  run_case "N9-oneliner-fix-form" \
+'f() { local x; x=1; local q; printf -v q '"'"'%q'"'"' "$x"; trap "rm -rf -- $q" EXIT; }
+sentinel_trap() { trap '"'"'echo ok'"'"' EXIT; }' 0
+
+  # N10: trap -- at script level with global var — not flagged (not inside a function)
+  # Reconciliation: affirms that trap -- at script level with a global variable is not
+  # flagged; the gate only tracks locals inside functions; script-level scope is ignored
+  run_case "N10-trap-double-dash-global" \
+'G=$(mktemp -d)
+trap -- '"'"'rm -rf "$G"'"'"' EXIT
+sentinel_other() { trap '"'"'echo ok'"'"' EXIT; }' 0
 
   # --- VACUITY GUARD ---
   # Vac1: corpus with no trap statements → gate fails

@@ -82,15 +82,17 @@ bash scripts/check-orphan-gates.sh --self-test
 **Auditoria:** índice limpo, só o relatório novo. Os 7 itens da Wave 0 passam; contra-braço nos três sítios e comportamento nos dois bash limpos. Dois falsos negativos do gate, nenhum presente no corpus: (1) `trap -- '...' EXIT` (o `store_trap` exige a aspa logo depois de `trap `); (2) função de uma linha `f() { local x; trap '...$x' EXIT; }` (o `brace_net` da linha dá 0 e o `flush_traps` roda antes do `store_trap`). Defeito conhecido se corrige agora: viram o ML-2B.
 
 ### ML-2B — Corretivo dos dois falsos negativos do gate (ares-tf) — AC3
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Files affected:** `scripts/check-no-trap-local-var.sh`
 **Acceptance criteria:**
-- [ ] `trap -- 'rm -rf "$x"' EXIT` com `x` local é acusado
-- [ ] função de uma linha `f() { local x; trap 'rm -rf "$x"' EXIT; }` é acusada; `f() { trap 'echo hi' EXIT; }` e a forma corrigida de uma linha com aspas duplas não são
-- [ ] braços novos no `--self-test`, cada um com a frase `Reconciliation:`; contra-braço: sem a correção, os braços novos reprovam
-- [ ] o gate continua com rc=0 no corpus e os 21 braços antigos passam; `make quality` verde
+- [x] `trap -- 'rm -rf "$x"' EXIT` com `x` local é acusado
+- [x] função de uma linha `f() { local x; trap 'rm -rf "$x"' EXIT; }` é acusada; `f() { trap 'echo hi' EXIT; }` e a forma corrigida de uma linha com aspas duplas não são
+- [x] braços novos no `--self-test`, cada um com a frase `Reconciliation:`; contra-braço: sem a correção, os braços novos reprovam
+- [x] o gate continua com rc=0 no corpus e os 21 braços antigos passam; `make quality` verde
 
 **Gates da wave:**
 ```bash
 test -s docs/seguranca/2026-11-07-redteam-trap-exit-variavel-local.md
 ```
+
+**Auditoria:** só o gate mudou, índice limpo. Quatro ajustes no awk: `store_trap` consome `--`; `collect_lvars` aceita `local` depois de `{`; a linha que fecha a função é processada antes do `flush_traps`; o token de sinal perde o `;`/`}` que vem depois. Fixtures próprias do arquiteto: `trap --` com local → rc=1 (`:4:x`); função de uma linha → rc=1 (`:2:x`); trap numa função citando local de outra → rc=0. Self-test 26/26, corpus rc=0. Contra-braço do executor: sem as correções, P14 e P15 passam despercebidos; `cmp` idêntico na restauração. `make quality` rc=0 (executor).
