@@ -7,6 +7,40 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [11.5.1] - 2026-11-07
+
+Guard de credencial: a mensagem diz de onde veio o achado, e o glob passa a ser resolvido pela pasta da ferramenta (#672).
+
+### Breaking Changes
+
+Nenhum.
+
+### Fixed
+
+- **O guard de credencial atribuía ao comando um achado que vinha de um arquivo lido por ele** (#672).
+  Agora a mensagem diz `detected in file <path> referenced by the command` quando a credencial está no
+  conteúdo de um arquivo, e `detected in tool payload` quando está no próprio comando. O caminho é
+  sanitizado (caracteres de controle, bidi e UTF-8 inválido viram `?`); o sinal de atenção do board
+  diz a origem sem o caminho.
+- **`cat arquivo.txt` era bloqueado e `cat *.txt` passava** (#672). O glob relativo era expandido na
+  pasta do processo, e o argumento nomeado, na pasta da ferramenta (`tool_info.cwd` ou `cwd` na raiz
+  do payload). Os dois usam a pasta da ferramenta, e o caminho dela é tratado como literal: `[`, `*` e
+  `?` no nome da pasta não viram padrão.
+- **As fixtures de teste do próprio repositório disparavam o guard** (#672): o token é montado em tempo
+  de execução, e um teste impede que um literal volte.
+
+### Changed
+
+- **Cobertura da segunda camada documentada** no `trackfw guard credential --help` e em
+  `docs/cli-parity.md`: argumentos de `cat`, `head`, `tail`, `jq` e `grep`, e alvos de redirecionamento.
+  Leitura recursiva de diretório (`grep -r`), `rg`, `find -exec`, `xargs` e copiar-e-ler não são cobertos.
+
+### Internal
+
+- CI vermelho só por conteúdo (#669): dispensa do `shim-byte-identity` para diff inerte, prazo do
+  PowerShell calibrado pelo aquecimento com nova tentativa, porta livre nos testes do `serve` e
+  `grep -q` fora de `pipefail`.
+
 ## [11.5.0] - 2026-11-05
 
 Guards relatados pelo primeiro usuário externo (#662, #663).
