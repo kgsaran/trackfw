@@ -30,17 +30,23 @@ Reprodução do arquiteto em 2026-11-07, função com `local tmp` e `trap 'rm -r
 
 O CI roda em `ubuntu-latest` (bash 5). O caminho de sucesso do self-test sai por `exit` explícito dentro da função, por isso o defeito nunca apareceu.
 
-Varredura dos traps de `scripts/*.sh` (variável do trap declarada `local` na função que o instala): dois sítios.
+Varredura dos traps de `scripts/*.sh` (variável do trap declarada `local` na função que o instala): três sítios. A varredura inicial do arquiteto achou dois; o threat model da Wave 0 achou o terceiro (a saída do grep tinha sido truncada com `head -40`).
 
 - `scripts/check-shim-diff-applies.sh`, `run_self_test` (`tmp` e `saved_github_output`);
-- `scripts/check-req-roadmap-rule-is-status-aware.sh`, `self_test` (`WORK`, sob `set -uo pipefail`).
+- `scripts/check-req-roadmap-rule-is-status-aware.sh`, `self_test` (`WORK`, sob `set -uo pipefail`);
+- `scripts/check-orphan-gates.sh`, `self_test` (`WORK`, sob `set -uo pipefail`).
+
+O threat model mediu também um terceiro caminho: se a função **retorna** normalmente e o processo sai depois, o trap vaza nas duas versões do bash.
+
+**Mesmo sintoma, outra causa (entra nesta REQ):** em `scripts/check-validate-rule-pins.sh`, o `trap 'rm -rf "$FENCE_TMP"' EXIT` da linha ~910 substitui o `trap 'rm -rf "$TMP_DIR"' EXIT` da linha ~35, no nível do script. O `$TMP_DIR` vaza em toda execução.
 
 Varredura de issues abertas e REQs abertas: nenhuma com o mesmo mecanismo. O vault não tem nota sobre ele.
 
 ## Acceptance Criteria
-- [ ] **AC1.** Nos dois sítios, o trap não depende de variável `local` que deixa de existir na saída: o valor é capturado na instalação do trap, com quoting seguro (`printf %q`), ou a variável deixa de ser `local`. Medido no bash 5 com falha forçada (por `set -e` e por `set -u`) numa cópia de cada script: rc diferente de zero, nenhum `unbound variable` vindo do trap e nenhum diretório temporário sobrando.
-- [ ] **AC2.** O caminho de sucesso dos dois self-tests continua com o mesmo resultado (`check-shim-diff-applies.sh --self-test`: 27 passam; `check-req-roadmap-rule-is-status-aware.sh --self-test`: 4 braços passam).
-- [ ] **AC3.** Um gate novo, ligado em `parity-rest`, reprova quando um `trap` com corpo entre aspas simples cita uma variável declarada `local` na função que instala o trap. Ele varre todos os `.sh` versionados (`git ls-files '*.sh'`), tem `--self-test` com braço positivo e negativo, e uma guarda de vacuidade (reprova se não encontrar nenhum `trap`). Contra-braço: com qualquer um dos dois sítios revertido, o gate reprova.
+- [ ] **AC1.** Nos três sítios, o trap não depende de variável `local` que deixa de existir na saída: o valor é capturado na instalação do trap, com quoting seguro (`printf %q`), ou a variável deixa de ser `local`. Medido no bash 5 com falha forçada (por `set -e` e por `set -u`) numa cópia de cada script: rc diferente de zero, nenhum `unbound variable` vindo do trap e nenhum diretório temporário sobrando.
+- [ ] **AC2.** O caminho de sucesso dos três self-tests continua com o mesmo resultado (`check-shim-diff-applies.sh --self-test`: 27 passam; `check-req-roadmap-rule-is-status-aware.sh --self-test`: 4 braços passam; `check-orphan-gates.sh --self-test`: mesmo resultado de antes).
+- [ ] **AC2b.** `check-validate-rule-pins.sh` remove os dois diretórios temporários ao sair: um trap só, que limpa `$TMP_DIR` e `$FENCE_TMP`. Medido por existência depois de uma execução.
+- [ ] **AC3.** Um gate novo, ligado em `parity-rest`, reprova quando um `trap` com corpo entre aspas simples cita uma variável declarada `local` na função que instala o trap. Ele varre todos os `.sh` versionados (`git ls-files '*.sh'`), tem `--self-test` com braço positivo e negativo, e uma guarda de vacuidade (reprova se não encontrar nenhum `trap`). Contra-braço: com qualquer um dos três sítios revertido, o gate reprova.
 - [ ] **AC4.** `make quality` verde.
 
 ## Negative scope
@@ -48,6 +54,7 @@ Varredura de issues abertas e REQs abertas: nenhuma com o mesmo mecanismo. O vau
 - Não muda o comportamento dos dois gates fora do caminho de saída (casos, mensagens, rc).
 - Não trata a parte 5 do self-test do shim no Windows (nome de arquivo com quebra de linha, inconstruível pelo git do Windows). O `classify` roda em ubuntu, e o relato não pede nada sobre isso.
 - Não reescreve os outros traps do repositório, que estão no nível do script ou citam variável global.
+- O gate não detecta sobreposição de trap EXIT no nível do script (`check-channels-content.sh` tem três, em blocos de modo exclusivos); o único caso real, `check-validate-rule-pins.sh`, é corrigido à mão.
 - Não cobre `trap` com corpo entre aspas duplas nem trap instalado via `eval`; o gate declara isso como residual.
 
 ## Linked ADR
