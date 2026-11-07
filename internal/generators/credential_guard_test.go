@@ -335,8 +335,12 @@ func TestGlobalCredentialGuardScript_WritesAttentionOnlyWhenRoadmapsDirExists(t 
 // modos de credential_guard.mode.
 // ---------------------------------------------------------------------------
 
-const syntheticJWT = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.abc123def456ghi789"
-const syntheticAWSKey = "AKIAABCDEFGHIJKLMNOP"
+// syntheticJWT and syntheticAWSKey are assembled from fragments so that no source
+// literal matches a credential pattern when the guard scans this file (ADR D3, REQ AC3).
+// Each fragment alone produces credScanInput("") — verified by TestSyntheticTokenFragments_NoneMatchCredentials.
+// The assembled value is a syntactically valid JWT / AWS access key detected by the guard.
+const syntheticJWT = "eyJ" + "hbGciOiJIUzI1NiJ9" + "." + "eyJzdWIiOiJ0ZXN0In0" + "." + "abc123def456ghi789"
+const syntheticAWSKey = "AKIA" + "ABCDEFGHIJKLMNOP"
 
 func setupCredentialGuardFixture(t *testing.T, trackfwYAML string) (dir, scriptPath string) {
 	t.Helper()
@@ -790,5 +794,215 @@ func TestCredentialGuardScript_GeneratedScript_WindowsPathRedirectDetectsJWTInFi
 	}
 	if !strings.Contains(stderr, "JWT") {
 		t.Errorf("esperava menção de JWT em stderr (segunda camada detectou via redirect), got: %s", stderr)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ML-1B: AC3 counter-arm tests (ADR D3, REQ AC3).
+// ---------------------------------------------------------------------------
+
+// TestSyntheticTokenFragments_NoneMatchCredentials verifies that each individual
+// fragment used to build syntheticJWT and syntheticAWSKey does NOT trigger the
+// credential guard when echoed as a command payload.
+//
+// Assertion: each source fragment that makes up syntheticJWT or syntheticAWSKey is
+// individually safe — only the assembled token matches a credential pattern.
+// This is the counter-arm that validates the fragmentation strategy (ADR D3, REQ AC3).
+func TestSyntheticTokenFragments_NoneMatchCredentials(t *testing.T) {
+	dir, _ := setupCredentialGuardFixture(t, "credential_guard:\n  mode: block\n")
+
+	// JWT fragments — each part alone must NOT match the JWT pattern.
+	// The JWT pattern requires eyJ<base64url>.<base64url>.<base64url>.
+	// No single fragment satisfies the full three-part structure.
+	jwtFragments := []string{
+		"eyJ",                  // just the eyJ prefix — no dot-separated parts
+		"hbGciOiJIUzI1NiJ9",   // header body — no eyJ prefix
+		".",                    // dot separator alone
+		"eyJzdWIiOiJ0ZXN0In0", // payload segment — no sig or header
+		"abc123def456ghi789",   // sig segment — no eyJ prefix or dots
+	}
+
+	// AWS access key fragments — each part alone must NOT match AKIA[0-9A-Z]{16}.
+	// The first fragment lacks the 16-char suffix; the second lacks the AKIA prefix.
+	awsFragments := []string{
+		"AKIA",             // prefix only — missing the 16-char body
+		"ABCDEFGHIJKLMNOP", // 16-char body — no AKIA prefix
+	}
+
+	allFragments := append(jwtFragments, awsFragments...)
+
+	for _, frag := range allFragments {
+		frag := frag
+		t.Run("fragment/"+frag, func(t *testing.T) {
+			t.Parallel()
+			payload := `{"tool_name":"Bash","tool_input":{"command":"echo ` + frag + `"}}`
+			code, _, stderr := runGuardBinaryCredential(t, dir, payload, false)
+			if code != 0 {
+				t.Errorf("fragment %q should not match any credential pattern (ADR D3), got rc=%d (stderr=%q)",
+					frag, code, stderr)
+			}
+		})
+	}
+}
+
+// TestSyntheticTokenAssembled_Detected verifies that the assembled syntheticJWT and
+// syntheticAWSKey constants ARE detected by the guard after fragmentation.
+//
+// Assertion: the token assembled at runtime from fragments is detected by the JWT
+// pattern (syntheticJWT) and the AWS access key pattern (syntheticAWSKey). The
+// mutation counter-arm (run in scratchpad per ML-1B protocol, not committed) confirms
+// that detection depends on each specific pattern — altering the pattern causes the
+// corresponding detection to fail.
+// TestCredentialGuardScript_SecondLayer_AttentionMessageParityNoPath asserts that
+// when a JWT is found via the second detection layer (cat <file>) in warn mode,
+// both the .sh fixture and the Go binary write the same attention JSON message,
+// and neither message contains the fixture file path (D1 — ADR-2026-11-06).
+//
+// Assertion: with a finding from a referenced file in warn mode (both project and
+// global scopes), the .sh oracle's attention signal and the Go binary's attention signal
+// carry the same origin ("in a file referenced by the command") and neither exposes
+// the file path (D1 — ADR-2026-11-06).
+func TestCredentialGuardScript_SecondLayer_AttentionMessageParityNoPath(t *testing.T) {
+	cases := []struct {
+		name   string
+		global bool
+	}{
+		{"project", false},
+		{"global", true},
+	}
+
+	payload := `{"tool_name":"Bash","tool_input":{"command":"cat token-fixture.txt"}}`
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			// --- Bash arm ---
+			dirBash := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dirBash, "trackfw.yaml"), []byte("credential_guard:\n  mode: warn\n"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Join(dirBash, "docs", "roadmaps"), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dirBash, "token-fixture.txt"), []byte(syntheticJWT+"\n"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			scriptBash := copyFrozenCredentialGuardFixture(t, dirBash, tc.global)
+
+			var errBuf strings.Builder
+			bashCmd := exec.Command("bash", scriptBash)
+			bashCmd.Dir = dirBash
+			bashCmd.Stdin = strings.NewReader(payload)
+			bashCmd.Env = injectGuardBinaryPath(t, os.Environ())
+			bashCmd.Stderr = &errBuf
+			var rcBash int
+			if err := bashCmd.Run(); err != nil {
+				if exitErr, ok := err.(*exec.ExitError); ok {
+					rcBash = exitErr.ExitCode()
+				} else {
+					t.Fatalf("bash arm falhou: %v", err)
+				}
+			}
+			if rcBash != 0 {
+				t.Errorf("bash arm: rc want 0, got %d (stderr: %s)", rcBash, errBuf.String())
+			}
+
+			rawBash, err := os.ReadFile(filepath.Join(dirBash, "docs", "roadmaps", ".trackfw-credential-guard.json"))
+			if err != nil {
+				t.Fatalf("bash: arquivo de atenção não encontrado: %v", err)
+			}
+			var attBash map[string]interface{}
+			if err := json.Unmarshal(rawBash, &attBash); err != nil {
+				t.Fatalf("bash: JSON de atenção inválido: %v (%s)", err, rawBash)
+			}
+			msgBash, _ := attBash["message"].(string)
+			if msgBash == "" {
+				t.Fatal("bash: mensagem de atenção vazia")
+			}
+			if !strings.Contains(msgBash, "detected in a file referenced by the command") {
+				t.Errorf("bash: esperava 'detected in a file referenced by the command', got %q", msgBash)
+			}
+
+			// --- Go arm (dir separado para não sobrescrever o arquivo do braço bash) ---
+			dirGo := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dirGo, "trackfw.yaml"), []byte("credential_guard:\n  mode: warn\n"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Join(dirGo, "docs", "roadmaps"), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dirGo, "token-fixture.txt"), []byte(syntheticJWT+"\n"), 0644); err != nil {
+				t.Fatal(err)
+			}
+
+			rcGo, _, _ := runGuardBinaryCredential(t, dirGo, payload, tc.global)
+			if rcGo != 0 {
+				t.Errorf("Go arm: rc want 0, got %d", rcGo)
+			}
+			rawGo, err := os.ReadFile(filepath.Join(dirGo, "docs", "roadmaps", ".trackfw-credential-guard.json"))
+			if err != nil {
+				t.Fatalf("Go: arquivo de atenção não encontrado: %v", err)
+			}
+			var attGo map[string]interface{}
+			if err := json.Unmarshal(rawGo, &attGo); err != nil {
+				t.Fatalf("Go: JSON de atenção inválido: %v (%s)", err, rawGo)
+			}
+			msgGo, _ := attGo["message"].(string)
+			if msgGo == "" {
+				t.Fatal("Go: mensagem de atenção vazia")
+			}
+			if !strings.Contains(msgGo, "detected in a file referenced by the command") {
+				t.Errorf("Go: esperava 'detected in a file referenced by the command', got %q", msgGo)
+			}
+
+			// Parity — only message; timestamps differ.
+			if msgBash != msgGo {
+				t.Errorf("mensagem de atenção diverge:\n  bash: %q\n  go:   %q", msgBash, msgGo)
+			}
+			// D1: nem o caminho absoluto nem o basename devem aparecer.
+			if strings.Contains(msgBash, "token-fixture.txt") {
+				t.Errorf("bash: mensagem contém o caminho do arquivo: %q", msgBash)
+			}
+			if strings.Contains(msgGo, "token-fixture.txt") {
+				t.Errorf("Go: mensagem contém o caminho do arquivo: %q", msgGo)
+			}
+		})
+	}
+}
+
+func TestSyntheticTokenAssembled_Detected(t *testing.T) {
+	dir, _ := setupCredentialGuardFixture(t, "credential_guard:\n  mode: block\n")
+
+	cases := []struct {
+		label   string
+		token   string
+		wantMsg string
+	}{
+		{
+			label:   "JWT assembled from fragments detected",
+			token:   syntheticJWT,
+			wantMsg: "JWT",
+		},
+		{
+			label:   "AWS key assembled from fragments detected",
+			token:   syntheticAWSKey,
+			wantMsg: "AWS",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.label, func(t *testing.T) {
+			payload := `{"tool_name":"Bash","tool_input":{"command":"echo ` + tc.token + `"}}`
+			code, _, stderr := runGuardBinaryCredential(t, dir, payload, false)
+			if code != 2 {
+				t.Errorf("%s: want rc=2 (credential detected), got rc=%d (stderr=%q)",
+					tc.label, code, stderr)
+			}
+			if !strings.Contains(stderr, tc.wantMsg) {
+				t.Errorf("%s: want stderr containing %q, got %q",
+					tc.label, tc.wantMsg, stderr)
+			}
+		})
 	}
 }

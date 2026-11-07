@@ -11,6 +11,9 @@ JWT_PATTERN='eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+'
 AWS_KEY_PATTERN='AKIA[0-9A-Z]{16}'
 
 MATCH=""
+# MATCH_FILE is set when the match came from a file argument (second layer, D1 ADR-2026-11-06).
+# When empty the finding was in the payload itself.
+MATCH_FILE=""
 if printf '%s' "$INPUT" | grep -qE "$JWT_PATTERN"; then
   MATCH="JWT"
 elif printf '%s' "$INPUT" | grep -qE "$AWS_KEY_PATTERN"; then
@@ -59,10 +62,12 @@ scan_file_for_pattern() {
   [ "$size" -lt 1048576 ] || return 1
   if grep -qE "$JWT_PATTERN" "$path" 2>/dev/null; then
     MATCH="JWT"
+    MATCH_FILE="$path"
     return 0
   fi
   if grep -qE "$AWS_KEY_PATTERN" "$path" 2>/dev/null; then
     MATCH="AWS access key"
+    MATCH_FILE="$path"
     return 0
   fi
   return 1
@@ -124,12 +129,18 @@ case "$MODE" in
   *) MODE="$DEFAULT_MODE" ;;
 esac
 
+if [ -n "$MATCH_FILE" ]; then
+  ORIGIN="detected in file $MATCH_FILE referenced by the command."
+else
+  ORIGIN="detected in tool payload."
+fi
+
 if [ "$MODE" = "block" ]; then
-  echo "trackfw-credential-guard: blocked - possible $MATCH detected in tool payload." >&2
+  echo "trackfw-credential-guard: blocked - possible $MATCH $ORIGIN" >&2
   exit 2
 fi
 
-echo "trackfw-credential-guard: warning - possible $MATCH detected in tool payload." >&2
+echo "trackfw-credential-guard: warning - possible $MATCH $ORIGIN" >&2
 
 # tr -d '\r': Windows CRLF in trackfw.yaml corrupts the path; normalise (not reject).
 # DO NOT use sed $'s/\r//g' -- fails on Git Bash (GNU sed 4.9): "no previous regular expression".
@@ -141,7 +152,11 @@ case "$ROADMAP_DIR" in
 esac
 
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-MSG="Possible $MATCH detected in tool payload - review before materializing credentials in plain text."
+if [ -n "$MATCH_FILE" ]; then
+  MSG="Possible $MATCH detected in a file referenced by the command - review before materializing credentials in plain text."
+else
+  MSG="Possible $MATCH detected in tool payload - review before materializing credentials in plain text."
+fi
 MSG_ESC=$(echo "$MSG" | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')
 
 mkdir -p "$ROADMAP_DIR"

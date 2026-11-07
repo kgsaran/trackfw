@@ -6233,6 +6233,77 @@ Pontos pinados:
   `internal/generators/scaffold.go` em ML-1A (ADR-2026-11-05): eram código morto, pois o script
   gerado é um thin shim que delega ao binário.
 
+## Segunda camada do credential-guard: cobertura e limitações (ADR-2026-11-06 D2)
+
+<!-- trackfw-contract: gate=internal/guard/credential_test.go partial=TestRunCredential_D1_FileMessage_ProjectScope pina "detected in file" para L2b (cat argumento); TestRunCredential_D4_GlobRelativeCwd pina que glob relativo usa tool_info.cwd; TestRunCredential_D4_GlobRootLevelCwd pina o fallback para cwd de nível raiz (Claude Code/Kiro); L2a, L2b-nonJSON e L4-deep cobertos por TestRunCredential_D1_FileMessage_L2a, _L2bNonJSON e _L4Deep respectivamente -->
+
+A segunda camada (`credSecondLayer`) escaneia o conteúdo de arquivos referenciados pelo
+comando, além do payload em si. Quando o achado vem de um arquivo, a mensagem identifica
+a origem: `possible <tipo> detected in file <caminho> referenced by the command.`
+
+### O que a segunda camada cobre
+
+<!-- trackfw-contract: gate=internal/guard/credential_test.go partial=TestRunCredential_D1_FileMessage_ProjectScope (cat argumento nomeado); TestRunCredential_D4_GlobRelativeCwd (glob de um nível, Windsurf cwd); TestRunCredential_D4_GlobRootLevelCwd (glob de um nível, Claude Code/Kiro cwd raiz); TestRunCredential_D1_FileMessage_L2a (redirecionamento não efêmero) -->
+
+| Mecanismo | Exemplo | Coberto |
+|---|---|---|
+| Argumento nomeado de verbo da lista | `cat arquivo.txt` | Sim |
+| Glob de um nível como argumento | `grep -n foo dir/*.go` | Sim |
+| Redirecionamento não efêmero | `cat secret > arq.txt` (arq.txt já tem credencial) | Sim |
+
+Verbos cobertos: `cat`, `head`, `tail`, `jq`, `grep`. O verbo deve ser a primeira
+palavra do comando (campo `token[0]` após `strings.Fields`). Outros verbos, incluindo
+`rg`, não estão na lista mesmo que recebam um arquivo nomeado.
+
+### O que a segunda camada não cobre
+
+<!-- trackfw-contract: none reason=comportamento negativo documentado; os testes positivos de L2b e glob de um nivel demonstram indiretamente que rg e grep -r nao disparam -->
+
+| Mecanismo | Exemplo | Coberto |
+|---|---|---|
+| Leitura recursiva de diretório | `grep -r foo dir/` | Não |
+| Verbos fora da lista, mesmo com arquivo nomeado | `rg foo arquivo.txt` | Não |
+| Glob com `**` | `cat dir/**/*.go` | Parcial (`**` casa um nível como `*`; sem recursão real) |
+| Arquivos ocultos (dotfiles) | `cat *` não escaneia `.env` | Não (filtro Bash sem `dotglob`) |
+| `find -exec`, `xargs`, cópia seguida de leitura | `find . -exec cat {} \;` | Não |
+
+A exclusão de leitura recursiva de diretório é deliberada (ADR-2026-11-06 D2): o
+custo seria ilimitado em repositórios grandes; na raiz, seria o repositório inteiro
+a cada chamada de ferramenta. A segunda camada é uma lombada para o caso óbvio, não
+uma fronteira contra quem quer contorná-la.
+
+### Exemplo ilustrativo (ADR-2026-11-06)
+
+<!-- trackfw-contract: none reason=exemplo ilustrativo do contrato de cobertura; comportamento verificado pelos testes de D1 e D4 nomeados na secao pai -->
+
+```
+grep -n foo secrets/*.cfg  → sinalizado se algum .cfg não-oculto contiver padrão de credencial
+grep -rn foo secrets/      → passa (leitura recursiva de diretório não é coberta)
+```
+
+O glob `*.cfg` é expandido contra a `cwd` da ferramenta (campo `tool_info.cwd` para
+payloads Windsurf, ou campo `"cwd"` de nível raiz para payloads Kiro — ver linha 4155
+deste documento). O mesmo cwd resolve argumentos nomeados relativos via `credResolveArg`.
+O campo `"cwd"` de nível raiz do payload do Claude Code (hook PreToolUse) também é
+usado para resolver globs relativos — coberto por `TestRunCredential_D4_GlobRootLevelCwd`.
+A `cwd` é sempre tratada como literal: os metacaracteres do caminho dela (`[`, `*`, `?`) não são
+expandidos pelo glob — ver `credGlobEscapeLiteral` (A-1 corretivo, 2026-11-06).
+
+### Mensagem de saída por origem
+
+<!-- trackfw-contract: gate=internal/guard/credential_test.go partial=TestRunCredential_D1_PayloadMessage pina "detected in tool payload" para Layer 1; TestRunCredential_D1_FileMessage_ProjectScope pina "detected in file ... referenced by the command" para Layer 2 -->
+
+| Origem do achado | Mensagem no stderr |
+|---|---|
+| Payload (Layer 1) | `possible <tipo> detected in tool payload.` |
+| Arquivo referenciado (Layer 2) | `possible <tipo> detected in file <caminho> referenced by the command.` |
+
+O caminho é sanitizado antes de ser impresso: caractere de controle, caractere
+bidirecional (Unicode Bidi_Control) e bytes UTF-8 inválidos viram `?`. O sinal de
+atenção (`.trackfw-credential-guard.json`) não leva o caminho — só o tipo e a
+origem textual — para evitar que o arquivo seja commitável num consumidor com
+`mode: warn`.
+
 ## Cobertura de matchers Read/Write/Edit do credential-guard por CLI (ADR-2026-08-06 emenda 7, ROADMAP-2026-08-08 Wave 2)
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
