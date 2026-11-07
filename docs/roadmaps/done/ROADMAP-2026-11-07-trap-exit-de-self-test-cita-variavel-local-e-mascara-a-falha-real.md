@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-11-07
 req: "docs/req/REQ-2026-11-07-trap-exit-de-self-test-cita-variavel-local-e-mascara-a-falha-real.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: trap EXIT de self-test cita variavel local e mascara a falha real
 
-> Created: 2026-11-07 | Status: wip
+> Created: 2026-11-07 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-11-07-trap-exit-de-self-test-cita-variavel-local-e-mascara-a-falha-real.md -->

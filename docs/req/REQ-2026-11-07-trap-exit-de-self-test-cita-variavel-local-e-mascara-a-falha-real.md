@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-11-07
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-11-07-trap-exit-de-self-test-cita-variavel-local-e-mascara-a-falha-real.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-11-07-trap-exit-de-self-test-cita-variavel-local-e-mascara-a-falha-real.md"
 ---
 
 # REQ: trap EXIT de self-test cita variavel local e mascara a falha real
 
-> Date: 2026-11-07 | Status: Open
+> Date: 2026-11-07 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -43,11 +43,11 @@ O threat model mediu também um terceiro caminho: se a função **retorna** norm
 Varredura de issues abertas e REQs abertas: nenhuma com o mesmo mecanismo. O vault não tem nota sobre ele.
 
 ## Acceptance Criteria
-- [ ] **AC1.** Nos três sítios, o trap não depende de variável `local` que deixa de existir na saída: o valor é capturado na instalação do trap, com quoting seguro (`printf %q`), ou a variável deixa de ser `local`. Medido no bash 5 com falha forçada (por `set -e` e por `set -u`) numa cópia de cada script: rc diferente de zero, nenhum `unbound variable` vindo do trap e nenhum diretório temporário sobrando.
-- [ ] **AC2.** O caminho de sucesso dos três self-tests continua com o mesmo resultado (`check-shim-diff-applies.sh --self-test`: 27 passam; `check-req-roadmap-rule-is-status-aware.sh --self-test`: 4 braços passam; `check-orphan-gates.sh --self-test`: mesmo resultado de antes).
-- [ ] **AC2b.** `check-validate-rule-pins.sh` remove os dois diretórios temporários ao sair: um trap só, que limpa `$TMP_DIR` e `$FENCE_TMP`. Medido por existência depois de uma execução.
-- [ ] **AC3.** Um gate novo, ligado em `parity-rest`, reprova quando um `trap` com corpo entre aspas simples cita uma variável declarada `local` na função que instala o trap. Ele varre todos os `.sh` versionados (`git ls-files '*.sh'`), tem `--self-test` com braço positivo e negativo, e uma guarda de vacuidade (reprova se não encontrar nenhum `trap`). Contra-braço: com qualquer um dos três sítios revertido, o gate reprova.
-- [ ] **AC4.** `make quality` verde.
+- [x] **AC1.** Nos três sítios, o trap não depende de variável `local` que deixa de existir na saída: o valor é capturado na instalação do trap, com quoting seguro (`printf %q`), ou a variável deixa de ser `local`. Medido no bash 5 com falha forçada (por `set -e` e por `set -u`) numa cópia de cada script: rc diferente de zero, nenhum `unbound variable` vindo do trap e nenhum diretório temporário sobrando.
+- [x] **AC2.** O caminho de sucesso dos três self-tests continua com o mesmo resultado (`check-shim-diff-applies.sh --self-test`: 27 passam; `check-req-roadmap-rule-is-status-aware.sh --self-test`: 4 braços passam; `check-orphan-gates.sh --self-test`: mesmo resultado de antes).
+- [x] **AC2b.** `check-validate-rule-pins.sh` remove os dois diretórios temporários ao sair: um trap só, que limpa `$TMP_DIR` e `$FENCE_TMP`. Medido por existência depois de uma execução.
+- [x] **AC3.** Um gate novo, ligado em `parity-rest`, reprova quando um `trap` com corpo entre aspas simples cita uma variável declarada `local` na função que instala o trap. Ele varre todos os `.sh` versionados (`git ls-files '*.sh'`), tem `--self-test` com braço positivo e negativo, e uma guarda de vacuidade (reprova se não encontrar nenhum `trap`). Contra-braço: com qualquer um dos três sítios revertido, o gate reprova.
+- [x] **AC4.** `make quality` verde.
 
 ## Negative scope
 
@@ -66,4 +66,4 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-11-07-trap-exit-de-self-test-cita-variavel-local-e-mascara-a-falha-real.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-11-07-trap-exit-de-self-test-cita-variavel-local-e-mascara-a-falha-real.md
