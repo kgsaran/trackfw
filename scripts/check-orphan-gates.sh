@@ -139,7 +139,8 @@ validate_exceptions() {
 self_test() {
   local WORK
   WORK=$(mktemp -d /tmp/check-orphan-gates-selftest.XXXXXX)
-  trap 'rm -rf "$WORK"' EXIT
+  local q; printf -v q '%q' "$WORK"
+  trap "rm -rf -- $q" EXIT
 
   local SELF_FAIL=0
 

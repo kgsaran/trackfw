@@ -226,6 +226,10 @@ parity-rest: build
 	# A forma correta é | grep ... >/dev/null. Este gate impede a reintrodução do padrão.
 	bash scripts/check-no-grep-q-under-pipefail.sh --self-test
 	bash scripts/check-no-grep-q-under-pipefail.sh
+	# REQ-2026-11-07 / #671: trap EXIT que cita variável local é desvinculada antes do EXIT
+	# disparar; valor deve ser capturado no momento da instalação com printf %q.
+	bash scripts/check-no-trap-local-var.sh --self-test
+	bash scripts/check-no-trap-local-var.sh
 
 parity-falsify: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/run-gates-falsify-parallel.sh
