@@ -175,17 +175,15 @@ run_classify() {
 run_self_test() {
   local tmp
   tmp=$(mktemp -d)
-  trap 'rm -rf "$tmp"' EXIT
+  local q; printf -v q '%q' "$tmp"
+  trap "rm -rf -- $q" EXIT
 
   local fail=0
   local pass=0
 
   # Desliga GITHUB_OUTPUT para que emit_result escreva em stdout
-  local saved_github_output="${GITHUB_OUTPUT:-}"
+  # (restaurar GITHUB_OUTPUT no exit do processo não tem efeito — processo já encerrou)
   unset GITHUB_OUTPUT
-
-  # Restaura na saída (além do trap de cleanup)
-  trap 'rm -rf "$tmp"; [[ -n "$saved_github_output" ]] && export GITHUB_OUTPUT="$saved_github_output"' EXIT
 
   # Helpers
   st_pass() { echo "OK   [$1]"; pass=$((pass + 1)); }

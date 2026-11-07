@@ -229,7 +229,8 @@ check_rule() {
 self_test() {
   local WORK
   WORK=$(mktemp -d "${TMPDIR:-/tmp}/check-req-roadmap-rule-status-aware-self-test.XXXXXX")
-  trap 'rm -rf "$WORK"' EXIT
+  local q; printf -v q '%q' "$WORK"
+  trap "rm -rf -- $q" EXIT
 
   local FAIL=0
 

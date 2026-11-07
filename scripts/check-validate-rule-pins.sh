@@ -32,7 +32,7 @@ export TERM=dumb
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-validate-rule-pins.XXXXXX")
-trap 'rm -rf "$TMP_DIR"' EXIT
+trap 'rm -rf "$TMP_DIR" "${FENCE_TMP:-}"' EXIT
 
 # Isolate $HOME — prevent real developer global guards from interfering.
 export GOPATH="${GOPATH:-$(go env GOPATH)}"
@@ -907,7 +907,7 @@ PY
 #   done/ state is covered by the same fixture as PIN26 (vacuity checked by PIN26 setup)
 # ---------------------------------------------------------------------------
 FENCE_TMP=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-fence-pins.XXXXXX")
-trap 'rm -rf "$FENCE_TMP"' EXIT
+# FENCE_TMP cleanup handled by the combined EXIT trap at the top of this script.
 
 # PIN26 fixture: roadmap with an unterminated fence starting at line 5.
 mkdir -p "$FENCE_TMP/p26/docs/roadmaps/wip" "$FENCE_TMP/p26/docs/roadmaps/done"
