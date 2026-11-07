@@ -73,11 +73,22 @@ bash scripts/check-orphan-gates.sh --self-test
 > Dependencies: Wave 1 completa.
 
 ### ML-2A — Red team (hades-tf)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Files affected:** `docs/seguranca/2026-11-07-redteam-trap-exit-variavel-local.md`
 **Acceptance criteria:**
-- [ ] cada item obrigatório da Wave 0 atacado com medição
-- [ ] veredito escrito
+- [x] cada item obrigatório da Wave 0 atacado com medição
+- [x] veredito escrito — **APROVA COM RESSALVAS**
+
+**Auditoria:** índice limpo, só o relatório novo. Os 7 itens da Wave 0 passam; contra-braço nos três sítios e comportamento nos dois bash limpos. Dois falsos negativos do gate, nenhum presente no corpus: (1) `trap -- '...' EXIT` (o `store_trap` exige a aspa logo depois de `trap `); (2) função de uma linha `f() { local x; trap '...$x' EXIT; }` (o `brace_net` da linha dá 0 e o `flush_traps` roda antes do `store_trap`). Defeito conhecido se corrige agora: viram o ML-2B.
+
+### ML-2B — Corretivo dos dois falsos negativos do gate (ares-tf) — AC3
+**Status:** ⬜ Pendente
+**Files affected:** `scripts/check-no-trap-local-var.sh`
+**Acceptance criteria:**
+- [ ] `trap -- 'rm -rf "$x"' EXIT` com `x` local é acusado
+- [ ] função de uma linha `f() { local x; trap 'rm -rf "$x"' EXIT; }` é acusada; `f() { trap 'echo hi' EXIT; }` e a forma corrigida de uma linha com aspas duplas não são
+- [ ] braços novos no `--self-test`, cada um com a frase `Reconciliation:`; contra-braço: sem a correção, os braços novos reprovam
+- [ ] o gate continua com rc=0 no corpus e os 21 braços antigos passam; `make quality` verde
 
 **Gates da wave:**
 ```bash
