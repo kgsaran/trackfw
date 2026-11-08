@@ -1335,39 +1335,53 @@ var nearMissHomoglyphs = map[rune]rune{
 }
 
 // nearMissGatesTargets is the closed set of skeleton prefixes that identify a
-// near-miss gates header (D8, ADR-2026-11-08 / ML-2G). After the skeleton is
-// computed by gatesNearMissSkeleton, the line is a near-miss when strings.HasPrefix
+// near-miss gates header (D8, ADR-2026-11-08 / ML-2G, ML-2I-bis). After the skeleton
+// is computed by gatesNearMissSkeleton, the line is a near-miss when strings.HasPrefix
 // matches one of these strings.
+//
+// ML-2I-bis switched to the letters-only skeleton: after stripping all markdown
+// punctuation and whitespace from the prefix up to the first ':', the targets are
+// the bare letter+colon sequences. All lowercase.
 var nearMissGatesTargets = []string{
-	"**gates da wave:**",
-	"**wave gates:**",
+	"wavegates:",
+	"wavegate:",
+	"gatesdawave:",
+	"gatedawave:",
 }
 
 // gatesNearMissSkeleton computes the normalised skeleton of a line for the
-// near-miss gates-header detection (D8, ADR-2026-11-08 / ML-2G). The five-step
-// algorithm is:
+// near-miss gates-header detection (D8, ADR-2026-11-08 / ML-2G, ML-2I-bis).
+// The four-step algorithm (ML-2I-bis, replaces the old e/e1/e2/e3 steps):
 //
-//  a. Remove every rune in unicode.Cf, unicode.Other_Default_Ignorable_Code_Point
-//     and VS16 (U+FE0F, the variation selector that decorates ✅).
+//  1. Remove every rune in unicode.Cf, unicode.Other_Default_Ignorable_Code_Point
+//     and VS16 (U+FE0F). Apply NFKC normalization (maps full-width letters and
+//     Unicode math bold/italic/fraktur to their ASCII base forms). Apply the
+//     nearMissHomoglyphs table. Convert to lowercase.
 //
-//  b. Strip leading Unicode whitespace (unicode.IsSpace, which includes NBSP).
+//  2. Repeatedly strip leading ordered-list markers (`\d+[.)]\s+`) and other
+//     list/blockquote prefixes (>, -, *, + followed by space) until no prefix
+//     remains. This step is needed because digits and '.'/')' are NOT in the
+//     step-3 removal set, so "1. **Wave gates:**" would otherwise leave "1."
+//     before the target letters. Steps for '>', '-', '*', '+' are redundant
+//     after step 3 but kept in the loop so nested markers like "> 1. …" are
+//     fully stripped.
 //
-//  c. Repeatedly strip one leading blockquote or list marker:
-//     - blockquote: '>' followed by optional whitespace
-//     - unordered list: '-', '*', or '+' followed by one space
-//     - ordered list: digits + '.' or ')' + one or more whitespace
-//     Loop until no marker is found at the start of the string.
+//  3. Remove all runes from the set {*, _, #, |, >, -, +, ~} and all
+//     unicode.IsSpace runes from anywhere in the prefix up to and including the
+//     first ':'. Everything after the first ':' is kept as-is (only the prefix
+//     is compared). Backtick (`) is intentionally NOT in the set: a header
+//     cited in backtick prose (e.g. "`**Wave gates:**`") must not trigger the
+//     check.
 //
-//  d. Map homoglyphs to ASCII using nearMissHomoglyphs.
+//  4. The skeleton is the result. nearMissGatesTargets contains the bare
+//     letter+colon prefixes (e.g. "wavegates:", "gatesdawave:") that the
+//     skeleton is compared against using strings.HasPrefix.
 //
-//  e. Convert to lowercase; collapse all runs of internal unicode.IsSpace
-//     whitespace to a single ASCII space.
-//
-// The skeleton is then compared against nearMissGatesTargets in ParseGatesLines.
-// A line whose skeleton matches is reported as a near-miss error regardless of
-// whether the wave already has a valid gate header.
+// This single removal in step 3 handles all markdown delimiter variations
+// without needing a per-variant enumeration: **, __, ##, |…|, single *,
+// leading space, mixed delimiters, space before ':', colon outside bold, etc.
 func gatesNearMissSkeleton(line string) string {
-	// Step a: remove Cf, ODIP, and VS16.
+	// Step 1a: remove Cf, ODIP, VS16.
 	var b strings.Builder
 	b.Grow(len(line))
 	for _, r := range line {
@@ -1380,37 +1394,13 @@ func gatesNearMissSkeleton(line string) string {
 	}
 	s := b.String()
 
-	// Step b: strip leading Unicode whitespace (including NBSP U+00A0).
-	s = strings.TrimLeftFunc(s, unicode.IsSpace)
+	// Step 1-NFKC: apply NFKC normalization before the homoglyph map.
+	// norm.NFKC maps full-width letters (ｗ → w) and Unicode math bold/italic
+	// (𝐖 → W) to their ASCII base forms. Safe: NFKC does NOT change ASCII
+	// punctuation including *, _, :, # or the markdown delimiters.
+	s = norm.NFKC.String(s)
 
-	// Step c: repeatedly strip leading blockquote or list marker.
-	for {
-		advanced := false
-		if strings.HasPrefix(s, ">") {
-			s = s[1:]
-			s = strings.TrimLeftFunc(s, unicode.IsSpace)
-			advanced = true
-		} else {
-			for _, m := range []string{"-", "*", "+"} {
-				if len(s) >= len(m)+1 && s[:len(m)] == m && s[len(m)] == ' ' {
-					s = s[len(m)+1:]
-					advanced = true
-					break
-				}
-			}
-			if !advanced {
-				if loc := nearMissOrderedListRe.FindStringIndex(s); loc != nil {
-					s = s[loc[1]:]
-					advanced = true
-				}
-			}
-		}
-		if !advanced {
-			break
-		}
-	}
-
-	// Step d: apply homoglyph table.
+	// Step 1-homoglyphs: apply homoglyph table.
 	var hb strings.Builder
 	hb.Grow(len(s))
 	for _, r := range s {
@@ -1422,23 +1412,67 @@ func gatesNearMissSkeleton(line string) string {
 	}
 	s = hb.String()
 
-	// Step e: lowercase then collapse internal whitespace runs to a single space.
+	// Step 1-lowercase: convert to lowercase.
 	s = strings.ToLower(s)
-	var wb strings.Builder
-	wb.Grow(len(s))
-	inSpace := false
-	for _, r := range s {
-		if unicode.IsSpace(r) {
-			if !inSpace {
-				wb.WriteByte(' ')
-				inSpace = true
+
+	// Step 2: repeatedly strip leading whitespace, blockquote, and list markers.
+	// Needed because digits and '.'/')' (ordered-list markers) survive step 3.
+	// The '>', '-', '*', '+' branches are redundant with step 3 but kept so
+	// that nested prefixes like "> 1. **…**" are fully unwrapped.
+	for {
+		advanced := false
+		// Leading whitespace (including NBSP U+00A0).
+		trimmed := strings.TrimLeftFunc(s, unicode.IsSpace)
+		if trimmed != s {
+			s = trimmed
+			advanced = true
+		}
+		// Blockquote '>'.
+		if strings.HasPrefix(s, ">") {
+			s = s[1:]
+			advanced = true
+			continue
+		}
+		// Ordered list: \d+[.)]\s+
+		if loc := nearMissOrderedListRe.FindStringIndex(s); loc != nil && loc[0] == 0 {
+			s = s[loc[1]:]
+			advanced = true
+			continue
+		}
+		// Unordered list: - * + followed by space.
+		for _, m := range []string{"-", "*", "+"} {
+			if len(s) >= len(m)+1 && s[:len(m)] == m && s[len(m)] == ' ' {
+				s = s[len(m)+1:]
+				advanced = true
+				break
 			}
-		} else {
-			wb.WriteRune(r)
-			inSpace = false
+		}
+		if !advanced {
+			break
 		}
 	}
-	return wb.String()
+
+	// Step 3: remove all runes from the strip set and all unicode.IsSpace runes
+	// from anywhere in the string up to and including the first ':'.
+	// Everything after the first ':' is kept unchanged (only the prefix
+	// participates in the target comparison). Backtick is NOT in the set
+	// so that "`**Wave gates:**`" in prose does not trigger detection.
+	const stripSet = "*_#|>-+~"
+	colonIdx := strings.IndexByte(s, ':')
+	if colonIdx < 0 {
+		// No colon: strings.HasPrefix against any target will fail.
+		return s
+	}
+	var sb strings.Builder
+	sb.Grow(len(s))
+	for _, r := range s[:colonIdx+1] { // process up to and including ':'
+		if strings.ContainsRune(stripSet, r) || unicode.IsSpace(r) {
+			continue
+		}
+		sb.WriteRune(r)
+	}
+	sb.WriteString(s[colonIdx+1:]) // tail after ':' unchanged
+	return sb.String()
 }
 
 // ParseGatesLines implements rule 5. It returns each gate command together

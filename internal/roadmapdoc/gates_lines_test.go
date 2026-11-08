@@ -1515,3 +1515,383 @@ func TestParseGatesLines_NearMiss_ValidPlusNearMiss_D8CoversValidWave(t *testing
 		t.Errorf("error %q does not name the near-miss at line 6", err.Error())
 	}
 }
+
+// ── ML-2I near-miss tests ──────────────────────────────────────────────────
+//
+// Each test covers one of the residual near-miss spellings declared in ML-2G.
+// A matching contra-arm verifies that the valid headers and prosa still work.
+//
+// helper: build a minimal wave doc with one line and expect a near-miss error.
+func nearMiss2IExpectError(t *testing.T, nearMissLine string, wantLineNo int) {
+	t.Helper()
+	doc := "## Wave 1 — test\n" + nearMissLine + "\n"
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, malformed := ParseWaves(lines, fenced)
+	if len(malformed) > 0 {
+		t.Fatalf("unexpected malformed waves: %v", malformed)
+	}
+	if len(waves) == 0 {
+		t.Fatal("expected 1 wave, got 0")
+	}
+	w := waves[0]
+	_, err := ParseGatesLines(lines, w.Start, w.End)
+	if err == nil {
+		t.Fatalf("expected near-miss error for %q, got nil", nearMissLine)
+	}
+	want := fmt.Sprintf("near-miss gates header at line %d", wantLineNo)
+	if !strings.Contains(err.Error(), want) {
+		t.Errorf("error %q does not contain %q", err.Error(), want)
+	}
+}
+
+// helper: build a wave doc with a valid header and bash block; expect commands, not an error.
+func nearMiss2IContraArmEN(t *testing.T) {
+	t.Helper()
+	doc := "## Wave 1 — contra-arm EN\n" +
+		"**Wave gates:**\n" +
+		"```bash\n" +
+		"echo valid\n" +
+		"```\n"
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, malformed := ParseWaves(lines, fenced)
+	if len(malformed) > 0 || len(waves) == 0 {
+		t.Fatalf("setup failed: malformed=%v waves=%d", malformed, len(waves))
+	}
+	w := waves[0]
+	cmds, err := ParseGatesLines(lines, w.Start, w.End)
+	if err != nil {
+		t.Fatalf("contra-arm EN: unexpected error %v", err)
+	}
+	if len(cmds) == 0 || cmds[0].Text != "echo valid" {
+		t.Errorf("contra-arm EN: expected [echo valid], got %v", cmds)
+	}
+}
+
+func nearMiss2IContraArmPT(t *testing.T) {
+	t.Helper()
+	doc := "## Wave 1 — contra-arm PT\n" +
+		"**Gates da wave:**\n" +
+		"```bash\n" +
+		"echo valid-pt\n" +
+		"```\n"
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, malformed := ParseWaves(lines, fenced)
+	if len(malformed) > 0 || len(waves) == 0 {
+		t.Fatalf("setup failed: malformed=%v waves=%d", malformed, len(waves))
+	}
+	w := waves[0]
+	cmds, err := ParseGatesLines(lines, w.Start, w.End)
+	if err != nil {
+		t.Fatalf("contra-arm PT: unexpected error %v", err)
+	}
+	if len(cmds) == 0 || cmds[0].Text != "echo valid-pt" {
+		t.Errorf("contra-arm PT: expected [echo valid-pt], got %v", cmds)
+	}
+}
+
+// TestParseGatesLines_NearMiss_SingularEN asserts that "**Wave gate:**" (singular
+// EN, no 's') is detected as a near-miss.
+//
+// Reconciliation (ML-2I-bis): gatesNearMissSkeleton strips `*` and
+// unicode.IsSpace from before the first `:` (letters-only skeleton, ML-2I-bis);
+// "**wave gate:**" → pre-colon chars "**wave gate" stripped of `*` and spaces →
+// "wavegate" → skeleton "wavegate:" → HasPrefix matches target "wavegate:"; this
+// test affirms it fires. The contra-arm affirms valid EN "**Wave gates:**" still
+// returns commands.
+func TestParseGatesLines_NearMiss_SingularEN(t *testing.T) {
+	nearMiss2IExpectError(t, "**Wave gate:**", 2)
+	nearMiss2IContraArmEN(t)
+}
+
+// TestParseGatesLines_NearMiss_SingularPT asserts that "**Gate da wave:**" (singular
+// PT, no 's') is detected as a near-miss.
+//
+// Reconciliation (ML-2I-bis): gatesNearMissSkeleton strips `*` and spaces from
+// before the first `:`; "**gate da wave:**" → pre-colon chars "**gate da wave"
+// stripped of `*` and spaces → "gatedawave" → skeleton "gatedawave:" → HasPrefix
+// matches target "gatedawave:"; this test affirms it fires. The contra-arm affirms
+// valid PT "**Gates da wave:**" still returns commands.
+func TestParseGatesLines_NearMiss_SingularPT(t *testing.T) {
+	nearMiss2IExpectError(t, "**Gate da wave:**", 2)
+	nearMiss2IContraArmPT(t)
+}
+
+// TestParseGatesLines_NearMiss_ColonOutsideBold asserts that "**Wave gates**:"
+// (colon after closing **) is detected as a near-miss.
+//
+// Reconciliation (ML-2I-bis): gatesNearMissSkeleton strips ALL `*` characters and
+// spaces from before the first `:`, regardless of their position; "**wave gates**:"
+// has pre-colon chars "**wave gates**" → strip `*` and spaces → "wavegates" →
+// skeleton "wavegates:"; this test affirms it fires. The contra-arm affirms the
+// valid form still passes.
+func TestParseGatesLines_NearMiss_ColonOutsideBold(t *testing.T) {
+	nearMiss2IExpectError(t, "**Wave gates**:", 2)
+	nearMiss2IContraArmEN(t)
+}
+
+// TestParseGatesLines_NearMiss_UnderscoreBold asserts that "__Wave gates:__"
+// (underscore bold delimiters) is detected as a near-miss.
+//
+// Reconciliation (ML-2I-bis): gatesNearMissSkeleton strips `_` characters from
+// before the first `:`; "__wave gates:__" → pre-colon chars "__wave gates" stripped
+// of `_` and spaces → "wavegates" → skeleton "wavegates:__" → HasPrefix "wavegates:"
+// → fires; this test affirms it fires. The contra-arm affirms the valid form still
+// passes.
+func TestParseGatesLines_NearMiss_UnderscoreBold(t *testing.T) {
+	nearMiss2IExpectError(t, "__Wave gates:__", 2)
+	nearMiss2IContraArmEN(t)
+}
+
+// TestParseGatesLines_NearMiss_SpaceBeforeColon asserts that "**Wave gates :**"
+// (space before the colon) is detected as a near-miss.
+//
+// Reconciliation (ML-2I-bis): gatesNearMissSkeleton strips unicode.IsSpace from
+// before the first `:`; "**wave gates :**" → pre-colon chars "**wave gates " →
+// strip `*` and spaces → "wavegates" → skeleton "wavegates:"; this test affirms it
+// fires. The contra-arm affirms the valid form still passes.
+func TestParseGatesLines_NearMiss_SpaceBeforeColon(t *testing.T) {
+	nearMiss2IExpectError(t, "**Wave gates :**", 2)
+	nearMiss2IContraArmEN(t)
+}
+
+// TestParseGatesLines_NearMiss_FullwidthLetters asserts that "**ｗａｖｅ ｇａｔｅｓ:**"
+// (full-width letters inside Markdown bold) is detected as a near-miss.
+//
+// Reconciliation (ML-2I-bis): NFKC normalization (Step 1) maps full-width letters
+// to their ASCII equivalents; "**ｗａｖｅ ｇａｔｅｓ:**" → after NFKC+lowercase →
+// "**wave gates:**" → skeleton strips `*` and spaces before `:` → "wavegates:" →
+// HasPrefix matches target "wavegates:"; this test affirms it fires.
+func TestParseGatesLines_NearMiss_FullwidthLetters(t *testing.T) {
+	nearMiss2IExpectError(t, "**ｗａｖｅ ｇａｔｅｓ:**", 2)
+	nearMiss2IContraArmEN(t)
+}
+
+// TestParseGatesLines_NearMiss_MathBoldLetters asserts that "**𝐖𝐚𝐯𝐞 𝐠𝐚𝐭𝐞𝐬:**"
+// (Unicode mathematical bold letters inside Markdown bold) is detected as a
+// near-miss.
+//
+// Reconciliation (ML-2I-bis): NFKC normalization (Step 1) maps mathematical bold
+// codepoints (e.g. U+1D416 𝐖 → W) to their ASCII base forms; "**𝐖𝐚𝐯𝐞 𝐠𝐚𝐭𝐞𝐬:**" →
+// after NFKC+lowercase → "**wave gates:**" → skeleton strips `*` and spaces before
+// `:` → "wavegates:" → HasPrefix matches target "wavegates:"; this test affirms it
+// fires.
+func TestParseGatesLines_NearMiss_MathBoldLetters(t *testing.T) {
+	nearMiss2IExpectError(t, "**𝐖𝐚𝐯𝐞 𝐠𝐚𝐭𝐞𝐬:**", 2)
+	nearMiss2IContraArmEN(t)
+}
+
+// TestParseGatesLines_NearMiss_WaveGateway_NoMatch asserts that "**Wave gateway:**"
+// does NOT trigger the near-miss check.
+//
+// Reconciliation (ML-2I-bis): skeleton of "**Wave gateway:**" strips `*` and spaces
+// before `:` → "wavegateway:" which does NOT start with "wavegate:" (position 9 is
+// `w`, not `:`). The colon-terminated target provides a natural word boundary:
+// "wavegateway:" diverges from "wavegate:" immediately after the shared prefix
+// "wavegate". This test guards against future overshoots — a broadened pattern that
+// caught "gateway" would require this test to be revisited.
+func TestParseGatesLines_NearMiss_WaveGateway_NoMatch(t *testing.T) {
+	doc := "## Wave 1 — gateway test\n" +
+		"**Wave gateway:**\n" +
+		"```bash\n" +
+		"echo gateway\n" +
+		"```\n"
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, malformed := ParseWaves(lines, fenced)
+	if len(malformed) > 0 || len(waves) == 0 {
+		t.Fatalf("setup failed: malformed=%v waves=%d", malformed, len(waves))
+	}
+	w := waves[0]
+	cmds, err := ParseGatesLines(lines, w.Start, w.End)
+	if err != nil {
+		t.Errorf("unexpected near-miss for **Wave gateway:** (should not match): %v", err)
+	}
+	// The header doesn't match GatesHeaderRe (no valid gate), so zero commands expected.
+	_ = cmds
+}
+
+// TestParseGatesLines_NearMiss_ProseWithBacktickML2I asserts that a prose line
+// mentioning the header form in inline backticks does NOT trigger the near-miss
+// check.
+//
+// Reconciliation (ML-2I-bis): the prose line starts with "Use " — those letters
+// survive the skeleton (they come before the first stripped char or space in the
+// leading prefix position); the resulting skeleton begins with "use`wavegate:" (or
+// similar), not "wavegate:", so no HasPrefix match fires. Additionally, backtick
+// (`) is NOT in the strip set, so even if the prose line started with a backtick,
+// the skeleton would begin with "`" not a target prefix. The fenced guard protects
+// genuinely triple-fenced lines but is not the operative defense for this input,
+// which is an ordinary prose line.
+func TestParseGatesLines_NearMiss_ProseWithBacktickML2I(t *testing.T) {
+	doc := "## Wave 1 — prose\n" +
+		"Use `**Wave gate:**` to declare a singular near-miss.\n" +
+		"**Wave gates:**\n" +
+		"```bash\n" +
+		"echo ok\n" +
+		"```\n"
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, malformed := ParseWaves(lines, fenced)
+	if len(malformed) > 0 || len(waves) == 0 {
+		t.Fatalf("setup failed: malformed=%v waves=%d", malformed, len(waves))
+	}
+	w := waves[0]
+	cmds, err := ParseGatesLines(lines, w.Start, w.End)
+	if err != nil {
+		t.Errorf("prose contra-arm: unexpected near-miss error: %v", err)
+	}
+	if len(cmds) == 0 || cmds[0].Text != "echo ok" {
+		t.Errorf("prose contra-arm: expected [echo ok], got %v", cmds)
+	}
+}
+
+// ── ML-2G residual graphies (ML-2I-bis skeleton algorithm) ───────────────────
+//
+// The seven tests below cover graphies that escaped the ML-2I enumeration approach
+// but are now caught by the letters-only skeleton algorithm introduced in ML-2I-bis.
+// Each test uses nearMiss2IExpectError, which builds a minimal wave document and
+// calls ParseGatesLines, asserting a near-miss error is returned.
+
+// TestParseGatesLines_NearMiss_MixedDelimiters asserts that "__Wave gates:**"
+// (leading __ without matching closing __, mixed with **) is detected as a near-miss.
+//
+// Reconciliation (ML-2I-bis): skeleton strips `_` and `*` and spaces from before
+// the first `:`; "__wave gates:**" → pre-colon chars "__wave gates" → strip `_`, `*`,
+// spaces → "wavegates" → skeleton "wavegates:**" → HasPrefix "wavegates:" → fires;
+// this test affirms ML-2I-bis detects this ML-2G residual grafia.
+func TestParseGatesLines_NearMiss_MixedDelimiters(t *testing.T) {
+	nearMiss2IExpectError(t, "__Wave gates:**", 2)
+	nearMiss2IContraArmEN(t)
+}
+
+// TestParseGatesLines_NearMiss_SpaceAfterColon asserts that "**Wave gates: **"
+// (trailing space and ** after the colon) is detected as a near-miss.
+//
+// Reconciliation (ML-2I-bis): only chars before the first `:` are stripped;
+// "**wave gates: **" → pre-colon chars "**wave gates" → strip `*` and spaces →
+// "wavegates" → skeleton "wavegates: **" → HasPrefix "wavegates:" → fires;
+// everything after `:` is kept verbatim; this test affirms ML-2I-bis detects this
+// ML-2G residual grafia.
+func TestParseGatesLines_NearMiss_SpaceAfterColon(t *testing.T) {
+	nearMiss2IExpectError(t, "**Wave gates: **", 2)
+	nearMiss2IContraArmEN(t)
+}
+
+// TestParseGatesLines_NearMiss_TripleAsterisks asserts that "***Wave gates:***"
+// (triple-asterisk bold-italic delimiters) is detected as a near-miss.
+//
+// Reconciliation (ML-2I-bis): skeleton strips all `*` from before the first `:`
+// regardless of count; "***wave gates:***" → pre-colon chars "***wave gates" →
+// strip `*` and spaces → "wavegates" → skeleton "wavegates:***" → HasPrefix
+// "wavegates:" → fires; this test affirms ML-2I-bis detects this ML-2G residual
+// grafia.
+func TestParseGatesLines_NearMiss_TripleAsterisks(t *testing.T) {
+	nearMiss2IExpectError(t, "***Wave gates:***", 2)
+	nearMiss2IContraArmEN(t)
+}
+
+// TestParseGatesLines_NearMiss_SingleAsterisk asserts that "*Wave gates:*"
+// (single-asterisk emphasis delimiters) is detected as a near-miss.
+//
+// Reconciliation (ML-2I-bis): skeleton strips `*` from before the first `:`; "*wave
+// gates:*" → pre-colon chars "*wave gates" → strip `*` and spaces → "wavegates" →
+// skeleton "wavegates:*" → HasPrefix "wavegates:" → fires; this test affirms
+// ML-2I-bis detects this ML-2G residual grafia.
+func TestParseGatesLines_NearMiss_SingleAsterisk(t *testing.T) {
+	nearMiss2IExpectError(t, "*Wave gates:*", 2)
+	nearMiss2IContraArmEN(t)
+}
+
+// TestParseGatesLines_NearMiss_HyphenInsteadOfSpace asserts that "**Wave-gates:**"
+// (hyphen in place of the space between "Wave" and "gates") is detected as a
+// near-miss.
+//
+// Reconciliation (ML-2I-bis): `-` is in the strip set; "**wave-gates:**" → pre-colon
+// chars "**wave-gates" → strip `*`, `-`, spaces → "wavegates" → skeleton
+// "wavegates:**" → HasPrefix "wavegates:" → fires; this test affirms ML-2I-bis
+// detects this ML-2G residual grafia.
+func TestParseGatesLines_NearMiss_HyphenInsteadOfSpace(t *testing.T) {
+	nearMiss2IExpectError(t, "**Wave-gates:**", 2)
+	nearMiss2IContraArmEN(t)
+}
+
+// TestParseGatesLines_NearMiss_H3Header asserts that "### Wave gates:" (ATX H3
+// heading inside a wave) is detected as a near-miss.
+//
+// Reconciliation (ML-2I-bis): `#` is in the strip set; "### wave gates:" → no
+// leading list marker in Step 2 (# is not stripped there) → Step 3 strips `#` and
+// spaces from before `:` → "wavegates" → skeleton "wavegates:" → HasPrefix fires.
+// A `##` heading would close the preceding wave (ParseWaves boundary), placing the
+// line at waveEnd (exclusive) and preventing the scan; `###` stays inside the wave
+// and is scanned. The contra-arm affirms valid EN "**Wave gates:**" still returns
+// commands.
+func TestParseGatesLines_NearMiss_H3Header(t *testing.T) {
+	nearMiss2IExpectError(t, "### Wave gates:", 2)
+	nearMiss2IContraArmEN(t)
+}
+
+// TestParseGatesLines_NearMiss_TableCell asserts that "| **Wave gates:** |"
+// (gate header inside a Markdown table cell) is detected as a near-miss.
+//
+// Reconciliation (ML-2I-bis): `|` is in the strip set; "| **wave gates:** |" →
+// pre-colon chars "| **wave gates" → strip `|`, `*`, spaces → "wavegates" →
+// skeleton "wavegates:** |" → HasPrefix "wavegates:" → fires; this test affirms
+// ML-2I-bis detects this ML-2G residual grafia.
+func TestParseGatesLines_NearMiss_TableCell(t *testing.T) {
+	nearMiss2IExpectError(t, "| **Wave gates:** |", 2)
+	nearMiss2IContraArmEN(t)
+}
+
+// TestGatesNearMissSkeleton_H2Header is a skeleton-only unit test confirming that
+// gatesNearMissSkeleton maps "## Wave gates:" to "wavegates:".
+//
+// Reconciliation (ML-2I-bis): `#` is in the strip set; "## wave gates:" →
+// pre-colon chars "## wave gates" → strip `#` and spaces → "wavegates" → skeleton
+// "wavegates:". ParseGatesLines never scans a "## Wave..." line in practice
+// (ParseWaves treats it as a wave boundary, closing the preceding wave at that
+// line index, so the near-miss loop in ParseGatesLines never reaches it). This
+// skeleton test confirms the algorithm is correct regardless of structural scoping.
+func TestGatesNearMissSkeleton_H2Header(t *testing.T) {
+	got := gatesNearMissSkeleton("## Wave gates:")
+	want := "wavegates:"
+	if got != want {
+		t.Errorf("skeleton of %q = %q, want %q", "## Wave gates:", got, want)
+	}
+}
+
+// TestParseGatesLines_NearMiss_WaveTitleNoColon asserts that a wave title line
+// such as "Wave 1 — gates:" (title mentioning "gates" with a colon but no Markdown
+// bold delimiters that would match the near-miss targets) does NOT trigger the
+// near-miss check.
+//
+// Reconciliation (ML-2I-bis): skeleton of "wave 1 — gates:" strips `-` and spaces
+// from before `:` → "wave1gates:" which does NOT start with any target prefix
+// ("wavegates:", "wavegate:", "gatesdawave:", "gatedawave:"); "wave1" diverges from
+// all targets at the char after "wave". This test exists as a contra-arm to guard
+// against over-stripping of digits: digits are NOT in the strip set so "1" survives
+// and separates "wave" from "gates".
+func TestParseGatesLines_NearMiss_WaveTitleNoColon(t *testing.T) {
+	doc := "## Wave 1 — gates test\n" +
+		"Wave 1 — gates:\n" +
+		"**Wave gates:**\n" +
+		"```bash\n" +
+		"echo ok\n" +
+		"```\n"
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, malformed := ParseWaves(lines, fenced)
+	if len(malformed) > 0 || len(waves) == 0 {
+		t.Fatalf("setup failed: malformed=%v waves=%d", malformed, len(waves))
+	}
+	w := waves[0]
+	cmds, err := ParseGatesLines(lines, w.Start, w.End)
+	if err != nil {
+		t.Errorf("wave title contra-arm: unexpected near-miss error for Wave title line: %v", err)
+	}
+	if len(cmds) == 0 || cmds[0].Text != "echo ok" {
+		t.Errorf("wave title contra-arm: expected [echo ok], got %v", cmds)
+	}
+}

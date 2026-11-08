@@ -239,6 +239,28 @@ var corrigidosPela470 = []registroCorrigido{
 			"wave=2 (fim=469 no corpus congelado) — ParseGatesLines retorna erro em vez de zero gates; " +
 			"baseline registrava gates.status=passed",
 	},
+	// ── D8 near-miss (ML-2I): "**Gate da wave:**" (singular PT) em wave=0 ──────
+	//
+	// Ambos os arquivos abaixo trazem "**Gate da wave:**" (singular, sem 's') como
+	// cabecalho de gates na wave=0. Esse cabecalho nao casa GatesHeaderRe (que exige
+	// "Gates" plural), mas o esqueleto computado por gatesNearMissSkeleton resulta
+	// em "gatedawave:" que casa o alvo "gatedawave:" do ML-2I. ParseGatesLines
+	// retorna erro de near-miss em vez do zero-gates silencioso anterior.
+	// O baseline registrava gates.status="passed" para essas waves.
+	{
+		caminho: "docs/roadmaps/done/ROADMAP-2026-09-11-by-agent-req-new-e-roadmap-new-agents-install-nao-registra-e-escreve-sempre-no-primeiro.md",
+		wave:    "0",
+		check:   "gates",
+		motivo: "D8 near-miss (ML-2I): cabecalho singular \"**Gate da wave:**\" na linha 67 dispara " +
+			"gatedawave: — ParseGatesLines retorna erro de near-miss; baseline registrava gates.status=passed",
+	},
+	{
+		caminho: "docs/roadmaps/done/ROADMAP-2026-09-11-self-test-do-ratchet-escreve-no-canal-do-gate-real-e-quebra-em-cp1252-e-no-runner.md",
+		wave:    "0",
+		check:   "gates",
+		motivo: "D8 near-miss (ML-2I): cabecalho singular \"**Gate da wave:**\" na linha 81 dispara " +
+			"gatedawave: — ParseGatesLines retorna erro de near-miss; baseline registrava gates.status=passed",
+	},
 }
 
 // corrigidoPela470 devolve o motivo quando o registro esta na lista.

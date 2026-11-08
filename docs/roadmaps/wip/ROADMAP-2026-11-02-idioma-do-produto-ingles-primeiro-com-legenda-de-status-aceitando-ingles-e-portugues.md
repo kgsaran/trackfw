@@ -360,11 +360,12 @@ de uma cerca. Um agente que copie o modelo com a indentação agora recebe erro,
 de antes, então a mudança não é regressão. A remoção da indentação entra no ML-3C.
 
 ### ML-2I — Quase-cabeçalho: grafias declaradas como residual pelo ML-2G
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Files affected:**
 - `internal/roadmapdoc/roadmapdoc.go`
 - `internal/roadmapdoc/gates_lines_test.go`
+- `internal/roadmapdoc/compare_baseline_test.go`
 - `docs/cli-parity.md`
 
 **Actions:** o esqueleto de `gatesNearMissSkeleton` passa por NFKC; `__` vira `**`; o espaço antes de `:` é removido;
@@ -372,9 +373,20 @@ de antes, então a mudança não é regressão. A remoção da indentação entr
 algum roadmap em `wip/` cair na regra.
 
 **Acceptance criteria:**
-- [ ] Um teste por grafia (singular EN e PT, dois-pontos fora, `__`, espaço antes de `:`, largura total, negrito matemático), com contra-braço
-- [ ] Medição do acervo reportada; nenhum roadmap em `wip/` passa a reprovar
-- [ ] `go test ./internal/roadmapdoc/ ./internal/commands/ ./internal/validator/` verde
+- [x] Um teste por grafia (singular EN e PT, dois-pontos fora, `__`, espaço antes de `:`, largura total, negrito matemático), com contra-braço
+- [x] Medição do acervo reportada; nenhum roadmap em `wip/` passa a reprovar
+- [x] `go test ./internal/roadmapdoc/ ./internal/commands/ ./internal/validator/` verde
+
+*Auditoria (Zeus, 2026-11-08):* a primeira entrega listava grafia por grafia e declarou mais 7 que escapavam.
+No corretivo, o Zeus trocou a lista por um esqueleto só de letras: remove a marcação (`*_#|>-+~`) e os espaços
+até o primeiro `:`, e compara com `wavegates:`, `wavegate:`, `gatesdawave:` e `gatedawave:`. A crase é
+preservada, então a citação em prosa continua permitida. O `## Wave gates:` não é alcançável porque abre outra
+seção; um teste confere o esqueleto. No acervo, 3 waves passam a dar erro, todas `**Gate da wave:**` no
+singular, todas na Wave 0 e em `done/`. Esses gates nunca rodaram. Na head ficam 18 erros: 14 D3, 1 E3 e
+3 quase-cabeçalho, nenhum em `wip/`. `check-gates-falsify.sh` 285 rc=0, rodado pelo Zeus em foreground. O WARN
+`no-repo-mutation` de `check-channels-content.sh` não é falha: o laço de não mutação emite esse aviso
+quando o script sai com rc≠0 sem alterar a árvore, e nenhum dos dois scripts difere da `main`. Contrato do
+barrier 49 e oráculo 243 rc=0.
 
 ### ML-2H — Terceira rodada do red team
 **Status:** ⬜ Pendente

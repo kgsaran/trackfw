@@ -3050,20 +3050,26 @@ These are literal parsing rules. The binary implements them.
    (captured in `gates.error` for `show --json`, causes exit 2 for `barrier`). The E3 residual
    is closed. The rule applies only when the wave has **no** unmasked gate header, and covers a
    header inside a closed HTML comment as well; a masked example next to a real header is allowed.
-   **Near-miss gates header (D8, ADR-2026-11-08, ML-2G):** an unmasked line that does not match
-   `GatesHeaderRe` but whose skeleton looks like a valid header is a parse error naming the
-   line. The skeleton is computed by: (a) removing Unicode format chars (`Cf`),
-   `Other_Default_Ignorable_Code_Point` chars and VS16 (`U+FE0F`); (b) stripping leading
-   Unicode whitespace (including NBSP); (c) repeatedly stripping a leading blockquote (`>`) or
-   list marker (`-`, `*`, `+`, or `\d+[.)]`) with trailing space; (d) mapping a small, explicit
-   table of Cyrillic and Greek homoglyphs to their ASCII equivalents (see
-   `nearMissHomoglyphs` in `roadmapdoc.go` for the justified table); (e) lowercasing and
-   collapsing internal whitespace runs to a single ASCII space. If the result begins with
-   `**gates da wave:**` or `**wave gates:**`, the line is a near-miss. The check runs for every
-   unmasked non-matching line in `[waveStart, waveEnd)`, **even when a valid header is also
-   present**; it runs before D3 so a near-miss error is always reported first. Residuals
-   (declared, non-blocking): `__Wave gates:__` (underscore bold), `**Wave gate:**` (singular),
-   `**Gates da wave**:` (colon outside bold), `**Wave gates :**` (space before colon).
+   **Near-miss gates header (D8, ADR-2026-11-08, ML-2G, ML-2I, ML-2I-bis):** an unmasked line
+   that does not match `GatesHeaderRe` but whose letters-only skeleton matches a target prefix
+   is a parse error naming the line. The skeleton is computed by `gatesNearMissSkeleton`:
+   (1) remove Unicode format chars (`Cf`), `Other_Default_Ignorable_Code_Point` chars and VS16
+   (`U+FE0F`); apply NFKC normalization (maps full-width letters and Unicode mathematical
+   bold/italic codepoints to ASCII base forms); apply homoglyph table (Cyrillic and Greek
+   homoglyphs → ASCII, see `nearMissHomoglyphs` in `roadmapdoc.go`); lowercase.
+   (2) repeatedly strip leading whitespace, blockquote `>`, and list markers (`-`, `*`, `+`
+   followed by a space, or `\d+[.)]` followed by whitespace).
+   (3) remove ALL runes in the set `{*, _, #, |, >, -, +, ~}` and all `unicode.IsSpace` runes
+   from every position **up to and including the first `:`**; everything after the first `:` is
+   kept verbatim. Backtick (`` ` ``) is intentionally **not** in the strip set, so a header
+   quoted in backticks in prose does not fire.
+   If the resulting skeleton begins with `wavegates:`, `wavegate:`, `gatesdawave:`, or
+   `gatedawave:`, the line is a near-miss. The check runs for every unmasked non-matching line
+   in `[waveStart, waveEnd)`, **even when a valid header is also present**; it runs before D3
+   so a near-miss error is always reported first. Note: a `## Wave gates:` heading (ATX H2)
+   closes the preceding wave at that line index, placing the near-miss line at exactly
+   `waveEnd` (exclusive), so ParseGatesLines never scans it; `###` and deeper headings stay
+   inside the wave and do fire.
    **`Lapsed:`/`Caducou:` invisible-filler guard (D8, ADR-2026-11-08, ML-2G):** the
    `lapsedLineHasContent` function rejects a continuation line whose post-colon content
    consists entirely of `Other_Default_Ignorable_Code_Point` characters (which includes the
