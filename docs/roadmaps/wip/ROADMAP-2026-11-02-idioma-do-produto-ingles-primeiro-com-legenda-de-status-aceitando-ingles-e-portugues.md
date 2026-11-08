@@ -166,6 +166,8 @@ test -s docs/seguranca/2026-11-08-wave0-idioma-ingles-primeiro.md
 **Squad:** apolo-tf
 **Files affected:**
 - `internal/validator/validator_roadmap_gates.go` e testes
+- `internal/validator/validator_roadmap_gates_ml1c_test.go` (novo)
+- `internal/roadmapdoc/wave0_gate_cause_test.go`
 - `internal/roadmapdoc/roadmapdoc.go` (só `Wave0GateDiagnosis`/causas, se a causa nova morar lá) e testes
 - `vault/notes/wave0gatediagnosis-d3-mensagem-errada-2026-11-08.md` (marcar como corrigido)
 
