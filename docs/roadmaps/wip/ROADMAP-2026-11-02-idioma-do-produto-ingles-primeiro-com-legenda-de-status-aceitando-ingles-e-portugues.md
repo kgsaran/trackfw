@@ -209,7 +209,9 @@ bash scripts/check-marker-corpus-parity.sh
 > Dependencies: Wave 1 completa.
 
 ### ML-2A — Red team do leitor bilíngue
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
+
+*Auditoria (Zeus, 2026-11-08):* veredito REPROVA, evidência conferida no parecer. Bloqueantes A2 (bloco ```bash dentro de cerca de exemplo escolhido como gate) e F (`Lapsed:` + NBSP/ZWSP conta como caducado). A1, D1, E3 e G têm o mesmo efeito (gate perdido ou término indevido) e são pré-existentes; entram aqui pela regra de defeito conhecido. Desvio do Hades: rodou `make quality` em background e criou um `.go` temporário na raiz, removido; árvore conferida limpa.
 **Squad:** hades-tf
 **Files affected:**
 - `docs/seguranca/2026-11-08-redteam-leitor-bilingue.md` (novo)
@@ -219,7 +221,60 @@ texto comum que vira marcador, e combinação de cabeçalhos que escapa de D3. A
 wave.
 
 **Acceptance criteria:**
-- [ ] Parecer com veredito e evidência por achado
+- [x] Parecer com veredito e evidência por achado
+
+### ML-2C — Gate nunca some em silêncio: correções do red team no parser
+**Status:** 🔄 Em andamento
+**Squad:** apolo-tf
+**Files affected:**
+- `internal/roadmapdoc/roadmapdoc.go`
+- `internal/roadmapdoc/gates_lines_test.go`
+- `internal/roadmapdoc/acceptance_lapsed_test.go`
+- `internal/roadmapdoc/roadmapdoc_test.go`
+- `docs/cli-parity.md`
+
+*Por que existe:* red team da Wave 2 (`docs/seguranca/2026-11-08-redteam-leitor-bilingue.md`). Os aliases
+novos ampliaram superfícies que já falhavam em português.
+
+**Actions:**
+1. A2/A1: a busca da cerca ```bash depois do cabeçalho ignora linhas mascaradas (`fenced[j]`, `htmlMask[j]`).
+2. D1/E3: anomalia de máscara que esconde ou pode esconder o cabeçalho de gates (comentário HTML não
+   fechado; cerca não fechada até o fim do documento) faz `ParseGatesLines` retornar erro (fail-closed),
+   nunca zero gates.
+3. F: a razão de `Lapsed:`/`Caducou:` exige ao menos um caractere `\p{L}`, `\p{N}` ou `\p{P}`; NBSP, ZWSP e
+   outros separadores/format chars sozinhos não contam.
+4. G: `StatusCategory` aplica a mesma guarda de marca combinatória de `StatusIsComplete`; corrigir o
+   comentário que afirma o contrário.
+5. Medir no acervo (243 roadmaps) quantas waves mudam de seleção de gates ou passam a dar erro com 1 e 2,
+   comparando a função antiga e a nova num teste temporário.
+
+**Acceptance criteria:**
+- [ ] Um teste por achado (A2, A1, D1, E3, F com NBSP e ZWSP, G), cada um com contra-braço
+- [ ] Medição do acervo reportada; nenhum roadmap em `wip/` passa a reprovar
+- [ ] `go test ./internal/roadmapdoc/ ./internal/commands/ ./internal/validator/` verde
+
+### ML-2D — Oráculo compara também os gates (lacuna do red team)
+**Status:** ⬜ Pendente
+**Squad:** apolo-tf
+**Files affected:**
+- `internal/generators/roadmap_show_json.go` e testes
+- `scripts/check-marker-corpus-parity.sh`
+- `docs/cli-parity.md`
+
+**Actions:** `roadmap show --json` ganha, por wave, a lista de comandos de gate e o erro de parse (campo
+aditivo). O oráculo compara esse campo quando os dois binários o emitem; enquanto a base não o tiver,
+compara com o campo retirado e imprime a lista da head. Depende do ML-2C (mesmo `docs/cli-parity.md`).
+
+**Acceptance criteria:**
+- [ ] `go test` do pacote verde; `bash scripts/check-marker-corpus-parity.sh --self-test` e execução rc=0
+- [ ] `make parity-rest` rc=0
+
+### ML-2E — Segunda rodada do red team
+**Status:** ⬜ Pendente
+**Squad:** hades-tf
+**Files affected:** `docs/seguranca/2026-11-08-redteam-leitor-bilingue.md` (seção nova "Rodada 2")
+**Acceptance criteria:**
+- [ ] Os sete achados da rodada 1 refeitos contra a branch, com veredito
 
 ### ML-2B — Merge e tag do leitor (Zeus)
 **Status:** ⬜ Pendente

@@ -94,6 +94,12 @@ passa a reprovar. Elas não são reeditadas (D5): roadmap em `done/` não roda m
 só inspeciona gates de roadmaps em `wip/`. O oráculo de D7 confirma saída idêntica de `validate` e de
 `roadmap show --json` nos 243 roadmaps.
 
+**Emenda 2026-11-08 (Wave 2, red team) — D8, gate nunca some em silêncio.** O red team mostrou que, já
+em português, o cabeçalho ou o bloco de gates podia ficar invisível (comentário HTML não fechado, cerca não
+fechada) ou ser trocado por um bloco de exemplo, e a wave passava. Os aliases ampliam essa superfície. Por
+isso: a busca do bloco respeita as mesmas máscaras do cabeçalho, e qualquer anomalia de máscara que possa
+esconder o cabeçalho é erro, não zero gates. A razão de `Lapsed:`/`Caducou:` exige caractere visível.
+
 ## Consequences
 
 - O acervo continua passando; roadmaps novos nascem em inglês depois da segunda tag.
