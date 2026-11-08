@@ -1086,9 +1086,17 @@ func htmlCommentMask(lines []string, fenced []bool) []bool {
 
 // lapsedLineHasContent reports whether a lapsed continuation line (already matched
 // by LapsedContinuationRe) contains at least one visible character — a rune whose
-// Unicode category is Letter (\p{L}), Number (\p{N}), or Punctuation (\p{P}) — after
-// the "Caducou:"/"Lapsed:" prefix. Symbols (\p{S}) are intentionally excluded from
-// the allowed set (spec: \p{L}|\p{N}|\p{P} only).
+// Unicode category is Letter (\p{L}), Number (\p{N}), or Punctuation (\p{P}) and
+// that is NOT in the Other_Default_Ignorable_Code_Point table — after the
+// "Caducou:"/"Lapsed:" prefix. Symbols (\p{S}) are intentionally excluded from the
+// allowed set (spec: \p{L}|\p{N}|\p{P} only).
+//
+// The ODIP guard (N-1, D8, ADR-2026-11-08 / ML-2G) closes the Hangul Filler bypass:
+// U+3164, U+115F, U+1160, U+FFA0 have category Lo (Letter, Other) so IsLetter returns
+// true, yet they carry no visible glyph. All four are in
+// unicode.Other_Default_Ignorable_Code_Point. Adding the negative guard makes the
+// function consistent: a rune counts as content only if it is both in \p{L}|\p{N}|\p{P}
+// AND outside the ODIP table.
 //
 // This check is performed BEFORE calling extractLapsedReason, which uses
 // strings.TrimSpace. TrimSpace strips NBSP (U+00A0, Zs) but does NOT strip ZWSP
@@ -1102,7 +1110,8 @@ func lapsedLineHasContent(line string) bool {
 		rest, found := strings.CutPrefix(stripped, prefix)
 		if found {
 			for _, r := range rest {
-				if unicode.IsLetter(r) || unicode.IsNumber(r) || unicode.IsPunct(r) {
+				if (unicode.IsLetter(r) || unicode.IsNumber(r) || unicode.IsPunct(r)) &&
+					!unicode.Is(unicode.Other_Default_Ignorable_Code_Point, r) {
 					return true
 				}
 			}
@@ -1267,6 +1276,171 @@ type GateCmd struct {
 	Text string // trimmed command text
 }
 
+// nearMissOrderedListRe matches a leading ordered-list marker (digits + . or ) +
+// one or more whitespace characters). Compiled once at package initialisation
+// to avoid per-call overhead inside ParseGatesLines.
+var nearMissOrderedListRe = regexp.MustCompile(`^\d+[.)]\s+`)
+
+// nearMissHomoglyphs maps visually confusable non-ASCII runes to their ASCII
+// equivalents for the letters that appear in "gates da wave" / "wave gates".
+// Only Cyrillic and Greek characters that are frequently mistaken for the
+// target ASCII letter are included; each mapping is justified below.
+//
+// Cyrillic confusables (a, e, s, d, w, v, t):
+//   - U+0430 а → a   Cyrillic small letter A, indistinguishable in many fonts
+//   - U+0410 А → A   Cyrillic capital letter A
+//   - U+0435 е → e   Cyrillic small letter IE, indistinguishable
+//   - U+0415 Е → E   Cyrillic capital letter IE
+//   - U+0455 ѕ → s   Cyrillic small letter DZE
+//   - U+0405 Ѕ → S   Cyrillic capital letter DZE
+//   - U+0501 ԁ → d   Cyrillic small letter KOMI DE (identical glyph to 'd')
+//   - U+051D ԝ → w   Cyrillic small letter WE
+//   - U+0475 ѵ → v   Cyrillic small letter IZHITSA (looks like 'v')
+//   - U+0474 Ѵ → V   Cyrillic capital letter IZHITSA
+//   - U+0422 Т → T   Cyrillic capital letter TE (identical glyph in many fonts)
+//
+// Latin-script confusable (g):
+//   - U+0261 ɡ → g   Latin small letter SCRIPT G (a typographic variant of g)
+//
+// Greek confusables (a, e, v, w, t):
+//   - U+03B1 α → a   Greek small letter ALPHA (looks like italic 'a' in many fonts)
+//   - U+03B5 ε → e   Greek small letter EPSILON (looks like 'e')
+//   - U+03BD ν → v   Greek small letter NU (glyph is ν ≈ v in many sans-serif fonts)
+//   - U+03C9 ω → w   Greek small letter OMEGA (glyph ≈ 'w')
+//   - U+03C4 τ → t   Greek small letter TAU (glyph ≈ 't')
+//
+// Residual (not included): characters that require a different font or context
+// to be confused, characters not in the target letter set, and capitals not
+// visually similar in common typefaces. The table is intentionally small and
+// explicit — a broad NFKC fold would map too many characters and generate
+// false positives on legitimate prose.
+var nearMissHomoglyphs = map[rune]rune{
+	'а': 'a', // а Cyrillic small a
+	'А': 'A', // А Cyrillic capital A
+	'е': 'e', // е Cyrillic small IE
+	'Е': 'E', // Е Cyrillic capital IE
+	'ѕ': 's', // ѕ Cyrillic small DZE
+	'Ѕ': 'S', // Ѕ Cyrillic capital DZE
+	'ԁ': 'd', // ԁ Cyrillic small Komi DE
+	'ԝ': 'w', // ԝ Cyrillic small WE
+	'ѵ': 'v', // ѵ Cyrillic small IZHITSA
+	'Ѵ': 'V', // Ѵ Cyrillic capital IZHITSA
+	'Т': 'T', // Т Cyrillic capital TE
+	'ɡ': 'g', // ɡ Latin small script G
+	'α': 'a', // α Greek ALPHA
+	'ε': 'e', // ε Greek EPSILON
+	'ν': 'v', // ν Greek NU
+	'ω': 'w', // ω Greek OMEGA
+	'τ': 't', // τ Greek TAU
+}
+
+// nearMissGatesTargets is the closed set of skeleton prefixes that identify a
+// near-miss gates header (D8, ADR-2026-11-08 / ML-2G). After the skeleton is
+// computed by gatesNearMissSkeleton, the line is a near-miss when strings.HasPrefix
+// matches one of these strings.
+var nearMissGatesTargets = []string{
+	"**gates da wave:**",
+	"**wave gates:**",
+}
+
+// gatesNearMissSkeleton computes the normalised skeleton of a line for the
+// near-miss gates-header detection (D8, ADR-2026-11-08 / ML-2G). The five-step
+// algorithm is:
+//
+//  a. Remove every rune in unicode.Cf, unicode.Other_Default_Ignorable_Code_Point
+//     and VS16 (U+FE0F, the variation selector that decorates ✅).
+//
+//  b. Strip leading Unicode whitespace (unicode.IsSpace, which includes NBSP).
+//
+//  c. Repeatedly strip one leading blockquote or list marker:
+//     - blockquote: '>' followed by optional whitespace
+//     - unordered list: '-', '*', or '+' followed by one space
+//     - ordered list: digits + '.' or ')' + one or more whitespace
+//     Loop until no marker is found at the start of the string.
+//
+//  d. Map homoglyphs to ASCII using nearMissHomoglyphs.
+//
+//  e. Convert to lowercase; collapse all runs of internal unicode.IsSpace
+//     whitespace to a single ASCII space.
+//
+// The skeleton is then compared against nearMissGatesTargets in ParseGatesLines.
+// A line whose skeleton matches is reported as a near-miss error regardless of
+// whether the wave already has a valid gate header.
+func gatesNearMissSkeleton(line string) string {
+	// Step a: remove Cf, ODIP, and VS16.
+	var b strings.Builder
+	b.Grow(len(line))
+	for _, r := range line {
+		if r == vs16 ||
+			unicode.Is(unicode.Cf, r) ||
+			unicode.Is(unicode.Other_Default_Ignorable_Code_Point, r) {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	s := b.String()
+
+	// Step b: strip leading Unicode whitespace (including NBSP U+00A0).
+	s = strings.TrimLeftFunc(s, unicode.IsSpace)
+
+	// Step c: repeatedly strip leading blockquote or list marker.
+	for {
+		advanced := false
+		if strings.HasPrefix(s, ">") {
+			s = s[1:]
+			s = strings.TrimLeftFunc(s, unicode.IsSpace)
+			advanced = true
+		} else {
+			for _, m := range []string{"-", "*", "+"} {
+				if len(s) >= len(m)+1 && s[:len(m)] == m && s[len(m)] == ' ' {
+					s = s[len(m)+1:]
+					advanced = true
+					break
+				}
+			}
+			if !advanced {
+				if loc := nearMissOrderedListRe.FindStringIndex(s); loc != nil {
+					s = s[loc[1]:]
+					advanced = true
+				}
+			}
+		}
+		if !advanced {
+			break
+		}
+	}
+
+	// Step d: apply homoglyph table.
+	var hb strings.Builder
+	hb.Grow(len(s))
+	for _, r := range s {
+		if mapped, ok := nearMissHomoglyphs[r]; ok {
+			hb.WriteRune(mapped)
+		} else {
+			hb.WriteRune(r)
+		}
+	}
+	s = hb.String()
+
+	// Step e: lowercase then collapse internal whitespace runs to a single space.
+	s = strings.ToLower(s)
+	var wb strings.Builder
+	wb.Grow(len(s))
+	inSpace := false
+	for _, r := range s {
+		if unicode.IsSpace(r) {
+			if !inSpace {
+				wb.WriteByte(' ')
+				inSpace = true
+			}
+		} else {
+			wb.WriteRune(r)
+			inSpace = false
+		}
+	}
+	return wb.String()
+}
+
 // ParseGatesLines implements rule 5. It returns each gate command together
 // with its 1-based line number so that the caller can attribute fragments to
 // the exact source line.
@@ -1327,6 +1501,35 @@ func ParseGatesLines(lines []string, waveStart, waveEnd int) ([]GateCmd, error) 
 		return nil, fmt.Errorf(
 			"unclosed HTML comment at line %d may hide the gates header (D8, ADR-2026-11-08)",
 			htmlOpenLine)
+	}
+
+	// D8 near-miss check (ADR-2026-11-08 / ML-2G): scan every unmasked line in
+	// [waveStart, waveEnd) that does NOT match GatesHeaderRe. Compute its skeleton
+	// (see gatesNearMissSkeleton) and test whether it starts with one of the two
+	// canonical header strings. If so, return an error naming the line.
+	//
+	// Ordering rationale: this check runs BEFORE D3 so that a near-miss error is
+	// always reported first — a document with a near-miss plus a D3 (duplicate)
+	// violation is most usefully diagnosed at the near-miss level, since fixing it
+	// also removes the duplicate. Running it before D3 also ensures the check fires
+	// even when a valid header is present in the same wave (the ADR says "the rule
+	// holds even when a valid header exists").
+	//
+	// Masked lines (fenced or HTML-commented) are excluded: a near-miss inside a
+	// fence or comment is not visible to the author as a potential header and
+	// therefore does not carry the same visual-confusion risk.
+	for i := waveStart; i < waveEnd; i++ {
+		if fenced[i] || htmlMask[i] || GatesHeaderRe.MatchString(lines[i]) {
+			continue
+		}
+		skel := gatesNearMissSkeleton(lines[i])
+		for _, target := range nearMissGatesTargets {
+			if strings.HasPrefix(skel, target) {
+				return nil, fmt.Errorf(
+					"near-miss gates header at line %d: the line looks like a gates header but does not match the accepted form exactly (leading space, list/blockquote marker, invisible character, homoglyph or case) — write '**Wave gates:**' or '**Gates da wave:**' at column 0 (D8, ADR-2026-11-08)",
+					i+1)
+			}
+		}
 	}
 
 	// ADR D3: pre-scan for every valid gate header in [waveStart, waveEnd).

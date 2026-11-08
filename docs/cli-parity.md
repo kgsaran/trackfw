@@ -791,6 +791,10 @@ Regras do parser (`AcceptanceEvaluateFull`, `internal/roadmapdoc`):
   linha em branco intercalada.
 - A linha de continuação deve ter ≥ 2 espaços de indentação (não pode estar na coluna 0; tab não é aceito).
 - `Caducou:` / `Lapsed:` sem texto após os dois-pontos não é aceito — a justificativa é obrigatória (D2).
+- A justificativa deve conter ao menos um rune de categoria `\p{L}`, `\p{N}` ou `\p{P}` que NÃO
+  esteja em `unicode.Other_Default_Ignorable_Code_Point` (N-1, D8, ADR-2026-11-08, ML-2G): os
+  quatro Hangul Fillers (U+3164, U+115F, U+1160, U+FFA0) têm categoria Lo (Letter, Other) mas
+  não carregam glifo visível — uma continuação com apenas esses caracteres é tratada como Unmet.
 - A linha de continuação dentro de cerca de código (```` ``` ````) é ignorada pelo fence-mask.
 - O conjunto aceito é exatamente `{"Caducou:", "Lapsed:"}` — outras grafias não são aceitas (ADR D1,
   ADR-2026-11-08).
@@ -3046,6 +3050,28 @@ These are literal parsing rules. The binary implements them.
    (captured in `gates.error` for `show --json`, causes exit 2 for `barrier`). The E3 residual
    is closed. The rule applies only when the wave has **no** unmasked gate header, and covers a
    header inside a closed HTML comment as well; a masked example next to a real header is allowed.
+   **Near-miss gates header (D8, ADR-2026-11-08, ML-2G):** an unmasked line that does not match
+   `GatesHeaderRe` but whose skeleton looks like a valid header is a parse error naming the
+   line. The skeleton is computed by: (a) removing Unicode format chars (`Cf`),
+   `Other_Default_Ignorable_Code_Point` chars and VS16 (`U+FE0F`); (b) stripping leading
+   Unicode whitespace (including NBSP); (c) repeatedly stripping a leading blockquote (`>`) or
+   list marker (`-`, `*`, `+`, or `\d+[.)]`) with trailing space; (d) mapping a small, explicit
+   table of Cyrillic and Greek homoglyphs to their ASCII equivalents (see
+   `nearMissHomoglyphs` in `roadmapdoc.go` for the justified table); (e) lowercasing and
+   collapsing internal whitespace runs to a single ASCII space. If the result begins with
+   `**gates da wave:**` or `**wave gates:**`, the line is a near-miss. The check runs for every
+   unmasked non-matching line in `[waveStart, waveEnd)`, **even when a valid header is also
+   present**; it runs before D3 so a near-miss error is always reported first. Residuals
+   (declared, non-blocking): `__Wave gates:__` (underscore bold), `**Wave gate:**` (singular),
+   `**Gates da wave**:` (colon outside bold), `**Wave gates :**` (space before colon).
+   **`Lapsed:`/`Caducou:` invisible-filler guard (D8, ADR-2026-11-08, ML-2G):** the
+   `lapsedLineHasContent` function rejects a continuation line whose post-colon content
+   consists entirely of `Other_Default_Ignorable_Code_Point` characters (which includes the
+   four Hangul Fillers U+3164, U+115F, U+1160, U+FFA0). These have Unicode category Lo
+   (Letter, Other) so `unicode.IsLetter` returns true, but they carry no visible glyph. A
+   continuation whose only characters are ODIP runes is treated as Unmet, not Lapsed. The
+   guard is an additional `!unicode.Is(unicode.Other_Default_Ignorable_Code_Point, r)` check
+   applied after the existing `IsLetter || IsNumber || IsPunct` test.
    **Consequence of per-line execution:** each gate command runs in its own `sh -c` process.
    There is no shared state between lines: `export`, `cd`, and variable assignments do not
    survive to the next line. Multi-line constructs — unbalanced quotes, `$(`, heredoc openers,

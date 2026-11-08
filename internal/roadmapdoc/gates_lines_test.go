@@ -2,6 +2,51 @@ package roadmapdoc
 
 // gates_lines_test.go — unit tests for ParseGatesLines and the F1 fix (REQ #491, ML-1A).
 //
+// ── New tests (D8, ADR-2026-11-08 / ML-2G — near-miss gates header detection) ──
+//
+//   TestParseGatesLines_NearMiss_OneLeadingSpace
+//     Affirms: " **Wave gates:**" (1 leading space) is detected as a near-miss.
+//
+//   TestParseGatesLines_NearMiss_TwoLeadingSpaces
+//     Affirms: "  **Wave gates:**" (2 leading spaces) is detected as a near-miss.
+//
+//   TestParseGatesLines_NearMiss_ThreeLeadingSpaces
+//     Affirms: "   **Gates da wave:**" (3 leading spaces) is detected as a near-miss.
+//
+//   TestParseGatesLines_NearMiss_NBSPLeading
+//     Affirms: " **Wave gates:**" (NBSP leading space) is detected as a near-miss.
+//
+//   TestParseGatesLines_NearMiss_UnorderedListDash
+//     Affirms: "- **Wave gates:**" (unordered-list dash) is detected as a near-miss.
+//
+//   TestParseGatesLines_NearMiss_OrderedList1Dot
+//     Affirms: "1. **Wave gates:**" (ordered-list "1.") is detected as a near-miss.
+//
+//   TestParseGatesLines_NearMiss_BlockquoteMarker
+//     Affirms: "> **Wave gates:**" (blockquote ">") is detected as a near-miss.
+//
+//   TestParseGatesLines_NearMiss_CyrillicHomoglyphGates
+//     Affirms: "**gаtes da wave:**" (Cyrillic а U+0430 in "gates") is detected.
+//
+//   TestParseGatesLines_NearMiss_AllCapsWaveGates
+//     Affirms: "**WAVE GATES:**" is detected as a near-miss via the lowercase step.
+//
+//   TestParseGatesLines_NearMiss_ZWSPInsideBold
+//     Affirms: "**Wave​ gates:**" (ZWSP U+200B between "Wave" and space) is detected.
+//
+//   TestParseGatesLines_NearMiss_ValidHeaderContraArm_EN
+//     Affirms: a valid "**Wave gates:**" at column 0 is NOT flagged as a near-miss.
+//
+//   TestParseGatesLines_NearMiss_ValidHeaderContraArm_PT
+//     Affirms: a valid "**Gates da wave:**" at column 0 is NOT flagged as a near-miss.
+//
+//   TestParseGatesLines_NearMiss_ProseWithBacktickContraArm
+//     Affirms: a prose line citing the header in backticks (e.g. "- `**Wave gates:**`") is NOT flagged.
+//
+//   TestParseGatesLines_NearMiss_ValidPlusNearMiss_D8CoversValidWave
+//     Affirms: a wave with one valid header AND one near-miss header returns a near-miss error,
+//     because the near-miss check runs unconditionally before D3.
+//
 // AC11 reconciliation (one sentence per test asserting which conclusion it affirms):
 //
 //   TestParseGatesLines_LineNumbers
@@ -79,6 +124,7 @@ package roadmapdoc
 //     headers count toward the duplicate check.
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1215,3 +1261,257 @@ func TestParseGatesLines_E3_MaskedOnlyHeaderReturnsError(t *testing.T) {
 	}
 }
 
+// ── Near-miss gates header tests (D8, ADR-2026-11-08 / ML-2G) ────────────────
+
+// nearMissWaveDoc returns a minimal document with one wave whose body is
+// the given gateHeaderLine followed by an optional bash fence and a final
+// newline. This helper keeps the fixture construction DRY across the near-miss
+// tests.
+func nearMissWaveDoc(gateHeaderLine, bashBlock string) string {
+	return "## Wave 1 — Near-miss test \n" +
+		gateHeaderLine + "\n" +
+		bashBlock
+}
+
+// nearMissWaveDocMustErr runs ParseGatesLines on a wave doc whose gate header
+// line is a near-miss and asserts:
+//   - err is non-nil
+//   - err.Error() contains "near-miss gates header at line N"
+func nearMissWaveDocMustErr(t *testing.T, doc string, expectLine int) {
+	t.Helper()
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, malformed := ParseWaves(lines, fenced)
+	if len(malformed) > 0 {
+		t.Fatalf("unexpected malformed waves: %v", malformed)
+	}
+	if len(waves) != 1 {
+		t.Fatalf("expected 1 wave, got %d", len(waves))
+	}
+	w := waves[0]
+	_, err := ParseGatesLines(lines, w.Start, w.End)
+	if err == nil {
+		t.Fatal("expected near-miss error, got nil")
+	}
+	want := fmt.Sprintf("near-miss gates header at line %d", expectLine)
+	if !strings.Contains(err.Error(), want) {
+		t.Errorf("error %q does not contain %q", err.Error(), want)
+	}
+}
+
+// nearMissWaveDocMustPass is the contra-arm helper: ParseGatesLines must
+// succeed (err == nil) for the given document.
+func nearMissWaveDocMustPass(t *testing.T, doc string) []GateCmd {
+	t.Helper()
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, malformed := ParseWaves(lines, fenced)
+	if len(malformed) > 0 {
+		t.Fatalf("unexpected malformed waves: %v", malformed)
+	}
+	if len(waves) != 1 {
+		t.Fatalf("expected 1 wave, got %d", len(waves))
+	}
+	w := waves[0]
+	cmds, err := ParseGatesLines(lines, w.Start, w.End)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	return cmds
+}
+
+// ── Ação 2 vector tests ───────────────────────────────────────────────────────
+
+// TestParseGatesLines_NearMiss_OneLeadingSpace asserts that " **Wave gates:**"
+// (1 leading ASCII space before the bold marker) is detected as a near-miss.
+//
+// Reconciliation (ML-2G): affirms that a visually identical header at a wrong
+// column is an error, not a silent zero-gates result.
+func TestParseGatesLines_NearMiss_OneLeadingSpace(t *testing.T) {
+	doc := nearMissWaveDoc(" **Wave gates:**", "")
+	nearMissWaveDocMustErr(t, doc, 2)
+}
+
+// TestParseGatesLines_NearMiss_TwoLeadingSpaces asserts that "  **Wave gates:**"
+// (2 leading ASCII spaces) is detected as a near-miss.
+//
+// Reconciliation (ML-2G): same conclusion as OneLeadingSpace, different spacing.
+func TestParseGatesLines_NearMiss_TwoLeadingSpaces(t *testing.T) {
+	doc := nearMissWaveDoc("  **Wave gates:**", "")
+	nearMissWaveDocMustErr(t, doc, 2)
+}
+
+// TestParseGatesLines_NearMiss_ThreeLeadingSpaces asserts that "   **Gates da wave:**"
+// (3 leading ASCII spaces) is detected as a near-miss.
+//
+// Reconciliation (ML-2G): same conclusion; covers the 3-space indentation that
+// scaffold.go currently emits (pre-existing bug reported to architect).
+func TestParseGatesLines_NearMiss_ThreeLeadingSpaces(t *testing.T) {
+	doc := nearMissWaveDoc("   **Gates da wave:**", "")
+	nearMissWaveDocMustErr(t, doc, 2)
+}
+
+// TestParseGatesLines_NearMiss_NBSPLeading asserts that " **Wave gates:**"
+// (NBSP U+00A0 as a leading space) is detected as a near-miss.
+//
+// Reconciliation (ML-2G): affirms that NBSP leading space triggers the near-miss
+// detection via the unicode.IsSpace strip in step b of gatesNearMissSkeleton.
+func TestParseGatesLines_NearMiss_NBSPLeading(t *testing.T) {
+	doc := nearMissWaveDoc(" **Wave gates:**", "")
+	nearMissWaveDocMustErr(t, doc, 2)
+}
+
+// TestParseGatesLines_NearMiss_UnorderedListDash asserts that "- **Wave gates:**"
+// (unordered-list dash marker) is detected as a near-miss.
+//
+// Reconciliation (ML-2G): affirms that a list-item version of the header is
+// an error, not a silent zero-gates result.
+func TestParseGatesLines_NearMiss_UnorderedListDash(t *testing.T) {
+	doc := nearMissWaveDoc("- **Wave gates:**", "")
+	nearMissWaveDocMustErr(t, doc, 2)
+}
+
+// TestParseGatesLines_NearMiss_OrderedList1Dot asserts that "1. **Wave gates:**"
+// (ordered-list "1." marker) is detected as a near-miss.
+//
+// Reconciliation (ML-2G): affirms that an ordered-list version of the header
+// is an error.
+func TestParseGatesLines_NearMiss_OrderedList1Dot(t *testing.T) {
+	doc := nearMissWaveDoc("1. **Wave gates:**", "")
+	nearMissWaveDocMustErr(t, doc, 2)
+}
+
+// TestParseGatesLines_NearMiss_BlockquoteMarker asserts that "> **Wave gates:**"
+// (blockquote ">" marker) is detected as a near-miss.
+//
+// Reconciliation (ML-2G): affirms that a blockquote version of the header is
+// an error.
+func TestParseGatesLines_NearMiss_BlockquoteMarker(t *testing.T) {
+	doc := nearMissWaveDoc("> **Wave gates:**", "")
+	nearMissWaveDocMustErr(t, doc, 2)
+}
+
+// TestParseGatesLines_NearMiss_CyrillicHomoglyphGates asserts that
+// "**gаtes da wave:**" (with Cyrillic small а U+0430 in "gates") is detected.
+//
+// Reconciliation (ML-2G): affirms that a homoglyph substitution that makes the
+// header visually indistinguishable from the valid form is an error.
+func TestParseGatesLines_NearMiss_CyrillicHomoglyphGates(t *testing.T) {
+	// "g" + Cyrillic а (U+0430) + "tes da wave:"
+	line := "**gаtes da wave:**"
+	doc := nearMissWaveDoc(line, "")
+	nearMissWaveDocMustErr(t, doc, 2)
+}
+
+// TestParseGatesLines_NearMiss_AllCapsWaveGates asserts that "**WAVE GATES:**"
+// (all uppercase) is detected via the lowercase step.
+//
+// Reconciliation (ML-2G): affirms that case variation is covered by the
+// lowercase normalisation in gatesNearMissSkeleton step e.
+func TestParseGatesLines_NearMiss_AllCapsWaveGates(t *testing.T) {
+	doc := nearMissWaveDoc("**WAVE GATES:**", "")
+	nearMissWaveDocMustErr(t, doc, 2)
+}
+
+// TestParseGatesLines_NearMiss_ZWSPInsideBold asserts that "**Wave​ gates:**"
+// (ZWSP U+200B between "Wave" and the space) is detected.
+//
+// Reconciliation (ML-2G): affirms that an invisible Cf character inside the
+// bold token is stripped in step a of gatesNearMissSkeleton, making the
+// near-miss visible.
+func TestParseGatesLines_NearMiss_ZWSPInsideBold(t *testing.T) {
+	// "**Wave" + ZWSP (U+200B) + " gates:**"
+	line := "**Wave​ gates:**"
+	doc := nearMissWaveDoc(line, "")
+	nearMissWaveDocMustErr(t, doc, 2)
+}
+
+// TestParseGatesLines_NearMiss_ValidHeaderContraArm_EN is the contra-arm for EN:
+// a valid "**Wave gates:**" at column 0 must NOT be flagged as a near-miss and
+// must return the gate commands from the following bash fence.
+//
+// Reconciliation (ML-2G): confirms that the near-miss check never fires on a
+// valid header — GatesHeaderRe lines are skipped by the near-miss loop.
+func TestParseGatesLines_NearMiss_ValidHeaderContraArm_EN(t *testing.T) {
+	doc := "## Wave 1 — contra-arm EN \n" +
+		"**Wave gates:**\n" +
+		"```bash\n" +
+		"echo ok\n" +
+		"```\n"
+	cmds := nearMissWaveDocMustPass(t, doc)
+	if len(cmds) != 1 || cmds[0].Text != "echo ok" {
+		t.Errorf("contra-arm EN: expected [echo ok], got %v", cmds)
+	}
+}
+
+// TestParseGatesLines_NearMiss_ValidHeaderContraArm_PT is the contra-arm for PT:
+// a valid "**Gates da wave:**" at column 0 must NOT be flagged as a near-miss.
+//
+// Reconciliation (ML-2G): same conclusion as the EN contra-arm.
+func TestParseGatesLines_NearMiss_ValidHeaderContraArm_PT(t *testing.T) {
+	doc := "## Wave 1 — contra-arm PT \n" +
+		"**Gates da wave:**\n" +
+		"```bash\n" +
+		"echo ok\n" +
+		"```\n"
+	cmds := nearMissWaveDocMustPass(t, doc)
+	if len(cmds) != 1 || cmds[0].Text != "echo ok" {
+		t.Errorf("contra-arm PT: expected [echo ok], got %v", cmds)
+	}
+}
+
+// TestParseGatesLines_NearMiss_ProseWithBacktickContraArm asserts that a prose
+// line citing the header inside backticks — "- `**Wave gates:**` is the EN form"
+// — does NOT trigger a near-miss error.
+//
+// Reconciliation (ML-2G): confirms that after stripping the list marker "- ",
+// the remaining string starts with a backtick, not "**", and therefore does not
+// match any near-miss target.
+func TestParseGatesLines_NearMiss_ProseWithBacktickContraArm(t *testing.T) {
+	// Wave with valid gate header followed by a prose line citing it in backticks.
+	doc := "## Wave 1 — prose citation contra-arm \n" +
+		"**Wave gates:**\n" +
+		"```bash\n" +
+		"echo ok\n" +
+		"```\n" +
+		"- `**Wave gates:**` is the EN form of the gates header.\n"
+	cmds := nearMissWaveDocMustPass(t, doc)
+	if len(cmds) != 1 || cmds[0].Text != "echo ok" {
+		t.Errorf("prose contra-arm: expected [echo ok], got %v", cmds)
+	}
+}
+
+// TestParseGatesLines_NearMiss_ValidPlusNearMiss_D8CoversValidWave asserts that
+// a wave containing both a valid "**Wave gates:**" header AND a near-miss line
+// " **Gates da wave:**" (1 leading space) returns a near-miss error — the
+// near-miss check runs unconditionally before D3, regardless of whether a valid
+// header exists.
+//
+// Reconciliation (ML-2G): affirms that the ADR requirement "the rule holds even
+// when a valid header is present" is implemented — a near-miss next to a real
+// header is still an error.
+func TestParseGatesLines_NearMiss_ValidPlusNearMiss_D8CoversValidWave(t *testing.T) {
+	doc := "## Wave 1 — valid plus near-miss \n" +
+		"**Wave gates:**\n" +
+		"```bash\n" +
+		"echo ok\n" +
+		"```\n" +
+		" **Gates da wave:**\n" // near-miss at line 6
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, malformed := ParseWaves(lines, fenced)
+	if len(malformed) > 0 {
+		t.Fatalf("unexpected malformed waves: %v", malformed)
+	}
+	if len(waves) != 1 {
+		t.Fatalf("expected 1 wave, got %d", len(waves))
+	}
+	w := waves[0]
+	_, err := ParseGatesLines(lines, w.Start, w.End)
+	if err == nil {
+		t.Fatal("expected near-miss error when valid+near-miss coexist, got nil")
+	}
+	if !strings.Contains(err.Error(), "near-miss gates header at line 6") {
+		t.Errorf("error %q does not name the near-miss at line 6", err.Error())
+	}
+}

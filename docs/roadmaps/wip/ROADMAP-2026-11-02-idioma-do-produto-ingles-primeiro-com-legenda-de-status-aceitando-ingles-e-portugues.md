@@ -329,7 +329,7 @@ residual aceito. O Zeus reclassificou: o sintoma é o mesmo do D8 (gate some em 
 conhecido, então entra nesta REQ (emenda da ADR). As duas correções ficam no ML-2G e a rodada 3 no ML-2H.
 
 ### ML-2G — Quase-cabeçalho de gates e razão só com preenchedor invisível são erro
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Files affected:**
 - `internal/roadmapdoc/roadmapdoc.go`
@@ -345,7 +345,34 @@ conhecido, então entra nesta REQ (emenda da ADR). As duas correções ficam no 
    roadmap em `wip/` cair na regra, parar e reportar.
 
 **Acceptance criteria:**
-- [ ] Teste por vetor (1 a 3 espaços, lista, blockquote, homóglifo cirílico, maiúsculas, U+3164/U+115F/U+1160/U+FFA0), com contra-braço
+- [x] Teste por vetor (1 a 3 espaços, lista, blockquote, homóglifo cirílico, maiúsculas, U+3164/U+115F/U+1160/U+FFA0), com contra-braço
+- [x] Medição do acervo reportada; nenhum roadmap em `wip/` passa a reprovar
+- [x] `go test ./internal/roadmapdoc/ ./internal/commands/ ./internal/validator/` verde
+
+*Auditoria (Zeus, 2026-11-08):* o acervo não tem nenhum quase-cabeçalho nem nenhuma razão só com preenchedor.
+Os 19 testes existem com os nomes reportados e passam; 14 deles reprovam contra 8e46da3e. Os gates de
+falsificação (285), do contrato do barrier (49) e do oráculo (243) deram rc=0. O próprio ML declarou quatro
+grafias que ainda escapam da regra: `**Wave gate:**` (singular), `**Wave gates**:` (dois-pontos fora do negrito),
+`__Wave gates:__` e `**Wave gates :**`. Além delas, letras de largura total ou matemáticas não passam por NFKC.
+São defeito conhecido do mesmo sintoma, então vão para o ML-2I. Achado colateral: o modelo de roadmap do
+comando `/trackfw:roadmap` (`internal/generators/scaffold.go`, `roadmap.md`) está indentado em 3 espaços dentro
+de uma cerca. Um agente que copie o modelo com a indentação agora recebe erro, em vez do zero gates silencioso
+de antes, então a mudança não é regressão. A remoção da indentação entra no ML-3C.
+
+### ML-2I — Quase-cabeçalho: grafias declaradas como residual pelo ML-2G
+**Status:** ⬜ Pendente
+**Squad:** apolo-tf
+**Files affected:**
+- `internal/roadmapdoc/roadmapdoc.go`
+- `internal/roadmapdoc/gates_lines_test.go`
+- `docs/cli-parity.md`
+
+**Actions:** o esqueleto de `gatesNearMissSkeleton` passa por NFKC; `__` vira `**`; o espaço antes de `:` é removido;
+`**x**:` vira `**x:**`. Os alvos aceitam `gate`/`gates` nas duas línguas. Medir o acervo antes e parar se
+algum roadmap em `wip/` cair na regra.
+
+**Acceptance criteria:**
+- [ ] Um teste por grafia (singular EN e PT, dois-pontos fora, `__`, espaço antes de `:`, largura total, negrito matemático), com contra-braço
 - [ ] Medição do acervo reportada; nenhum roadmap em `wip/` passa a reprovar
 - [ ] `go test ./internal/roadmapdoc/ ./internal/commands/ ./internal/validator/` verde
 
@@ -396,6 +423,10 @@ test -s docs/seguranca/2026-11-08-redteam-leitor-bilingue.md
 `update.go`, `internal/identity/preset.go` e demais da tabela §1 do parecer da Wave 0. `claudemd.go` e
 `agentfiles.go` são meta-geradores: instruem o agente consumidor a escrever `⬜ Pendente`; só mudam depois
 da tag do leitor (Wave 0, achado 4).
+
+*Acrescentado (auditoria do ML-2G):* o modelo de roadmap dentro de `roadmap.md` em `scaffold.go` perde a
+indentação de 3 espaços, para que o cabeçalho de gates copiado fique na coluna 0. Teste: o modelo extraído da
+cerca e passado a `ParseGatesLines` não dá erro na Wave 0 e retorna o gate `exit 1`.
 **Acceptance criteria:**
 - [ ] `trackfw update` entrega a versão nova sem perder edição local (teste)
 - [ ] Nomes de preset mantidos, descrições em inglês (ADR D6)

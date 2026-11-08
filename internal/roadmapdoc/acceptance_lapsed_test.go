@@ -550,3 +550,109 @@ func TestAcceptanceEvaluateFull_F_LapsedZWSPOnly(t *testing.T) {
 		t.Errorf("F-ZWSP: detail.Unmet = %d, want 1 — criterion with ZWSP-only continuation must be Unmet", detail.Unmet)
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// N-1 (D8, ADR-2026-11-08 / ML-2G): Hangul Filler bypass in lapsedLineHasContent
+//
+// The four Hangul Fillers (U+3164, U+115F, U+1160, U+FFA0) have category Lo
+// (Letter, Other), so unicode.IsLetter returns true. All four are in
+// unicode.Other_Default_Ignorable_Code_Point. Without the ODIP guard, a
+// "  Lapsed:<filler>" line would pass lapsedLineHasContent and classify the
+// criterion as Lapsed instead of Unmet. The fix adds:
+//   !unicode.Is(unicode.Other_Default_Ignorable_Code_Point, r)
+// as a secondary guard so that ODIP runes never count as content, regardless
+// of their primary category.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// lapsedHangulFixtureFor builds a minimal ML with one unmet criterion followed
+// by a "  Lapsed:" line whose suffix consists only of the given filler rune.
+func lapsedHangulFixtureFor(filler rune) string {
+	return "### ML-1A — test\n**Status:** 🔄 In progress\n**Acceptance criteria:**\n" +
+		"- [ ] criterion\n  Lapsed:" + string(filler) + "\n"
+}
+
+// TestAcceptanceEvaluateFull_N1_LapsedHangulFiller_U3164 asserts that
+// "  Lapsed:ㅤ" (U+3164 HANGUL FILLER) is rejected by lapsedLineHasContent
+// and the criterion counts as Unmet, not Lapsed.
+//
+// Reconciliation (ML-2G): this test affirms that the ODIP guard closes the
+// Hangul Filler bypass — the same root cause as F (ML-2C) but for Lo-category
+// characters that IsLetter accepts.
+func TestAcceptanceEvaluateFull_N1_LapsedHangulFiller_U3164(t *testing.T) {
+	content := lapsedHangulFixtureFor('ㅤ')
+	lines, fenced, mls := mustParseMLs(t, content)
+	detail := AcceptanceEvaluateFull(lines, fenced, mls[0])
+	if detail.Lapsed != 0 {
+		t.Errorf("N1-U3164: Lapsed=%d want 0 — HANGUL FILLER must not count as Lapsed content", detail.Lapsed)
+	}
+	if detail.Unmet != 1 {
+		t.Errorf("N1-U3164: Unmet=%d want 1 — criterion must be Unmet when filler is only content", detail.Unmet)
+	}
+}
+
+// TestAcceptanceEvaluateFull_N1_LapsedHangulFiller_U115F asserts that
+// "  Lapsed:ᅟ" (U+115F HANGUL CHOSEONG FILLER) is rejected.
+//
+// Reconciliation (ML-2G): affirms same as U+3164 for a different ODIP filler.
+func TestAcceptanceEvaluateFull_N1_LapsedHangulFiller_U115F(t *testing.T) {
+	content := lapsedHangulFixtureFor('ᅟ')
+	lines, fenced, mls := mustParseMLs(t, content)
+	detail := AcceptanceEvaluateFull(lines, fenced, mls[0])
+	if detail.Lapsed != 0 {
+		t.Errorf("N1-U115F: Lapsed=%d want 0 — HANGUL CHOSEONG FILLER must not count as Lapsed content", detail.Lapsed)
+	}
+	if detail.Unmet != 1 {
+		t.Errorf("N1-U115F: Unmet=%d want 1", detail.Unmet)
+	}
+}
+
+// TestAcceptanceEvaluateFull_N1_LapsedHangulFiller_U1160 asserts that
+// "  Lapsed:ᅠ" (U+1160 HANGUL JUNGSEONG FILLER) is rejected.
+//
+// Reconciliation (ML-2G): affirms same as U+3164 for a different ODIP filler.
+func TestAcceptanceEvaluateFull_N1_LapsedHangulFiller_U1160(t *testing.T) {
+	content := lapsedHangulFixtureFor('ᅠ')
+	lines, fenced, mls := mustParseMLs(t, content)
+	detail := AcceptanceEvaluateFull(lines, fenced, mls[0])
+	if detail.Lapsed != 0 {
+		t.Errorf("N1-U1160: Lapsed=%d want 0 — HANGUL JUNGSEONG FILLER must not count as Lapsed content", detail.Lapsed)
+	}
+	if detail.Unmet != 1 {
+		t.Errorf("N1-U1160: Unmet=%d want 1", detail.Unmet)
+	}
+}
+
+// TestAcceptanceEvaluateFull_N1_LapsedHangulFiller_UFFA0 asserts that
+// "  Lapsed:ﾠ" (U+FFA0 HALFWIDTH HANGUL FILLER) is rejected.
+//
+// Reconciliation (ML-2G): affirms same as U+3164 for a different ODIP filler.
+func TestAcceptanceEvaluateFull_N1_LapsedHangulFiller_UFFA0(t *testing.T) {
+	content := lapsedHangulFixtureFor('ﾠ')
+	lines, fenced, mls := mustParseMLs(t, content)
+	detail := AcceptanceEvaluateFull(lines, fenced, mls[0])
+	if detail.Lapsed != 0 {
+		t.Errorf("N1-UFFA0: Lapsed=%d want 0 — HALFWIDTH HANGUL FILLER must not count as Lapsed content", detail.Lapsed)
+	}
+	if detail.Unmet != 1 {
+		t.Errorf("N1-UFFA0: Unmet=%d want 1", detail.Unmet)
+	}
+}
+
+// TestAcceptanceEvaluateFull_N1_LapsedRealText_ContraArm is the contra-arm:
+// a continuation with real text ("superseded by D3") must still classify as
+// Lapsed after the ODIP guard is added.
+//
+// Reconciliation (ML-2G): confirms the ODIP guard does not reject legitimate
+// justification text — only invisible fillers are blocked.
+func TestAcceptanceEvaluateFull_N1_LapsedRealText_ContraArm(t *testing.T) {
+	content := "### ML-1A — test\n**Status:** 🔄 In progress\n**Acceptance criteria:**\n" +
+		"- [ ] criterion\n  Lapsed: superseded by D3\n"
+	lines, fenced, mls := mustParseMLs(t, content)
+	detail := AcceptanceEvaluateFull(lines, fenced, mls[0])
+	if detail.Lapsed != 1 {
+		t.Errorf("N1-contra-arm: Lapsed=%d want 1 — real text must still classify as Lapsed", detail.Lapsed)
+	}
+	if detail.Unmet != 0 {
+		t.Errorf("N1-contra-arm: Unmet=%d want 0", detail.Unmet)
+	}
+}
