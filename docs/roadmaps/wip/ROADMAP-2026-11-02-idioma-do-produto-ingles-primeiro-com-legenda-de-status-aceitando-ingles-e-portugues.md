@@ -36,7 +36,9 @@ Issues abertas com o mesmo mecanismo: nenhuma (varredura em 2026-11-08, zero iss
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model e inventário por grupo (AC1)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
+
+*Auditoria (Zeus, 2026-11-08):* §3 (fail-open medido com o binário 11.5.1), §4 e os achados de falsificação aprovados; AC1 reprovado — inventário com 12 de 45 arquivos — e corrigido no ML-0B.
 **Squad:** hades-tf
 **Files affected:**
 - `docs/seguranca/2026-11-08-wave0-idioma-ingles-primeiro.md` (novo; único arquivo que o ML escreve)
@@ -67,13 +69,15 @@ Issues abertas com o mesmo mecanismo: nenhuma (varredura em 2026-11-08, zero iss
 `git status --short` e `git diff --cached --name-only` no relatório.
 
 **Acceptance criteria:**
-- [ ] As seis seções respondidas com evidência (comando e resultado), não com afirmação de uma linha
-- [ ] Tabela de inventário com arquivo, linha, grupo e direção (emite/lê) para cada sítio
-- [ ] Item 3 medido com o binário da `main`, com o comando e a saída
-- [ ] Nenhuma linha de implementação escrita
+- [x] As seis seções respondidas com evidência (comando e resultado), não com afirmação de uma linha
+- [x] Tabela de inventário com arquivo, linha, grupo e direção (emite/lê) para cada sítio
+- [x] Item 3 medido com o binário da `main`, com o comando e a saída
+- [x] Nenhuma linha de implementação escrita
 
 ### ML-0B — Corretivo: inventário completo e releitura do grupo 3
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
+
+*Auditoria (Zeus, 2026-11-08):* tabela com 48 arquivos; conferidos no código os três leitores novos, todos já bilíngues — `config.go:398` (`AcceptanceMarkers`), `sync.go:202` (`## Motivation`/`## Motivação`), `generators/roadmap.go:661` (`NewRoadmapFromREQ`). Nenhum exige alias no ML-1A.
 **Squad:** hades-tf
 **Files affected:**
 - `docs/seguranca/2026-11-08-wave0-idioma-ingles-primeiro.md`
@@ -90,8 +94,8 @@ afirmação "nenhum leitor de grupo 3 fora de roadmapdoc/barrier/validator" não
    metrics.go e dizer, com linha, se algum literal português é lido de volta de arquivo do consumidor.
 
 **Acceptance criteria:**
-- [ ] Todos os arquivos da medição do arquiteto presentes na tabela
-- [ ] Cada arquivo da ação 2 com veredito leitor/não leitor e linha citada
+- [x] Todos os arquivos da medição do arquiteto presentes na tabela
+- [x] Cada arquivo da ação 2 com veredito leitor/não leitor e linha citada
 
 **Gates da wave:**
 ```bash
@@ -107,8 +111,8 @@ test -s docs/seguranca/2026-11-08-wave0-idioma-ingles-primeiro.md
 **Files affected:**
 - `internal/roadmapdoc/roadmapdoc.go`, `internal/roadmapdoc/*_test.go`
 - `internal/commands/barrier.go` e testes, se o inventário apontar marcador lido ali
-- `internal/validator/*.go` e testes, idem
-- demais leitores apontados pela Wave 0 (lista fechada no handoff)
+- `docs/cli-parity.md` (seção "Wave gates contract" fixa `**Gates da wave:**` como única forma; Wave 0, achado 3)
+- nenhum outro leitor: a Wave 0 fechou o grupo 3 em G3-1..G3-4 como os únicos só em português
 
 **Actions:**
 1. `GatesHeaderRe` aceita `**Gates da wave:**` e `**Wave gates:**`.
@@ -119,6 +123,9 @@ test -s docs/seguranca/2026-11-08-wave0-idioma-ingles-primeiro.md
 5. Testes: braço positivo por alias novo; `❌ Blocked` e `❌ Bloqueado` continuam pendentes; os dois
    cabeçalhos dão erro; grafia fora do conjunto (`**Wave Gate:**`, `Lapsed :`) não é reconhecida.
    Mensagens novas em inglês.
+6. Falsificação da Wave 0: `❌ cancellation-pending` continua pendente (comparação exata, nunca prefixo);
+   `  Lapsed:` sem texto não conta; `**Wave gate:**` (singular) e `**Wave  gates:**` (dois espaços) não
+   são reconhecidos.
 
 **Acceptance criteria:**
 - [ ] `go build ./...` sem erro
@@ -206,8 +213,10 @@ test -s docs/seguranca/2026-11-08-redteam-leitor-bilingue.md
 ### ML-3C — Conteúdo gerado no consumidor e presets (AC3, AC5)
 **Status:** ⬜ Pendente
 **Squad:** prometeu-tf
-**Files affected:** `internal/generators/scaffold.go`, `claudemd.go`, `agentfiles.go`, `update.go`,
-`internal/identity/preset.go` e demais apontados pela Wave 0.
+**Files affected:** `internal/generators/scaffold.go`, `claudemd.go` (linha ~36), `agentfiles.go` (linhas ~112-113),
+`update.go`, `internal/identity/preset.go` e demais da tabela §1 do parecer da Wave 0. `claudemd.go` e
+`agentfiles.go` são meta-geradores: instruem o agente consumidor a escrever `⬜ Pendente`; só mudam depois
+da tag do leitor (Wave 0, achado 4).
 **Acceptance criteria:**
 - [ ] `trackfw update` entrega a versão nova sem perder edição local (teste)
 - [ ] Nomes de preset mantidos, descrições em inglês (ADR D6)

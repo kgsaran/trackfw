@@ -81,6 +81,13 @@ descritivo** do preset vai para inglês.
 `trackfw validate` sobre todo `docs/roadmaps/`, com o binário da `main` e com o da branch. A diferença
 tem de ser vazia: nenhuma violação nova e nenhuma perdida.
 
+**Emenda 2026-11-08 (Wave 0).** O inventário fechou o grupo 3: os únicos marcadores só em português são
+os quatro de D1. Há três leitores já bilíngues fora das zonas da tabela acima — `config.AcceptanceMarkers`
+(`internal/config/config.go`), `extractMotivation` (`internal/sync/sync.go`, `## Motivation`/`## Motivação`)
+e `NewRoadmapFromREQ` (`internal/generators/roadmap.go`) — e nenhum exige alias. D2 vale também para os
+meta-geradores (`claudemd.go`, `agentfiles.go`), que instruem o agente consumidor a escrever os marcadores:
+eles mudam na mesma tag do gerador. `docs/cli-parity.md` documenta o contrato e muda junto com o leitor.
+
 ## Consequences
 
 - O acervo continua passando; roadmaps novos nascem em inglês depois da segunda tag.
