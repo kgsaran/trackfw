@@ -429,6 +429,10 @@ na regra.
 - [ ] Vetores da rodada 3 refeitos contra a branch, com veredito; vetores novos classificados como acidentais ou como residual do item 4 da emenda; veredito final pelo critério do item 5
 
 ### ML-2B — Merge e tag do leitor (Zeus)
+
+*Decisão do KG (2026-11-08):* dois PRs, com uma tag no meio. Este PR leva as Waves 0–2 (leitor bilíngue) e,
+depois do merge, recebe a tag; as Waves 3–4 (gerador em inglês) vão num segundo PR. O KG também aceitou o
+residual de ofuscação deliberada (emenda da ADR, rodada 3, item 4).
 **Status:** ⬜ Pendente
 **Squad:** zeus-tf
 **Actions:** PR das Waves 0–2, merge pelo KG, release minor com o leitor bilíngue via `trackfw release tag`.
