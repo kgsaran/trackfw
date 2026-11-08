@@ -72,6 +72,27 @@ Issues abertas com o mesmo mecanismo: nenhuma (varredura em 2026-11-08, zero iss
 - [ ] Item 3 medido com o binário da `main`, com o comando e a saída
 - [ ] Nenhuma linha de implementação escrita
 
+### ML-0B — Corretivo: inventário completo e releitura do grupo 3
+**Status:** 🔄 Em andamento
+**Squad:** hades-tf
+**Files affected:**
+- `docs/seguranca/2026-11-08-wave0-idioma-ingles-primeiro.md`
+
+*Por que existe:* a auditoria do ML-0A reprovou o AC1. A §1 do parecer buscou só palavras de marcador e
+cobriu 12 arquivos; a medição do arquiteto de literais com acento em arquivos de produto achou 45 arquivos
+e 269 linhas (help.go 45, scaffold.go 44, validator/validator.go 31, …). Com a lista incompleta, a
+afirmação "nenhum leitor de grupo 3 fora de roadmapdoc/barrier/validator" não estava sustentada.
+
+**Actions:**
+1. Tabela de §1 cobrindo todos os arquivos de produto com português, com grupo, direção e ML de destino.
+2. Releitura de §2: abrir validator.go, config.go, discover.go, sync.go, thirdparty/markers.go, update.go,
+   req_chain_ml4a.go, integrations/render.go, guard/writescope.go, validator_req_roadmap_cutoff.go e
+   metrics.go e dizer, com linha, se algum literal português é lido de volta de arquivo do consumidor.
+
+**Acceptance criteria:**
+- [ ] Todos os arquivos da medição do arquiteto presentes na tabela
+- [ ] Cada arquivo da ação 2 com veredito leitor/não leitor e linha citada
+
 **Gates da wave:**
 ```bash
 test -s docs/seguranca/2026-11-08-wave0-idioma-ingles-primeiro.md
