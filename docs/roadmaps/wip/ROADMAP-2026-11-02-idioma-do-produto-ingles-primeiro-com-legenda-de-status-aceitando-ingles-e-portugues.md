@@ -293,10 +293,11 @@ contra c76cd44d e mutações dos dois disjuntos (`fenced`, `htmlMask`) reprovam.
 (285) e `check-roadmap-barrier-contract.sh` (49) rc=0.
 
 ### ML-2D — Oráculo compara também os gates (lacuna do red team)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Files affected:**
-- `internal/generators/roadmap_show_json.go` e testes
+- `internal/generators/roadmap_show_json.go`
+- `internal/generators/roadmap_show_json_test.go`
 - `scripts/check-marker-corpus-parity.sh`
 - `docs/cli-parity.md`
 
@@ -305,8 +306,14 @@ aditivo). O oráculo compara esse campo quando os dois binários o emitem; enqua
 compara com o campo retirado e imprime a lista da head. Depende do ML-2C (mesmo `docs/cli-parity.md`). Roda em paralelo ao ML-2F (arquivos disjuntos) e documenta a regra do E3 em `docs/cli-parity.md`, porque o ML-2F não toca esse arquivo.
 
 **Acceptance criteria:**
-- [ ] `go test` do pacote verde; `bash scripts/check-marker-corpus-parity.sh --self-test` e execução rc=0
-- [ ] `make parity-rest` rc=0
+- [x] `go test` do pacote verde; `bash scripts/check-marker-corpus-parity.sh --self-test` e execução rc=0
+- [x] `make parity-rest` rc=0
+
+*Auditoria (Zeus, 2026-11-08):* campo `gates: {commands, error}` por wave. Reexecutei com a árvore em df216f07 mais o
+diff do ML-2D: self-test 6/6, oráculo rc=0 em 243 roadmaps, e na head 188 waves com comandos e 15 com erro.
+Listei as 15 uma a uma: 14 D3 e 1 E3, todas em `done/`; nenhuma em `wip/`. Limite declarado: enquanto a `main`
+não tiver o campo, o oráculo remove `gates` dos dois lados e só resume a head. A comparação de gates entre
+base e head passa a valer depois que o leitor bilíngue chegar à `main` (ADR D2).
 
 ### ML-2E — Segunda rodada do red team
 **Status:** ⬜ Pendente

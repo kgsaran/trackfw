@@ -140,6 +140,93 @@ func TestRoadmapShowJSON_HeadingIsRaw(t *testing.T) {
 	}
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// ML-2D (REQ-2026-11-02) — campo gates por wave
+// ────────────────────────────────────────────────────────────────────────────
+
+// AFIRMA (ML-2D): wave com cabeçalho EN "**Wave gates:**" expõe os comandos no
+// campo gates.commands, e wave com cabeçalho PT "**Gates da wave:**" também.
+// Os dois aliases devem ser reconhecidos (ADR D1, ADR-2026-11-08).
+func TestRoadmapShowJSON_GatesField_ENAndPTHeaders(t *testing.T) {
+	body := "# ROADMAP\n\n## Wave 1 — en\n\n" +
+		"**Wave gates:**\n" +
+		"```bash\necho en-gate\n```\n\n" +
+		"### ML-1A — x\n**Status:** done\n\n" +
+		"## Wave 2 — pt\n\n" +
+		"**Gates da wave:**\n" +
+		"```bash\necho pt-gate\n```\n\n" +
+		"### ML-2A — y\n**Status:** done\n"
+
+	got := doc(t, body)
+	if len(got.Waves) != 2 {
+		t.Fatalf("esperava 2 waves, veio %d", len(got.Waves))
+	}
+	w1 := got.Waves[0]
+	if len(w1.Gates.Commands) != 1 || w1.Gates.Commands[0] != "echo en-gate" {
+		t.Errorf("wave EN: gates.commands = %v, queria [\"echo en-gate\"]", w1.Gates.Commands)
+	}
+	if w1.Gates.Error != "" {
+		t.Errorf("wave EN: gates.error inesperado: %q", w1.Gates.Error)
+	}
+	w2 := got.Waves[1]
+	if len(w2.Gates.Commands) != 1 || w2.Gates.Commands[0] != "echo pt-gate" {
+		t.Errorf("wave PT: gates.commands = %v, queria [\"echo pt-gate\"]", w2.Gates.Commands)
+	}
+	if w2.Gates.Error != "" {
+		t.Errorf("wave PT: gates.error inesperado: %q", w2.Gates.Error)
+	}
+}
+
+// AFIRMA (ML-2D): wave sem cabeçalho de gate algum (nem EN nem PT) expõe lista
+// vazia em gates.commands e nenhum erro. Zero gates é legal — a barrier nunca
+// inventa um gate.
+func TestRoadmapShowJSON_GatesField_WaveWithNoGatesHeader(t *testing.T) {
+	body := "# ROADMAP\n\n## Wave 1 — sem gate\n\n" +
+		"### ML-1A — x\n**Status:** done\n"
+
+	got := doc(t, body)
+	if len(got.Waves) != 1 {
+		t.Fatalf("esperava 1 wave, veio %d", len(got.Waves))
+	}
+	g := got.Waves[0].Gates
+	if g.Commands == nil {
+		t.Error("gates.commands não deve ser nil — deve ser []string{}")
+	}
+	if len(g.Commands) != 0 {
+		t.Errorf("wave sem gate: gates.commands = %v, queria []", g.Commands)
+	}
+	if g.Error != "" {
+		t.Errorf("wave sem gate: gates.error inesperado: %q", g.Error)
+	}
+}
+
+// AFIRMA (ML-2D): wave com dois cabeçalhos de gate válidos (D3,
+// ADR-2026-11-08) resulta em gates.error não-vazio e gates.commands vazio.
+// Um segundo leitor que ignorasse o campo error e confiasse só em commands
+// veria "zero gates" e concluiria que a wave passa — o campo error é o
+// mecanismo que expõe o defeito.
+func TestRoadmapShowJSON_GatesField_DuplicateHeaderReturnsError(t *testing.T) {
+	body := "# ROADMAP\n\n## Wave 1 — duplicado\n\n" +
+		"**Wave gates:**\n```bash\necho first\n```\n\n" +
+		"**Gates da wave:**\n```bash\necho second\n```\n\n" +
+		"### ML-1A — x\n**Status:** done\n"
+
+	got := doc(t, body)
+	if len(got.Waves) != 1 {
+		t.Fatalf("esperava 1 wave, veio %d", len(got.Waves))
+	}
+	g := got.Waves[0].Gates
+	if g.Error == "" {
+		t.Error("gates.error deve ser não-vazio para D3 (duplicate header), mas está vazio")
+	}
+	if g.Commands == nil {
+		t.Error("gates.commands não deve ser nil mesmo com erro")
+	}
+	if len(g.Commands) != 0 {
+		t.Errorf("gates.commands deve ser [] quando há erro D3, veio %v", g.Commands)
+	}
+}
+
 // AFIRMA (ML-1C, D3): o campo `lapsed` do JSON conta separadamente os critérios
 // "- [ ]" com Caducou: na linha seguinte. Com 1 met, 1 lapsed e 1 unmet, os três
 // campos saem distintos (met=1, unmet=1, lapsed=1) — provando que AcceptanceEvaluateFull

@@ -97,6 +97,11 @@ if [[ "${1:-}" == "--self-test" ]]; then
   # Format for roadmap show <name> --json:
   #   $1=roadmap $2=show $3=<name> $4=--json
   # Path must match what git ls-files returns for the fixture.
+  #
+  # Binaries used by ST-N1/P1/P2/P3 emit single-line JSON (empty waves — no
+  # gates field involved, so no indentation requirement).
+  # Binaries used by ST-P4/P5 must emit properly-indented multi-line JSON so
+  # that the sed gate-stripper can locate the "gates" block at 6-space indent.
 
   _bin_base="$_st_tmp/bin-base"
   _bin_head_eq="$_st_tmp/bin-head-eq"      # identical to base
@@ -135,6 +140,132 @@ esac
 BINEOF
   chmod +x "$_bin_head_val_diff"
 
+  # ST-P4: both binaries emit indented JSON with the gates field, different commands.
+  # Base emits "echo base", head emits "echo head" — direct comparison, gates differ → rc=1.
+  _bin_p4_base="$_st_tmp/bin-p4-base"
+  _bin_p4_head="$_st_tmp/bin-p4-head"
+
+  cat > "$_bin_p4_base" << 'BINEOF'
+#!/usr/bin/env bash
+case "${1:-}" in
+  roadmap)
+    cat << BEOF
+{
+  "roadmap": "$3.md",
+  "path": "docs/roadmaps/wip/$3.md",
+  "state": "wip",
+  "malformed_waves": [],
+  "waves": [
+    {
+      "label": "1",
+      "line": 1,
+      "gates": {
+        "commands": [
+          "echo base"
+        ]
+      },
+      "mls": []
+    }
+  ]
+}
+BEOF
+    ;;
+  validate) echo "0 warning(s)" ;;
+esac
+BINEOF
+  chmod +x "$_bin_p4_base"
+
+  cat > "$_bin_p4_head" << 'BINEOF'
+#!/usr/bin/env bash
+case "${1:-}" in
+  roadmap)
+    cat << BEOF
+{
+  "roadmap": "$3.md",
+  "path": "docs/roadmaps/wip/$3.md",
+  "state": "wip",
+  "malformed_waves": [],
+  "waves": [
+    {
+      "label": "1",
+      "line": 1,
+      "gates": {
+        "commands": [
+          "echo head"
+        ]
+      },
+      "mls": []
+    }
+  ]
+}
+BEOF
+    ;;
+  validate) echo "0 warning(s)" ;;
+esac
+BINEOF
+  chmod +x "$_bin_p4_head"
+
+  # ST-P5 (counter-arm): base lacks the gates field (old binary), head has it.
+  # Everything else is identical. After stripping gates from head the outputs
+  # match → rc=0, and the summary line is printed.
+  _bin_p5_base="$_st_tmp/bin-p5-base"
+  _bin_p5_head="$_st_tmp/bin-p5-head"
+
+  cat > "$_bin_p5_base" << 'BINEOF'
+#!/usr/bin/env bash
+case "${1:-}" in
+  roadmap)
+    cat << BEOF
+{
+  "roadmap": "$3.md",
+  "path": "docs/roadmaps/wip/$3.md",
+  "state": "wip",
+  "malformed_waves": [],
+  "waves": [
+    {
+      "label": "1",
+      "line": 1,
+      "mls": []
+    }
+  ]
+}
+BEOF
+    ;;
+  validate) echo "0 warning(s)" ;;
+esac
+BINEOF
+  chmod +x "$_bin_p5_base"
+
+  cat > "$_bin_p5_head" << 'BINEOF'
+#!/usr/bin/env bash
+case "${1:-}" in
+  roadmap)
+    cat << BEOF
+{
+  "roadmap": "$3.md",
+  "path": "docs/roadmaps/wip/$3.md",
+  "state": "wip",
+  "malformed_waves": [],
+  "waves": [
+    {
+      "label": "1",
+      "line": 1,
+      "gates": {
+        "commands": [
+          "echo something"
+        ]
+      },
+      "mls": []
+    }
+  ]
+}
+BEOF
+    ;;
+  validate) echo "0 warning(s)" ;;
+esac
+BINEOF
+  chmod +x "$_bin_p5_head"
+
   echo "--- self-test: check-marker-corpus-parity ---"
 
   # ST-N1: identical outputs → rc=0
@@ -156,6 +287,19 @@ BINEOF
   # Affirms: when no ROADMAP-*.md files exist in the corpus, the script exits rc=1 to prevent silent success.
   _st_arm "ST-P3-vacuity-zero-roadmaps" 1 "vacuity" \
           "$_bin_base" "$_bin_head_eq" "$_empty"
+
+  # ST-P4: both sides emit the gates field with different commands → rc=1.
+  # Affirms: a divergence only in gates.commands (both sides have the field) is
+  # detected as a real difference — the script does NOT strip when base has gates.
+  _st_arm "ST-P4-gates-divergence-both-sides" 1 "ROADMAP-st-fixture" \
+          "$_bin_p4_base" "$_bin_p4_head" "$_fix"
+
+  # ST-P5: base lacks gates (old binary), head has it, rest identical → rc=0.
+  # Affirms: a head-only gates field does not trigger a false failure when base
+  # is an old binary — the gates block is stripped before comparison, and the
+  # summary line naming the count is printed.
+  _st_arm "ST-P5-old-base-gates-stripped" 0 "gates summary" \
+          "$_bin_p5_base" "$_bin_p5_head" "$_fix"
 
   echo "---"
   printf "Results: %d passed, %d failed\n" "$ST_PASS" "$ST_FAIL"
@@ -244,6 +388,15 @@ fi
 FAIL=0
 TOTAL=0
 
+# Gates-field awareness counters (ML-2D, REQ-2026-11-02).
+# When base binary pre-dates the gates field (old binary), the gates block is
+# stripped from head output before comparison.  _OLD_BASE_SEEN flips to 1 on
+# the first roadmap where base lacks the field; the per-wave stats accumulate
+# across all roadmaps for the end-of-run summary.
+_OLD_BASE_SEEN=0
+_WAVES_WITH_CMDS=0
+_WAVES_WITH_ERRORS=0
+
 for _rel in "${ROADMAPS[@]}"; do
   _name="${_rel##*/}"   # basename with .md
   _name="${_name%.md}"  # strip .md extension
@@ -270,9 +423,40 @@ for _rel in "${ROADMAPS[@]}"; do
     fi
   fi
 
-  # Build comparison keys: "rc=N\n<output>"
-  _base_key=$(printf 'rc=%d\n%s' "$_base_rc" "$_base_out")
-  _head_key=$(printf 'rc=%d\n%s' "$_head_rc" "$_head_out")
+  # Build comparison keys: "rc=N\n<output>".
+  # Gates-field handling: when base output contains the gates field, both sides
+  # have it and any difference is real — compare as-is.  When base lacks the
+  # field (old binary), strip the gates block from head before comparing so
+  # that a head-only gates addition is not flagged as a regression.
+  #
+  # The sed range relies on waveJSON struct ordering (see roadmap_show_json.go):
+  #   "gates": {    appears at 6-space indent (between "line" and "mls")
+  #   },            closing at 6-space (comma present because "mls" always follows)
+  if [[ "$_base_rc" -eq 0 ]] && printf '%s\n' "$_base_out" | grep -qF '"gates": {'; then
+    # Both sides have the gates field: direct comparison, any diff is real.
+    _base_key=$(printf 'rc=%d\n%s' "$_base_rc" "$_base_out")
+    _head_key=$(printf 'rc=%d\n%s' "$_head_rc" "$_head_out")
+  else
+    # Old base (no gates field): strip the gates block from head, then compare.
+    _OLD_BASE_SEEN=1
+    _head_stripped_rc=0
+    _head_stripped=$(printf '%s\n' "$_head_out" \
+        | sed '/^      "gates": {/,/^      },/d') || _head_stripped_rc=$?
+    if [[ "$_head_stripped_rc" -ne 0 ]]; then
+      _head_stripped="$_head_out"
+    fi
+    _base_key=$(printf 'rc=%d\n%s' "$_base_rc" "$_base_out")
+    _head_key=$(printf 'rc=%d\n%s' "$_head_rc" "$_head_stripped")
+
+    # Accumulate per-wave gates stats from head output for the summary report.
+    # grep -c returns rc=1 when there are no matches; the '|| true' guard inside
+    # the braces prevents set -e from aborting — the value "0" is the correct result.
+    _cnt_all=$( { printf '%s\n' "$_head_out" | grep -cF '"commands": [' || true; } )
+    _cnt_empty=$( { printf '%s\n' "$_head_out" | grep -cF '"commands": []' || true; } )
+    _cnt_err=$( { printf '%s\n' "$_head_out" | grep -cF '"error":' || true; } )
+    (( _WAVES_WITH_CMDS += _cnt_all - _cnt_empty )) || true
+    (( _WAVES_WITH_ERRORS += _cnt_err )) || true
+  fi
 
   if [[ "$_base_key" != "$_head_key" ]]; then
     printf '=== DIFF show --json: %s ===\n' "$_rel"
@@ -318,4 +502,8 @@ if [[ "$FAIL" -gt 0 ]]; then
 fi
 
 printf '%s: %d roadmaps compared, validate identical\n' "$SELF" "$TOTAL"
+if [[ "$_OLD_BASE_SEEN" -eq 1 ]]; then
+  printf '%s: head gates summary (base lacked gates field): %d wave(s) with commands, %d wave(s) with errors\n' \
+         "$SELF" "$_WAVES_WITH_CMDS" "$_WAVES_WITH_ERRORS"
+fi
 exit 0

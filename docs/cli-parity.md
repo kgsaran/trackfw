@@ -723,7 +723,7 @@ ML-1C closed only the arm that could act on an arbitrary artifact.
 
 #### `roadmap show <name> --json` — o mesmo resolvedor, outra saída
 
-<!-- trackfw-contract: gate=internal/generators/roadmap_show_json_test.go partial=o gate cobre a normalizacao do vocabulario de status (as 8 grafias medidas na #407 nas 3 categorias), a cerca de codigo ignorada, a wave malformada exposta, o status ausente distinguivel e o heading cru; NAO cobre a divergencia de stdout na ambiguidade (o teste exercita buildRoadmapShowDoc, que e a montagem pura, e nao o caminho de resolucao de nome); a checagem de cerca aberta (REQ #476, ML-2B/ML-2C) está em internal/commands/roadmap_show_fence_test.go -->
+<!-- trackfw-contract: gate=internal/generators/roadmap_show_json_test.go partial=o gate cobre a normalizacao do vocabulario de status (as 8 grafias medidas na #407 nas 3 categorias), a cerca de codigo ignorada, a wave malformada exposta, o status ausente distinguivel, o heading cru, e o campo gates por wave (cabecalho EN e PT, wave sem cabecalho, cabecalho duplicado D3); NAO cobre a divergencia de stdout na ambiguidade (o teste exercita buildRoadmapShowDoc, que e a montagem pura, e nao o caminho de resolucao de nome); a checagem de cerca aberta (REQ #476, ML-2B/ML-2C) está em internal/commands/roadmap_show_fence_test.go -->
 
 **Unterminated fence (REQ #476, ML-2B/ML-2C):** `roadmap show` and `show --json` both return
 exit 2 when the roadmap contains an unterminated code fence, before any output is written.
@@ -741,6 +741,25 @@ intercepts that type and calls `os.Exit(2)` directly, bypassing cobra's exit-1 e
 `status_found` e `status` normalizado (`complete` | `pending` | `terminated`, as três categorias de
 `roadmapdoc.StatusCategory` — nem uma a mais), mais `acceptance` (`met`, `unmet`, `has_block`). Waves
 com heading malformado aparecem em `malformed_waves` com linha e token, em vez de sumirem.
+
+**Campo `gates` por wave (ML-2D, REQ-2026-11-02):** cada wave inclui um sub-documento `gates`:
+
+```json
+"gates": {
+  "commands": ["echo foo", "make test"],
+  "error": "..."
+}
+```
+
+- `commands` — array de textos de comando, na ordem de declaração. Sempre não-nulo: wave sem
+  cabeçalho de gate algum emite `[]`. Nunca `null`.
+- `error` — string não-vazia quando `ParseGatesLines` retorna erro (cabeçalho duplicado D3,
+  máscara não fechada D8, E3 após ML-2F). Omitido do JSON quando vazio (`omitempty`). Quando
+  presente, `commands` é `[]`.
+- **Ordering constraint:** `gates` aparece entre `line` e `mls` no JSON emitido. O script
+  `check-marker-corpus-parity.sh` detecta binários antigos (sem o campo) por `grep '"gates": {'`
+  no output do base e, quando ausente, faz strip com sed antes de comparar — a adição do campo
+  não dispara falso-positivo na comparação.
 
 **Uma divergência deliberada com a saída de texto, e é a única:** com `--json` a lista de candidatos
 de um casamento ambíguo **não** vai para o stdout — ela viaja dentro do erro, como em `roadmap move`.
@@ -3013,10 +3032,20 @@ These are literal parsing rules. The binary implements them.
      message `"Wave 0 gate block is malformed: <error>"`. `Wave0GateDiagnosisDetail` only inspects
      Wave 0; D8 errors in Wave 1+ are not surfaced by validate.
    - `serve` (live board): does not call `ParseGatesLines`; D8 errors are not surfaced here.
-   **Declared residual E3 (open vector; candidate ML in this REQ):** a 3-tick fence that opens,
-   masks the gate header, and closes — all within the wave — returns `openFenceLine=0` from
-   `scanFences` (fence is closed), so D8's fence check cannot fire. This scenario requires a
-   `scanFences` rework.
+   - `show --json`: D8 errors (e.g., unclosed `<!--` spanning the wave boundary) are captured in
+     the per-wave `gates.error` field — the JSON document is still emitted normally (exit 0).
+     Unlike `barrier`, `show --json` never exits 2 for a per-wave gate error; the document-level
+     `FenceMaskCheck` in `ShowRoadmapJSON` aborts with exit 2 before `ParseGatesLines` is reached
+     when the roadmap itself has an unclosed fence, so D8's fence-check branch is unreachable from
+     `show --json` as well.
+   **E3 — closed fence masking the gate header (ADR-2026-11-08, ML-2F):** a 3-tick fence that
+   opens, masks the gate header, and closes — all within the wave — was previously a declared
+   residual: `scanFences` returned `openFenceLine=0` (fence IS closed), so D8's fence check could
+   not fire and the scenario silently produced zero gates. ML-2F implements the fix: when the
+   per-wave scan finds the gate header masked by a closed fence it returns a non-nil error
+   (captured in `gates.error` for `show --json`, causes exit 2 for `barrier`). The E3 residual
+   is closed. The rule applies only when the wave has **no** unmasked gate header, and covers a
+   header inside a closed HTML comment as well; a masked example next to a real header is allowed.
    **Consequence of per-line execution:** each gate command runs in its own `sh -c` process.
    There is no shared state between lines: `export`, `cd`, and variable assignments do not
    survive to the next line. Multi-line constructs — unbalanced quotes, `$(`, heredoc openers,
