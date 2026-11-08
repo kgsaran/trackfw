@@ -56,6 +56,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 EXCEPTIONS=(
   # Example (do not un-comment without a real reason):
   # "check-diagnose-something.sh|manual-only diagnostic; no automated consumer by design"
+  "check-marker-corpus-parity.sh|intentionally not wired into parity-rest: requires origin/main and compiles two binaries; invoked manually during REQ-2026-11-02 validation (ADR D7, ML-1B)"
 )
 
 # ---------------------------------------------------------------------------

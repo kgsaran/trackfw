@@ -139,11 +139,12 @@ test -s docs/seguranca/2026-11-08-wave0-idioma-ingles-primeiro.md
 ### ML-1B — Oráculo do acervo (ADR D7)
 **Status:** ✅ Concluído
 
-*Auditoria (Zeus, 2026-11-08):* `bash scripts/check-marker-corpus-parity.sh` com `origin/main` (9fd2d84b) × árvore com ML-1A: rc=0, 243 roadmaps, validate idêntico; nenhum worktree sobrando. Limitação: dois roadmaps (`architect-command-guidelines`, `attention-hooks-agent-clis`) têm nome ambíguo no `roadmap show` e só o `validate` os cobre.
+*Auditoria (Zeus, 2026-11-08):* `bash scripts/check-marker-corpus-parity.sh` com `origin/main` (9fd2d84b) × árvore com ML-1A: rc=0, 243 roadmaps, validate idêntico; nenhum worktree sobrando. Limitação: dois roadmaps (`architect-command-guidelines`, `attention-hooks-agent-clis`) têm nome ambíguo no `roadmap show` e só o `validate` os cobre. *Corretivo (2026-11-08):* o `make quality` do arquiteto reprovou em `check-unguarded-capture-rc` (captura `$(… | grep …)` sem guarda); o ares-tf guardou a captura, trocou dois `grep -q` em pipe e registrou a exceção do `check-orphan-gates.sh`, fora da lista fechada mas exigida pelo gate. `make parity-rest` rc=0.
 **Squad:** ares-tf
 **Files affected:**
 - `scripts/check-marker-corpus-parity.sh` (novo; gate desta REQ, **não** ligado em `parity-rest`: depende de
   `origin/main` e compila dois binários)
+- `scripts/check-orphan-gates.sh` (exceção com motivo para o script não ligado em Makefile; corretivo)
 
 **Actions:**
 1. O script compila o binário de `origin/main` (via `git worktree` em diretório temporário fora do repo,

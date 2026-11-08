@@ -54,7 +54,7 @@ if [[ "${1:-}" == "--self-test" ]]; then
       printf '  FAIL  %s  (expected rc=%d, got rc=%d)\n' "$label" "$expect_rc" "$actual_rc"
       ok=0
     fi
-    if [[ -n "$grep_pat" ]] && ! printf '%s\n' "$actual_out" | grep -qF "$grep_pat"; then
+    if [[ -n "$grep_pat" ]] && ! printf '%s\n' "$actual_out" | grep -F "$grep_pat" >/dev/null; then
       printf '  FAIL  %s  (expected %q in output; got: %s)\n' \
              "$label" "$grep_pat" "$actual_out"
       ok=0
@@ -257,9 +257,9 @@ for _rel in "${ROADMAPS[@]}"; do
     || _head_rc=$?
 
   # Path verification: only when base resolved to JSON (rc=0) and contains "path" field
-  if [[ "$_base_rc" -eq 0 ]] && printf '%s\n' "$_base_out" | grep -q '"path"'; then
+  if [[ "$_base_rc" -eq 0 ]] && printf '%s\n' "$_base_out" | grep '"path"' >/dev/null; then
     _base_path=$(printf '%s\n' "$_base_out" \
-                 | grep -o '"path": *"[^"]*"' \
+                 | { grep -o '"path": *"[^"]*"' || true; } \
                  | sed 's/"path": *"\([^"]*\)"/\1/')
     if [[ "$_base_path" != "$_rel" ]]; then
       printf '%s: ERROR: show returned path=%s, expected %s (partial-match confusion?)\n' \
