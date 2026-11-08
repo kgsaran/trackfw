@@ -160,7 +160,9 @@ test -s docs/seguranca/2026-11-08-wave0-idioma-ingles-primeiro.md
 - [x] Contra-braço: com um alias quebrado de propósito numa cópia temporária, o script reprova
 
 ### ML-1C — O validate nomeia o erro de cabeçalho duplicado (residual do ML-1A)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
+
+*Auditoria (Zeus, 2026-11-08):* os 3 testes novos do validator e o braço D3 de `TestWave0GateDiagnosis_NamesTheCause` existem e passam. O barrier já mostrava a mensagem do parser (exit 2). Residual apontado: cerca de gates não fechada também cai na mensagem fixa de "not followed by" → ML-1D.
 **Squad:** apolo-tf
 **Files affected:**
 - `internal/validator/validator_roadmap_gates.go` e testes
@@ -172,8 +174,22 @@ validate imprime "`**Gates da wave:**` is not followed by a ```bash fence". Com 
 na Wave 0 aparece com a mensagem errada. Mesma causa (contrato dos cabeçalhos), mesma REQ.
 
 **Acceptance criteria:**
-- [ ] Wave 0 com dois cabeçalhos: o validate emite mensagem que diz "duplicate" e nomeia as duas linhas
-- [ ] Mensagem de fence ausente cita os dois cabeçalhos aceitos, não só o português
+- [x] Wave 0 com dois cabeçalhos: o validate emite mensagem que diz "duplicate" e nomeia as duas linhas
+- [x] Mensagem de fence ausente cita os dois cabeçalhos aceitos, não só o português
+- [x] `go test ./internal/validator/ ./internal/roadmapdoc/` verde
+
+### ML-1D — O validate repassa a causa real do bloco de gates malformado
+**Status:** 🔄 Em andamento
+**Squad:** apolo-tf
+**Files affected:** `internal/validator/validator_roadmap_gates.go`, `internal/roadmapdoc/roadmapdoc.go` (só `Wave0GateDiagnosisDetail`) e testes
+
+*Por que existe:* residual do ML-1C. `Wave0GateMalformed` cobre cerca não fechada e o fail-closed do
+`FenceMaskCheck`, mas a mensagem diz sempre "is not followed by a ```bash fence". É a mesma mensagem fixa
+que esconde a causa do parser, tocada no ML-1C; defeito conhecido se corrige agora.
+
+**Acceptance criteria:**
+- [ ] Cerca de gates não fechada na Wave 0: a mensagem do validate traz o texto do erro do parser
+- [ ] Bloco sem cerca continua com a mensagem atual (as duas formas de cabeçalho)
 - [ ] `go test ./internal/validator/ ./internal/roadmapdoc/` verde
 
 **Gates da wave:**

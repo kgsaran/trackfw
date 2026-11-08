@@ -1344,21 +1344,38 @@ const (
 	// Wave0GateAbsent — nao ha bloco de gates, ou ele esta vazio (so comentarios).
 	Wave0GateAbsent
 	// Wave0GateMalformed — o marcador existe e a cerca ```bash nao foi encontrada
-	// antes do proximo heading, ou a cerca nao fecha.
+	// antes do proximo heading, ou a cerca nao fecha (nao cobre duplicata — ver Wave0GateDuplicate).
 	Wave0GateMalformed
+	// Wave0GateDuplicate — a wave tem dois ou mais cabecalhos de gates validos fora
+	// de cercas e comentarios HTML (ADR D3). O detalhe com os numeros de linha vem
+	// de Wave0GateDiagnosisDetail.
+	Wave0GateDuplicate
 )
 
 // Wave0GateDiagnosis e o predicado COM a causa. Wave0HasPlaceholderOrMissingGate
 // passa a ser a leitura booleana dele, entao nao existem duas derivacoes do mesmo
 // veredito que possam divergir.
 func Wave0GateDiagnosis(data string) Wave0GateCause {
+	cause, _ := Wave0GateDiagnosisDetail(data)
+	return cause
+}
+
+// Wave0GateDiagnosisDetail returns the cause AND the detail string from ParseGates.
+// The detail string is non-empty only when cause is Wave0GateDuplicate or
+// Wave0GateMalformed — it carries the original parser error message so the caller
+// can surface it verbatim instead of using a fixed template.
+//
+// Wave0GateDuplicate is returned when ParseGatesLines detects two or more valid gate
+// headers in Wave 0 outside fences and HTML comments (prefix "duplicate gates header:").
+// Wave0GateMalformed covers all other ParseGates errors (fence absent or unclosed).
+func Wave0GateDiagnosisDetail(data string) (Wave0GateCause, string) {
 	lines := SplitRoadmapLines(data)
 	// Fail-closed on unterminated fence: a malformed document whose fence never
 	// closes can hide wave 0 entirely. Return Wave0GateMalformed — the cause that
 	// maps to "fence did not close before next heading or at all" (same enum value
 	// as the ParseGates error path below, same message in the validator).
 	if _, err := FenceMaskCheck(lines); err != nil {
-		return Wave0GateMalformed
+		return Wave0GateMalformed, err.Error()
 	}
 	waves, _ := ParseWaves(lines, FenceMask(lines))
 	for _, w := range waves {
@@ -1367,30 +1384,34 @@ func Wave0GateDiagnosis(data string) Wave0GateCause {
 		}
 		cmds, err := ParseGates(lines, w.Start, w.End)
 		if err != nil {
-			// Bloco malformado — fail closed, como antes. O que muda e o NOME da causa.
-			if hasAnyNonPendingML(data) {
-				return Wave0GateMalformed
+			if !hasAnyNonPendingML(data) {
+				return Wave0GateOK, ""
 			}
-			return Wave0GateOK
+			// D3: duplicate gate header is its own cause so the validator can
+			// surface the line numbers from the parser error verbatim.
+			if strings.HasPrefix(err.Error(), "duplicate gates header:") {
+				return Wave0GateDuplicate, err.Error()
+			}
+			return Wave0GateMalformed, err.Error()
 		}
 		if len(cmds) == 0 {
 			if hasAnyNonPendingML(data) {
-				return Wave0GateAbsent
+				return Wave0GateAbsent, ""
 			}
-			return Wave0GateOK
+			return Wave0GateOK, ""
 		}
 		for _, cmd := range cmds {
 			if !strings.HasPrefix(cmd, "exit 1") {
-				return Wave0GateOK
+				return Wave0GateOK, ""
 			}
 		}
 		if hasAnyNonPendingML(data) {
-			return Wave0GatePlaceholder
+			return Wave0GatePlaceholder, ""
 		}
-		return Wave0GateOK
+		return Wave0GateOK, ""
 	}
 	// Wave 0 nao encontrada — dominio do AC7-bis.
-	return Wave0GateOK
+	return Wave0GateOK, ""
 }
 
 func Wave0HasPlaceholderOrMissingGate(data string) bool {

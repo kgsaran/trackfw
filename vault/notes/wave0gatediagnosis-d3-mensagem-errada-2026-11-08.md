@@ -37,11 +37,43 @@ guia o usuário para a correção certa.
 `internal/validator/` não estava na lista fechada de arquivos do ML-1A. O ML-1A implementa
 o leitor bilíngue; a mensagem do validator é um sítio dependente que requer ML próprio.
 
-## Ação necessária
+## Corrigido em ML-1C (REQ de idioma, ADR-2026-11-08)
 
-Novo ML na REQ de idioma (ou nova REQ se a causa for diferente):
-- Adicionar `Wave0GateDuplicate` ao tipo de diagnóstico em `internal/roadmapdoc/`
-- Atualizar `Wave0GateDiagnosis` para retornar `Wave0GateDuplicate` quando o erro de
-  `ParseGates` contiver `"duplicate gates header"`
-- Atualizar `internal/validator/validator_roadmap_gates.go` para usar a mensagem correta
-  por variante de diagnóstico
+### Mecanismo da correção
+
+1. **`Wave0GateDuplicate` adicionado** ao `Wave0GateCause` enum em `internal/roadmapdoc/roadmapdoc.go`
+   (após `Wave0GateMalformed`, sem reordenar o iota).
+
+2. **`Wave0GateDiagnosisDetail`** (nova função exportada) retorna `(Wave0GateCause, string)`.
+   O segundo campo carrega a mensagem original do parser para os casos Duplicate e Malformed.
+   `Wave0GateDiagnosis` passa a ser um wrapper de uma linha que descarta o detalhe.
+
+3. **Classificação D3**: `strings.HasPrefix(err.Error(), "duplicate gates header:")` distingue
+   o erro de duplicata dos demais erros de `ParseGates`. Continua gateado por `hasAnyNonPendingML`.
+
+4. **`validator_roadmap_gates.go`** passa a chamar `Wave0GateDiagnosisDetail` e adiciona:
+   - `case Wave0GateDuplicate`: emite a mensagem do parser verbatim (linha N e M já incluídos).
+   - Mensagens de `Wave0GateAbsent` e `Wave0GateMalformed` atualizadas para citar ambas as formas
+     (`'**Wave gates:**'` e `'**Gates da wave:**'`).
+
+### Resíduo conhecido (mesmo mecanismo — reportar ao arquiteto)
+
+O caso de "unterminated gates fence" e o FenceMaskCheck fail-closed continuam caindo em
+`Wave0GateMalformed` com a mensagem de "not followed by a fence" mesmo que o problema seja
+outro. Mesmo mecanismo (parser detail esmaga em mensagem fixa), escopo fora do ML-1C.
+
+### Comportamento do barrier para D3
+
+O barrier já surfaceava a mensagem D3 do parser corretamente via `usageExit` (exit 2),
+sem alteração necessária em barrier.go. Verificado empiricamente:
+```
+trackfw barrier: duplicate gates header: lines 21 and 26 both declare a gates block
+outside fences and comments — use exactly one gates header per wave (ADR D3)
+```
+
+### Arquivos alterados
+
+- `internal/roadmapdoc/roadmapdoc.go` — `Wave0GateDuplicate` + `Wave0GateDiagnosisDetail`
+- `internal/validator/validator_roadmap_gates.go` — novo case + mensagens bilíngues
+- `internal/roadmapdoc/wave0_gate_cause_test.go` — novo braço D3 em `TestWave0GateDiagnosis_NamesTheCause`
+- `internal/validator/validator_roadmap_gates_ml1c_test.go` — três testes novos

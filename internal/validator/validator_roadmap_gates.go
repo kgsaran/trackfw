@@ -105,7 +105,10 @@ func validateRoadmapGatesCoverage() (wave0Msgs []string, wave0ExemptNotice []str
 			// #460: a causa vem junto, porque as tres levam a acoes OPOSTAS —
 			// reescrever o comando, escrever o bloco, ou mover a cerca. A mensagem
 			// antiga nomeava duas causas e instruia sobre uma so.
-			switch roadmapdoc.Wave0GateDiagnosis(data) {
+			// Wave0GateDiagnosisDetail returns the parser detail string for Duplicate and
+			// Malformed causes so the validator can surface the original error verbatim.
+			cause, detail := roadmapdoc.Wave0GateDiagnosisDetail(data)
+			switch cause {
 			case roadmapdoc.Wave0GatePlaceholder:
 				gateMsgs = append(gateMsgs, fmt.Sprintf(
 					"roadmap %q (wip) Wave 0 gate is still the placeholder; replace the exit 1 command with a real gate (AC7, ADR-2026-09-18 decision 4)",
@@ -113,13 +116,18 @@ func validateRoadmapGatesCoverage() (wave0Msgs []string, wave0ExemptNotice []str
 				))
 			case roadmapdoc.Wave0GateAbsent:
 				gateMsgs = append(gateMsgs, fmt.Sprintf(
-					"roadmap %q (wip) Wave 0 has no gate block; add '**Gates da wave:**' followed by a ```bash fence with a real gate command (AC7, ADR-2026-09-18 decision 4)",
+					"roadmap %q (wip) Wave 0 has no gate block; add '**Wave gates:**' or '**Gates da wave:**' followed by a ```bash fence with a real gate command (AC7, ADR-2026-09-18 decision 4)",
 					base,
 				))
 			case roadmapdoc.Wave0GateMalformed:
 				gateMsgs = append(gateMsgs, fmt.Sprintf(
-					"roadmap %q (wip) Wave 0 gate block was not found: '**Gates da wave:**' is not followed by a ```bash fence before the next heading (AC7, ADR-2026-09-18 decision 4)",
+					"roadmap %q (wip) Wave 0 gate block was not found: '**Wave gates:**' or '**Gates da wave:**' is not followed by a ```bash fence before the next heading (AC7, ADR-2026-09-18 decision 4)",
 					base,
+				))
+			case roadmapdoc.Wave0GateDuplicate:
+				gateMsgs = append(gateMsgs, fmt.Sprintf(
+					"roadmap %q (wip) Wave 0 gate block has a duplicate header: %s (AC7, ADR-2026-09-18 decision 4)",
+					base, detail,
 				))
 			}
 		}
