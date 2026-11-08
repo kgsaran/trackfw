@@ -464,3 +464,263 @@ $ git status --short
 $ git diff --cached --stat
 (vazio)
 ```
+
+---
+
+## Rodada 3 (2026-11-08)
+
+**Binário branch:** `go build -o $SCRATCH/hades3/trackfw ./cmd/trackfw` sobre HEAD `f5e44ac9`. Versão: `11.5.1`.
+**Scratchpad:** `/private/tmp/claude-501/-Users-kgsaran-Sistemas-Desenvolvimento-workspace-trackfw/a247cc38-463b-4f99-8cb2-7400f9dec171/scratchpad/hades3/`
+**Acervo:** 1 wip, 264 done, 11 abandoned, 0 backlog/analyzing/blocked.
+
+---
+
+### Reverificação de N-1 e Probe (a) da Rodada 2
+
+Após commits 4419fc0f (ML-2G) e f5e44ac9 (ML-2I):
+
+| Vector | R2 | R3 | Mecanismo do fix |
+|---|---|---|---|
+| N-1 U+3164 Hangul Filler | BLOQUEANTE | **FECHADO** | `!unicode.Is(ODIP, r)` em `lapsedLineHasContent`; `acceptance_evidence: blocked` |
+| N-1 U+115F Hangul Choseong | — | **FECHADO** | mesmo guard; `acceptance_evidence: blocked` |
+| N-1 U+1160 Hangul Jungseong | — | **FECHADO** | idem |
+| N-1 U+FFA0 Halfwidth Hangul | — | **FECHADO** | idem |
+| Probe (a) 1–3 espaços antes | ABERTO | **FECHADO** | gatesNearMissSkeleton + step 2 (TrimLeftFunc IsSpace) |
+| Probe (a) `- **Wave gates:**` | ABERTO | **FECHADO** | step 2 strip list marker |
+| Probe (a) `> **Wave gates:**` | ABERTO | **FECHADO** | step 2 strip blockquote |
+| Probe (a) cirílico `gаtes` | ABERTO | **FECHADO** | nearMissHomoglyphs `а`→`a` antes de ToLower |
+
+Evidência de near-miss para Probe (a) ` **Wave gates:**` (1 espaço):
+
+```
+$ trackfw barrier ROADMAP-pa-1space --wave 0 --trust-local-gates
+trackfw barrier: near-miss gates header at line 15: the line looks like a gates header but does not match the accepted form exactly (leading space, list/blockquote marker, invisible character, homoglyph or case) — write '**Wave gates:**' or '**Gates da wave:**' at column 0 (D8, ADR-2026-11-08)
+rc=2
+```
+
+---
+
+### R3-A — Homóglifos capitais: pipeline aplica homoglyphs antes de ToLower (ABERTO · ALTO · BLOQUEANTE)
+
+**Mecanismo:** `gatesNearMissSkeleton` aplica `nearMissHomoglyphs` antes de `strings.ToLower`. A tabela cobre as formas minúsculas (ԝ→w, α→a, ε→e, τ→t) mas não os capitais correspondentes. O capital chega ao passo de homoglifos sem mapeamento, passa pela tabela inalterado, depois `ToLower` o converte para a forma minúscula — que a tabela de homoglyphs já aplicou. O rune minúsculo resultante (ԝ, α, ε) fica no skeleton sem mapeamento para o ASCII correspondente.
+
+Verificação Go: `unicode.ToLower(0x051C)` → `0x051D` (ԝ). `unicode.ToLower(0x0391)` → `0x03B1` (α). `unicode.ToLower(0x0395)` → `0x03B5` (ε).
+
+| Vector | Código | ToLower de | Skeleton | Resultado |
+|---|---|---|---|---|
+| `**Ԝave gates:**` | U+051C Cyrillic capital WE | U+051C→U+051D ԝ | `ԝavegates:` | ABERTO (cmds=[], rc=0) |
+| `**Wave gΑtes:**` | U+0391 Greek capital Alpha | U+0391→U+03B1 α | `wavegαtes:` | ABERTO (cmds=[], rc=0) |
+| `**Wave gatΕs:**` | U+0395 Greek capital Epsilon | U+0395→U+03B5 ε | `wavegateεs:` | ABERTO (cmds=[], rc=0) |
+
+Contra-braço — Т (U+0422 Cyrillic capital TE, presente na tabela como `Т→T`) → `Ta` via ToLower → T mapeado na tabela → skeleton `wavegates:` → near-miss CAPTURADO (rc=2). Confirma que a tabela em si funciona quando o capital está incluído.
+
+Contra-braço — `**Wave gates:**` canônica → `commands=["exit 1"]`, `status=blocked`, rc=1. Gate executado.
+
+**Por que é BLOQUEANTE:** Ԝ, Α, Ε são scripts cirílico e grego, explicitamente fora do escopo de residual declarado (aprovação criterion: "Cyrillic and Greek cannot be declared residual").
+
+---
+
+### R3-B — Seletores de variação VS1–VS14: categoria Mn, não removidos em step 1a (ABERTO · ALTO · BLOQUEANTE)
+
+**Mecanismo:** step 1a remove apenas `unicode.Cf`, `unicode.Other_Default_Ignorable_Code_Point` e VS16 (`U+FE0F`). Os seletores VS1–VS15 (`U+FE00–U+FE0E`) têm categoria `Mn` (Nonspacing Mark) com propriedade `Variation_Selector`. Não são `Cf` nem ODIP. NFKC não os remove. Não estão no strip set (`*_#|>-+~`) nem são `unicode.IsSpace`. Renderizam-se como invisíveis na maioria dos contextos.
+
+| Vector | Código | Mecanismo | Resultado |
+|---|---|---|---|
+| `**Wave︀ gates:**` | VS1 U+FE00 após 'e' de Wave | byte 0xEF 0xB8 0x80 sobrevive ao skeleton; `wave︀gates:` ≠ `wavegates:` | ABERTO (cmds=[], rc=0) |
+| `**Wave g︎ates:**` | VS14 U+FE0E dentro de gates | idem; `waveg︎ates:` ≠ `wavegates:` | ABERTO (cmds=[], rc=0) |
+
+Contra-braço: NBSP (U+00A0, `unicode.IsSpace=true`) entre Wave e gates → near-miss CAPTURADO (rc=2). Confirma que a remoção de IsSpace em step 3 funciona, mas VS1–VS14 escapam por serem Mn.
+
+**Por que é BLOQUEANTE:** o VS1–VS14 é invisível ao autor e ao revisor — contradiz a afirmação da emenda D8 "sem caracteres invisíveis". Um LLM que gere texto com seletor de variação por copy-paste ou troca de fonte produziria este bypass.
+
+---
+
+### R3-C — Braille Blank U+2800 como espaço (ABERTO · ALTO · BLOQUEANTE)
+
+**Mecanismo:** U+2800 tem categoria `So` (Symbol, Other). `unicode.IsSpace` retorna `false` para `So` (apenas Zs/Zl/Zp e os whitespace ASCII especiais). Não está no strip set. Renderiza com largura de um espaço em contextos visuais.
+
+```
+**Wave⠀gates:**   (U+2800 entre Wave e gates)
+→ skeleton: wave⠀gates:   (⠀ sobrevive, não-match)
+→ ABERTO: commands=[], status=passed, rc=0
+```
+
+Contra-braço — NBSP U+00A0 (IsSpace=true) → near-miss capturado. Braille Blank escapa porque IsSpace não cobre categoria So.
+
+**Por que é BLOQUEANTE:** Braille Blank renderiza identicamente ao espaço comum em todos os renderizadores Markdown testados. O revisor visual não distingue.
+
+---
+
+### R3-D — Formas sem dois-pontos ASCII: colonIdx = -1, retorno antecipado (ABERTO · ALTO · BLOQUEANTE)
+
+**Mecanismo:** `gatesNearMissSkeleton` usa `strings.IndexByte(s, ':')` para localizar o dois-pontos. Quando o cabeçalho não contém `:` (ASCII 0x3A), `colonIdx < 0` e a função retorna `s` sem processar. O skeleton não começa com nenhum target → near-miss não dispara. `GatesHeaderRe` também não casa (exige `:` literal). Resultado: zero gates silenciosamente.
+
+| Vector | GatesHeaderRe | Near-miss | Resultado |
+|---|---|---|---|
+| `**Wave gates**` | não casa | colonIdx=-1; não dispara | ABERTO (cmds=[], rc=0) |
+| `### Wave gates` | não casa | colonIdx=-1; não dispara | ABERTO (cmds=[], rc=0) |
+| `**Gates da wave**` | não casa | colonIdx=-1; não dispara | ABERTO (cmds=[], rc=0) |
+
+Contra-braço — `**Wave gates:**` (com colon) → `commands=["exit 1"]`, status=blocked.
+
+**Por que é BLOQUEANTE:** "**Wave gates**" (sem colon) é a forma mais provável de output de LLM ao gerar um roadmap incompleto. "### Wave gates" é natural em Markdown. São os vetores de maior probabilidade de ocorrência acidental.
+
+---
+
+### R3-E — Símbolos alternativos de dois-pontos (PARCIAL)
+
+**U+FF1A ：(Fullwidth Colon) → FECHADO:** NFKC converte U+FF1A para `:` (ASCII). Após normalização, `colonIdx` encontra o colon e o skeleton se torna `wavegates:` → near-miss CAPTURADO (rc=2). Comportamento correto.
+
+**U+2236 ∶ (Ratio Symbol) → ABERTO:** NFKC não converte U+2236 (categoria Sm). `strings.IndexByte` busca byte `0x3A`; U+2236 codifica como `\xE2\x88\xB6` — sem byte `0x3A`. `colonIdx=-1` → retorno antecipado → NOT caught.
+
+```
+**Wave gates∶**  (U+2236)
+→ skeleton: **wave gates∶** (retorno antecipado)
+→ ABERTO: commands=[], status=passed, rc=0
+```
+
+**U+A789 ꞉ (Modifier Letter Colon) → ABERTO:** idem. `colonIdx=-1` → NOT caught.
+
+Dos 3 símbolos alternativos: 1 capturado, 2 ABERTO. ∶ e ꞉ renderizam identicamente ao `:` em muitas fontes.
+
+---
+
+### R3-F — Formas HTML e entity (PARCIAL)
+
+| Vector | Mecanismo | Resultado |
+|---|---|---|
+| `<strong>Wave gates:</strong>` | `<` não está no strip set; skeleton = `<strong>wavegates:...` → não começa com `wavegates:` | ABERTO (cmds=[], rc=0) |
+| `<b>Gates da wave:</b>` | idem; `<b>gatesdawave:` → não casa | ABERTO (cmds=[], rc=0) |
+| `**Wave gates&#58;**` | entity `&#58;` não contém ASCII `:`; colonIdx=-1 → retorno antecipado | ABERTO (cmds=[], rc=0) |
+| `**Wave gates:**` (NBSP) | NBSP é IsSpace → stripped em step 3 → skeleton `wavegates:` → CAPTURADO | FECHADO (near-miss rc=2) |
+
+`<strong>Wave gates:</strong>` renderiza identicamente a `**Wave gates:**` em HTML. Um LLM pode gerar HTML raw em um roadmap. `**Wave gates&#58;**` renderiza como `**Wave gates:**` em todos os renderers que processam entidades HTML.
+
+---
+
+### R3-G — Latin ɑ (U+0251) em lugar de 'a' (ABERTO · MÉDIO · BLOQUEANTE pelo critério)
+
+**Mecanismo:** U+0251 (Latin Small Letter Alpha, categoria Ll) não está em `nearMissHomoglyphs`. NFKC não o converte (já é forma canônica). `strings.ToLower` não altera (já é lowercase). Skeleton: `wavegɑtes:` ≠ `wavegates:` → NOT caught.
+
+```
+**Wave gɑtes:**  (ɑ = U+0251)
+→ skeleton: wavegɑtes:
+→ ABERTO: commands=[], rc=0
+```
+
+**Critério de residual:** o critério de aprovação do arquiteto exclui explicitamente scripts Latino/Cirílico/Grego do residual declarado. ɑ é script Latino. BLOQUEANTE pelo critério.
+
+Contra-braço — ɡ (U+0261 Latin Small Letter Script G, presente na tabela como `ɡ→g`) → near-miss CAPTURADO. Confirma que a tabela captura o subset incluído.
+
+---
+
+### R3-H — Falsos positivos: near-miss dispara em prosa legítima
+
+**Mecanismo:** o loop de near-miss escaneia todas as linhas não-mascaradas em [waveStart, waveEnd) que não casam com `GatesHeaderRe`. Uma linha de prosa "Wave gates: see below" não está em itálico/negrito e não casa `GatesHeaderRe`. Seu skeleton: `wave gates: see below` → strip (IsSpace, stripSet) → `wavegates:see below` → `strings.HasPrefix(_, "wavegates:")` = **true** → near-miss dispara rc=2.
+
+O loop não é desabilitado pela presença de um cabeçalho válido (`validHeaderLines` é preenchido depois do loop de near-miss):
+
+```go
+// D8 near-miss check runs BEFORE D3 — before validHeaderLines is populated.
+for i := waveStart; i < waveEnd; i++ {
+    if fenced[i] || htmlMask[i] || GatesHeaderRe.MatchString(lines[i]) {
+        continue
+    }
+    // prose line "Wave gates: see below" reaches here
+```
+
+**Medição:**
+
+FP1 — wave com `**Wave gates:**` válido + prosa `Wave gates: see below` em corpo de ML:
+```
+$ trackfw barrier ROADMAP-fp1-prose-wavegates --wave 0 --trust-local-gates
+trackfw barrier: near-miss gates header at line 16: the line looks like a gates header...
+rc=2
+```
+
+FP2 — wave com `**Wave gates:**` válido + item de lista `- Gates da wave: rodados pelo Zeus`:
+```
+$ trackfw barrier ROADMAP-fp2-list-gatesdawave --wave 0 --trust-local-gates
+trackfw barrier: near-miss gates header at line 28: the line looks like a gates header...
+rc=2
+```
+
+**Varredura do acervo (`roadmap show --json` em 276 roadmaps):**
+
+| Estado | Near-miss hits |
+|---|---|
+| wip (1) | **0** |
+| done (264) | 3 (antigos `**Gate da wave:**` singulares em roadmaps pre-D8) |
+| abandoned (11) | 0 |
+
+0 hits em `wip/` → nenhuma regressão em CI na branch atual. Os 3 hits em `done/` são do form singular `**Gate da wave:**` que era usado antes da padronização; não são rodados pelo `validate`/`barrier` no CI.
+
+**Prosa legítima com `**...**` em backtick é protegida:** `` `**Wave gates:**` `` tem o backtick preservado (passo 3 não remove backtick), então skeleton começa com `` ` `` e não casa nenhum target — correto.
+
+**Severidade do FP:** MÉDIO. O padrão de risco é: um autor que escreve "Wave gates: see below" em texto simples (sem backtick) em qualquer lugar da wave teria o `barrier` reprovando mesmo com gate válido. A proteção via backtick é indireta e não documentada. 0 hits atuais em wip/ → nenhuma regressão imediata.
+
+---
+
+### Resumo tabular dos vetores R3
+
+| ID | Vector | GatesHeaderRe | Near-miss | Veredito | Severidade |
+|---|---|---|---|---|---|
+| R3-A1 | `**Ԝave gates:**` U+051C | não casa | ABERTO (ԝ sobrevive) | ABERTO | ALTO |
+| R3-A2 | `**Wave gΑtes:**` U+0391 | não casa | ABERTO (α sobrevive) | ABERTO | ALTO |
+| R3-A3 | `**Wave gatΕs:**` U+0395 | não casa | ABERTO (ε sobrevive) | ABERTO | ALTO |
+| R3-A* | `**Wave gaТes:**` U+0422 TE | não casa | CAPTURADO (Т→T na tabela) | FECHADO | — |
+| R3-B1 | VS1 U+FE00 invisível | não casa | ABERTO (Mn, não-Cf/ODIP) | ABERTO | ALTO |
+| R3-B2 | VS14 U+FE0E invisível | não casa | ABERTO | ABERTO | ALTO |
+| R3-C | U+2800 Braille blank | não casa | ABERTO (So, não IsSpace) | ABERTO | ALTO |
+| R3-D1 | `**Wave gates**` sem `:` | não casa | ABERTO (colonIdx=-1) | ABERTO | ALTO |
+| R3-D2 | `### Wave gates` sem `:` | não casa | ABERTO | ABERTO | ALTO |
+| R3-D3 | `**Gates da wave**` sem `:` | não casa | ABERTO | ABERTO | ALTO |
+| R3-E1 | `**Wave gates：**` U+FF1A | não casa | CAPTURADO (NFKC→`:`) | FECHADO | — |
+| R3-E2 | `**Wave gates∶**` U+2236 | não casa | ABERTO (colonIdx=-1) | ABERTO | MÉDIO |
+| R3-E3 | `**Wave gates꞉**` U+A789 | não casa | ABERTO (colonIdx=-1) | ABERTO | MÉDIO |
+| R3-F1 | `<strong>Wave gates:</strong>` | não casa | ABERTO (`<` sobrevive) | ABERTO | MÉDIO |
+| R3-F2 | `<b>Gates da wave:</b>` | não casa | ABERTO | ABERTO | MÉDIO |
+| R3-F3 | `**Wave gates&#58;**` | não casa | ABERTO (colonIdx=-1) | ABERTO | MÉDIO |
+| R3-F* | `**Wave gates:**` NBSP | não casa | CAPTURADO (IsSpace stripped) | FECHADO | — |
+| R3-G | `**Wave gɑtes:**` U+0251 | não casa | ABERTO (Ll, não na tabela) | ABERTO | MÉDIO |
+| R3-H | FP: prosa "Wave gates: see below" | n/a | DISPARA rc=2 (FP) | FP | MÉDIO |
+
+**ABERTO confirmado (D8 fail-open): 14 vetores.** FECHADO/CAPTURADO: 4 vetores. FP: 1 classe.
+
+---
+
+### Veredito da Rodada 3
+
+**REPROVA**
+
+Motivos de bloqueio:
+
+1. **R3-A — Homóglifos capitais (Ԝ U+051C, Α U+0391, Ε U+0395):** pipeline aplica `nearMissHomoglyphs` antes de `ToLower`; capitais Cirílico/Grego não estão na tabela. Após `ToLower` a forma minúscula persiste no skeleton sem mapeamento para ASCII. Os três scripts são Cirílico e Grego — explicitamente fora do escopo de residual pelo critério de aprovação.
+
+2. **R3-B — Variation selectors VS1–VS14 (U+FE00–U+FE0E):** categoria `Mn`, não removidos por step 1a (que cobre `Cf` e ODIP, não `Mn`). NFKC não os remove. Invisíveis em qualquer renderizador. Contrariam a afirmação de D8 "sem caracteres invisíveis".
+
+3. **R3-C — Braille Blank U+2800:** categoria `So`, `unicode.IsSpace=false`. Renderiza como espaço. Não está no strip set. Near-miss bypassa.
+
+4. **R3-D — Formas sem dois-pontos ASCII (`**Wave gates**`, `### Wave gates`, `**Gates da wave**`):** `strings.IndexByte` retorna -1; função retorna sem processar. `**Wave gates**` é a forma mais provável de LLM omitir o colon. Zero gates silenciosamente.
+
+5. **R3-E2/R3-E3 — ∶ U+2236 e ꞉ U+A789:** colonIdx=-1 (nenhum byte `0x3A` no UTF-8 desses símbolos). Zero gates silenciosamente.
+
+6. **R3-F — `<strong>`, `<b>`, `&#58;`:** `<` sobrevive ao skeleton ou colonIdx=-1. Zero gates.
+
+7. **R3-G — Latin ɑ U+0251:** não na tabela de homoglyphs; script Latino, fora do escopo de residual.
+
+8. **R3-H (falso positivo) — FP não bloqueia o merge por si só** (0 hits em wip/ no acervo real), mas o mecanismo é real: prosa não-backtick com "Wave gates:" ou lista com "Gates da wave:" em qualquer linha de uma wave dispara near-miss mesmo com cabeçalho válido. Deve ser corrigido junto com os ABERTO acima (mesma causa: lógica do loop de near-miss).
+
+Todos os vetores ABERTO compartilham o mesmo sintoma D8: gate some em silêncio, `barrier` passa com `commands=[]`. Por Regra Dura: mesma causa → mesma REQ → mesmo ML (novo ML para o arquiteto na REQ vigente).
+
+---
+
+### Saída dos comandos git (Rodada 3)
+
+```
+$ git status --short
+ M docs/seguranca/2026-11-08-redteam-leitor-bilingue.md
+
+$ git diff --cached --stat
+(vazio)
+```

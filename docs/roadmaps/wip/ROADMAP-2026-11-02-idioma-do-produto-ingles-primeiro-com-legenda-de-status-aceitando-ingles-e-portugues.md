@@ -389,11 +389,44 @@ quando o script sai com rc≠0 sem alterar a árvore, e nenhum dos dois scripts 
 barrier 49 e oráculo 243 rc=0.
 
 ### ML-2H — Terceira rodada do red team
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** hades-tf
 **Files affected:** `docs/seguranca/2026-11-08-redteam-leitor-bilingue.md` (seção nova "Rodada 3")
 **Acceptance criteria:**
-- [ ] N-1 e os vetores da sondagem (a) refeitos contra a branch, com veredito; veredito final APROVA ou REPROVA
+- [x] N-1 e os vetores da sondagem (a) refeitos contra a branch, com veredito; veredito final APROVA ou REPROVA
+
+*Resultado:* REPROVA. N-1 e a sondagem (a) estão FECHADOS. A rodada achou 14 vetores novos: capitais
+cirílicas e gregas (erro de ordem: o mapa de homóglifos roda antes da caixa baixa), VS1–VS14, Braille em
+branco, forma sem dois-pontos, dois-pontos alternativos, HTML/entidade e `ɑ` latino. Também achou falso
+positivo em prosa. O Zeus parou o ciclo de grafias: a emenda da ADR (rodada 3) fixa o modelo de ameaça
+(acidente, não adversário), ancora a regra na cerca ligada e define o critério de convergência. Correção no
+ML-2J e rodada 4 no ML-2K.
+
+### ML-2J — Quase-cabeçalho ancorado na cerca, classes por categoria
+**Status:** ⬜ Pendente
+**Squad:** apolo-tf
+**Files affected:**
+- `internal/roadmapdoc/roadmapdoc.go`
+- `internal/roadmapdoc/gates_lines_test.go`
+- `internal/roadmapdoc/compare_baseline_test.go`
+- `docs/cli-parity.md`
+
+**Actions:** itens 2 e 3 da emenda da ADR (rodada 3). A ligação cabeçalho→cerca vira função única, usada
+pelo cabeçalho válido e pelo quase-cabeçalho. Medir o acervo antes e parar se algum roadmap em `wip/` cair
+na regra.
+
+**Acceptance criteria:**
+- [ ] Teste por vetor acidental da rodada 3 (capitais, VS1, U+2800, sem dois-pontos em negrito e em `###`, `∶`, `꞉`, `<strong>`, `&#58;`, `ɑ`), com contra-braço
+- [ ] Falso positivo da rodada 3 coberto: prosa "Wave gates: …" sem cerca ligada não dispara, com e sem cabeçalho válido
+- [ ] Medição do acervo reportada; nenhum roadmap em `wip/` passa a reprovar
+- [ ] `go test ./internal/roadmapdoc/ ./internal/commands/ ./internal/validator/` verde
+
+### ML-2K — Quarta rodada do red team (critério de convergência)
+**Status:** ⬜ Pendente
+**Squad:** hades-tf
+**Files affected:** `docs/seguranca/2026-11-08-redteam-leitor-bilingue.md` (seção nova "Rodada 4")
+**Acceptance criteria:**
+- [ ] Vetores da rodada 3 refeitos contra a branch, com veredito; vetores novos classificados como acidentais ou como residual do item 4 da emenda; veredito final pelo critério do item 5
 
 ### ML-2B — Merge e tag do leitor (Zeus)
 **Status:** ⬜ Pendente

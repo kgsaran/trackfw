@@ -117,6 +117,31 @@ que nomeia a linha. O conjunto de grafias aceitas continua fechado: o quase-cabe
 aceito. Na mesma linha, a razão de `Lapsed:`/`Caducou:` não pode ter só caracteres
 `Other_Default_Ignorable_Code_Point` (preenchedores Hangul, de categoria Lo).
 
+**Emenda 2026-11-08 (Wave 2, red team rodada 3) — modelo de ameaça e critério de convergência do D8.**
+A rodada 3 achou 14 grafias novas que escapam. Depois das rodadas 1 e 2, ficou claro que reconhecer
+grafias não converge, e que a meta das emendas anteriores ("homóglifo", "sem caracteres invisíveis") era
+maior do que o mecanismo consegue entregar. A frase "sem caracteres invisíveis" estava errada como escrita:
+os seletores de variação VS1–VS14 (categoria Mn) e o Braille em branco (U+2800, So) passavam.
+
+1. **Modelo de ameaça.** Para a wave ≥1, zero gates é legal. Quem pode editar o roadmap pode apagar o
+   cabeçalho e o bloco, e nenhuma regra de grafia impede isso. A detecção de quase-cabeçalho protege
+   contra **acidente** (pessoa ou modelo de linguagem que escreve o cabeçalho de um jeito quase certo), não
+   contra adversário. A defesa contra quem apaga gates é a revisão do diff do roadmap, não o parser.
+2. **Âncora na cerca.** Um quase-cabeçalho só é erro se estiver **ligado a uma cerca** ```` ```bash ````
+   pela mesma ligação que o cabeçalho válido usa: a próxima cerca ```` ```bash ```` fora de máscara
+   antes do próximo `## `/`### `. Sem cerca ligada, nada se perde, porque o barrier roda zero gates nos
+   dois casos. Isso também tira o falso positivo de prosa como "Wave gates: ver abaixo" sem cerca depois.
+3. **Classes fechadas por categoria, não por grafia.** O esqueleto remove todo `Mn`, `Cf`,
+   `Other_Default_Ignorable_Code_Point` e U+2800. Decodifica entidades HTML e remove tags `<…>`. Passa para
+   minúsculas **antes** do mapa de homóglifos. Trata `:`, `：`, `∶` e `꞉` como dois-pontos. A forma sem
+   dois-pontos casa só quando a linha inteira, reduzida, é o alvo (`**Wave gates**`, `### Wave gates`).
+4. **Residual declarado.** Homóglifo fora da tabela fechada (scripts que não sejam latino, cirílico ou
+   grego, e confusáveis raros desses três) e qualquer ofuscação deliberada. Pelo item 1, isso equivale a
+   apagar o cabeçalho, que já é legal.
+5. **Critério de aprovação do red team.** APROVA quando nenhum vetor **acidental** (digitável por pessoa
+   ou gerável por modelo de linguagem sem intenção de evasão) conta zero gates em silêncio. Vetores da
+   classe do item 4 não reprovam.
+
 ## Consequences
 
 - O acervo continua passando; roadmaps novos nascem em inglês depois da segunda tag.
