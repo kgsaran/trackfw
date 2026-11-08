@@ -3023,9 +3023,12 @@ These are literal parsing rules. The binary implements them.
    - **HTML comment check:** `HTMLCommentMaskCheck(lines, fenced, waveEnd)` returns a non-zero
      open line — an `<!--` opened within `[0, waveEnd)` never closes. This catches red-team
      scenario D1 (unclosed `<!-- … -->` masks the gate header entirely).
-   Note: A1 and A2 are j-loop fixes (`fenced[j] || htmlMask[j]` guard), independent of D8.
-   They prevent a masked ```` ```bash ```` from being mistaken for the gate fence opener; they
-   do not make ParseGatesLines return an error.
+   Note: A1 is a j-loop fix (`fenced[j] || htmlMask[j]` guard in `boundGateFence`), independent
+   of D8. It prevents a masked ```` ```bash ```` from being mistaken for the gate fence opener.
+   A2 (outer fence skips to later ```bash) was reachable before ML-2L; after ML-2L mecanismo B,
+   `boundGateFence` stops at the FIRST fence opener regardless of tag, so a document with an
+   outer example fence before the gate fence now produces a fence-tag error rather than adopting
+   the later bash fence. The legal layout is: ```bash gate block first, outer example fence after.
    Per-surface consequences:
    - `barrier` with unclosed `<!--` (measured): `ParseGatesLines` returns error → `usageExit` →
      **exit 2, stderr message, no JSON output** (even with `--json`).
@@ -3050,16 +3053,26 @@ These are literal parsing rules. The binary implements them.
    (captured in `gates.error` for `show --json`, causes exit 2 for `barrier`). The E3 residual
    is closed. The rule applies only when the wave has **no** unmasked gate header, and covers a
    header inside a closed HTML comment as well; a masked example next to a real header is allowed.
-   **Near-miss gates header (D8, ADR-2026-11-08, ML-2G, ML-2I, ML-2I-bis, ML-2J, ML-2J corretivo):** an
+   **Near-miss gates header (D8, ADR-2026-11-08, ML-2G, ML-2I, ML-2I-bis, ML-2J, ML-2J corretivo, ML-2L):** an
    unmasked line that does not match `GatesHeaderRe` but whose skeleton matches a target is a
-   parse error naming the line, **provided** a ` ```bash ` fence is bound to it
-   (`boundGateFence` finds one between the near-miss line and the next section heading,
+   parse error naming the line, **provided** a fence opener is bound to it (`boundGateFence`
+   finds the first unmasked fence opener — any info-string — before the next section heading,
    valid `GatesHeaderRe` line, or wave end). The search stops at the first unmasked
    `GatesHeaderRe` line because a fence belongs to the nearest header above it; without this
    stop, prose like `Wave gates: see below` before a valid `**Wave gates:**` would traverse
    past the valid header, claim its fence, and produce a false near-miss error (ML-2J
    corretivo, R3-H). Lines without a bound fence are not flagged, eliminating prose false-positives.
-   The skeleton is computed by `gatesNearMissSkeleton` (seven-step pipeline, ML-2J):
+   **Fence binding (ML-2L mecanismo B, ADR-2026-11-08 rodada 4):** `boundGateFence` now stops
+   at the FIRST fence opener regardless of info-string (using `DetectFenceMarker` tolerance).
+   The caller is responsible for the tag check:
+   - **Near-miss path:** any fence opener bound to the near-miss line triggers the near-miss
+     error (the info-string is irrelevant — the near-miss error always fires when a fence is bound).
+   - **Valid-header path:** after the fence is found, `ParseGatesLines` verifies that the
+     trimmed fence line equals exactly `\`\`\`bash` (three backticks immediately followed by
+     `bash`, no leading or trailing space on the trimmed string). If the tag differs, the error is:
+     `"gates fence at line N must open with exactly '```bash' (found %q) — the barrier never skips to a later fence (D8, ADR-2026-11-08)"`.
+     The barrier **never** skips to a later fence to find one with the correct tag.
+   The skeleton is computed by `gatesNearMissSkeleton` (eight-step pipeline, step 4 added ML-2L):
    (0) `html.UnescapeString` + HTML-tag removal (`<[^>]*>`), so `<strong>Wave gates:</strong>`
    reduces to `Wave gates:`.
    (1a) Remove every rune in `unicode.Mn` (covers VS1–VS14 `U+FE00–U+FE0E` and other
@@ -3078,6 +3091,14 @@ These are literal parsing rules. The binary implements them.
    followed by a space, or `\d+[.)]` followed by whitespace).
    (3) Remove all runes in `{*, _, #, |, >, -, +, ~}` and all `unicode.IsSpace` runes.
    With a colon: process only up to and including the first `:`; leave the tail verbatim.
+   (4) _(ML-2L mecanismo A, ADR-2026-11-08 rodada 4)_ Remove ASCII digit sequences and
+   substrings enclosed in matching `(`…`)` or `[`…`]` (non-nested) from the **prefix only**
+   (up to the first `:`, or the whole string when no colon is present). This allows numeric
+   wave labels (`**Wave 1 gates:**`, `**Gates da wave 0:**`) and parenthetical qualifiers
+   (`**Wave gates (blocking):**`, `**Wave gates** (run by Zeus)`) to match the same targets as
+   the canonical forms. Declared behaviours: an unbalanced `(` consumes to the end of the
+   prefix; a colon inside parentheses (e.g. `(note: x)`) is part of the removed group;
+   digits and groups after the first `:` are preserved.
    The skeleton is compared with `HasPrefix` against `nearMissGatesTargets`
    (`wavegates:`, `wavegate:`, `gatesdawave:`, `gatedawave:`).
    Without a colon: process the entire string and compare with **exact equality** against

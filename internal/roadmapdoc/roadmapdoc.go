@@ -1507,8 +1507,9 @@ func gatesNearMissSkeleton(line string) string {
 	colonIdx := strings.IndexByte(s, ':')
 	var sb strings.Builder
 	sb.Grow(len(s))
+	var step3Out string
 	if colonIdx < 0 {
-		// No colon: strip the entire string and return.
+		// No colon: strip the entire string.
 		// The caller uses exact equality against nearMissGatesTargetsNoColon
 		// (R3-D, ML-2J: "**Wave gates**", "### Wave gates", "**Gates da wave**").
 		for _, r := range s {
@@ -1517,26 +1518,64 @@ func gatesNearMissSkeleton(line string) string {
 			}
 			sb.WriteRune(r)
 		}
-		return sb.String()
-	}
-	for _, r := range s[:colonIdx+1] { // process up to and including ':'
-		if strings.ContainsRune(stripSet, r) || unicode.IsSpace(r) {
-			continue
+		step3Out = sb.String()
+	} else {
+		for _, r := range s[:colonIdx+1] { // process up to and including ':'
+			if strings.ContainsRune(stripSet, r) || unicode.IsSpace(r) {
+				continue
+			}
+			sb.WriteRune(r)
 		}
-		sb.WriteRune(r)
+		sb.WriteString(s[colonIdx+1:]) // tail after ':' unchanged
+		step3Out = sb.String()
 	}
-	sb.WriteString(s[colonIdx+1:]) // tail after ':' unchanged
-	return sb.String()
+
+	// Step 4 (ML-2L, ADR-2026-11-08 rodada 4 mecanismo A): remove ASCII digit sequences
+	// and substrings enclosed in matching parentheses or square brackets (non-nested)
+	// from the prefix — up to the first ':' in step3Out, or the whole string when
+	// there is no colon. This allows numeric wave labels ("**Wave 1 gates:**",
+	// "**Gates da wave 0:**") and parenthetical qualifiers ("**Wave gates (blocking):**",
+	// "**Wave gates** (run by Zeus)") to match the same targets as the canonical forms.
+	// Square brackets are included for symmetric coverage.
+	// Declared behaviours:
+	//   - Non-nested: an unbalanced '(' consumes to the end of the prefix.
+	//   - A colon inside parentheses, e.g. "(note: x)", is part of the removed group.
+	//   - Removal is prefix-only: digits and groups after the first ':' are preserved.
+	colonInStep3 := strings.IndexByte(step3Out, ':')
+	var pref4, tail4 string
+	if colonInStep3 >= 0 {
+		pref4 = step3Out[:colonInStep3]
+		tail4 = step3Out[colonInStep3:] // includes ':'
+	} else {
+		pref4 = step3Out
+		tail4 = ""
+	}
+	var s4 strings.Builder
+	s4.Grow(len(pref4))
+	depth4 := 0
+	for _, r := range pref4 {
+		switch {
+		case r == '(' || r == '[':
+			depth4++
+		case r == ')' || r == ']':
+			if depth4 > 0 {
+				depth4--
+			}
+		case depth4 == 0 && r >= '0' && r <= '9':
+			// skip digit
+		case depth4 == 0:
+			s4.WriteRune(r)
+		}
+	}
+	return s4.String() + tail4
 }
 
 // nearMissSkeletonMatches reports whether the skeleton of line matches any
 // entry in nearMissGatesTargets (HasPrefix) or nearMissGatesTargetsNoColon
-// (exact equality). It is extracted from the near-miss loop in ParseGatesLines
-// so that boundGateFence can reuse the same predicate: a fence belongs to the
-// nearest unmasked header above it, so the search must stop when it encounters
-// a line whose skeleton also matches — another near-miss sitting between the
-// original near-miss and its apparent fence would claim that fence first.
-// (ML-2J corretivo, R3-H)
+// (exact equality). Used by the near-miss loop in ParseGatesLines and by
+// test helpers. The skeleton includes all pipeline steps from
+// gatesNearMissSkeleton, including the ML-2L digit/paren removal (step 4).
+// (ML-2J corretivo, R3-H; step 4 added ML-2L)
 func nearMissSkeletonMatches(line string) bool {
 	skel := gatesNearMissSkeleton(line)
 	for _, target := range nearMissGatesTargets {
@@ -1553,15 +1592,21 @@ func nearMissSkeletonMatches(line string) bool {
 }
 
 // boundGateFence searches forward from lines[headerIdx+1] for the first
-// unmasked "```bash" line before the next section heading (## or ###) within
-// [headerIdx+1, waveEnd). It returns the 0-based index of the fence and true
-// when found, or -1 and false otherwise.
+// unmasked fence opener (backtick or tilde, any info-string, same grammar as
+// DetectFenceMarker) before the next section heading (## or ###) or unmasked
+// GatesHeaderRe match within [headerIdx+1, waveEnd). It returns the 0-based
+// index of the opener and true when found, or -1 and false otherwise.
 //
-// This is the same gate-fence binding used by the valid-header path in
-// ParseGatesLines (the former inline j := i+1 loop), extracted into a function
-// (ML-2J) so that the near-miss check can reuse it: a near-miss line is only
-// an error when a fence is bound to it, anchoring the detection to the case
-// where the near-miss would actually be used as a gate declaration.
+// ML-2L (ADR-2026-11-08 rodada 4, mecanismo B): the search now stops at the
+// FIRST fence opener regardless of info-string. The caller is responsible for
+// checking whether the info-string is exactly "```bash": any other tag is an
+// error that the caller should report. The barrier never skips to a later
+// fence.
+//
+// This function is used by both the valid-header path and the near-miss check
+// in ParseGatesLines. For the near-miss check: the near-miss error fires when
+// any fence is bound (N8-class: near-miss + non-bash fence). For the valid-
+// header path: the caller checks the tag and returns the appropriate error.
 //
 // The search skips masked lines (fenced or HTML-commented) exactly as the
 // valid-header path does. It stops at any unmasked ## or ### heading, treating
@@ -1580,10 +1625,12 @@ func boundGateFence(lines []string, fenced, htmlMask []bool, headerIdx, waveEnd 
 		if fenced[j] || htmlMask[j] {
 			continue
 		}
-		if strings.TrimSpace(lines[j]) == "```bash" {
+		trimmed := strings.TrimSpace(lines[j])
+		_, _, isFenceOpener := DetectFenceMarker(trimmed)
+		if isFenceOpener {
 			return j, true
 		}
-		// A valid gate header (or another near-miss) claims the fence from here on:
+		// A valid gate header claims the fence from here on:
 		// stop and report no bound fence for headerIdx.
 		if GatesHeaderRe.MatchString(lines[j]) {
 			return -1, false
@@ -1619,12 +1666,14 @@ func boundGateFence(lines []string, fenced, htmlMask []bool, headerIdx, waveEnd 
 //     The previously fail-open "zero gates" is now a named failure — the author must
 //     add a real gate header or remove the masked one. Exception: if no masked header
 //     exists either (wave genuinely has no gate header), zero gates remains legal.
-//   - The ```bash fence is found by scanning forward to the next heading boundary
-//     (## / ###). The search skips prose, blank lines and paragraphs (#460): a real
+//   - The gate fence is found by scanning forward using boundGateFence, which now stops
+//     at the FIRST unmasked fence opener (any info-string, ML-2L mecanismo B). The caller
+//     then verifies that the trimmed opener line equals exactly "```bash"; any other tag
+//     is a parse error. The search skips prose, blank lines and paragraphs (#460): a real
 //     gate block may have an explanatory sentence between the header and the fence.
 //     🔴 The boundary is the NEXT HEADING, not the end of the wave: without it, a
-//     ```bash fence that belongs to another section (e.g. an ML body example) would
-//     be adopted as the gate fence and run code nobody declared as a gate.
+//     fence that belongs to another section (e.g. an ML body example) would be adopted
+//     as the gate fence and run code nobody declared as a gate.
 //   - Empty lines and lines whose first non-space character is '#' are ignored inside
 //     the fence block.
 //
@@ -1682,24 +1731,7 @@ func ParseGatesLines(lines []string, waveStart, waveEnd int) ([]GateCmd, error) 
 		if fenced[i] || htmlMask[i] || GatesHeaderRe.MatchString(lines[i]) {
 			continue
 		}
-		skel := gatesNearMissSkeleton(lines[i])
-		matched := false
-		for _, target := range nearMissGatesTargets {
-			if strings.HasPrefix(skel, target) {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			// No-colon form: exact equality against no-colon targets.
-			for _, target := range nearMissGatesTargetsNoColon {
-				if skel == target {
-					matched = true
-					break
-				}
-			}
-		}
-		if matched {
+		if nearMissSkeletonMatches(lines[i]) {
 			if _, bound := boundGateFence(lines, fenced, htmlMask, i, waveEnd); bound {
 				return nil, fmt.Errorf(
 					"near-miss gates header at line %d: the line looks like a gates header but does not match the accepted form exactly (leading space, list/blockquote marker, invisible character, homoglyph or case) — write '**Wave gates:**' or '**Gates da wave:**' at column 0 (D8, ADR-2026-11-08)",
@@ -1768,6 +1800,13 @@ func ParseGatesLines(lines []string, waveStart, waveEnd int) ([]GateCmd, error) 
 	j, bound := boundGateFence(lines, fenced, htmlMask, i, waveEnd)
 	if !bound {
 		return nil, fmt.Errorf("gates block not found: gates header at line %d is not followed by a ```bash fence before the next heading", i+1)
+	}
+	// ML-2L (ADR-2026-11-08 rodada 4, mecanismo B): the linked fence must open
+	// with exactly "```bash". The barrier never skips to a later fence.
+	if tag := strings.TrimSpace(lines[j]); tag != "```bash" {
+		return nil, fmt.Errorf(
+			"gates fence at line %d must open with exactly '```bash' (found %q) — the barrier never skips to a later fence (D8, ADR-2026-11-08)",
+			j+1, tag)
 	}
 	fenceStart := j
 	var cmds []GateCmd

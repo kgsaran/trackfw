@@ -922,13 +922,22 @@ func TestParseGatesLines_D3_FencedPlusRealNoError(t *testing.T) {
 //     header → real gate commands returned, no error; (c) header only inside HTML
 //     comment → error.
 
-// TestParseGatesLines_A2_ExampleFenceMaskedBash tests the A2 fix.
+// TestParseGatesLines_A2_ExampleFenceMaskedBash tests the A2 / ML-2L boundary.
 //
-// Contra-arm: the wrong gate text ("echo \"example gate\"") must NOT be returned.
+// ML-2L mecanismo B changed A2's semantics: `boundGateFence` now stops at the
+// FIRST unmasked fence opener regardless of info-string. The document below has
+// an untagged ```` fence (no info-string) immediately after the gate header; that
+// fence IS the linked fence, its tag is not "```bash", so a fence-tag error fires.
+// The example-gate text is never returned — both because the error fires first and
+// because the inner ```bash is inside the masked outer fence.
+//
+// A reordered arm below tests the legal layout: ```bash gate block first, then the
+// outer example fence after it.
 func TestParseGatesLines_A2_ExampleFenceMaskedBash(t *testing.T) {
-	// A2 (D8, ADR-2026-11-08 / ML-2C): a "```bash" inside a 4-backtick outer fence
-	// (fenced[j]=true) must be skipped — only the real "```bash" after the outer
-	// fence closes is the gate fence opener.
+	// Under ML-2L mecanismo B: the first unmasked fence opener after the header
+	// is ```` at line 3 (untagged). That is the linked fence; its tag ≠ "```bash",
+	// so ParseGatesLines returns a fence-tag error. The barrier never skips to the
+	// ```bash at line 10.
 	doc := "## Wave 0 — A2 test\n" +
 		"**Wave gates:**\n" +
 		"````\n" +
@@ -949,18 +958,56 @@ func TestParseGatesLines_A2_ExampleFenceMaskedBash(t *testing.T) {
 	}
 	w := waves[0]
 
+	_, err := ParseGatesLines(lines, w.Start, w.End)
+	if err == nil {
+		t.Fatal("A2 ML-2L: expected fence-tag error for untagged outer fence, got nil")
+	}
+	if !strings.Contains(err.Error(), "gates fence at line 3") {
+		t.Errorf("A2 ML-2L: error %q does not name 'gates fence at line 3'", err.Error())
+	}
+	if !strings.Contains(err.Error(), "found") {
+		t.Errorf("A2 ML-2L: error %q does not contain the found tag", err.Error())
+	}
+	// The example-gate text must never be returned — the error fires before any cmds.
+	// (This check is implicit: err != nil guarantees no cmds.)
+}
+
+// TestParseGatesLines_A2_ReorderedLegalLayout verifies the layout that is legal
+// under ML-2L: the ```bash gate block comes first, the outer example fence after.
+// The inner ```bash (example gate) must NOT appear in the returned commands.
+func TestParseGatesLines_A2_ReorderedLegalLayout(t *testing.T) {
+	doc := "## Wave 0 — A2 reordered\n" +
+		"**Wave gates:**\n" +
+		"```bash\n" +
+		"echo \"real gate\"\n" +
+		"```\n" +
+		"````\n" +
+		"This is an example fence:\n" +
+		"```bash\n" +
+		"echo \"example gate\"\n" +
+		"```\n" +
+		"````\n"
+
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, _ := ParseWaves(lines, fenced)
+	if len(waves) != 1 {
+		t.Fatalf("setup: expected 1 wave, got %d", len(waves))
+	}
+	w := waves[0]
+
 	gcmds, err := ParseGatesLines(lines, w.Start, w.End)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("A2 reordered: unexpected error: %v", err)
 	}
 	if len(gcmds) != 1 {
-		t.Fatalf("expected 1 GateCmd (real gate), got %d: %v", len(gcmds), gcmds)
+		t.Fatalf("A2 reordered: expected 1 GateCmd, got %d: %v", len(gcmds), gcmds)
 	}
 	if gcmds[0].Text == `echo "example gate"` {
-		t.Error("A2 not fixed: returned the gate from inside the example fence instead of the real gate")
+		t.Error("A2 reordered: returned the example gate text — example fence was not skipped")
 	}
 	if gcmds[0].Text != `echo "real gate"` {
-		t.Errorf("gcmds[0].Text = %q, want %q", gcmds[0].Text, `echo "real gate"`)
+		t.Errorf("A2 reordered: gcmds[0].Text = %q, want %q", gcmds[0].Text, `echo "real gate"`)
 	}
 }
 
@@ -2448,5 +2495,336 @@ func TestParseGatesLines_NearMiss_OwnFenceBeforeValidHeader_Fires(t *testing.T) 
 	}
 	if !strings.Contains(err.Error(), "near-miss gates header at line 2") {
 		t.Errorf("error %q does not name near-miss at line 2", err.Error())
+	}
+}
+
+// ── ML-2L tests: Mecanismo A (digit/paren removal in skeleton) ──────────────
+
+// TestParseGatesLines_N2_NumericWaveLabelEN verifies that "**Wave 1 gates:**"
+// followed by a ```bash fence fires a near-miss error (N2).
+// Reconciliation: this test asserts that after digit removal the skeleton
+// "wave1gates:" → "wavegates:" which matches nearMissGatesTargets; the ML-2L
+// step 4 produces this exact reduction.
+func TestParseGatesLines_N2_NumericWaveLabelEN(t *testing.T) {
+	doc := "## Wave 0 — setup\n" +
+		"**Wave 1 gates:**\n" +
+		"```bash\n" +
+		"echo hi\n" +
+		"```\n"
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, malformed := ParseWaves(lines, fenced)
+	if len(malformed) > 0 || len(waves) != 1 {
+		t.Fatalf("setup: malformed=%v waves=%d", malformed, len(waves))
+	}
+	w := waves[0]
+	_, err := ParseGatesLines(lines, w.Start, w.End)
+	if err == nil {
+		t.Fatal("N2: expected near-miss error for **Wave 1 gates:**, got nil")
+	}
+	if !strings.Contains(err.Error(), "near-miss gates header at line 2") {
+		t.Errorf("N2: error %q does not contain 'near-miss gates header at line 2'", err.Error())
+	}
+}
+
+// TestParseGatesLines_N3_NumericWaveLabelPT verifies that "**Gates da wave 0:**"
+// followed by a ```bash fence fires a near-miss error (N3).
+// Reconciliation: digit removal turns "gatesdawave0:" → "gatesdawave:" which
+// matches the "gatesdawave:" entry in nearMissGatesTargets.
+func TestParseGatesLines_N3_NumericWaveLabelPT(t *testing.T) {
+	doc := "## Wave 0 — setup\n" +
+		"**Gates da wave 0:**\n" +
+		"```bash\n" +
+		"echo hi\n" +
+		"```\n"
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, malformed := ParseWaves(lines, fenced)
+	if len(malformed) > 0 || len(waves) != 1 {
+		t.Fatalf("setup: malformed=%v waves=%d", malformed, len(waves))
+	}
+	w := waves[0]
+	_, err := ParseGatesLines(lines, w.Start, w.End)
+	if err == nil {
+		t.Fatal("N3: expected near-miss error for **Gates da wave 0:**, got nil")
+	}
+	if !strings.Contains(err.Error(), "near-miss gates header at line 2") {
+		t.Errorf("N3: error %q does not contain 'near-miss gates header at line 2'", err.Error())
+	}
+}
+
+// TestParseGatesLines_N4_ParenQualifierEN verifies that "**Wave gates (blocking):**"
+// followed by a ```bash fence fires a near-miss error (N4).
+// Reconciliation: paren removal turns "wavegates(blocking):" → "wavegates:" which
+// matches the "wavegates:" entry in nearMissGatesTargets.
+func TestParseGatesLines_N4_ParenQualifierEN(t *testing.T) {
+	doc := "## Wave 0 — setup\n" +
+		"**Wave gates (blocking):**\n" +
+		"```bash\n" +
+		"echo hi\n" +
+		"```\n"
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, malformed := ParseWaves(lines, fenced)
+	if len(malformed) > 0 || len(waves) != 1 {
+		t.Fatalf("setup: malformed=%v waves=%d", malformed, len(waves))
+	}
+	w := waves[0]
+	_, err := ParseGatesLines(lines, w.Start, w.End)
+	if err == nil {
+		t.Fatal("N4: expected near-miss error for **Wave gates (blocking):**, got nil")
+	}
+	if !strings.Contains(err.Error(), "near-miss gates header at line 2") {
+		t.Errorf("N4: error %q does not contain 'near-miss gates header at line 2'", err.Error())
+	}
+}
+
+// TestParseGatesLines_N7_ParenAfterBoldEN verifies that "**Wave gates** (run by Zeus)"
+// followed by a ```bash fence fires a near-miss error (N7).
+// Reconciliation: after strip-set removal and paren removal the skeleton becomes
+// "wavegates" which matches the "wavegates" entry in nearMissGatesTargetsNoColon
+// (exact equality, no-colon form).
+func TestParseGatesLines_N7_ParenAfterBoldEN(t *testing.T) {
+	doc := "## Wave 0 — setup\n" +
+		"**Wave gates** (run by Zeus)\n" +
+		"```bash\n" +
+		"echo hi\n" +
+		"```\n"
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, malformed := ParseWaves(lines, fenced)
+	if len(malformed) > 0 || len(waves) != 1 {
+		t.Fatalf("setup: malformed=%v waves=%d", malformed, len(waves))
+	}
+	w := waves[0]
+	_, err := ParseGatesLines(lines, w.Start, w.End)
+	if err == nil {
+		t.Fatal("N7: expected near-miss error for **Wave gates** (run by Zeus), got nil")
+	}
+	if !strings.Contains(err.Error(), "near-miss gates header at line 2") {
+		t.Errorf("N7: error %q does not contain 'near-miss gates header at line 2'", err.Error())
+	}
+}
+
+// ── ML-2L tests: Mecanismo B (first fence opener; non-bash tag error) ───────
+
+// TestParseGatesLines_N8_NearMissWithShellFence verifies that a near-miss
+// header followed by a ```shell fence fires a near-miss error (N8).
+// Reconciliation: the near-miss check fires when ANY fence is bound (after
+// ML-2L mecanismo B); the shell tag does not prevent the fence from being
+// bound — it is still the first unmasked fence opener.
+func TestParseGatesLines_N8_NearMissWithShellFence(t *testing.T) {
+	doc := "## Wave 0 — setup\n" +
+		"**Wave Gates:**\n" +
+		"```shell\n" +
+		"echo hi\n" +
+		"```\n"
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, malformed := ParseWaves(lines, fenced)
+	if len(malformed) > 0 || len(waves) != 1 {
+		t.Fatalf("setup: malformed=%v waves=%d", malformed, len(waves))
+	}
+	w := waves[0]
+	_, err := ParseGatesLines(lines, w.Start, w.End)
+	if err == nil {
+		t.Fatal("N8: expected near-miss error for **Wave Gates:** + ```shell, got nil")
+	}
+	if !strings.Contains(err.Error(), "near-miss gates header at line 2") {
+		t.Errorf("N8: error %q does not contain 'near-miss gates header at line 2'", err.Error())
+	}
+}
+
+// TestParseGatesLines_N9_ValidHeaderWithShFence verifies that a canonical
+// header followed by a ```sh fence fires the fence-tag error (N9).
+// Reconciliation: ML-2L mecanismo B: the linked fence is the first fence
+// opener; if its tag is not "```bash" the barrier returns an error naming the
+// line and the found tag. The barrier never skips to a later fence.
+func TestParseGatesLines_N9_ValidHeaderWithShFence(t *testing.T) {
+	doc := "## Wave 0 — setup\n" +
+		"**Wave gates:**\n" +
+		"```sh\n" +
+		"echo hi\n" +
+		"```\n" +
+		"```bash\n" +
+		"echo ignored\n" +
+		"```\n"
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, malformed := ParseWaves(lines, fenced)
+	if len(malformed) > 0 || len(waves) != 1 {
+		t.Fatalf("setup: malformed=%v waves=%d", malformed, len(waves))
+	}
+	w := waves[0]
+	_, err := ParseGatesLines(lines, w.Start, w.End)
+	if err == nil {
+		t.Fatal("N9: expected fence-tag error for **Wave gates:** + ```sh, got nil")
+	}
+	if !strings.Contains(err.Error(), "gates fence at line 3") {
+		t.Errorf("N9: error %q does not contain 'gates fence at line 3'", err.Error())
+	}
+	if !strings.Contains(err.Error(), "```sh") {
+		t.Errorf("N9: error %q does not name the found tag '```sh'", err.Error())
+	}
+	// Barrier must NOT skip to the later ```bash fence.
+	if !strings.Contains(err.Error(), "barrier never skips") {
+		t.Errorf("N9: error %q does not contain the D8 barrier note", err.Error())
+	}
+}
+
+// TestParseGatesLines_FenceTags_NonBash verifies that several non-bash fence tags
+// after a valid header all produce a fence-tag error (not silently adopting the fence).
+// Reconciliation: ML-2L mecanismo B: any tag other than "```bash" (exact string)
+// triggers the fence-tag error. This includes sh, shell, Bash (case mismatch), and
+// a leading space (``` bash vs ```bash).
+func TestParseGatesLines_FenceTags_NonBash(t *testing.T) {
+	cases := []struct {
+		tag  string
+		name string
+	}{
+		{"```sh", "sh"},
+		{"```shell", "shell"},
+		{"```Bash", "Bash (capital B)"},
+		{"``` bash", "space-before-bash"},
+		{"~~~bash", "tilde-fence-bash"},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			closer := "```"
+			if strings.HasPrefix(tc.tag, "~~~") {
+				closer = "~~~"
+			}
+			doc := "## Wave 0 — setup\n" +
+				"**Wave gates:**\n" +
+				tc.tag + "\n" +
+				"echo hi\n" +
+				closer + "\n"
+			lines := SplitRoadmapLines(doc)
+			fenced := FenceMask(lines)
+			waves, malformed := ParseWaves(lines, fenced)
+			if len(malformed) > 0 || len(waves) != 1 {
+				t.Fatalf("setup: malformed=%v waves=%d", malformed, len(waves))
+			}
+			w := waves[0]
+			_, err := ParseGatesLines(lines, w.Start, w.End)
+			if err == nil {
+				t.Fatalf("fence tag %q: expected fence-tag error, got nil", tc.tag)
+			}
+			if !strings.Contains(err.Error(), "gates fence at line 3") {
+				t.Errorf("fence tag %q: error %q does not contain 'gates fence at line 3'", tc.tag, err.Error())
+			}
+		})
+	}
+}
+
+// ── ML-2L contra-arms ────────────────────────────────────────────────────────
+
+// TestParseGatesLines_ContraArm_ValidHeaderBashFenceReturnsGates verifies that a
+// canonical header followed by exactly "```bash" returns gates (not an error).
+// This contra-arm guards that the Mecanismo B change did not break the happy path.
+func TestParseGatesLines_ContraArm_ValidHeaderBashFenceReturnsGates(t *testing.T) {
+	doc := "## Wave 0 — setup\n" +
+		"**Wave gates:**\n" +
+		"```bash\n" +
+		"echo ok\n" +
+		"```\n"
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, malformed := ParseWaves(lines, fenced)
+	if len(malformed) > 0 || len(waves) != 1 {
+		t.Fatalf("setup: malformed=%v waves=%d", malformed, len(waves))
+	}
+	w := waves[0]
+	cmds, err := ParseGatesLines(lines, w.Start, w.End)
+	if err != nil {
+		t.Fatalf("contra-arm: expected nil error, got %v", err)
+	}
+	if len(cmds) != 1 || cmds[0].Text != "echo ok" {
+		t.Errorf("contra-arm: expected [echo ok], got %v", cmds)
+	}
+}
+
+// TestParseGatesLines_ContraArm_ValidHeaderProseThenBashFence verifies that
+// a canonical header followed by explanatory prose then "```bash" returns gates.
+// This contra-arm guards the prose-skip (#460) path after ML-2L.
+func TestParseGatesLines_ContraArm_ValidHeaderProseThenBashFence(t *testing.T) {
+	doc := "## Wave 0 — setup\n" +
+		"**Wave gates:**\n" +
+		"\n" +
+		"Run the validation script before merging.\n" +
+		"\n" +
+		"```bash\n" +
+		"echo ok\n" +
+		"```\n"
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, malformed := ParseWaves(lines, fenced)
+	if len(malformed) > 0 || len(waves) != 1 {
+		t.Fatalf("setup: malformed=%v waves=%d", malformed, len(waves))
+	}
+	w := waves[0]
+	cmds, err := ParseGatesLines(lines, w.Start, w.End)
+	if err != nil {
+		t.Fatalf("contra-arm: expected nil error, got %v", err)
+	}
+	if len(cmds) != 1 || cmds[0].Text != "echo ok" {
+		t.Errorf("contra-arm: expected [echo ok], got %v", cmds)
+	}
+}
+
+// TestParseGatesLines_ContraArm_WaveGatewayNoFire verifies that "**Wave gateway:**"
+// (not a target) followed by a fence does NOT fire a near-miss error.
+// Reconciliation: "wavegateway:" does not match any entry in nearMissGatesTargets or
+// nearMissGatesTargetsNoColon; the step 4 stripping does not produce a hit.
+func TestParseGatesLines_ContraArm_WaveGatewayNoFire(t *testing.T) {
+	doc := "## Wave 0 — setup\n" +
+		"**Wave gateway:**\n" +
+		"```bash\n" +
+		"echo hi\n" +
+		"```\n"
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, malformed := ParseWaves(lines, fenced)
+	if len(malformed) > 0 || len(waves) != 1 {
+		t.Fatalf("setup: malformed=%v waves=%d", malformed, len(waves))
+	}
+	w := waves[0]
+	cmds, err := ParseGatesLines(lines, w.Start, w.End)
+	// No valid gate header and no near-miss → zero gates (empty slice, nil error).
+	if err != nil {
+		t.Errorf("contra-arm: 'Wave gateway:' should not error, got %v", err)
+	}
+	if len(cmds) != 0 {
+		t.Errorf("contra-arm: 'Wave gateway:' expected 0 cmds, got %d", len(cmds))
+	}
+}
+
+// TestParseGatesLines_ContraArm_Wave1DashGatesNoColon verifies that
+// "Wave 1 — gates" (no colon, em-dash separator) does NOT fire a near-miss error.
+// Reconciliation: the em-dash U+2014 is not in the strip set ("*_#|>-+~" uses
+// ASCII hyphen-minus). After step 4, the skeleton is "wave—gates" (digit removed,
+// em-dash preserved). Exact equality against nearMissGatesTargetsNoColon fails
+// because none of the targets contain the em-dash. No near-miss fires.
+func TestParseGatesLines_ContraArm_Wave1DashGatesNoColon(t *testing.T) {
+	doc := "## Wave 0 — setup\n" +
+		"Wave 1 — gates\n" +
+		"```bash\n" +
+		"echo hi\n" +
+		"```\n"
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, malformed := ParseWaves(lines, fenced)
+	if len(malformed) > 0 || len(waves) != 1 {
+		t.Fatalf("setup: malformed=%v waves=%d", malformed, len(waves))
+	}
+	w := waves[0]
+	cmds, err := ParseGatesLines(lines, w.Start, w.End)
+	// No near-miss and no valid gate header → zero gates, nil error.
+	if err != nil {
+		t.Errorf("contra-arm: 'Wave 1 — gates' (no colon) should not error, got %v", err)
+	}
+	if len(cmds) != 0 {
+		t.Errorf("contra-arm: 'Wave 1 — gates' expected 0 cmds, got %d", len(cmds))
 	}
 }

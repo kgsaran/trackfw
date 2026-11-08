@@ -443,7 +443,7 @@ ou parênteses no rótulo (`**Wave 1 gates:**`, `**Gates da wave 0:**`, este com
 posterior. Emenda da ADR (rodada 4); correção no ML-2L, verificação no ML-2M.
 
 ### ML-2L — A cerca ligada é a primeira cerca; rótulo tolera número e parênteses
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Files affected:**
 - `internal/roadmapdoc/roadmapdoc.go`
@@ -455,9 +455,17 @@ posterior. Emenda da ADR (rodada 4); correção no ML-2L, verificação no ML-2M
 cair na regra.
 
 **Acceptance criteria:**
-- [ ] Teste por vetor N2, N3, N4, N7, N8 e N9 da rodada 4, e por etiqueta (`sh`, `shell`, `Bash`, ` bash`, `~~~bash`), com contra-braço
-- [ ] Medição do acervo reportada; nenhum roadmap em `wip/` passa a reprovar
-- [ ] `go test ./internal/roadmapdoc/ ./internal/commands/ ./internal/validator/` verde
+- [x] Teste por vetor N2, N3, N4, N7, N8 e N9 da rodada 4, e por etiqueta (`sh`, `shell`, `Bash`, ` bash`, `~~~bash`), com contra-braço
+- [x] Medição do acervo reportada; nenhum roadmap em `wip/` passa a reprovar
+- [x] `go test ./internal/roadmapdoc/ ./internal/commands/ ./internal/validator/` verde
+
+*Auditoria (Zeus, 2026-11-08):* no acervo, 4 waves de `done/` passam a dar erro e nenhuma de `wip/`. Três delas usam
+`**Gates da wave 0:**`, e o corpus congelado registra os três casos. A quarta é
+`ROADMAP-2026-09-28-trackfw-init-...` wave 0, cuja primeira cerca não tem etiqueta. O erro de gates aparece em
+21 waves, todas em `done/`. O teste A2 mudou de sentido: uma cerca de exemplo entre o cabeçalho e o gate,
+antes aceita, agora é erro, e o layout legal (gate primeiro, exemplo depois) tem teste próprio. Este próprio
+roadmap continua sem erro nas cinco waves (`roadmap show --json`). Rodado pelo Zeus: falsificação 285,
+contrato do barrier 49 e `go test` do pacote, todos rc=0; o hash do arquivo confere com o reportado.
 
 ### ML-2M — Verificação do red team (rodada 5, escopo fechado)
 **Status:** ⬜ Pendente

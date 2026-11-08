@@ -261,6 +261,39 @@ var corrigidosPela470 = []registroCorrigido{
 		motivo: "D8 near-miss (ML-2I): cabecalho singular \"**Gate da wave:**\" na linha 81 dispara " +
 			"gatedawave: — ParseGatesLines retorna erro de near-miss; baseline registrava gates.status=passed",
 	},
+	// ── D8 near-miss (ML-2L): "**Gates da wave 0:**" (numero na rotulo) em wave=0 ──
+	//
+	// Os tres arquivos abaixo usam "**Gates da wave 0:**" (com o numero 0 no rotulo)
+	// como cabecalho de gates na wave=0. Esse cabecalho nao casa GatesHeaderRe (que
+	// exige "Gates da wave:" ou "Wave gates:" sem numero), mas o esqueleto computado
+	// por gatesNearMissSkeleton resulta — apos o passo 4 de ML-2L (remocao de digitos)
+	// — em "gatesdawave:" que casa o alvo "gatesdawave:" da lista de near-miss.
+	// ParseGatesLines retorna erro de near-miss em vez do zero-gates silencioso anterior.
+	// O baseline registrava gates.status="passed" com commands=[] para essas waves.
+	{
+		caminho: "docs/roadmaps/done/ROADMAP-2026-09-17-gate-escreve-na-arvore-que-audita-e-a-guarda-existente-nao-cobre-o-culpado.md",
+		wave:    "0",
+		check:   "gates",
+		motivo: "D8 near-miss (ML-2L): cabecalho \"**Gates da wave 0:**\" na linha 50 — apos remocao " +
+			"de digito (passo 4) o esqueleto vira gatesdawave: — ParseGatesLines retorna erro de " +
+			"near-miss; baseline registrava gates.status=passed com commands=[]",
+	},
+	{
+		caminho: "docs/roadmaps/done/ROADMAP-2026-09-17-gerador-aplica-o-template-de-consumidor-ao-proprio-produtor-e-o-doctor-prescreve-desfazer-a-correcao.md",
+		wave:    "0",
+		check:   "gates",
+		motivo: "D8 near-miss (ML-2L): cabecalho \"**Gates da wave 0:**\" na linha 48 — apos remocao " +
+			"de digito (passo 4) o esqueleto vira gatesdawave: — ParseGatesLines retorna erro de " +
+			"near-miss; baseline registrava gates.status=passed com commands=[]",
+	},
+	{
+		caminho: "docs/roadmaps/done/ROADMAP-2026-09-17-jira-base-url-do-repositorio-vira-destino-de-post-autenticado-e-um-pr-que-edita-so-a-config-exfiltra-a-credencial-do-ci.md",
+		wave:    "0",
+		check:   "gates",
+		motivo: "D8 near-miss (ML-2L): cabecalho \"**Gates da wave 0:**\" na linha 66 — apos remocao " +
+			"de digito (passo 4) o esqueleto vira gatesdawave: — ParseGatesLines retorna erro de " +
+			"near-miss; baseline registrava gates.status=passed com commands=[]",
+	},
 }
 
 // corrigidoPela470 devolve o motivo quando o registro esta na lista.
