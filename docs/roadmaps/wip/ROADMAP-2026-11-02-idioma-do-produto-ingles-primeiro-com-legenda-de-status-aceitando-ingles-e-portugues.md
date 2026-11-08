@@ -263,7 +263,7 @@ não cabia no item 2, que trata só de máscara não fechada. Vai para o ML-2F. 
 mesmo jeito, que é a política da ADR de 2026-08-29 (`concluído` → `concluido`).
 
 ### ML-2F — E3: cabeçalho de gates só mascarado é erro
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Files affected:**
 - `internal/roadmapdoc/roadmapdoc.go`
@@ -281,9 +281,16 @@ silêncio"), então fica nesta REQ.
 waves caem na regra; se algum roadmap em `wip/` cair, parar e reportar.
 
 **Acceptance criteria:**
-- [ ] O teste do residual E3 passa a afirmar erro, com contra-braço (wave sem cabeçalho nenhum continua zero gates sem erro)
-- [ ] Medição do acervo reportada; nenhum roadmap em `wip/` passa a reprovar
-- [ ] `go test ./internal/roadmapdoc/ ./internal/commands/ ./internal/validator/` verde
+- [x] O teste do residual E3 passa a afirmar erro, com contra-braço (wave sem cabeçalho nenhum continua zero gates sem erro)
+- [x] Medição do acervo reportada; nenhum roadmap em `wip/` passa a reprovar
+- [x] `go test ./internal/roadmapdoc/ ./internal/commands/ ./internal/validator/` verde
+
+*Auditoria (Zeus, 2026-11-08):* acervo com 1 caso, `done/ROADMAP-2026-08-22-...` wave 2 (linha 226), e 0 em
+`wip/`. A regra também inverteu três contratos que afirmavam "marcador mascarado sozinho conta zero gates"
+(`TestParseGatesLines_F1_MaskedMarkerNotGate`, `TestParseGatesLines_HTMLComment_MarkerNotGate`,
+`TestParseGatesLines_RealFile_Wave2MaskedOnlyReturnsError`). A inversão é intencional pela emenda D8. Bite proof
+contra c76cd44d e mutações dos dois disjuntos (`fenced`, `htmlMask`) reprovam. `check-gates-falsify.sh`
+(285) e `check-roadmap-barrier-contract.sh` (49) rc=0.
 
 ### ML-2D — Oráculo compara também os gates (lacuna do red team)
 **Status:** ⬜ Pendente

@@ -31,5 +31,8 @@ O arquivo `testdata/corpus/` usa 3 backticks nas linhas 223 e 236; o arquivo liv
 - `internal/roadmapdoc/roadmapdoc.go` — `ParseGatesLines`, `HTMLCommentMaskCheck`, `htmlCommentMaskKernel`, `scanFences`
 - `internal/commands/barrier.go` — `runBarrier` (chama `FenceMaskCheck`, NÃO `HTMLCommentMaskCheck`)
 - `internal/validator/validator_roadmap_gates.go` — `Wave0GateDiagnosisDetail`
-- `internal/roadmapdoc/gates_lines_test.go` — `TestParseGatesLines_D8_UnclosedFenceBeforeHeaderReturnsError`, `TestParseGatesLines_D1_UnclosedHTMLCommentReturnsError`, `TestParseGatesLines_E3_CommonMark_ClosedFenceMasksHeader_Residual`
+- `internal/roadmapdoc/gates_lines_test.go` — `TestParseGatesLines_D8_UnclosedFenceBeforeHeaderReturnsError`, `TestParseGatesLines_D1_UnclosedHTMLCommentReturnsError`, `TestParseGatesLines_E3_MaskedOnlyHeaderReturnsError`
 - `internal/roadmapdoc/compare_baseline_test.go` — `corrigidosPela470` entrada `wave=2, check=gates`
+
+
+**Atualização 2026-11-08 (ML-2F):** o residual E3 foi fechado. Uma wave sem cabeçalho de gates válido e com cabeçalho só mascarado (cerca balanceada ou comentário HTML) agora retorna erro. Contratos antigos que afirmavam "marcador mascarado sozinho = zero gates" (F1, AC11 e o teste do arquivo real `done/ROADMAP-2026-08-22-...` wave 2) foram invertidos de propósito. No acervo há um único caso, em `done/`, que não roda mais barrier.

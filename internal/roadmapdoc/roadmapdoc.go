@@ -401,8 +401,11 @@ func scanFences(lines []string) (mask []bool, openLine int) {
 // StatusLineRe and CriteriaHeaderRe must ignore documentation/examples inside
 // a cerca — otherwise a roadmap that cites those literals (as this very
 // roadmap, its REQ and its ADR do, repeatedly) is read as real ML content.
-// ParseGatesLines consults this mask to skip "**Gates da wave:**" markers that
-// appear inside an example fence (F1, REQ #491).
+// ParseGatesLines consults this mask to exclude "**Gates da wave:**" markers that
+// appear inside an example fence from counting as valid declarations (F1, REQ #491).
+// When all gate headers in a wave are masked and none is unmasked, ParseGatesLines
+// returns an error rather than silently returning zero gates (E3, D8, ADR-2026-11-08
+// / ML-2F).
 func FenceMask(lines []string) []bool {
 	mask, _ := scanFences(lines)
 	return mask
@@ -1272,15 +1275,22 @@ type GateCmd struct {
 //   - GatesHeaderRe matches both "**Gates da wave:**" (PT) and "**Wave gates:**" (EN).
 //     Both forms are case-sensitive (D1, ADR-2026-11-08 / ML-1A).
 //   - The marker must not be inside a fenced code block (F1, REQ #491): FenceMask is
-//     consulted so that a marker inside an example fence is silently skipped rather
-//     than treated as a real gate declaration.
+//     consulted so that a marker inside an example fence does not count as a real gate
+//     declaration. If that masked marker is the ONLY gate header in the wave, see E3.
 //   - The marker must not be inside an HTML comment block (<!-- … -->)
 //     (AC11, ML-3C, REQ-2026-10-31): column-0 semantics — a marker whose column 0 is
-//     inside a multi-line comment is skipped. A line starting with <!-- cannot match
+//     inside a multi-line comment does not count as a real declaration. If it is the
+//     ONLY gate header in the wave, see E3. A line starting with <!-- cannot match
 //     GatesHeaderRe, so the opening line is never masked.
 //   - D3 (ADR-2026-11-08 / ML-1A): two or more valid headers in the same wave is an
 //     error. The error names the 1-based line numbers of the first two headers.
 //     Fusion would hide the author's intent; silent first-wins would discard gates.
+//   - E3 (D8, ADR-2026-11-08 / ML-2F): when zero valid (unmasked) gate headers exist
+//     in [waveStart, waveEnd) but at least one line matches GatesHeaderRe while being
+//     masked (fenced or HTML-commented), that is an error naming the first masked line.
+//     The previously fail-open "zero gates" is now a named failure — the author must
+//     add a real gate header or remove the masked one. Exception: if no masked header
+//     exists either (wave genuinely has no gate header), zero gates remains legal.
 //   - The ```bash fence is found by scanning forward to the next heading boundary
 //     (## / ###). The search skips prose, blank lines and paragraphs (#460): a real
 //     gate block may have an explanatory sentence between the header and the fence.
@@ -1290,8 +1300,8 @@ type GateCmd struct {
 //   - Empty lines and lines whose first non-space character is '#' are ignored inside
 //     the fence block.
 //
-// A wave with no valid gate header returns an empty, non-nil slice — zero gates is
-// legal and the barrier never invents one.
+// A wave with no gate header of any kind returns an empty, non-nil slice — zero gates
+// is legal when no GatesHeaderRe match exists in the wave at all.
 func ParseGatesLines(lines []string, waveStart, waveEnd int) ([]GateCmd, error) {
 	// Use scanFences directly (instead of FenceMask) to get both the mask and the
 	// 1-based line number of any unclosed fence opener — required for the D8 check.
@@ -1337,6 +1347,24 @@ func ParseGatesLines(lines []string, waveStart, waveEnd int) ([]GateCmd, error) 
 	}
 
 	if len(validHeaderLines) == 0 {
+		// E3 (D8, ADR-2026-11-08 / ML-2F): when there is no valid (unmasked) gate header
+		// in the wave but at least one line matches GatesHeaderRe while being masked
+		// (inside a code fence or HTML comment), the gates block would be silently
+		// ignored. Return an error naming the first masked occurrence instead of
+		// returning zero gates — a fail-open that an attacker (or accident) can exploit.
+		//
+		// The matching uses the same predicate as the D3 pre-scan above, inverted:
+		// GatesHeaderRe matches AND (fenced[i] OR htmlMask[i]).
+		//
+		// If there is no masked header either (the wave genuinely has no gate header),
+		// this branch is not entered and the existing zero-gates-is-legal path applies.
+		for i := waveStart; i < waveEnd; i++ {
+			if GatesHeaderRe.MatchString(lines[i]) && (fenced[i] || htmlMask[i]) {
+				return nil, fmt.Errorf(
+					"gates header at line %d is inside a code fence or HTML comment and no unmasked gates header exists in this wave — the gates block would be silently ignored (D8, ADR-2026-11-08)",
+					i+1)
+			}
+		}
 		return []GateCmd{}, nil
 	}
 
@@ -1401,10 +1429,12 @@ func ParseGatesLines(lines []string, waveStart, waveEnd int) ([]GateCmd, error) 
 	return cmds, nil
 }
 
-// ParseGates implements rule 5. A wave with no gate-header block outside a fence
-// or HTML comment returns an empty, non-nil slice — zero gates is legal and the
-// barrier never invents one. It is a thin wrapper around ParseGatesLines that
-// discards line-number information for callers that do not need it.
+// ParseGates implements rule 5. A wave with NO gate-header of any kind (neither
+// outside nor inside a fence or HTML comment) returns an empty, non-nil slice —
+// zero gates is legal when no GatesHeaderRe match exists at all. When a gate header
+// exists but is entirely masked (E3, D8, ADR-2026-11-08 / ML-2F), an error is
+// returned. It is a thin wrapper around ParseGatesLines that discards line-number
+// information for callers that do not need it.
 func ParseGates(lines []string, waveStart, waveEnd int) ([]string, error) {
 	gcmds, err := ParseGatesLines(lines, waveStart, waveEnd)
 	if err != nil {

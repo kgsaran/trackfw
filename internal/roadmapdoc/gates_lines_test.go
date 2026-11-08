@@ -9,29 +9,33 @@ package roadmapdoc
 //     gate command, while ignoring empty lines and comment lines that begin with '#'.
 //
 //   TestParseGatesLines_F1_MaskedMarkerNotGate
-//     Affirms: a "**Gates da wave:**" marker that falls inside a 4-backtick example fence is
-//     silently skipped (F1), so no gate is generated from that marker.
+//     Affirms: a "**Gates da wave:**" marker that falls inside a 4-backtick example fence
+//     and is the ONLY gate header in the wave causes ParseGatesLines to return an error
+//     (E3 rule, ML-2F) — a masked-only header is a named failure, not silent zero gates.
 //
 //   TestParseGatesLines_F1_RealMarkerAfterMasked
 //     Affirms: when a masked marker (inside a 4-backtick fence) precedes a real marker in
 //     the same wave, the real marker's commands are returned with correct line numbers —
-//     confirming that the scan continues past masked markers rather than stopping.
+//     confirming that the scan continues past masked markers rather than stopping, and that
+//     the E3 rule does NOT fire when a valid unmasked header exists.
 //
-//   TestParseGatesLines_RealFile_Wave2Returns_Empty
+//   TestParseGatesLines_RealFile_Wave2MaskedOnlyReturnsError
 //     Affirms: ParseGates on Wave 2 of docs/roadmaps/done/ROADMAP-2026-08-22-wave-0-…
-//     now returns [] (the marker at line 226 is inside a 4-backtick fence and is masked),
-//     matching the measured before/after delta reported in the ML-1A handoff.
+//     now returns a non-nil error (E3 rule, ML-2F) because the marker at line 226 is
+//     inside a 4-backtick fence and no unmasked header exists in that wave.
 //
 // ── New tests (ML-3C, REQ-2026-10-31) — AC11 ──────────────────────────────────
 //
 //   TestParseGatesLines_HTMLComment_MarkerNotGate
 //     Affirms: a "**Gates da wave:**" marker whose column 0 is inside an HTML comment block
-//     (<!-- … -->) is silently skipped (AC11), so no gate is generated from that block.
+//     (<!-- … -->) and is the ONLY gate header in the wave causes ParseGatesLines to return
+//     an error (E3 rule, ML-2F) — a masked-only header is a named failure, not silent zero gates.
 //
 //   TestParseGatesLines_HTMLComment_RealMarkerAfterCommented
 //     Affirms: when a commented-out marker precedes a real marker outside the comment in
 //     the same wave, only the real marker's commands are returned — the scan continues past
-//     the commented marker rather than stopping.
+//     the commented marker rather than stopping, and the E3 rule does NOT fire when a valid
+//     unmasked header exists.
 //
 // ── New tests (ML-3C ação 3, REQ-2026-10-31) — AC11b inline ──────────────────
 //
@@ -140,15 +144,26 @@ func TestParseGatesLines_LineNumbers(t *testing.T) {
 
 // ── TestParseGatesLines_F1_MaskedMarkerNotGate ───────────────────────────────
 
+// TestParseGatesLines_F1_MaskedMarkerNotGate asserts that a "**Gates da wave:**"
+// marker that falls inside a 4-backtick example fence and has NO real (unmasked) header
+// anywhere else in the wave causes ParseGatesLines to return an error (E3 rule, D8,
+// ADR-2026-11-08 / ML-2F). The masked marker is not a gate declaration, but its
+// presence without a companion real header means the author likely made a mistake —
+// failing with an error (rather than silently returning zero gates) prevents the
+// barrier from passing with no gate executed.
+//
+// Reconciliation (Regra Dura): when the ONLY gate header in a wave is inside a
+// 4-tick example fence, ParseGatesLines returns a non-nil error naming that line —
+// the E3 rule makes the previously fail-open "zero gates" into a named failure.
 func TestParseGatesLines_F1_MaskedMarkerNotGate(t *testing.T) {
 	// Wave with only one "**Gates da wave:**", but inside a 4-backtick example fence.
-	// The wave should return zero gates (F1 fix).
+	// Under E3 (ML-2F): the wave returns an error because the only gate header is masked.
 	//
 	//  line 1: ## Wave 1 — F1 Masked
 	//  line 2: (empty)
 	//  line 3: ````
 	//  line 4: Example output:
-	//  line 5: **Gates da wave:**   ← inside 4-backtick fence, must be skipped
+	//  line 5: **Gates da wave:**   ← inside 4-backtick fence, only header
 	//  line 6: ```bash
 	//  line 7: exit 1  # inside the example
 	//  line 8: ```
@@ -171,7 +186,7 @@ func TestParseGatesLines_F1_MaskedMarkerNotGate(t *testing.T) {
 	}
 	w := waves[0]
 
-	// The marker at line 5 (0-indexed: 4) must be masked.
+	// Sanity: the marker at line 5 (0-indexed: 4) must be masked by FenceMask.
 	if !fenced[4] {
 		t.Errorf("expected line 5 (0-indexed 4) to be masked by FenceMask, but it is not")
 	}
@@ -179,12 +194,16 @@ func TestParseGatesLines_F1_MaskedMarkerNotGate(t *testing.T) {
 		t.Errorf("sanity: GatesHeaderRe should match line 5, but does not")
 	}
 
+	// E3 rule (ML-2F): only masked header → error naming line 5.
 	gcmds, err := ParseGatesLines(lines, w.Start, w.End)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil {
+		t.Fatalf("expected E3 error for masked-only header (no real header), got nil (cmds=%v)", gcmds)
 	}
-	if len(gcmds) != 0 {
-		t.Errorf("expected 0 GateCmds (masked marker), got %d: %v", len(gcmds), gcmds)
+	if !strings.Contains(err.Error(), "gates header at line 5") {
+		t.Errorf("E3: error %q does not name line 5", err.Error())
+	}
+	if gcmds != nil {
+		t.Errorf("expected nil cmds on error path, got %v", gcmds)
 	}
 }
 
@@ -245,14 +264,19 @@ func TestParseGatesLines_F1_RealMarkerAfterMasked(t *testing.T) {
 	}
 }
 
-// ── TestParseGatesLines_RealFile_Wave2Returns_Empty ──────────────────────────
+// ── TestParseGatesLines_RealFile_Wave2MaskedOnlyReturnsError ─────────────────
 
-// TestParseGatesLines_RealFile_Wave2Returns_Empty reads the real acervo file
+// TestParseGatesLines_RealFile_Wave2MaskedOnlyReturnsError reads the real acervo file
 // docs/roadmaps/done/ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md
-// and asserts that ParseGates on Wave 2 now returns [] (previously it returned
-// ["exit 1  # placeholder gate fails closed until ML-0A replaces it"] because
-// the marker at line 226 was inside a 4-backtick fence but ParseGates ignored FenceMask).
-func TestParseGatesLines_RealFile_Wave2Returns_Empty(t *testing.T) {
+// and asserts that ParseGates on Wave 2 now returns an error — the marker at line 226
+// is inside a 4-backtick fence and there is no real (unmasked) gate header in that wave,
+// so the E3 rule (ML-2F) fires. Previously (ML-1A) this returned [] (zero gates, no
+// error) after the F1 fix; now the masked-only condition is a named error.
+//
+// Reconciliation (Regra Dura): ParseGates on a wave whose only gate header is masked
+// (fenced) now returns a non-nil error naming that line — the E3 rule applied to the
+// real corpus file confirms the fix covers concrete in-repo content (ML-2F).
+func TestParseGatesLines_RealFile_Wave2MaskedOnlyReturnsError(t *testing.T) {
 	root := repoRoot(t)
 	path := filepath.Join(root, "docs", "roadmaps", "done",
 		"ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md")
@@ -295,36 +319,38 @@ func TestParseGatesLines_RealFile_Wave2Returns_Empty(t *testing.T) {
 		t.Errorf("sanity: line 226 (0-indexed %d) should be inside FenceMask, but is not", markerIdx)
 	}
 
-	// The key assertion: ParseGates must return [] now (not the placeholder command).
+	// E3 rule (ML-2F): the masked-only gate header at line 226 returns an error.
 	cmds, parseErr := ParseGates(lines, wave2.Start, wave2.End)
-	if parseErr != nil {
-		t.Fatalf("ParseGates error: %v", parseErr)
+	if parseErr == nil {
+		t.Fatalf("expected E3 error (masked-only header at line 226), got nil (cmds=%v)", cmds)
 	}
-	if len(cmds) != 0 {
-		t.Errorf("expected ParseGates to return [] for Wave 2 (marker inside fence), got %v", cmds)
+	if !strings.Contains(parseErr.Error(), "gates header at line 226") {
+		t.Errorf("E3: error %q does not name line 226", parseErr.Error())
 	}
 }
 
 // ── TestParseGatesLines_HTMLComment_MarkerNotGate ─────────────────────────────
 
 // TestParseGatesLines_HTMLComment_MarkerNotGate asserts that a "**Gates da wave:**"
-// marker whose column 0 is inside an HTML comment block (<!-- … -->) is silently
-// skipped (AC11, ML-3C, REQ-2026-10-31), producing zero gates.
+// marker whose column 0 is inside an HTML comment block (<!-- … -->) and has NO real
+// (unmasked) header anywhere else in the wave causes ParseGatesLines to return an error
+// (E3 rule, D8, ADR-2026-11-08 / ML-2F). The masked marker is not a gate declaration,
+// but its presence without a companion real header means the author likely made a
+// mistake — failing with an error prevents the barrier from passing with no gate executed.
 //
-// Contra-braço: without htmlCommentMask in ParseGatesLines the marker inside the
-// comment would be treated as a real gate declaration; the exit 1 command would be
-// collected and the test would fail because len(gcmds) != 0.
+// Contra-braço: without the E3 guard, the masked marker would be silently skipped and
+// ParseGatesLines would return zero gates — the barrier would pass with no gate run.
 //
-// Reconciliation (Regra Dura): a "**Gates da wave:**" marker inside <!-- --> does NOT
-// produce a gate — the block is invisible to ParseGatesLines (AC11).
+// Reconciliation (Regra Dura): when the ONLY gate header in a wave is inside an HTML
+// comment, ParseGatesLines returns a non-nil error naming that line (E3 rule, ML-2F).
 func TestParseGatesLines_HTMLComment_MarkerNotGate(t *testing.T) {
 	// Wave with only one "**Gates da wave:**", but inside an HTML comment block.
-	// The wave should return zero gates.
+	// Under E3 (ML-2F): the wave returns an error because the only gate header is masked.
 	//
 	//  line 1: ## Wave 3 — HTML Comment
 	//  line 2: (empty)
 	//  line 3: <!--
-	//  line 4: **Gates da wave:**   ← column 0 inside comment, must be skipped
+	//  line 4: **Gates da wave:**   ← column 0 inside comment, only header
 	//  line 5: ```bash
 	//  line 6: exit 1
 	//  line 7: ```
@@ -359,13 +385,22 @@ func TestParseGatesLines_HTMLComment_MarkerNotGate(t *testing.T) {
 	if !htmlMask[3] {
 		t.Errorf("sanity: line 4 (0-indexed 3) should be masked by HTMLCommentMask (inside <!-- -->)")
 	}
-
-	gcmds, err := ParseGatesLines(lines, w.Start, w.End)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	// Sanity: the HTML comment IS closed (-->), so D8's unclosed-comment check will not fire.
+	// The only gate header is masked by htmlMask, not by an unclosed comment.
+	if htmlOpenLine, _ := HTMLCommentMaskCheck(lines, fenced, w.End); htmlOpenLine != 0 {
+		t.Errorf("sanity: unexpected unclosed HTML comment at line %d (should be closed)", htmlOpenLine)
 	}
-	if len(gcmds) != 0 {
-		t.Errorf("expected 0 GateCmds (marker inside HTML comment), got %d: %v", len(gcmds), gcmds)
+
+	// E3 rule (ML-2F): only masked header → error naming line 4.
+	gcmds, err := ParseGatesLines(lines, w.Start, w.End)
+	if err == nil {
+		t.Fatalf("expected E3 error for HTML-comment-only header, got nil (cmds=%v)", gcmds)
+	}
+	if !strings.Contains(err.Error(), "gates header at line 4") {
+		t.Errorf("E3: error %q does not name line 4", err.Error())
+	}
+	if gcmds != nil {
+		t.Errorf("expected nil cmds on error path, got %v", gcmds)
 	}
 }
 
@@ -832,13 +867,14 @@ func TestParseGatesLines_D3_FencedPlusRealNoError(t *testing.T) {
 //     for this scenario, so this D8 fence check is reachable via validator/Wave0GateDiagnosis
 //     but unreachable from `barrier`'s runBarrier codepath.
 //
-//   TestParseGatesLines_E3_CommonMark_ClosedFenceMasksHeader_Residual
-//     Affirms: when a 3-tick fence opens at line 1 and its interior ```bash-with-info-string
-//     does NOT close it (CommonMark: closing fence must have no info string), but the
-//     plain ``` later in the doc closes it — masking the gates header the whole time —
-//     ParseGatesLines returns zero gates WITHOUT error (E3 residual, cause is distinct
-//     from D1/A2: scanFences returns openLine=0 since all fences close). Open vector;
-//     candidate ML in this REQ.
+//   TestParseGatesLines_E3_MaskedOnlyHeaderReturnsError
+//     Affirms: when ALL gate headers in a wave are masked (fenced or HTML-commented)
+//     and no unmasked header exists, ParseGatesLines returns a non-nil error naming
+//     the first masked line — the gates block would be silently ignored without this
+//     guard (E3 fix, D8, ADR-2026-11-08 / ML-2F). Counter-braços: (a) wave with no
+//     gate header at all → zero gates, no error; (b) masked header + real unmasked
+//     header → real gate commands returned, no error; (c) header only inside HTML
+//     comment → error.
 
 // TestParseGatesLines_A2_ExampleFenceMaskedBash tests the A2 fix.
 //
@@ -1026,23 +1062,29 @@ func TestParseGatesLines_D8_UnclosedFenceBeforeHeaderReturnsError(t *testing.T) 
 	}
 }
 
-// TestParseGatesLines_E3_CommonMark_ClosedFenceMasksHeader_Residual documents E3.
+// TestParseGatesLines_E3_MaskedOnlyHeaderReturnsError tests the E3 fix (ML-2F).
 //
-// E3 (red team, ADR-2026-11-08): a 3-tick fence that OPENS AND CLOSES WITHIN the wave
-// but masks the gates header due to CommonMark fence semantics. Because scanFences
-// returns openLine=0 (all fences close), D8's unclosed-fence check cannot fire.
-// ParseGatesLines returns zero gates without error — this is a fail-open residual.
-// Open vector; candidate ML in this REQ (cause is distinct from D1/A2 — scanFences
-// rework required, not j-loop or comment-mask fix).
+// E3 (D8, ADR-2026-11-08 / ML-2F): a 3-tick fence that opens and closes within the
+// wave, masking the gates header due to CommonMark fence semantics. scanFences returns
+// openLine=0 (all fences close), so D8's unclosed-fence check cannot fire. With the
+// E3 fix, ParseGatesLines detects that the only GatesHeaderRe match in the wave is
+// masked and returns an error instead of silently returning zero gates.
 //
-// Contra-arm: scanFences must confirm openLine=0 (the residual characterisation).
-func TestParseGatesLines_E3_CommonMark_ClosedFenceMasksHeader_Residual(t *testing.T) {
-	// E3 residual: a 3-tick fence opens at line 2 (``` with no info string), masks
-	// the gates header at line 3. The ```bash at line 4 has an info string so it does
-	// NOT close the outer fence per CommonMark (closing fence must have no trailing
-	// content). The outer fence closes at line 6 (plain ```). scanFences returns
-	// openLine=0. ParseGatesLines sees no unmasked gate header → zero gates, no error.
-	doc := "## Wave 0 — E3 CommonMark residual\n" +
+// Reconciliation (Regra Dura): ParseGatesLines returns a non-nil error naming the first
+// masked gate header line when no unmasked gate header exists in the wave — the
+// previously fail-open E3 vector is now closed (D8, ADR-2026-11-08 / ML-2F).
+//
+// Counter-braços:
+//   (a) wave with no gate header at all — zero gates, no error (absence is legal)
+//   (b) masked header inside 4-tick fence + real unmasked header — real gates returned, no error
+//   (c) header only inside HTML comment (closed) — error naming the masked line
+func TestParseGatesLines_E3_MaskedOnlyHeaderReturnsError(t *testing.T) {
+	// Main arm: E3 scenario — 3-tick fence opens at line 2 (no info string),
+	// masks the gates header at line 3. The ```bash at line 4 has an info string so
+	// it does NOT close the outer fence per CommonMark. The outer fence closes at
+	// line 6 (plain ```). scanFences returns openLine=0. ParseGatesLines now detects
+	// the masked-only header and returns an error.
+	doc := "## Wave 0 — E3 fix\n" +
 		"```\n" +
 		"**Wave gates:**\n" +
 		"```bash\n" +
@@ -1058,20 +1100,118 @@ func TestParseGatesLines_E3_CommonMark_ClosedFenceMasksHeader_Residual(t *testin
 	}
 	w := waves[0]
 
-	gcmds, err := ParseGatesLines(lines, w.Start, w.End)
-	if err != nil {
-		t.Fatalf("E3 residual: expected no error (open vector), got %v", err)
-	}
-	if gcmds == nil {
-		t.Fatal("E3 residual: expected non-nil empty slice, got nil")
-	}
-	if len(gcmds) != 0 {
-		t.Errorf("E3 residual: expected zero gates, got %d: %v", len(gcmds), gcmds)
-	}
-	// Contra-arm: scanFences returns openLine=0 — confirms the residual characterisation.
+	// Sanity: scanFences returns openLine=0 — all fences close (the E3 characterisation).
 	_, openFenceLine := scanFences(lines)
 	if openFenceLine != 0 {
-		t.Errorf("E3: scanFences returned openFenceLine=%d, expected 0 — residual characterisation changed", openFenceLine)
+		t.Errorf("E3: scanFences returned openFenceLine=%d, expected 0 — characterisation changed", openFenceLine)
+	}
+	// Sanity: the gates header at line 3 (0-indexed 2) is masked.
+	if !fenced[2] {
+		t.Errorf("E3: expected line 3 (0-indexed 2) to be masked by FenceMask, but it is not")
+	}
+
+	gcmds, err := ParseGatesLines(lines, w.Start, w.End)
+	if err == nil {
+		t.Fatalf("E3: expected error for masked-only gate header, got nil (cmds=%v)", gcmds)
+	}
+	if !strings.Contains(err.Error(), "gates header at line 3") {
+		t.Errorf("E3: error %q does not name line 3", err.Error())
+	}
+	if !strings.Contains(err.Error(), "inside a code fence or HTML comment") {
+		t.Errorf("E3: error %q does not mention code fence or HTML comment", err.Error())
+	}
+	if gcmds != nil {
+		t.Errorf("E3: expected nil cmds on error path, got %v", gcmds)
+	}
+
+	// Counter-braço (a): wave with no gate header at all — zero gates, no error.
+	// Absence of a gate header is legal ("a wave with no valid gate header returns an
+	// empty, non-nil slice"); the E3 rule must not fire here.
+	docNoHeader := "## Wave 0 — no header\n" +
+		"Some prose with no gate block.\n"
+	lines2 := SplitRoadmapLines(docNoHeader)
+	fenced2 := FenceMask(lines2)
+	waves2, _ := ParseWaves(lines2, fenced2)
+	if len(waves2) != 1 {
+		t.Fatalf("counter-arm (a): expected 1 wave, got %d", len(waves2))
+	}
+	w2 := waves2[0]
+	gcmds2, err2 := ParseGatesLines(lines2, w2.Start, w2.End)
+	if err2 != nil {
+		t.Fatalf("counter-arm (a): expected no error (no header), got %v", err2)
+	}
+	if len(gcmds2) != 0 {
+		t.Errorf("counter-arm (a): expected 0 gates, got %v", gcmds2)
+	}
+
+	// Counter-braço (b): masked header inside 4-tick fence PLUS real unmasked header.
+	// This is the "example + real" pattern from TestParseGatesLines_D3_FencedPlusRealNoError
+	// but applied here: the E3 rule must NOT fire when a valid unmasked header also exists.
+	docMaskedPlusReal := "## Wave 0 — masked and real\n" +
+		"````\n" +
+		"**Wave gates:**\n" + // masked header (inside 4-tick fence)
+		"```bash\n" +
+		"exit 1\n" +
+		"```\n" +
+		"````\n" +
+		"\n" +
+		"**Wave gates:**\n" + // real unmasked header
+		"```bash\n" +
+		"echo \"real\"\n" +
+		"```\n"
+	lines3 := SplitRoadmapLines(docMaskedPlusReal)
+	fenced3 := FenceMask(lines3)
+	waves3, _ := ParseWaves(lines3, fenced3)
+	if len(waves3) != 1 {
+		t.Fatalf("counter-arm (b): expected 1 wave, got %d", len(waves3))
+	}
+	w3 := waves3[0]
+	gcmds3, err3 := ParseGatesLines(lines3, w3.Start, w3.End)
+	if err3 != nil {
+		t.Fatalf("counter-arm (b): expected no error (real header present), got %v", err3)
+	}
+	if len(gcmds3) != 1 || gcmds3[0].Text != `echo "real"` {
+		t.Errorf("counter-arm (b): expected [echo \"real\"], got %v", gcmds3)
+	}
+
+	// Counter-braço (c): header only inside a CLOSED HTML comment — error naming the line.
+	// This exercises the htmlMask[i] branch of the E3 guard.
+	docHTMLOnly := "## Wave 0 — HTML-comment-only header\n" +
+		"<!--\n" +
+		"**Wave gates:**\n" + // masked by HTML comment (line 3)
+		"```bash\n" +
+		"echo \"hidden\"\n" +
+		"```\n" +
+		"-->\n"
+	// The comment IS closed (-->), so D8's unclosed-HTML check will not fire.
+	// The gates header is masked by htmlMask, not by an unclosed comment.
+	lines4 := SplitRoadmapLines(docHTMLOnly)
+	fenced4 := FenceMask(lines4)
+	waves4, _ := ParseWaves(lines4, fenced4)
+	if len(waves4) != 1 {
+		t.Fatalf("counter-arm (c): expected 1 wave, got %d", len(waves4))
+	}
+	w4 := waves4[0]
+	// Sanity: header at line 3 (0-indexed 2) is in HTML comment, not fenced.
+	htmlMask4 := HTMLCommentMask(lines4, fenced4)
+	if !htmlMask4[2] {
+		t.Errorf("counter-arm (c): expected line 3 (0-indexed 2) to be in HTML comment mask")
+	}
+	if fenced4[2] {
+		t.Errorf("counter-arm (c): line 3 must NOT be fenced (it is in an HTML comment)")
+	}
+	gcmds4, err4 := ParseGatesLines(lines4, w4.Start, w4.End)
+	if err4 == nil {
+		t.Fatalf("counter-arm (c): expected error for HTML-comment-only header, got nil (cmds=%v)", gcmds4)
+	}
+	if !strings.Contains(err4.Error(), "gates header at line 3") {
+		t.Errorf("counter-arm (c): error %q does not name line 3", err4.Error())
+	}
+	if !strings.Contains(err4.Error(), "inside a code fence or HTML comment") {
+		t.Errorf("counter-arm (c): error %q does not mention code fence or HTML comment", err4.Error())
+	}
+	if gcmds4 != nil {
+		t.Errorf("counter-arm (c): expected nil cmds on error path, got %v", gcmds4)
 	}
 }
 
