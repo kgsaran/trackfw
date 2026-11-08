@@ -431,11 +431,40 @@ disparar; 0 em `wip/`; 2 erros de quase-cabeçalho continuam em `done/`. Gates r
 reportados.
 
 ### ML-2K — Quarta rodada do red team (critério de convergência)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** hades-tf
 **Files affected:** `docs/seguranca/2026-11-08-redteam-leitor-bilingue.md` (seção nova "Rodada 4")
 **Acceptance criteria:**
-- [ ] Vetores da rodada 3 refeitos contra a branch, com veredito; vetores novos classificados como acidentais ou como residual do item 4 da emenda; veredito final pelo critério do item 5
+- [x] Vetores da rodada 3 refeitos contra a branch, com veredito; vetores novos classificados como acidentais ou como residual do item 4 da emenda; veredito final pelo critério do item 5
+
+*Resultado:* REPROVA. R3-A a R3-H estão FECHADOS. A rodada achou dois mecanismos acidentais novos. **A**: número
+ou parênteses no rótulo (`**Wave 1 gates:**`, `**Gates da wave 0:**`, este com dois casos reais em `done/`).
+**B**: a ligação pula a cerca com etiqueta diferente de `bash`, e o barrier pode executar um bloco de exemplo
+posterior. Emenda da ADR (rodada 4); correção no ML-2L, verificação no ML-2M.
+
+### ML-2L — A cerca ligada é a primeira cerca; rótulo tolera número e parênteses
+**Status:** ⬜ Pendente
+**Squad:** apolo-tf
+**Files affected:**
+- `internal/roadmapdoc/roadmapdoc.go`
+- `internal/roadmapdoc/gates_lines_test.go`
+- `internal/roadmapdoc/compare_baseline_test.go`
+- `docs/cli-parity.md`
+
+**Actions:** emenda da ADR (rodada 4), mecanismos A e B. Medir o acervo antes e parar se algum roadmap em `wip/`
+cair na regra.
+
+**Acceptance criteria:**
+- [ ] Teste por vetor N2, N3, N4, N7, N8 e N9 da rodada 4, e por etiqueta (`sh`, `shell`, `Bash`, ` bash`, `~~~bash`), com contra-braço
+- [ ] Medição do acervo reportada; nenhum roadmap em `wip/` passa a reprovar
+- [ ] `go test ./internal/roadmapdoc/ ./internal/commands/ ./internal/validator/` verde
+
+### ML-2M — Verificação do red team (rodada 5, escopo fechado)
+**Status:** ⬜ Pendente
+**Squad:** hades-tf
+**Files affected:** `docs/seguranca/2026-11-08-redteam-leitor-bilingue.md` (seção nova "Rodada 5")
+**Acceptance criteria:**
+- [ ] Vetores da rodada 4 refeitos com veredito; vetores novos só nos mecanismos A e B; veredito pelo critério do item 5 da emenda da rodada 3
 
 ### ML-2B — Merge e tag do leitor (Zeus)
 

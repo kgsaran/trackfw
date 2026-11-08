@@ -142,6 +142,21 @@ os seletores de variação VS1–VS14 (categoria Mn) e o Braille em branco (U+28
    ou gerável por modelo de linguagem sem intenção de evasão) conta zero gates em silêncio. Vetores da
    classe do item 4 não reprovam.
 
+**Emenda 2026-11-08 (Wave 2, red team rodada 4) — a ligação é a primeira cerca, e o rótulo tolera número e
+parênteses.** A rodada 4 achou dois mecanismos acidentais:
+
+- **B, lado da cerca.** A ligação pulava toda cerca cuja etiqueta não fosse `bash`. Com isso, um gate escrito
+  em ```` ```sh ```` era pulado e o barrier executava um bloco ```` ```bash ```` de exemplo que viesse depois
+  (mesmo efeito do A2 da rodada 1). Também deixava sem erro um quase-cabeçalho seguido de ```` ```shell ````.
+  O item 2 passa a dizer: **a cerca ligada é a primeira abertura de cerca** (```` ``` ```` ou `~~~`, qualquer
+  etiqueta) depois do cabeçalho ou do quase-cabeçalho, antes de `## `, `### ` ou de outro cabeçalho válido.
+  Se a etiqueta dessa cerca não for exatamente `bash`, é erro que nomeia a linha. O barrier nunca avança para
+  uma cerca posterior.
+- **A, lado do rótulo.** Rótulos como `**Wave 1 gates:**`, `**Gates da wave 0:**`, `**Wave gates (blocking):**`
+  e `**Wave gates** (run by Zeus)` escapavam. O item 3 passa a dizer: antes da comparação, o esqueleto remove
+  dígitos e trechos entre parênteses ou colchetes. A forma sem dois-pontos continua por igualdade exata depois
+  dessa remoção.
+
 ## Consequences
 
 - O acervo continua passando; roadmaps novos nascem em inglês depois da segunda tag.

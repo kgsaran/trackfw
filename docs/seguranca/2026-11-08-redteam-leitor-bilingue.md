@@ -724,3 +724,363 @@ $ git status --short
 $ git diff --cached --stat
 (vazio)
 ```
+
+---
+
+## Rodada 4 (2026-11-08)
+
+**Binário branch:** `go build -o $SCRATCH/hades4/trackfw ./cmd/trackfw` sobre HEAD `51ada601` (ML-2J). Versão: `11.5.1`.
+**Critério ADR itens 1–5:** near-miss só é erro se tiver cerca ` ```bash ` ligada (`boundGateFence`). APROVA quando nenhum vetor ACIDENTAL conta zero gates em silêncio (item 5). Residual (item 4): homóglifos fora da tabela fechada e ofuscação deliberada — esses NÃO reprovam.
+**Scratchpad:** `/private/tmp/claude-501/-Users-kgsaran-Sistemas-Desenvolvimento-workspace-trackfw/a247cc38-463b-4f99-8cb2-7400f9dec171/scratchpad/hades4/`
+**Instrumento:** `roadmap show --json` (wave 1 de cada fixture); barrier confirmado em N9 e ctrl-canonical.
+**Disclosure:** durante esta rodada foi criado `/tmp/hades4-barrier-test/` fora do scratchpad. Continha `gates_script.sh` com `echo OK_BARRIER` + `exit 0` (teste rápido de fence durante diagnóstico de N8). Removido (`rm -rf`) nesta sessão antes do handback; nunca conteve roadmaps de produção.
+
+---
+
+### Reverificação R3-A a R3-H contra ML-2J
+
+Critério novo para cada vetor: três braços — (a) com ` ```bash ` fence: deve emitir near-miss ERR; (b) sem fence: deve dar `cmds=[]` sem erro (zero gates legal); (c) cabeçalho canônico + fence: deve dar `cmds=['exit 1']`.
+
+| Vetor | Arm (a) com fence | Arm (b) sem fence | Mecanismo do fix |
+|---|---|---|---|
+| R3-A `**Ԝave gates:**` U+051C | ERR near-miss | cmds=[] ok | ToLower antes de homoglyphs; U+051C→ԝ→w |
+| R3-A `**Wave gΑtes:**` U+0391 | ERR near-miss | — | U+0391→α→a |
+| R3-A `**Wave gatΕs:**` U+0395 | ERR near-miss | — | U+0395→ε→e |
+| R3-B `**Wave︀ gates:**` VS1 U+FE00 | ERR near-miss | — | Mn removido em step 1a |
+| R3-C `**Wave⠀gates:**` U+2800 | ERR near-miss | — | U+2800 removido explicitamente em step 1a |
+| R3-D `**Wave gates**` (sem colon) | ERR near-miss | — | colonIdx=-1 → exact-equality path; skeleton=`wavegates` |
+| R3-E `**Wave gates∶**` U+2236 | ERR near-miss | — | step 1e: `∶`→`:` |
+| R3-F `<strong>Wave gates:</strong>` | ERR near-miss | — | step 0: tag removal; html.UnescapeString |
+| R3-F `**Wave gates&#58;**` | ERR near-miss | — | step 0: `&#58;`→`:` (fixtura corrigida sem `\`) |
+| R3-G `**Wave gɑtes:**` U+0251 | ERR near-miss | — | ɑ adicionado em nearMissHomoglyphs em ML-2J |
+| R3-H prose antes de header válido | cmds=['echo R3H_REAL','exit 1'] | — | boundGateFence para em GatesHeaderRe; near-miss não dispara |
+
+**Contra-braço ctrl-canonical:** `**Wave gates:**` + ` ```bash ` → `cmds=['echo REAL','exit 1']` (canônico, executado).
+
+**Medição R3-H FP (correção do R3-H):** Wave 1 com prosa `Wave gates: see below` ANTES de `**Wave gates:**` válido + fence: near-miss loop encontra a prosa, chama `boundGateFence`; `boundGateFence` avança e encontra `GatesHeaderRe` → retorna false → near-miss não dispara. O header válido subsequente captura os gates → `cmds=['echo R3H_REAL','exit 1']`. Correto.
+
+Todos os vetores R3-A a R3-H: **FECHADOS** com near-miss fence-anchored. Sem fence: `cmds=[]` sem erro — correto per item 2 (zero gates é legal quando nenhum cabeçalho válido existe).
+
+---
+
+### Vetores novos
+
+#### N1 — `**Wave Gates:**` (G maiúsculo) com ` ```bash `
+
+```
+$ roadmap show n1-WaveGates-cap-fence --json (wave 1)
+gates: ERR near-miss at line 23
+```
+
+Capturado. Classificação: **ACIDENTAL** (auto-capitalize, título Markdown). FECHADO pelo near-miss com fence.
+
+Sem fence (`n1-WaveGates-cap-nofence`): `cmds=[]` sem erro. Correto per item 2.
+
+---
+
+#### N11 — `**wave gates:**` (tudo minúsculo) com ` ```bash `
+
+```
+$ roadmap show n11-allower-fence --json (wave 1)
+gates: ERR near-miss at line 23
+```
+
+Capturado. Classificação: **ACIDENTAL** (Markdown editado sem capitalização). FECHADO.
+
+---
+
+#### N2 — Token numérico inserido: `**Wave 1 gates:**` / `**Gates da wave 0:**` (BLOQUEANTE)
+
+```
+$ roadmap show n2-Wave1gates-fence --json (wave 1)
+gates: {'commands': []}
+```
+
+Sem erro. Zero gates silenciosamente. Contra-braço: `ctrl-canonical` → `cmds=['echo REAL','exit 1']`.
+
+**Mecanismo:** skeleton de `**Wave 1 gates:**` = `wave1gates:` (após strip de `*`, espaço até `:`). `wave1gates:` não começa com nenhum target (`wavegates:`, `wavegate:`, `gatesdawave:`, `gatedawave:`). `colonIdx` encontra `:`, então a path sem colon não é usada. Nenhum match → near-miss não dispara → zero gates.
+
+**Evidência real no acervo.** Dois roadmaps em `done/` têm `**Gates da wave 0:**` seguido de ` ```bash ` imediato:
+- `docs/roadmaps/done/ROADMAP-2026-09-17-jira-...md`: wave 0: `cmds=[]`, sem erro
+- `docs/roadmaps/done/ROADMAP-2026-09-17-gate-escreve-...md`: wave 0: `cmds=[]`, sem erro
+
+Ambos medidos com `roadmap show --json` → `cmds=[]`. O binário atual conta zero para esses roadmaps. O mecanismo é o mesmo de N2. Mesmo padrão: N3 (`**Gates da wave 1:**` → skeleton `gatesdawave1:`, mesma causa).
+
+**Classificação:** ACIDENTAL — inserir o número da wave no cabeçalho é o gesto natural de quem documenta wave por wave. Medido no acervo deste repositório. ALTO.
+
+**Por que é BLOQUEANTE:** per ADR item 5, "APROVA quando nenhum vetor ACIDENTAL conta zero gates em silêncio". N2 é acidental e conta zero gates em silêncio, com fence explicitamente presente. Fora do residual do item 4 (não é homóglifo nem ofuscação deliberada).
+
+---
+
+#### N3 — `**Gates da wave 1:**` com ` ```bash `
+
+```
+$ roadmap show n3-GatesdaWave1-fence --json (wave 1)
+gates: {'commands': []}
+```
+
+Mesma causa que N2: skeleton `gatesdawave1:` ≠ `gatesdawave:`. **ACIDENTAL**, ALTO. Mesma causa → mesmo ML.
+
+---
+
+#### N4 — `**Wave gates (blocking):**` com ` ```bash `
+
+```
+$ roadmap show n4-WavegatesBlocking-fence --json (wave 1)
+gates: {'commands': []}
+```
+
+Skeleton: `wavegates(blocking):` — `(` inserido antes de `:`, bloqueia o prefix match de `wavegates:`. Classificação: **ACIDENTAL** — um LLM documentador pode anotar o cabeçalho como `**Wave gates (blocking):**`. Menos natural que N2 mas dentro do espaço acidental. Mesma causa de mecanismo que N2 (token inserido antes do colon). BAIXO. Per item 5: zero gates em silêncio + acidental = **BLOQUEANTE** (mesma causa e mesmo ML que N2, menor prioridade).
+
+---
+
+#### N5 — `**Gates:**` (paráfrase, palavra "Wave" omitida)
+
+```
+$ roadmap show n5-Gates-alone-fence --json (wave 1)
+gates: {'commands': []}
+```
+
+Skeleton: `gates:`. Nenhum target começa com `gates:`. **Classificação: paráfrase** — uma palavra diferente do cabeçalho, equivalente a apagar o cabeçalho (ADR item 1). Não é near-miss. Não bloqueia.
+
+---
+
+#### N6 — `**Gates for this wave:**` (paráfrase)
+
+```
+$ roadmap show n6-GatesForThisWave-fence --json (wave 1)
+gates: {'commands': []}
+```
+
+Skeleton: `gatesforthiswave:`. Sem match. **Classificação: paráfrase** — cabeçalho totalmente diferente. Não bloqueia.
+
+---
+
+#### N7 — `**Wave gates** (run by Zeus)` (forma sem colon + sufixo)
+
+```
+$ roadmap show n7-WavegatesSuffix-nocolon --json (wave 1)
+gates: {'commands': []}
+```
+
+Skeleton no-colon path: `wavegates(runbyzeus)` ≠ `wavegates` (exact-equality falha). **Classificação:** tensão irreconciliável entre item 3 e item 5. Item 3 manda exact-equality na forma sem colon para evitar FPs de prosa — isso captura apenas `**Wave gates**` sozinho. Item 5 proíbe vetor acidental com zero gates em silêncio — `**Wave gates** (run by Zeus)` é variante acidental que um LLM pode gerar. Os dois itens não podem ser satisfeitos simultaneamente para esta forma: relaxar exact-equality para prefix-match introduz FPs de prosa; manter exact-equality deixa N7 aberto. Uma das duas ADR exigências precisa ser emendada pelo arquiteto. BLOQUEANTE-ADR (não é código, é conflito de especificação).
+
+---
+
+#### N8 — `**Wave Gates:**` + ` ```shell ` (assimetria de fence) (BLOQUEANTE)
+
+```
+$ roadmap show n8-WaveGates-shell-fence --json (wave 1)
+gates: {'commands': []}
+```
+
+**Mecanismo:** skeleton de `**Wave Gates:**` = `wavegates:` → near-miss MATCH. `boundGateFence` busca `strings.TrimSpace(lines[j]) == "` ` ` `bash"` (literal). ` ```shell` → TrimSpace → ` ```shell` ≠ ` ```bash` → não ligado. Near-miss não dispara. Zero gates silenciosamente.
+
+**Classificação:** ACIDENTAL — LLM que faz title-case nos cabeçalhos tende a emitir também ` ```shell` ou ` ```sh` (info-strings comuns para scripts shell). Os dois erros juntos resultam em zero gates sem diagnóstico.
+
+**Por que é BLOQUEANTE:** per item 5. Vetor acidental, zero gates em silêncio. Fora do residual do item 4.
+
+**Contra-braço A:** `fence-sh-only.md` (cabeçalho canônico `**Wave gates:**` + ` ```sh`, sem ` ```bash` posterior) → `roadmap show --json` retorna `ERR "gates block not found: ...not followed by a \`\`\`bash fence..."`. Ou seja: o cabeçalho canônico falha corretamente com ` ```sh` — fail-closed, explícito.
+
+**Contra-braço B:** `n1-WaveGates-cap-fence.md` (near-miss `**Wave Gates:**` + ` ```bash`) → `ERR near-miss at line 23`. Ou seja: a near-miss com ` ```bash` falha corretamente.
+
+Juntos os dois braços falsificam a premissa do item 2 ("nada se perde sem cerca ligada"): com near-miss + ` ```shell`, nenhuma cerca está ligada, mas zero gates são perdidos. O problema ocorre porque `boundGateFence` retorna not-ok (nenhum ` ```bash` ligado), a near-miss loop não dispara, e `ParseGatesLines` não emite erro.
+
+**Mecanismo do fix candidato:** a premissa do item 2 ("um quase-cabeçalho só é erro se tiver ` ```bash` ligado") falha para N8: com ` ```sh`, nenhuma fence está ligada, mas zero gates são perdidos silenciosamente. O fix correto exige uma emenda ao item 2: qualquer fence opener após a near-miss deveria contar como ligação (não apenas ` ```bash`). A forma certa é inverter o critério: se `boundGateFence` encontrar QUALQUER fence opener antes do próximo cabeçalho válido ou heading, disparar o near-miss error. Isso tornaria N8 fail-closed. Esta é uma emenda ao ADR item 2 e deve ser declarada como tal pelo implementador.
+
+---
+
+#### N9 — Canonical header + ` ```sh ` gate + ` ```bash ` exemplo posterior (BLOQUEANTE D8)
+
+```
+$ roadmap show n9-canonical-sh-then-bash-example --json (wave 1)
+gates: {'commands': ['echo EXAMPLE_PICKED']}
+
+$ barrier n9-canonical-sh-then-bash-example --wave 1 --trust-local-gates --json
+"checks":[...,{"name":"gates","status":"passed","commands":["echo EXAMPLE_PICKED"],"evidence":["echo EXAMPLE_PICKED: exit 0"],...}]
+```
+
+**Mecanismo:** `**Wave gates:**` é header válido. `boundGateFence` avança: linha ` ```sh` — TrimSpace → ` ```sh` ≠ ` ```bash` — skipped. As linhas DENTRO do bloco ` ```sh` estão marcadas como `fenced[j]=true` → skipped. A linha de fechamento ` ``` ` não é ` ```bash` → skipped. Depois da cerca, encontra ` ```bash` do exemplo → BOUND. O exemplo executa como gate.
+
+**Contra-braço `ctrl-canonical`:**
+```
+barrier ctrl-canonical --wave 1 --trust-local-gates --json
+"gates":{"status":"blocked","commands":["echo REAL","exit 1"],"evidence":["echo REAL: exit 0"],"failures":["exit 1: exit 1"]}
+```
+O gate real (`exit 1`) bloqueia corretamente.
+
+**Classificação:** ACIDENTAL — ` ```sh` é info-string muito comum; qualquer pessoa ou LLM pode usar `sh` em vez de `bash`. O autor tem `**Wave gates:**` correto e um bloco ` ```sh` com os comandos reais, mas o barrier executa o exemplo seguinte.
+
+**Por que é BLOQUEANTE:** D8 — o gate real "some em silêncio". O barrier executa `echo EXAMPLE_PICKED` e reporta `status=passed`; o gate real (`exit 1`) nunca corre. R1 classificou A2 (mesmo mecanismo via pre-scan mask: "exemplo executa em vez do gate real") como BLOQUEANTE-ALTO. N9 é A2 pelo caminho da info-string: a mesa é a mesma, a porta de entrada é diferente. Classificado **BLOQUEANTE-ALTO** consistentemente com A2.
+
+**Mecanismo do fix candidato:** `boundGateFence` para quando encontra qualquer fence opener diferente de ` ```bash` em vez de continuar. Isso tornaria N9 fail-closed ("gates block not found").
+
+---
+
+#### N10 — CRLF line endings
+
+```
+$ roadmap show n10-crlf --json (wave 1)
+gates: {'commands': ['echo CRLF_GATE', 'exit 1']}
+```
+
+Gate executado corretamente. CRLF não afeta o parsing. PASS.
+
+---
+
+#### Variantes de fence info-string após cabeçalho válido (sem exemplo posterior)
+
+| Info-string | Resultado |
+|---|---|
+| ` ```sh` | ERR "gates block not found: ...not followed by a \`\`\`bash fence..." |
+| ` ```shell` | ERR "gates block not found..." |
+| `` ` ```Bash` `` | ERR "gates block not found..." |
+| `` ` ``` bash` `` (espaço) | ERR "gates block not found..." |
+| `` ` ```bash title=gate` `` | ERR "gates block not found..." |
+
+Todos fail-closed quando NÃO há outro ` ```bash ` no mesmo wave. O problema N9 só ocorre quando há um ` ```bash ` posterior (exemplo).
+
+---
+
+### Falsos Positivos — Varredura do acervo
+
+Instrumento: `roadmap show --json` em todos os roadmaps em `wip/` e `done/` (sem `abandoned/`, sem `analyzing/backlog/blocked/` — todos vazios, confirmado). Iteração por basename sem `.md` (evita "ambiguous match" do match por path relativo vs. busca por nome). Por wave, não por roadmap.
+
+Estados existentes e contagem:
+- `wip/`: 1 arquivo
+- `done/`: 264 arquivos confirmados (`ls docs/roadmaps/done/ | grep -c '\.md$'`)
+- `analyzing/`, `backlog/`, `blocked/`: vazios
+
+Arquivos não resolvidos em `done/` (3 casos de match ambíguo):
+- `ROADMAP-2026-06-19-architect-command-guidelines` (prefixo de dois arquivos): ambos resolvidos separadamente (ml-1b e o base) → waves=0 cada, sem near-miss
+- `ROADMAP-2026-06-20-attention-hooks-agent-clis` (prefixo de dois arquivos): node separado → waves=0 sem near-miss; arquivo base (`…-clis.md`) não resolve — verificado diretamente: não tem `**Gate da wave`
+- `ROADMAP-2026-07-19-global-adrs-governance` (prefixo de três arquivos): dois resolvem separadamente (ml-1b, ml-2b) → waves=0 sem near-miss; arquivo base (`…-governance.md`): não tem `**Gate da wave`
+
+Mais 3 arquivos formato pré-wave (antigo): `agent-rules-inject`, `analyzing-state-ml-status-rules` etc. — `show --json` retorna estrutura com `waves=[]`, desconsiderados na contagem.
+
+| Estado | Arquivos | Waves totais | Waves com near-miss |
+|---|---|---|---|
+| wip | 1 | 5 | **0** |
+| done | 264 | 748 | **2** |
+| analyzing/backlog/blocked | 0 | 0 | — |
+
+Os 2 hits de near-miss em `done/` são:
+- `ROADMAP-2026-09-11-by-agent-req-new-...`: wave 0, `**Gate da wave:**` (singular) + ` ```bash ` imediato
+- `ROADMAP-2026-09-11-self-test-do-ratchet-...`: wave 0, idem
+
+Skeleton = `gatedawave:` → matches target `gatedawave:`. Near-miss correto — a forma singular era usada antes da padronização. Ambas são wave 0; o binário atual conta zero para esses casos.
+
+**Grep para os 3 roadmaps não-near-miss com `**Gate da wave:**` singular:** `leniencia` (linha 60: `**Gate da wave 0:**` + texto inline, sem fence), `conclusao` (linha 573: em prosa dentro de um parágrafo), `teste-e-gate` (linha 115: `**Gate da wave:**` + comando inline, sem fence). Todos confirmados: sem ` ```bash ` ligado → near-miss não dispara, correto per item 2.
+
+**Reconciliação com R3 (que contou 3 hits):** R3 foi escrito no commit `a413988a` (ADR + rodada 3), anterior ao commit `51ada601` (ML-2J, que adicionou fence-anchoring). No código de R3, near-miss disparava independente de fence. O 3º hit de R3 é `ROADMAP-2026-09-22-teste-e-gate-...`: tem `**Gate da wave:**` (singular) na linha 115 mas sem ` ```bash ` fence seguinte — confirmado: R4 binary retorna `error=none`. Sob ML-2J, não é mais near-miss error (correto per item 2). R4: 2 near-miss hits — correto sob a semântica atual.
+
+**FP1 construído** (confirmação de que a varredura funciona):
+
+Fixture `fp1-prose-with-unrelated-bash.md`: linha de prosa `Gates da wave: rodados pelo Zeus` (sem `**`) + ` ```bash ` de exemplo não relacionado. Skeleton = `gatesdawave: rodados pelo zeus` → HasPrefix(`gatesdawave:`) = true → fence bound → near-miss dispara:
+
+```
+$ roadmap show fp1-prose-with-unrelated-bash --json (wave 1)
+ERR: near-miss gates header at line 23...
+```
+
+FP1 é fail-closed por design do item 2: prosa com texto similar ao cabeçalho gera um erro explícito, não silência. 0 hits em wip/ → nenhuma regressão em CI. Nuisance documentado (item 2 declarou este tradeoff).
+
+---
+
+### Dead code — `nearMissSkeletonMatches` não chamada em produção
+
+`nearMissSkeletonMatches` (linha 1540) é definida mas nenhum código de produção a chama. `boundGateFence` tem comentário "(or another near-miss) claims the fence from here on" (linha 1586) mas o código só para em `GatesHeaderRe.MatchString` — a parada em "outra near-miss" não foi implementada. Efeito: dois near-misses em sequência → ambos têm fence bound → o primeiro retorna erro (correto), o segundo nunca é checado. Fail-closed. Misatribuição de linha, não silenciamento.
+
+```
+$ roadmap show deadcode-two-nearmiss --json (wave 1)
+ERR near-miss at line 23 (Wave Gates: linha 23) — correto, fail-closed
+```
+
+Severidade: LOW. Código morto, comentário diverge, mas comportamento é fail-closed.
+
+---
+
+### Tabela "residual, item 4"
+
+Vetores abaixo são da classe do item 4 (ADR — "homóglifo fora da tabela fechada... e qualquer ofuscação deliberada"). NÃO reprovam.
+
+Nenhum vetor desta classe foi medido nesta rodada. O modelo de ameaça do item 1 é acidente, não adversário; o item 4 declara o residual como aceito. As classes abaixo são definidas pelo ADR — não foi construída fixture para nenhuma.
+
+| Classe | Descrição ADR item 4 |
+|---|---|
+| Homóglifo Cirílico/Grego fora da tabela fechada | nearMissHomoglyphs cobre um subconjunto; qualquer confusável não listado sobrevive à pipeline. Não medido. |
+| Scripts não-latino/não-cirílico/não-grego | Sem mapa de homoglyphs: árabe, coreano, etc. Equivale a apagar o cabeçalho (ADR item 1). |
+| Ofuscação deliberada | Zero-width splicing, fragmentação de bytes, homoglyphs raros. Defesa é revisão do diff. Fora do modelo de acidente. |
+
+---
+
+### Resumo tabular dos vetores R4
+
+| ID | Vetor | Resultado com fence | Resultado sem fence | Classificação | Severidade |
+|---|---|---|---|---|---|
+| R3-A `**Ԝave gates:**` U+051C | ERR near-miss | cmds=[] ok | FECHADO | — |
+| R3-A `**Wave gΑtes:**` U+0391 | ERR near-miss | — | FECHADO | — |
+| R3-A `**Wave gatΕs:**` U+0395 | ERR near-miss | — | FECHADO | — |
+| R3-B VS1 U+FE00 | ERR near-miss | — | FECHADO | — |
+| R3-C U+2800 Braille | ERR near-miss | — | FECHADO | — |
+| R3-D sem colon | ERR near-miss | — | FECHADO | — |
+| R3-E ∶ U+2236 | ERR near-miss | — | FECHADO | — |
+| R3-F HTML tags | ERR near-miss | — | FECHADO | — |
+| R3-F &#58; entidade | ERR near-miss | — | FECHADO (fixture corrigida) | — |
+| R3-G ɑ U+0251 | ERR near-miss | — | FECHADO | — |
+| R3-H FP prosa + header válido | cmds corretos (sem FP) | — | FECHADO | — |
+| N1 `**Wave Gates:**` G maiúsculo | ERR near-miss | cmds=[] ok | FECHADO (detectado) | — |
+| N11 `**wave gates:**` minúsculo | ERR near-miss | — | FECHADO | — |
+| **N2** `**Wave 1 gates:**` | **cmds=[] SILÊNCIO** | — | **ABERTO ACIDENTAL** | **ALTO BLOQUEANTE** |
+| **N3** `**Gates da wave 1:**` | **cmds=[] SILÊNCIO** | — | **ABERTO ACIDENTAL** | **ALTO (mesma causa N2)** |
+| **N4** `**Wave gates (blocking):**` | **cmds=[] SILÊNCIO** | — | **ABERTO ACIDENTAL (Mecanismo A)** | **BAIXO BLOQUEANTE** |
+| N5 `**Gates:**` (paráfrase) | cmds=[] | — | Paráfrase — não é near-miss | — |
+| N6 `**Gates for this wave:**` | cmds=[] | — | Paráfrase | — |
+| **N7** `**Wave gates** (run by Zeus)` | cmds=[] | — | **ABERTO ACIDENTAL — conflito ADR item 3 × item 5** | **BLOQUEANTE-ADR** |
+| **N8** `**Wave Gates:**` + ` ```shell` | **cmds=[] SILÊNCIO** | n/a | **ABERTO ACIDENTAL** | **MÉDIO BLOQUEANTE** |
+| **N9** canonical + ` ```sh` + example | **cmds=['echo EXAMPLE_PICKED']** | n/a | **ABERTO ACIDENTAL (Mecanismo B)** | **ALTO BLOQUEANTE** |
+| N10 CRLF | cmds corretos | — | PASS | — |
+| Dead code nearMissSkeletonMatches | misatribuição, fail-closed | — | LOW | — |
+
+---
+
+### Veredito da Rodada 4
+
+**REPROVA**
+
+Motivos de bloqueio:
+
+1. **N2/N3 — Inserção de token numérico: `**Wave 1 gates:**`, `**Gates da wave 0:**`** (ALTO, ACIDENTAL): skeleton `wave1gates:` / `gatesdawave0:` não casa nenhum target. Zero gates em silêncio com fence presente. Evidência no acervo: dois roadmaps em `done/` com `**Gates da wave 0:**` + ` ```bash ` imediato, ambos com `cmds=[]`. Fora do residual do item 4. Viola item 5.
+
+2. **N8 — `**Wave Gates:**` + ` ```shell ` (assimetria de fence)** (MÉDIO, ACIDENTAL): near-miss skeleton `wavegates:` casa o target, mas `boundGateFence` só liga em ` ```bash ` → near-miss não dispara → zero gates em silêncio. Um LLM que faz title-case e usa ` ```shell` produz este resultado. Fora do residual do item 4. Viola item 5.
+
+3. **N9 — Canonical header + ` ```sh ` gate + ` ```bash ` exemplo posterior** (ALTO, ACIDENTAL): `boundGateFence` skipa o bloco ` ```sh ` e liga no exemplo seguinte. Barrier reporta `gates.status=passed` executando `echo EXAMPLE_PICKED`; o gate real (`exit 1`) nunca corre. R1 classificou A2 (mesmo mecanismo via pre-scan mask) como BLOQUEANTE-ALTO; N9 é A2 pelo caminho da info-string. **BLOQUEANTE-ALTO.**
+
+4. **N4 — `**Wave gates (blocking):**`** (BAIXO, ACIDENTAL): skeleton `wavegates(blocking):` não casa nenhum target. Zero gates em silêncio. Mesma causa que N2 (Mecanismo A), menor prioridade. Entra no mesmo ML que N2.
+
+5. **N7 — `**Wave gates** (run by Zeus)` no-colon com sufixo** (BLOQUEANTE-ADR): item 3 manda exact-equality na forma no-colon; item 5 proíbe vetor acidental com zero gates em silêncio. Os dois não podem ser satisfeitos simultaneamente para esta forma. Requer emenda ao ADR — não é defeito de código isolado.
+
+Achados não bloqueantes:
+- Dead code `nearMissSkeletonMatches`: LOW, fail-closed.
+- FP1 (prosa bound a exemplo): fail-closed por design do item 2, 0 hits em wip/ no acervo.
+
+Os vetores se dividem em dois mecanismos distintos — ambos sob D8, mesma REQ, MLs separados:
+
+**Mecanismo A — token extra no cabeçalho frustra a normalização** (N2, N3, N4, N7): `gatesNearMissSkeleton` reduz o cabeçalho a um skeleton que não casa nenhum target porque um token (número de wave, parêntese, sufixo) é inserido antes ou depois do colon. Fix site: `gatesNearMissSkeleton` / lista de targets. Teste: se eu corrigir A, N2+N3+N4 fecham; N7 fecha somente se exact-equality for relaxada (emenda de ADR, não só código). Se eu corrigir A sem emendar o ADR, N7 permanece aberto — portanto o ML deve declarar qual dos dois conflitos resolve.
+
+**Mecanismo B — `boundGateFence` só liga ` ```bash`, skipa outras fences** (N8, N9): O loop de near-miss não dispara quando `boundGateFence` retorna not-ok; `ParseGatesLines` não emite erro. Para N9, `boundGateFence` retorna ok ligando a um ` ```bash` posterior (exemplo), executando-o. Fix site: `boundGateFence` (`internal/roadmapdoc/roadmapdoc.go:1578`). Regra unificada (emenda ao ADR item 2): **a primeira fence opener após um cabeçalho ou quase-cabeçalho é a cerca ligada, independente da info-string.** Consequências: (a) cabeçalho válido + fence não-bash → erro "gates block not found" (já é o comportamento atual); (b) quase-cabeçalho + qualquer fence → near-miss error (fix de N8); (c) quase-cabeçalho ou cabeçalho válido para no primeiro fence opener encontrado → nunca avança para exemplo posterior (fix de N9). Uma única regra fecha N8 e N9.
+
+Por Regra Dura: mesma causa (D8) → mesma REQ → dois MLs novos (ML-A para mecanismo A; ML-B para mecanismo B).
+
+---
+
+### Saída dos comandos git (Rodada 4)
+
+```
+$ git status --short
+ M docs/seguranca/2026-11-08-redteam-leitor-bilingue.md
+
+$ git diff --cached --stat
+(vazio)
+```
+
