@@ -100,6 +100,12 @@ fechada) ou ser trocado por um bloco de exemplo, e a wave passava. Os aliases am
 isso: a busca do bloco respeita as mesmas máscaras do cabeçalho, e qualquer anomalia de máscara que possa
 esconder o cabeçalho é erro, não zero gates. A razão de `Lapsed:`/`Caducou:` exige caractere visível.
 
+**Emenda 2026-11-08 (Wave 2, auditoria do ML-2C) — D8 cobre também a máscara balanceada.** Cercas
+balanceadas pela regra CommonMark podem cobrir o cabeçalho real (E3 do red team) sem nenhuma anomalia de
+máscara. Por isso: uma wave sem cabeçalho de gates válido que tenha cabeçalho só dentro de cerca ou de
+comentário HTML falha com erro que nomeia a linha. Com um cabeçalho válido presente, exemplos mascarados
+continuam permitidos.
+
 ## Consequences
 
 - O acervo continua passando; roadmaps novos nascem em inglês depois da segunda tag.
