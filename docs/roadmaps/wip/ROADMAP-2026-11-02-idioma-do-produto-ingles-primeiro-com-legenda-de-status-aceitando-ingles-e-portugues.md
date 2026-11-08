@@ -209,7 +209,7 @@ bash scripts/check-marker-corpus-parity.sh
 > Dependencies: Wave 1 completa.
 
 ### ML-2A — Red team do leitor bilíngue
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Squad:** hades-tf
 **Files affected:**
 - `docs/seguranca/2026-11-08-redteam-leitor-bilingue.md` (novo)
