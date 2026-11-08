@@ -36,7 +36,7 @@ Issues abertas com o mesmo mecanismo: nenhuma (varredura em 2026-11-08, zero iss
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model e inventário por grupo (AC1)
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Squad:** hades-tf
 **Files affected:**
 - `docs/seguranca/2026-11-08-wave0-idioma-ingles-primeiro.md` (novo; único arquivo que o ML escreve)
