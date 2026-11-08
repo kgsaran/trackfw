@@ -432,7 +432,7 @@ for _rel in "${ROADMAPS[@]}"; do
   # The sed range relies on waveJSON struct ordering (see roadmap_show_json.go):
   #   "gates": {    appears at 6-space indent (between "line" and "mls")
   #   },            closing at 6-space (comma present because "mls" always follows)
-  if [[ "$_base_rc" -eq 0 ]] && printf '%s\n' "$_base_out" | grep -qF '"gates": {'; then
+  if [[ "$_base_rc" -eq 0 ]] && printf '%s\n' "$_base_out" | grep -F '"gates": {' >/dev/null; then
     # Both sides have the gates field: direct comparison, any diff is real.
     _base_key=$(printf 'rc=%d\n%s' "$_base_rc" "$_base_out")
     _head_key=$(printf 'rc=%d\n%s' "$_head_rc" "$_head_out")

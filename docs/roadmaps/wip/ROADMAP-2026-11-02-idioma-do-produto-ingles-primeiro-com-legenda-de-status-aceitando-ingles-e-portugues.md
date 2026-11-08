@@ -311,7 +311,9 @@ compara com o campo retirado e imprime a lista da head. Depende do ML-2C (mesmo 
 
 *Auditoria (Zeus, 2026-11-08):* campo `gates: {commands, error}` por wave. Reexecutei com a árvore em df216f07 mais o
 diff do ML-2D: self-test 6/6, oráculo rc=0 em 243 roadmaps, e na head 188 waves com comandos e 15 com erro.
-Listei as 15 uma a uma: 14 D3 e 1 E3, todas em `done/`; nenhuma em `wip/`. Limite declarado: enquanto a `main`
+Listei as 15 uma a uma: 14 D3 e 1 E3, todas em `done/`; nenhuma em `wip/`. Corretivo (fim da Wave 2): a linha 435 usava `| grep -qF` sob pipefail e reprovou o
+`make quality` (`check-no-grep-q-under-pipefail`), embora o relatório do ML afirmasse `make parity-rest` rc=0.
+Corrigida para `| grep -F … >/dev/null`; o `make quality` rodado pelo Zeus com a máquina ociosa deu rc=0. Limite declarado: enquanto a `main`
 não tiver o campo, o oráculo remove `gates` dos dois lados e só resume a head. A comparação de gates entre
 base e head passa a valer depois que o leitor bilíngue chegar à `main` (ADR D2).
 
@@ -487,6 +489,9 @@ depois do merge, recebe a tag; as Waves 3–4 (gerador em inglês) vão num segu
 residual de ofuscação deliberada (emenda da ADR, rodada 3, item 4).
 **Status:** ⬜ Pendente
 **Squad:** zeus-tf
+**Files affected:**
+- `CHANGELOG.md`
+
 **Actions:** PR das Waves 0–2, merge pelo KG, release minor com o leitor bilíngue via `trackfw release tag`.
 O roadmap continua em `wip/` depois desse merge (ADR D2).
 
