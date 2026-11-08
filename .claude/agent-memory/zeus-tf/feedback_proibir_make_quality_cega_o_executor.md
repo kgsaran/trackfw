@@ -34,3 +34,8 @@ de 2 min e não roda Go.
   e por quê. Marcadores de gates diferentes moram lado a lado e parecem a mesma coisa.
 
 Relacionado: [[paralelismo-tem-custo-de-cpu]], [[mudar-contrato-auditar-quem-afirma-o-antigo]].
+
+**3ª ocorrência (2026-11-08, REQ de idioma, ML-1B):** proibi `make quality` por frente paralela e não pedi
+`make parity-rest` para o script novo `check-marker-corpus-parity.sh`. O `check-unguarded-capture-rc`
+reprovou uma captura `$(… | grep …)` sem guarda só no `make quality` do arquiteto. Handoff de script novo
+em `scripts/` sempre lista `bash scripts/check-unguarded-capture-rc.sh` e `check-no-trap-local-var.sh`.
