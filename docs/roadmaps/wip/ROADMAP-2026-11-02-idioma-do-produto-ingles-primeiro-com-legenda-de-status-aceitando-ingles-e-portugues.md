@@ -106,7 +106,9 @@ test -s docs/seguranca/2026-11-08-wave0-idioma-ingles-primeiro.md
 > Dependencies: Wave 0 auditada. ML-1A e ML-1B tocam arquivos disjuntos e correm em paralelo.
 
 ### ML-1A — Aliases em inglês nos parsers
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
+
+*Auditoria (Zeus, 2026-11-08):* os 16 testes novos existem pelo nome e passam; `go test` de roadmapdoc, commands e validator rc=0. Medição do item 7 conferida por contagem independente (awk fora de cerca/comentário): 14 waves com dois cabeçalhos, todas em `done/`. Desvio: o apolo-tf escreveu nota no vault, fora da lista fechada; conteúdo válido, mantido. Residual apontado por ele vira o ML-1C.
 **Squad:** apolo-tf
 **Files affected:**
 - `internal/roadmapdoc/roadmapdoc.go`, `internal/roadmapdoc/*_test.go`
@@ -130,12 +132,14 @@ test -s docs/seguranca/2026-11-08-wave0-idioma-ingles-primeiro.md
    cerca e comentário: com D3, essas passam a dar erro no `barrier`, e o oráculo do ML-1B não as vê.
 
 **Acceptance criteria:**
-- [ ] `go build ./...` sem erro
-- [ ] `go test ./internal/roadmapdoc/ ./internal/commands/ ./internal/validator/` verde
-- [ ] Cada teste novo com a frase do que afirma (Regra Dura de Reconciliação)
+- [x] `go build ./...` sem erro
+- [x] `go test ./internal/roadmapdoc/ ./internal/commands/ ./internal/validator/` verde
+- [x] Cada teste novo com a frase do que afirma (Regra Dura de Reconciliação)
 
 ### ML-1B — Oráculo do acervo (ADR D7)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
+
+*Auditoria (Zeus, 2026-11-08):* `bash scripts/check-marker-corpus-parity.sh` com `origin/main` (9fd2d84b) × árvore com ML-1A: rc=0, 243 roadmaps, validate idêntico; nenhum worktree sobrando. Limitação: dois roadmaps (`architect-command-guidelines`, `attention-hooks-agent-clis`) têm nome ambíguo no `roadmap show` e só o `validate` os cobre.
 **Squad:** ares-tf
 **Files affected:**
 - `scripts/check-marker-corpus-parity.sh` (novo; gate desta REQ, **não** ligado em `parity-rest`: depende de
@@ -151,9 +155,26 @@ test -s docs/seguranca/2026-11-08-wave0-idioma-ingles-primeiro.md
    vacuidade (zero roadmaps comparados → reprova).
 
 **Acceptance criteria:**
-- [ ] `bash scripts/check-marker-corpus-parity.sh --self-test` verde
-- [ ] `bash scripts/check-marker-corpus-parity.sh` rc=0 com ML-1A aplicado
-- [ ] Contra-braço: com um alias quebrado de propósito numa cópia temporária, o script reprova
+- [x] `bash scripts/check-marker-corpus-parity.sh --self-test` verde
+- [x] `bash scripts/check-marker-corpus-parity.sh` rc=0 com ML-1A aplicado
+- [x] Contra-braço: com um alias quebrado de propósito numa cópia temporária, o script reprova
+
+### ML-1C — O validate nomeia o erro de cabeçalho duplicado (residual do ML-1A)
+**Status:** 🔄 Em andamento
+**Squad:** apolo-tf
+**Files affected:**
+- `internal/validator/validator_roadmap_gates.go` e testes
+- `internal/roadmapdoc/roadmapdoc.go` (só `Wave0GateDiagnosis`/causas, se a causa nova morar lá) e testes
+- `vault/notes/wave0gatediagnosis-d3-mensagem-errada-2026-11-08.md` (marcar como corrigido)
+
+*Por que existe:* `Wave0GateDiagnosis` mapeia todo erro de `ParseGates` para `Wave0GateMalformed`, e o
+validate imprime "`**Gates da wave:**` is not followed by a ```bash fence". Com D3, um cabeçalho duplicado
+na Wave 0 aparece com a mensagem errada. Mesma causa (contrato dos cabeçalhos), mesma REQ.
+
+**Acceptance criteria:**
+- [ ] Wave 0 com dois cabeçalhos: o validate emite mensagem que diz "duplicate" e nomeia as duas linhas
+- [ ] Mensagem de fence ausente cita os dois cabeçalhos aceitos, não só o português
+- [ ] `go test ./internal/validator/ ./internal/roadmapdoc/` verde
 
 **Gates da wave:**
 ```bash

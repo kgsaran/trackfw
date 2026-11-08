@@ -428,3 +428,76 @@ func TestAcceptanceEvaluate_LapsedCountsAsUnmetInWrapper(t *testing.T) {
 		t.Fatalf("expected unmet=1 (lapsed included in legacy unmet), got %d", unmet)
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// D1: English alias for Lapsed continuation — ADR-2026-11-08 / ML-1A
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestAcceptanceEvaluateFull_LapsedENAlias asserts that "  Lapsed: reason" is
+// accepted as a lapsed continuation with the reason text preserved, confirming
+// that the EN alias for the PT-only "  Caducou:" form is wired end-to-end
+// (ADR D1, ADR-2026-11-08 / ML-1A).
+//
+// Reconciliation (Regra Dura): implements the ML-1A conclusion that
+// LapsedContinuationRe now accepts "  Lapsed:" with the same semantics as
+// "  Caducou:", including extraction of the justification text.
+func TestAcceptanceEvaluateFull_LapsedENAlias(t *testing.T) {
+	content := strings.Join([]string{
+		"### ML-1A — Lapsed EN",
+		"**Status:** ✅",
+		"**Critérios de aceite:**",
+		"- [x] met criterion",
+		"- [ ] lapsed criterion",
+		"  Lapsed: justified by deadline",
+	}, "\n")
+	lines, fenced, mls := mustParseMLs(t, content)
+	d := AcceptanceEvaluateFull(lines, fenced, mls[0])
+	if !d.HasBlock {
+		t.Fatal("expected HasBlock=true")
+	}
+	if d.Met != 1 {
+		t.Fatalf("expected Met=1, got %d", d.Met)
+	}
+	if d.Unmet != 0 {
+		t.Fatalf("expected Unmet=0, got %d", d.Unmet)
+	}
+	if d.Lapsed != 1 {
+		t.Fatalf("expected Lapsed=1, got %d", d.Lapsed)
+	}
+	if len(d.LapsedReasons) != 1 {
+		t.Fatalf("expected 1 LapsedReason, got %d", len(d.LapsedReasons))
+	}
+	if d.LapsedReasons[0].Text != "justified by deadline" {
+		t.Errorf("LapsedReasons[0].Text = %q, want %q", d.LapsedReasons[0].Text, "justified by deadline")
+	}
+}
+
+// TestLapsedContinuationRe_EN_EmptyRejects asserts that "  Lapsed:" (without
+// any text after the colon) does NOT match LapsedContinuationRe, confirming
+// that the EN alias preserves the same "text must follow" rule as "  Caducou:"
+// (ADR D1 says ≥2 spaces, not tab, text non-empty after colon — ML-1A).
+//
+// Reconciliation (Regra Dura): implements the ML-1A conclusion that the EN
+// alias carries the same constraints as the PT form; a bare "  Lapsed:" with
+// no justification is not a valid continuation.
+func TestLapsedContinuationRe_EN_EmptyRejects(t *testing.T) {
+	if LapsedContinuationRe.MatchString("  Lapsed:") {
+		t.Error("LapsedContinuationRe must NOT match '  Lapsed:' (no text after colon)")
+	}
+	if LapsedContinuationRe.MatchString("  Lapsed: ") {
+		t.Error("LapsedContinuationRe must NOT match '  Lapsed: ' (only whitespace after colon)")
+	}
+}
+
+// TestLapsedContinuationRe_EN_TabRejects asserts that "\tLapsed: reason" does
+// NOT match LapsedContinuationRe, confirming the indentation rule (≥2 spaces,
+// never tab) applies equally to the EN alias (ADR D1, ML-1A).
+//
+// Reconciliation (Regra Dura): implements the ML-1A conclusion that
+// LapsedContinuationRe's space-only indentation constraint is not relaxed for
+// the EN alias — tab-indented continuations are invalid in both languages.
+func TestLapsedContinuationRe_EN_TabRejects(t *testing.T) {
+	if LapsedContinuationRe.MatchString("\tLapsed: reason") {
+		t.Error("LapsedContinuationRe must NOT match tab-indented '\\tLapsed: reason'")
+	}
+}

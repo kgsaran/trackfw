@@ -753,26 +753,34 @@ nome vazio, o glob e a contagem de casamentos não podem divergir.
 dialeto para descrever um dialeto, que é o defeito que esta saída existe para eliminar.
 
 **`acceptance.lapsed` — critérios caducados (D3, ADR-2026-10-04, REQ #514 ML-1B):** o campo
-`lapsed` expõe a contagem de itens `- [ ]` com uma linha de continuação `Caducou:` válida (D3).
-Estes itens **não** são `unmet` — eles foram explicitamente reconhecidos como permanentemente
-inverificáveis com justificativa. A forma do marcador é:
+`lapsed` expõe a contagem de itens `- [ ]` com uma linha de continuação `Caducou:` ou `Lapsed:`
+válida (D3, D1). Estes itens **não** são `unmet` — eles foram explicitamente reconhecidos como
+permanentemente inverificáveis com justificativa. As formas do marcador são:
 
 ```markdown
 - [ ] critério que nunca poderá ser verificado
   Caducou: <justificativa obrigatória — linha seguinte, ≥ 2 espaços, sem linha em branco entre elas>
 ```
 
+```markdown
+- [ ] criterion that can never be verified
+  Lapsed: <mandatory justification — next line, ≥ 2 spaces, no blank line between them>
+```
+
 Regras do parser (`AcceptanceEvaluateFull`, `internal/roadmapdoc`):
-- A linha `Caducou:` deve estar imediatamente após o `- [ ]`, sem linha em branco intercalada.
-- A linha `Caducou:` deve ter ≥ 2 espaços de indentação (não pode estar na coluna 0).
-- `Caducou:` sem texto após os dois-pontos não é aceito — a justificativa é obrigatória (D2).
-- `Caducou:` dentro de cerca de código (```` ``` ````) é ignorado pelo fence-mask.
-- O campo `unmet` do JSON agora é estrito: só conta `- [ ]` sem continuação `Caducou:` válida.
+- A linha de continuação (`Caducou:` ou `Lapsed:`) deve estar imediatamente após o `- [ ]`, sem
+  linha em branco intercalada.
+- A linha de continuação deve ter ≥ 2 espaços de indentação (não pode estar na coluna 0; tab não é aceito).
+- `Caducou:` / `Lapsed:` sem texto após os dois-pontos não é aceito — a justificativa é obrigatória (D2).
+- A linha de continuação dentro de cerca de código (```` ``` ````) é ignorada pelo fence-mask.
+- O conjunto aceito é exatamente `{"Caducou:", "Lapsed:"}` — outras grafias não são aceitas (ADR D1,
+  ADR-2026-11-08).
+- O campo `unmet` do JSON agora é estrito: só conta `- [ ]` sem continuação válida.
   Consumidores que dependiam do comportamento anterior (`unmet = unmet + lapsed`) devem somar
   `unmet + lapsed` para recuperar a semântica antiga.
 - O campo `lapsed_details` no JSON do `barrier` (ML-1D, REQ #514) expõe, para cada critério
   caducado, um objeto `{"line": N, "text": "<justificativa>"}` onde `line` é o número de linha
-  (1-based) da continuação `Caducou:` e `text` é o texto trimado após os dois-pontos, truncado
+  (1-based) da continuação e `text` é o texto trimado após os dois-pontos, truncado
   a 120 caracteres Unicode com `…`; o campo é omitido quando não há critérios caducados
   (`omitempty`). Na saída textual, cada justificativa aparece como `      line N: Caducou: <text>`.
 
@@ -2955,13 +2963,21 @@ These are literal parsing rules. The binary implements them.
    outside HTML comments. **An ML with no acceptance block at all is `blocked`, not vacuously
    passed.** A `- [x]` criterion forged inside `<!-- … -->` is not counted as Met (AC9,
    ADR-2026-10-31; closes the T4 residual from REQ-2026-08-29).
-5. **Wave gates.** Gates are declared per wave by a `**Gates da wave:**` line followed by a
-   fenced ```` ```bash ```` block. Each non-empty, non-comment line in that block is one gate
-   command, executed from the repository root, in declaration order.
-   **The `**Gates da wave:**` marker must not be inside a fenced code block** (F1, REQ #491)
+5. **Wave gates.** Gates are declared per wave by a `**Gates da wave:**` or `**Wave gates:**`
+   line followed by a fenced ```` ```bash ```` block. Each non-empty, non-comment line in that
+   block is one gate command, executed from the repository root, in declaration order.
+   Both forms are accepted by the parser (bilingual contract, ADR D1, ADR-2026-11-08); the
+   accepted set is exactly `{"**Gates da wave:**", "**Wave gates:**"}` — both are case-sensitive,
+   no other spellings are accepted.
+   **A wave must have at most one gate header outside fences and comments.** If a wave contains
+   two or more valid gate headers (in any combination of PT/EN) outside fenced code blocks and
+   HTML comments, the barrier fails with an error naming both line numbers (D3,
+   ADR-2026-11-08):
+   `duplicate gates header: lines N and M both declare a gates block outside fences and comments — use exactly one gates header per wave (ADR D3)`
+   **The gate header marker must not be inside a fenced code block** (F1, REQ #491)
    or **inside an HTML comment block** (`<!-- … -->`) (AC11, ML-3C, REQ-2026-10-31). A marker
    whose column 0 is inside a multi-line HTML comment is silently skipped — the scan continues
-   so that a real marker later in the same wave is still found. A `**Gates da wave:**` block
+   so that a real marker later in the same wave is still found. A marker block
    entirely inside `<!-- … -->` produces zero gates, not a malformed-block error.
    **Prose is allowed between the marker and the fence** (#460): blank lines, blockquotes and
    paragraphs are skipped. 🔴 The search stops at the **next heading** (`## ` or `### `) — without
@@ -2969,7 +2985,7 @@ These are literal parsing rules. The binary implements them.
    example inside an ML body, and the product would run a command nobody declared as a gate.
    A marker with no fence before the next heading is a malformed block, and the message says so
    instead of blaming the gate's content.
-   A wave with no `**Gates da wave:**` block outside a fence or HTML comment declares zero gates
+   A wave with no gate header outside a fence or HTML comment declares zero gates
    — that is legal and yields a `gates` check with `status: "passed"` and an empty `commands`
    array. The barrier **never** invents a gate.
    **Consequence of per-line execution:** each gate command runs in its own `sh -c` process.
@@ -3355,7 +3371,7 @@ Every `.md` file under `roadmap_dir` that (a) appears in the branch diff, (b) ex
 | `date:` before 2026-07-18 | — | Orchestration only |
 | All other cases | — | Orchestration + patterns from started waves (ADR-2026-10-31 D2) |
 
-**Started wave** (for both the target and members): a wave with at least one ML satisfying the K match-positive predicate: `StatusIsComplete` (✅), `StatusTerminated` (❌ Cancelado, 🚫 Abandonado), or `StatusPending` with first emoji `🔄` or `❌` (🔄 Em andamento, ❌ Bloqueado). VS16 (U+FE0F) appended to the emoji is normalised before comparison. A wave ⬜ is never started. All-`⬜` members contribute only orchestration. A missing `date:` field is treated as post-cutoff.
+**Started wave** (for both the target and members): a wave with at least one ML satisfying the K match-positive predicate: `StatusIsComplete` (✅), `StatusTerminated` (❌ Cancelado / ❌ canceled / ❌ cancelled, 🚫 Abandonado, `abandonado` / `abandoned`), or `StatusPending` with first emoji `🔄` or `❌` (🔄 Em andamento, ❌ Bloqueado). `❌ Blocked` is StatusPending (not Terminated); only the exact tokens `{cancelado, canceled, cancelled}` resolve `❌` as Terminated (ADR D1, ADR-2026-11-08). VS16 (U+FE0F) appended to the emoji is normalised before comparison. A wave ⬜ is never started. All-`⬜` members contribute only orchestration. A missing `date:` field is treated as post-cutoff.
 
 **Note:** the target roadmap and members use the same started-wave predicate. For members, K (the highest started wave number) is still computed to detect the all-`⬜` case early; the wave loop then contributes only started waves, not the contiguous range 0..K (ADR-2026-10-31 D2).
 

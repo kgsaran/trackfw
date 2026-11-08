@@ -88,6 +88,12 @@ e `NewRoadmapFromREQ` (`internal/generators/roadmap.go`) — e nenhum exige alia
 meta-geradores (`claudemd.go`, `agentfiles.go`), que instruem o agente consumidor a escrever os marcadores:
 eles mudam na mesma tag do gerador. `docs/cli-parity.md` documenta o contrato e muda junto com o leitor.
 
+**Emenda 2026-11-08 (Wave 1), consequência de D3 no acervo.** 14 waves de roadmaps em `done/` têm dois
+cabeçalhos de gates; até aqui o segundo bloco era ignorado em silêncio. Com D3, o `barrier` dessas waves
+passa a reprovar. Elas não são reeditadas (D5): roadmap em `done/` não roda mais barrier, e o `validate`
+só inspeciona gates de roadmaps em `wip/`. O oráculo de D7 confirma saída idêntica de `validate` e de
+`roadmap show --json` nos 243 roadmaps.
+
 ## Consequences
 
 - O acervo continua passando; roadmaps novos nascem em inglês depois da segunda tag.

@@ -48,14 +48,20 @@ var (
 	MetCriterionRe = regexp.MustCompile(`^- \[[xX]\]`)
 	CriterionLineRe = regexp.MustCompile(`^- \[.\]`)
 	BoldLineRe      = regexp.MustCompile(`^\*\*`)
-	GatesHeaderRe   = regexp.MustCompile(`^\*\*Gates da wave:\*\*`)
-	// LapsedContinuationRe matches a valid Caducou: continuation line (D2, REQ #514 / ML-1A):
-	// ≥2 leading spaces (not tabs), "Caducou:", optional whitespace, then at least one
-	// non-whitespace character. Using \s* (not \s+) allows "Caducou:text" (no space), which
-	// is valid per D2 ("texto não vazio depois dos dois-pontos"). A bare "  Caducou:" or
-	// "  Caducou:\r" still fails: \r is whitespace, so \s* consumes it, but then \S requires
+	// GatesHeaderRe matches the gates-block header in its Portuguese and English forms
+	// (D1, ADR-2026-11-08 / ML-1A). Both forms are case-sensitive (same rule as PT was
+	// before the alias was added). Accepted: "**Gates da wave:**", "**Wave gates:**".
+	// Rejected: "**Wave gate:**" (singular), "**Wave  gates:**" (double space),
+	// "**wave gates:**" (lower-case first letter).
+	GatesHeaderRe = regexp.MustCompile(`^\*\*(?:Gates da wave|Wave gates):\*\*`)
+	// LapsedContinuationRe matches a valid lapsed-criterion continuation line
+	// (D2, REQ #514 / ML-1A; alias D1, ADR-2026-11-08 / ML-1A):
+	// ≥2 leading spaces (not tabs), "Caducou:" or "Lapsed:", optional whitespace, then at
+	// least one non-whitespace character. Using \s* (not \s+) allows "Caducou:text" (no
+	// space after the colon), which is valid per D2. A bare "  Caducou:" / "  Lapsed:" or
+	// "  Lapsed:\r" still fails: \r is whitespace, so \s* consumes it, but \S then requires
 	// a real (non-whitespace) character which is absent.
-	LapsedContinuationRe = regexp.MustCompile(`^ {2,}Caducou:\s*\S`)
+	LapsedContinuationRe = regexp.MustCompile(`^ {2,}(?:Caducou|Lapsed):\s*\S`)
 )
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -192,15 +198,23 @@ const (
 // terminatedVocabulary covers explicit termination markers (first token, lower-cased
 // and diacritics-folded). These release a done transition because the omission was
 // deliberate and recorded, not forgotten.
+// D1 (ADR-2026-11-08 / ML-1A): "abandoned" is the English alias for "abandonado".
 var terminatedVocabulary = map[string]bool{
 	"abandonado": true,
+	"abandoned":  true,
 	"🚫":          true,
 }
 
-// canceladoToken is the second-token disambiguator for the ❌ first-token case.
-// "❌ Cancelado" → Terminated; "❌ Bloqueado" → Pending.
-// Both strings are compared after normalizeStatusToken.
-const canceladoNormalized = "cancelado"
+// isCanceledToken reports whether norm (a normalizeStatusToken result) is one of
+// the recognised cancellation second-tokens for the ❌ first-token case:
+// "❌ Cancelado" / "❌ canceled" / "❌ cancelled" → Terminated; "❌ Bloqueado" /
+// "❌ Blocked" → Pending.
+// D1 (ADR-2026-11-08 / ML-1A): "canceled" and "cancelled" are English aliases.
+// Exact token comparison only — "❌ cancellation-pending" must stay Pending (D1 §threat model,
+// wave 0 §5.1). Never use prefix matching here.
+func isCanceledToken(norm string) bool {
+	return norm == "cancelado" || norm == "canceled" || norm == "cancelled"
+}
 
 // StatusCategory returns the three-way classification of a "**Status:**" marker.
 // It does NOT alter StatusIsComplete — that function remains the binary gate
@@ -233,7 +247,7 @@ func StatusCategory(marker string) StatusCat {
 	// ❌ is ambiguous by first token: check second token.
 	if first == "❌" && len(fields) >= 2 {
 		secondNorm := normalizeStatusToken(fields[1])
-		if secondNorm == canceladoNormalized {
+		if isCanceledToken(secondNorm) {
 			return StatusTerminated
 		}
 	}
@@ -1003,16 +1017,24 @@ func htmlCommentMask(lines []string, fenced []bool) []bool {
 	return mask
 }
 
-// extractLapsedReason parses a valid Caducou: continuation line (already matched
-// by LapsedContinuationRe) and returns a LapsedReason for AcceptanceEvaluateFull.
-// lineNo is 1-based. The text is the trimmed content after "Caducou:", truncated at
-// 120 runes with "…" (ML-1D, REQ #514).
+// extractLapsedReason parses a valid lapsed continuation line (already matched by
+// LapsedContinuationRe) and returns a LapsedReason for AcceptanceEvaluateFull.
+// lineNo is 1-based. The text is the trimmed content after "Caducou:" or "Lapsed:"
+// (D1, ADR-2026-11-08 / ML-1A), truncated at 120 runes with "…" (ML-1D, REQ #514).
+//
+// Search order: strip leading spaces, then try each known prefix. The match is
+// positional after the leading whitespace, not a substring search, so a line like
+// "  Lapsed: superseded, Caducou: x" uses "Lapsed:" correctly and does not bleed
+// into the "Caducou:" substring inside the justification text.
 func extractLapsedReason(line string, lineNo int) LapsedReason {
-	const prefix = "Caducou:"
-	idx := strings.Index(line, prefix)
+	stripped := strings.TrimLeft(line, " \t")
 	text := ""
-	if idx >= 0 {
-		text = strings.TrimSpace(line[idx+len(prefix):])
+	for _, prefix := range []string{"Caducou:", "Lapsed:"} {
+		rest, found := strings.CutPrefix(stripped, prefix)
+		if found {
+			text = strings.TrimSpace(rest)
+			break
+		}
 	}
 	runes := []rune(text)
 	if len(runes) > 120 {
@@ -1148,100 +1170,113 @@ type GateCmd struct {
 // with its 1-based line number so that the caller can attribute fragments to
 // the exact source line.
 //
-// Grammar (same as ParseGates):
-//   - The marker "**Gates da wave:**" must not be inside a fenced code block
-//     (F1, REQ #491): FenceMask is consulted so that a marker inside an example
-//     fence is silently skipped rather than treated as a real gate declaration.
-//     The scan continues past a skipped marker — a real marker after an example
-//     marker in the same wave is found and used.
+// Grammar:
+//   - GatesHeaderRe matches both "**Gates da wave:**" (PT) and "**Wave gates:**" (EN).
+//     Both forms are case-sensitive (D1, ADR-2026-11-08 / ML-1A).
+//   - The marker must not be inside a fenced code block (F1, REQ #491): FenceMask is
+//     consulted so that a marker inside an example fence is silently skipped rather
+//     than treated as a real gate declaration.
 //   - The marker must not be inside an HTML comment block (<!-- … -->)
-//     (AC11, ML-3C, REQ-2026-10-31): a "**Gates da wave:**" whose column 0 is
-//     inside a multi-line comment is silently skipped (same continue behaviour
-//     as F1). The opening line of the comment is NOT masked (column-0 semantics),
-//     so a line starting with <!-- can never match GatesHeaderRe anyway.
-//   - The ```bash fence is found by scanning forward to the next heading
-//     boundary (## / ###), same as before. Headings and fence-delimiter lines
-//     are never included.
-//   - Empty lines and lines whose first non-space character is '#' are ignored.
+//     (AC11, ML-3C, REQ-2026-10-31): column-0 semantics — a marker whose column 0 is
+//     inside a multi-line comment is skipped. A line starting with <!-- cannot match
+//     GatesHeaderRe, so the opening line is never masked.
+//   - D3 (ADR-2026-11-08 / ML-1A): two or more valid headers in the same wave is an
+//     error. The error names the 1-based line numbers of the first two headers.
+//     Fusion would hide the author's intent; silent first-wins would discard gates.
+//   - The ```bash fence is found by scanning forward to the next heading boundary
+//     (## / ###). The search skips prose, blank lines and paragraphs (#460): a real
+//     gate block may have an explanatory sentence between the header and the fence.
+//     🔴 The boundary is the NEXT HEADING, not the end of the wave: without it, a
+//     ```bash fence that belongs to another section (e.g. an ML body example) would
+//     be adopted as the gate fence and run code nobody declared as a gate.
+//   - Empty lines and lines whose first non-space character is '#' are ignored inside
+//     the fence block.
 //
-// A wave with no "**Gates da wave:**" block outside a fence or comment returns
-// an empty, non-nil slice — zero gates is legal and the barrier never invents one.
+// A wave with no valid gate header returns an empty, non-nil slice — zero gates is
+// legal and the barrier never invents one.
 func ParseGatesLines(lines []string, waveStart, waveEnd int) ([]GateCmd, error) {
 	fenced := FenceMask(lines)
 	htmlMask := htmlCommentMask(lines, fenced)
+
+	// ADR D3: pre-scan for every valid gate header in [waveStart, waveEnd).
+	// A valid header is one that matches GatesHeaderRe AND is not inside a fenced
+	// code block AND is not inside an HTML comment. Count them before processing.
+	var validHeaderLines []int
 	for i := waveStart; i < waveEnd; i++ {
-		if !GatesHeaderRe.MatchString(lines[i]) {
-			continue
+		if GatesHeaderRe.MatchString(lines[i]) && !fenced[i] && !htmlMask[i] {
+			validHeaderLines = append(validHeaderLines, i)
 		}
-		// F1 (REQ #491): skip markers that appear inside an example fence.
-		// Use continue (not return) so that a real marker later in the same wave
-		// is still found.
-		if fenced[i] {
-			continue
-		}
-		// AC11 (ML-3C, REQ-2026-10-31): skip markers that appear inside an HTML
-		// comment block. Same continue behaviour as F1 above.
-		if htmlMask[i] {
-			continue
-		}
-		// #460: a busca pula PROSA, nao so linha em branco. Escrever um gate real
-		// convida a explica-lo — o proprio template diz "replace this placeholder
-		// with a project-specific check", e um check especifico costuma precisar de
-		// uma frase de contexto. Exigir a cerca na linha seguinte fazia a forma mais
-		// natural de escrever ser a unica recusada.
-		//
-		// 🔴 A BORDA e o proximo heading, e nao o fim da wave. Sem ela, a varredura
-		// acharia uma cerca ```bash que pertence a outra secao — um exemplo dentro do
-		// corpo de um ML, por exemplo — e o gate passaria a ser um comando que ninguem
-		// declarou como gate. Parar no heading mantem a cerca na MESMA secao do
-		// marcador, que e o vinculo que o formato promete.
-		j := i + 1
-		for j < waveEnd {
-			t := strings.TrimSpace(lines[j])
-			if t == "```bash" {
-				break
-			}
-			if strings.HasPrefix(lines[j], "## ") || strings.HasPrefix(lines[j], "### ") {
-				// Chegou na proxima secao sem achar a cerca.
-				j = waveEnd
-				break
-			}
-			j++
-		}
-		if j >= waveEnd {
-			return nil, fmt.Errorf("gates block not found: '**Gates da wave:**' at line %d is not followed by a ```bash fence before the next heading", i+1)
-		}
-		fenceStart := j
-		var cmds []GateCmd
-		k := j + 1
-		closed := false
-		for k < waveEnd {
-			if strings.TrimSpace(lines[k]) == "```" {
-				closed = true
-				break
-			}
-			line := strings.TrimSpace(lines[k])
-			if line != "" && !strings.HasPrefix(line, "#") {
-				cmds = append(cmds, GateCmd{Line: k + 1, Text: line})
-			}
-			k++
-		}
-		if !closed {
-			return nil, fmt.Errorf("unterminated gates fence starting at line %d", fenceStart+1)
-		}
-		if cmds == nil {
-			cmds = []GateCmd{}
-		}
-		return cmds, nil
 	}
-	return []GateCmd{}, nil
+
+	// D3: two or more valid headers → error naming the first two (1-based).
+	if len(validHeaderLines) >= 2 {
+		return nil, fmt.Errorf(
+			"duplicate gates header: lines %d and %d both declare a gates block outside fences and comments — use exactly one gates header per wave (ADR D3)",
+			validHeaderLines[0]+1, validHeaderLines[1]+1)
+	}
+
+	if len(validHeaderLines) == 0 {
+		return []GateCmd{}, nil
+	}
+
+	// Single valid header: process it.
+	i := validHeaderLines[0]
+
+	// #460: a busca pula PROSA, nao so linha em branco. Escrever um gate real
+	// convida a explica-lo — o proprio template diz "replace this placeholder
+	// with a project-specific check", e um check especifico costuma precisar de
+	// uma frase de contexto. Exigir a cerca na linha seguinte fazia a forma mais
+	// natural de escrever ser a unica recusada.
+	//
+	// 🔴 A BORDA e o proximo heading, e nao o fim da wave. Sem ela, a varredura
+	// acharia uma cerca ```bash que pertence a outra secao — um exemplo dentro do
+	// corpo de um ML, por exemplo — e o gate passaria a ser um comando que ninguem
+	// declarou como gate. Parar no heading mantem a cerca na MESMA secao do
+	// marcador, que e o vinculo que o formato promete.
+	j := i + 1
+	for j < waveEnd {
+		t := strings.TrimSpace(lines[j])
+		if t == "```bash" {
+			break
+		}
+		if strings.HasPrefix(lines[j], "## ") || strings.HasPrefix(lines[j], "### ") {
+			// Chegou na proxima secao sem achar a cerca.
+			j = waveEnd
+			break
+		}
+		j++
+	}
+	if j >= waveEnd {
+		return nil, fmt.Errorf("gates block not found: gates header at line %d is not followed by a ```bash fence before the next heading", i+1)
+	}
+	fenceStart := j
+	var cmds []GateCmd
+	k := j + 1
+	closed := false
+	for k < waveEnd {
+		if strings.TrimSpace(lines[k]) == "```" {
+			closed = true
+			break
+		}
+		line := strings.TrimSpace(lines[k])
+		if line != "" && !strings.HasPrefix(line, "#") {
+			cmds = append(cmds, GateCmd{Line: k + 1, Text: line})
+		}
+		k++
+	}
+	if !closed {
+		return nil, fmt.Errorf("unterminated gates fence starting at line %d", fenceStart+1)
+	}
+	if cmds == nil {
+		cmds = []GateCmd{}
+	}
+	return cmds, nil
 }
 
-// ParseGates implements rule 5. A wave with no "**Gates da wave:**" block
-// outside a fenced example returns an empty, non-nil slice — zero gates is
-// legal and the barrier never invents one. It is a thin wrapper around
-// ParseGatesLines that discards line-number information for callers that do
-// not need it.
+// ParseGates implements rule 5. A wave with no gate-header block outside a fence
+// or HTML comment returns an empty, non-nil slice — zero gates is legal and the
+// barrier never invents one. It is a thin wrapper around ParseGatesLines that
+// discards line-number information for callers that do not need it.
 func ParseGates(lines []string, waveStart, waveEnd int) ([]string, error) {
 	gcmds, err := ParseGatesLines(lines, waveStart, waveEnd)
 	if err != nil {

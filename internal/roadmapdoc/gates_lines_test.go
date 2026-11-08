@@ -40,10 +40,44 @@ package roadmapdoc
 //     line and truncates at an unclosed "<!--", returning (stripped, endsOpen) — so
 //     backtick tokens inside comments are invisible to extractTokens while tokens outside
 //     are preserved.
+//
+// ── New tests (D1/D3, ADR-2026-11-08 / ML-1A — bilingual gate header) ─────────
+//
+//   TestGatesHeaderRe_ENAlias_Positive
+//     Affirms: GatesHeaderRe matches "**Wave gates:**" (the English alias), so the
+//     parser recognises the EN form of the gates header without code changes in callers.
+//
+//   TestGatesHeaderRe_ENAlias_NegativeCases
+//     Affirms: "**Wave gate:**" (singular), "**Wave  gates:**" (double space) and
+//     "**wave gates:**" (lower-case) do NOT match GatesHeaderRe — the accepted set is
+//     exactly {"**Gates da wave:**", "**Wave gates:**"} and nothing else.
+//
+//   TestParseGatesLines_ENAlias_ReturnsCommands
+//     Affirms: ParseGatesLines recognises "**Wave gates:**" as a valid gate header and
+//     returns the commands inside the following ```bash fence with correct line numbers.
+//
+//   TestParseGatesLines_D3_TwoHeadersPTandPT
+//     Affirms: a wave with two "**Gates da wave:**" headers outside fences and comments
+//     returns an error naming both 1-based line numbers (ADR D3).
+//
+//   TestParseGatesLines_D3_TwoHeadersPTandEN
+//     Affirms: a wave with one PT header and one EN header outside fences and comments
+//     returns a D3 error naming both line numbers — the error fires for any combination
+//     of PT/EN headers, not only same-language pairs.
+//
+//   TestParseGatesLines_D3_TwoHeadersENandEN
+//     Affirms: a wave with two "**Wave gates:**" headers outside fences and comments
+//     returns a D3 error naming both line numbers.
+//
+//   TestParseGatesLines_D3_FencedPlusRealNoError
+//     Affirms: a wave with one header inside a fence (skipped by F1) and one real header
+//     outside the fence does NOT trigger the D3 duplicate-header error — only unmasked
+//     headers count toward the duplicate check.
 
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -477,3 +511,298 @@ func TestStripInlineHTMLComments(t *testing.T) {
 		})
 	}
 }
+
+// ── TestGatesHeaderRe_ENAlias_Positive ───────────────────────────────────────
+
+// TestGatesHeaderRe_ENAlias_Positive asserts that GatesHeaderRe matches the English
+// alias "**Wave gates:**" in addition to the Portuguese "**Gates da wave:**".
+//
+// Reconciliation (Regra Dura): GatesHeaderRe accepts "**Wave gates:**" as a valid gate
+// header, closing the fail-open described in ADR D2 for binary versions after the first
+// bilingual-reader release tag (D1, ADR-2026-11-08 / ML-1A).
+func TestGatesHeaderRe_ENAlias_Positive(t *testing.T) {
+	cases := []string{
+		"**Gates da wave:**",           // PT — must continue to match
+		"**Wave gates:**",              // EN alias — must now match
+		"**Wave gates:** (required)",   // EN with suffix — prefix match, must work
+		"**Gates da wave:** (obrigatórios)", // PT with suffix — still matches
+	}
+	for _, line := range cases {
+		if !GatesHeaderRe.MatchString(line) {
+			t.Errorf("GatesHeaderRe should match %q, but does not", line)
+		}
+	}
+}
+
+// ── TestGatesHeaderRe_ENAlias_NegativeCases ──────────────────────────────────
+
+// TestGatesHeaderRe_ENAlias_NegativeCases asserts that the forms outside the closed
+// accepted set do NOT match GatesHeaderRe.
+//
+// Reconciliation (Regra Dura): these forms are explicitly rejected — they are
+// outside the bilingual closed set (D1 §threat model, wave 0 §5.1 via 2). A regex
+// too broad would cause ordinary prose to be treated as a gate header.
+func TestGatesHeaderRe_ENAlias_NegativeCases(t *testing.T) {
+	cases := []struct {
+		line   string
+		reason string
+	}{
+		{"**Wave gate:**", "singular 'gate' — not in the accepted set"},
+		{"**Wave  gates:**", "double space — not in the accepted set"},
+		{"**wave gates:**", "lower-case first letter — headers are case-sensitive"},
+		{"**Wave Gates:**", "wrong capitalisation ('Gates' capitalised)"},
+		{"Wave gates:", "missing bold markers"},
+		{" **Wave gates:**", "leading space — header must be at column 0"},
+	}
+	for _, tc := range cases {
+		if GatesHeaderRe.MatchString(tc.line) {
+			t.Errorf("GatesHeaderRe must NOT match %q (%s), but it does", tc.line, tc.reason)
+		}
+	}
+}
+
+// ── TestParseGatesLines_ENAlias_ReturnsCommands ───────────────────────────────
+
+// TestParseGatesLines_ENAlias_ReturnsCommands asserts that ParseGatesLines recognises
+// "**Wave gates:**" as a valid gate header and returns the commands from the following
+// ```bash fence with correct 1-based line numbers.
+//
+// Reconciliation (Regra Dura): ParseGatesLines returns the gate commands when the EN
+// alias is used, identical behaviour to the PT form — the fail-open of D2 is closed
+// once a binary with this change is installed (D1, ADR-2026-11-08 / ML-1A).
+func TestParseGatesLines_ENAlias_ReturnsCommands(t *testing.T) {
+	// line 1: ## Wave 5 — EN Alias
+	// line 2: (empty)
+	// line 3: **Wave gates:**
+	// line 4: ```bash
+	// line 5: go build ./...
+	// line 6: ```
+	doc := "## Wave 5 — EN Alias\n" +
+		"\n" +
+		"**Wave gates:**\n" +
+		"```bash\n" +
+		"go build ./...\n" +
+		"```\n"
+
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, _ := ParseWaves(lines, fenced)
+	if len(waves) != 1 {
+		t.Fatalf("expected 1 wave, got %d", len(waves))
+	}
+	w := waves[0]
+
+	gcmds, err := ParseGatesLines(lines, w.Start, w.End)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(gcmds) != 1 {
+		t.Fatalf("expected 1 GateCmd, got %d: %v", len(gcmds), gcmds)
+	}
+	// "go build ./..." is at 0-indexed line 4, so 1-based line 5.
+	if gcmds[0].Line != 5 {
+		t.Errorf("gcmds[0].Line = %d, want 5", gcmds[0].Line)
+	}
+	if gcmds[0].Text != "go build ./..." {
+		t.Errorf("gcmds[0].Text = %q, want %q", gcmds[0].Text, "go build ./...")
+	}
+}
+
+// ── TestParseGatesLines_D3_TwoHeadersPTandPT ─────────────────────────────────
+
+// TestParseGatesLines_D3_TwoHeadersPTandPT asserts that a wave with two
+// "**Gates da wave:**" headers outside fences and comments returns an error
+// naming both 1-based line numbers (ADR D3).
+//
+// Reconciliation (Regra Dura): ParseGatesLines returns an error when two valid gate
+// headers are present in the same wave (PT+PT), preventing silent first-wins behavior
+// that would discard the second block's gates.
+func TestParseGatesLines_D3_TwoHeadersPTandPT(t *testing.T) {
+	// line 1: ## Wave 6 — D3 PT+PT
+	// line 2: (empty)
+	// line 3: **Gates da wave:**   ← first real header
+	// line 4: ```bash
+	// line 5: echo "first"
+	// line 6: ```
+	// line 7: (empty)
+	// line 8: **Gates da wave:**   ← second real header
+	// line 9: ```bash
+	// line 10: echo "second"
+	// line 11: ```
+	doc := "## Wave 6 — D3 PT+PT\n" +
+		"\n" +
+		"**Gates da wave:**\n" +
+		"```bash\n" +
+		"echo \"first\"\n" +
+		"```\n" +
+		"\n" +
+		"**Gates da wave:**\n" +
+		"```bash\n" +
+		"echo \"second\"\n" +
+		"```\n"
+
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, _ := ParseWaves(lines, fenced)
+	if len(waves) != 1 {
+		t.Fatalf("expected 1 wave, got %d", len(waves))
+	}
+	w := waves[0]
+
+	_, err := ParseGatesLines(lines, w.Start, w.End)
+	if err == nil {
+		t.Fatal("expected D3 error for two PT+PT headers, got nil")
+	}
+	// Error must name both line numbers as a pair: "lines 3 and 8".
+	// A match on this exact substring proves both the error type and the line numbers.
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "lines 3 and 8") {
+		t.Errorf("D3 error message %q does not contain %q", errMsg, "lines 3 and 8")
+	}
+}
+
+// ── TestParseGatesLines_D3_TwoHeadersPTandEN ─────────────────────────────────
+
+// TestParseGatesLines_D3_TwoHeadersPTandEN asserts that a wave with one PT and
+// one EN header outside fences and comments returns a D3 error naming both lines.
+//
+// Reconciliation (Regra Dura): ParseGatesLines returns an error for the PT+EN
+// combination — D3 fires for any combination of recognised gate headers, not only
+// same-language pairs (ADR D3, ADR-2026-11-08 / ML-1A).
+func TestParseGatesLines_D3_TwoHeadersPTandEN(t *testing.T) {
+	// line 1: ## Wave 7 — D3 PT+EN
+	// line 2: (empty)
+	// line 3: **Gates da wave:**   ← first real header (PT)
+	// line 4: ```bash
+	// line 5: echo "first"
+	// line 6: ```
+	// line 7: (empty)
+	// line 8: **Wave gates:**      ← second real header (EN)
+	// line 9: ```bash
+	// line 10: echo "second"
+	// line 11: ```
+	doc := "## Wave 7 — D3 PT+EN\n" +
+		"\n" +
+		"**Gates da wave:**\n" +
+		"```bash\n" +
+		"echo \"first\"\n" +
+		"```\n" +
+		"\n" +
+		"**Wave gates:**\n" +
+		"```bash\n" +
+		"echo \"second\"\n" +
+		"```\n"
+
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, _ := ParseWaves(lines, fenced)
+	if len(waves) != 1 {
+		t.Fatalf("expected 1 wave, got %d", len(waves))
+	}
+	w := waves[0]
+
+	_, err := ParseGatesLines(lines, w.Start, w.End)
+	if err == nil {
+		t.Fatal("expected D3 error for PT+EN headers, got nil")
+	}
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "lines 3 and 8") {
+		t.Errorf("D3 error message %q does not contain %q", errMsg, "lines 3 and 8")
+	}
+}
+
+// ── TestParseGatesLines_D3_TwoHeadersENandEN ─────────────────────────────────
+
+// TestParseGatesLines_D3_TwoHeadersENandEN asserts that a wave with two
+// "**Wave gates:**" headers outside fences and comments returns a D3 error.
+//
+// Reconciliation (Regra Dura): ParseGatesLines returns an error for the EN+EN
+// combination — D3 applies to all language combinations (ADR D3, ADR-2026-11-08 / ML-1A).
+func TestParseGatesLines_D3_TwoHeadersENandEN(t *testing.T) {
+	doc := "## Wave 8 — D3 EN+EN\n" +
+		"\n" +
+		"**Wave gates:**\n" +
+		"```bash\n" +
+		"echo \"first\"\n" +
+		"```\n" +
+		"\n" +
+		"**Wave gates:**\n" +
+		"```bash\n" +
+		"echo \"second\"\n" +
+		"```\n"
+
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, _ := ParseWaves(lines, fenced)
+	if len(waves) != 1 {
+		t.Fatalf("expected 1 wave, got %d", len(waves))
+	}
+	w := waves[0]
+
+	_, err := ParseGatesLines(lines, w.Start, w.End)
+	if err == nil {
+		t.Fatal("expected D3 error for EN+EN headers, got nil")
+	}
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "lines 3 and 8") {
+		t.Errorf("D3 error message %q does not contain %q", errMsg, "lines 3 and 8")
+	}
+}
+
+// ── TestParseGatesLines_D3_FencedPlusRealNoError ──────────────────────────────
+
+// TestParseGatesLines_D3_FencedPlusRealNoError asserts that a wave with one header
+// inside a fence (skipped by F1) and one real header outside the fence does NOT
+// trigger the D3 duplicate-header error.
+//
+// Reconciliation (Regra Dura): only unmasked (non-fenced, non-commented) headers
+// count toward the D3 duplicate check — a header inside a fence is documentation,
+// not a declaration, and must not cause a false D3 error (ADR D3).
+func TestParseGatesLines_D3_FencedPlusRealNoError(t *testing.T) {
+	// line 1: ## Wave 9 — D3 Fenced+Real
+	// line 2: (empty)
+	// line 3: ````
+	// line 4: **Gates da wave:**  ← inside fence, skipped by F1
+	// line 5: ```bash
+	// line 6: exit 1
+	// line 7: ```
+	// line 8: ````
+	// line 9: (empty)
+	// line 10: **Wave gates:**    ← real EN header, outside fence
+	// line 11: ```bash
+	// line 12: echo "real gate"
+	// line 13: ```
+	doc := "## Wave 9 — D3 Fenced+Real\n" +
+		"\n" +
+		"````\n" +
+		"**Gates da wave:**\n" +
+		"```bash\n" +
+		"exit 1\n" +
+		"```\n" +
+		"````\n" +
+		"\n" +
+		"**Wave gates:**\n" +
+		"```bash\n" +
+		"echo \"real gate\"\n" +
+		"```\n"
+
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, _ := ParseWaves(lines, fenced)
+	if len(waves) != 1 {
+		t.Fatalf("expected 1 wave, got %d", len(waves))
+	}
+	w := waves[0]
+
+	gcmds, err := ParseGatesLines(lines, w.Start, w.End)
+	if err != nil {
+		t.Fatalf("unexpected D3 error (fenced+real should not trigger D3): %v", err)
+	}
+	if len(gcmds) != 1 {
+		t.Fatalf("expected 1 GateCmd from real header, got %d: %v", len(gcmds), gcmds)
+	}
+	if gcmds[0].Text != `echo "real gate"` {
+		t.Errorf("gcmds[0].Text = %q, want %q", gcmds[0].Text, `echo "real gate"`)
+	}
+}
+
