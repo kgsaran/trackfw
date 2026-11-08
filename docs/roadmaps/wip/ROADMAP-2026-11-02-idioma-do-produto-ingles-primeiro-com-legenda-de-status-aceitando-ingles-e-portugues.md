@@ -106,7 +106,7 @@ test -s docs/seguranca/2026-11-08-wave0-idioma-ingles-primeiro.md
 > Dependencies: Wave 0 auditada. ML-1A e ML-1B tocam arquivos disjuntos e correm em paralelo.
 
 ### ML-1A — Aliases em inglês nos parsers
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Squad:** apolo-tf
 **Files affected:**
 - `internal/roadmapdoc/roadmapdoc.go`, `internal/roadmapdoc/*_test.go`
@@ -126,6 +126,8 @@ test -s docs/seguranca/2026-11-08-wave0-idioma-ingles-primeiro.md
 6. Falsificação da Wave 0: `❌ cancellation-pending` continua pendente (comparação exata, nunca prefixo);
    `  Lapsed:` sem texto não conta; `**Wave gate:**` (singular) e `**Wave  gates:**` (dois espaços) não
    são reconhecidos.
+7. Medir no acervo (`docs/roadmaps/**/*.md`) quantas waves têm dois ou mais cabeçalhos de gates fora de
+   cerca e comentário: com D3, essas passam a dar erro no `barrier`, e o oráculo do ML-1B não as vê.
 
 **Acceptance criteria:**
 - [ ] `go build ./...` sem erro
@@ -133,25 +135,25 @@ test -s docs/seguranca/2026-11-08-wave0-idioma-ingles-primeiro.md
 - [ ] Cada teste novo com a frase do que afirma (Regra Dura de Reconciliação)
 
 ### ML-1B — Oráculo do acervo (ADR D7)
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Squad:** ares-tf
 **Files affected:**
-- `scripts/check-marker-corpus-parity.sh` (novo)
-- `Makefile` (ligar em `parity-rest`, com `--self-test` e execução)
+- `scripts/check-marker-corpus-parity.sh` (novo; gate desta REQ, **não** ligado em `parity-rest`: depende de
+  `origin/main` e compila dois binários)
 
 **Actions:**
 1. O script compila o binário de `origin/main` (via `git worktree` em diretório temporário fora do repo,
    removido no fim, trap com valor capturado na instalação) e o da árvore atual.
-2. Para cada roadmap em `docs/roadmaps/**/*.md`, roda `trackfw barrier <roadmap> --wave <N> --dry-run`
-   (ou o modo de listagem que exista; confirmar no `--help`) para cada wave, e `trackfw validate`, com os
-   dois binários, e compara as saídas normalizadas. Diferença não vazia reprova e mostra o diff.
+2. Para cada roadmap em `docs/roadmaps/**/*.md`, roda `trackfw roadmap show <basename-sem-.md> --json` com os
+   dois binários e compara; roda `trackfw validate` com os dois e compara. O `barrier` não entra: ele executa
+   os gates e não tem modo de listagem. Diferença não vazia reprova e mostra o diff.
 3. `--self-test` com braço positivo (fixture com divergência injetada reprova) e negativo; guarda de
-   vacuidade (zero roadmaps → reprova).
+   vacuidade (zero roadmaps comparados → reprova).
 
 **Acceptance criteria:**
 - [ ] `bash scripts/check-marker-corpus-parity.sh --self-test` verde
 - [ ] `bash scripts/check-marker-corpus-parity.sh` rc=0 com ML-1A aplicado
-- [ ] `make parity-rest` verde
+- [ ] Contra-braço: com um alias quebrado de propósito numa cópia temporária, o script reprova
 
 **Gates da wave:**
 ```bash
