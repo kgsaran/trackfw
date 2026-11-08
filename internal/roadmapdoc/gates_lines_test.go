@@ -1267,7 +1267,16 @@ func TestParseGatesLines_E3_MaskedOnlyHeaderReturnsError(t *testing.T) {
 // the given gateHeaderLine followed by an optional bash fence and a final
 // newline. This helper keeps the fixture construction DRY across the near-miss
 // tests.
+//
+// ML-2J: when bashBlock is empty, a default "```bash\nexit 1\n```\n" fence is
+// appended so that boundGateFence finds a fence bound to the near-miss line.
+// Under the new fence-anchoring rule a near-miss without a bound fence does not
+// fire (R3-H: no false positive for prose lines); the existing ML-2G tests
+// genuinely intend to assert detection, so they must have a fence.
 func nearMissWaveDoc(gateHeaderLine, bashBlock string) string {
+	if bashBlock == "" {
+		bashBlock = "```bash\nexit 1\n```\n"
+	}
 	return "## Wave 1 — Near-miss test \n" +
 		gateHeaderLine + "\n" +
 		bashBlock
@@ -1483,20 +1492,29 @@ func TestParseGatesLines_NearMiss_ProseWithBacktickContraArm(t *testing.T) {
 
 // TestParseGatesLines_NearMiss_ValidPlusNearMiss_D8CoversValidWave asserts that
 // a wave containing both a valid "**Wave gates:**" header AND a near-miss line
-// " **Gates da wave:**" (1 leading space) returns a near-miss error — the
-// near-miss check runs unconditionally before D3, regardless of whether a valid
-// header exists.
+// " **Gates da wave:**" (1 leading space) WITH a bound fence returns a near-miss
+// error — the near-miss check runs unconditionally before D3, regardless of whether
+// a valid header exists.
 //
 // Reconciliation (ML-2G): affirms that the ADR requirement "the rule holds even
 // when a valid header is present" is implemented — a near-miss next to a real
 // header is still an error.
+//
+// ML-2J: a second ```bash fence (lines 7–9) is added after the near-miss line
+// so that boundGateFence finds a fence bound to the near-miss at line 6. Under
+// the fence-anchoring rule the near-miss only fires when a fence is bound to it;
+// adding the fence restores the asserted behaviour. The first fence (lines 3–5)
+// belongs to the valid gate header; the second belongs to the near-miss.
 func TestParseGatesLines_NearMiss_ValidPlusNearMiss_D8CoversValidWave(t *testing.T) {
 	doc := "## Wave 1 — valid plus near-miss \n" +
 		"**Wave gates:**\n" +
 		"```bash\n" +
 		"echo ok\n" +
 		"```\n" +
-		" **Gates da wave:**\n" // near-miss at line 6
+		" **Gates da wave:**\n" + // near-miss at line 6
+		"```bash\n" + // bound fence for the near-miss at line 7
+		"exit 1\n" +
+		"```\n"
 	lines := SplitRoadmapLines(doc)
 	fenced := FenceMask(lines)
 	waves, malformed := ParseWaves(lines, fenced)
@@ -1522,9 +1540,12 @@ func TestParseGatesLines_NearMiss_ValidPlusNearMiss_D8CoversValidWave(t *testing
 // A matching contra-arm verifies that the valid headers and prosa still work.
 //
 // helper: build a minimal wave doc with one line and expect a near-miss error.
+// ML-2J: a "```bash\nexit 1\n```\n" fence is appended after the near-miss line
+// so that boundGateFence can find a bound fence. Without this fence the new
+// fence-anchoring rule would not fire for the near-miss.
 func nearMiss2IExpectError(t *testing.T, nearMissLine string, wantLineNo int) {
 	t.Helper()
-	doc := "## Wave 1 — test\n" + nearMissLine + "\n"
+	doc := "## Wave 1 — test\n" + nearMissLine + "\n" + "```bash\nexit 1\n```\n"
 	lines := SplitRoadmapLines(doc)
 	fenced := FenceMask(lines)
 	waves, malformed := ParseWaves(lines, fenced)
@@ -1893,5 +1914,539 @@ func TestParseGatesLines_NearMiss_WaveTitleNoColon(t *testing.T) {
 	}
 	if len(cmds) == 0 || cmds[0].Text != "echo ok" {
 		t.Errorf("wave title contra-arm: expected [echo ok], got %v", cmds)
+	}
+}
+
+// ── ML-2J near-miss tests (R3-A through R3-H) ─────────────────────────────
+//
+// Each vector tests that the new skeleton pipeline + fence-anchoring catches
+// the R3 bypass cases. Each test has two arms:
+//   - WITH fence: the near-miss fires (error "near-miss gates header at line 2")
+//   - WITHOUT fence: the near-miss does NOT fire (err == nil, cmds == [])
+//
+// Helper used by both arms of each test:
+//   nearMiss2JWithFence(line)    → expects error at line 2
+//   nearMiss2JWithoutFence(line) → expects err=nil, len(cmds)==0
+
+func nearMiss2JWithFence(t *testing.T, nearMissLine string) {
+	t.Helper()
+	doc := "## Wave 1 — test\n" + nearMissLine + "\n" + "```bash\nexit 1\n```\n"
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, malformed := ParseWaves(lines, fenced)
+	if len(malformed) > 0 || len(waves) == 0 {
+		t.Fatalf("setup failed: malformed=%v waves=%d", malformed, len(waves))
+	}
+	w := waves[0]
+	_, err := ParseGatesLines(lines, w.Start, w.End)
+	if err == nil {
+		t.Fatalf("expected near-miss error for %q (with fence), got nil", nearMissLine)
+	}
+	want := "near-miss gates header at line 2"
+	if !strings.Contains(err.Error(), want) {
+		t.Errorf("error %q does not contain %q", err.Error(), want)
+	}
+}
+
+func nearMiss2JWithoutFence(t *testing.T, nearMissLine string) {
+	t.Helper()
+	doc := "## Wave 1 — test\n" + nearMissLine + "\n"
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, malformed := ParseWaves(lines, fenced)
+	if len(malformed) > 0 || len(waves) == 0 {
+		t.Fatalf("setup failed: malformed=%v waves=%d", malformed, len(waves))
+	}
+	w := waves[0]
+	cmds, err := ParseGatesLines(lines, w.Start, w.End)
+	if err != nil {
+		t.Fatalf("unexpected near-miss error for %q (without fence): %v", nearMissLine, err)
+	}
+	if len(cmds) != 0 {
+		t.Errorf("expected 0 commands for %q (without fence), got %v", nearMissLine, cmds)
+	}
+}
+
+// TestParseGatesLines_NearMiss_R3A_CyrillicCapitalWE asserts that
+// "**Ԝave gates:**" (Ԝ U+051C Cyrillic capital WE) is detected with fence
+// but not without fence.
+//
+// Reconciliation (ML-2J, R3-A): ToLower runs before the homoglyph map; Ԝ
+// (U+051C) lowers to ԝ (U+051D), which maps to 'w' in nearMissHomoglyphs.
+// Without fence: boundGateFence returns false → no near-miss (fence-anchoring).
+func TestParseGatesLines_NearMiss_R3A_CyrillicCapitalWE(t *testing.T) {
+	line := "**Ԝave gates:**" // Ԝ U+051C
+	nearMiss2JWithFence(t, line)
+	nearMiss2JWithoutFence(t, line)
+}
+
+// TestParseGatesLines_NearMiss_R3A_GreekCapitalAlpha asserts that
+// "**Wave gΑtes:**" (Α U+0391 Greek capital Alpha) is detected with fence.
+//
+// Reconciliation (ML-2J, R3-A): ToLower(Α U+0391) = α U+03B1; α maps to 'a'.
+func TestParseGatesLines_NearMiss_R3A_GreekCapitalAlpha(t *testing.T) {
+	line := "**Wave gΑtes:**" // Α U+0391
+	nearMiss2JWithFence(t, line)
+	nearMiss2JWithoutFence(t, line)
+}
+
+// TestParseGatesLines_NearMiss_R3A_GreekCapitalEpsilon asserts that
+// "**Wave gatΕs:**" (Ε U+0395 Greek capital Epsilon) is detected with fence.
+//
+// Reconciliation (ML-2J, R3-A): ToLower(Ε U+0395) = ε U+03B5; ε maps to 'e'.
+func TestParseGatesLines_NearMiss_R3A_GreekCapitalEpsilon(t *testing.T) {
+	line := "**Wave gatΕs:**" // Ε U+0395
+	nearMiss2JWithFence(t, line)
+	nearMiss2JWithoutFence(t, line)
+}
+
+// TestParseGatesLines_NearMiss_R3B_VS1VariationSelector asserts that
+// "**Wave︀ gates:**" (VS1 U+FE00 after 'e' of Wave) is detected with fence.
+//
+// Reconciliation (ML-2J, R3-B): VS1 U+FE00 has category Mn; step 1a now
+// removes all Mn runes (not just Cf/ODIP). The skeleton becomes "wavegates:".
+func TestParseGatesLines_NearMiss_R3B_VS1VariationSelector(t *testing.T) {
+	line := "**Wave︀ gates:**" // VS1 U+FE00
+	nearMiss2JWithFence(t, line)
+	nearMiss2JWithoutFence(t, line)
+}
+
+// TestParseGatesLines_NearMiss_R3C_BrailleBlank asserts that
+// "**Wave⠀gates:**" (U+2800 Braille Blank between Wave and gates) is detected.
+//
+// Reconciliation (ML-2J, R3-C): U+2800 is explicitly removed in step 1a.
+// The skeleton becomes "wavegates:".
+func TestParseGatesLines_NearMiss_R3C_BrailleBlank(t *testing.T) {
+	line := "**Wave⠀gates:**" // U+2800 Braille Blank
+	nearMiss2JWithFence(t, line)
+	nearMiss2JWithoutFence(t, line)
+}
+
+// TestParseGatesLines_NearMiss_R3D_NoBoldNoColon asserts that
+// "**Wave gates**" (bold, no colon) is detected with fence.
+//
+// Reconciliation (ML-2J, R3-D): colonIdx = -1; step 3 strips the whole string;
+// skeleton = "wavegates"; exact equality against nearMissGatesTargetsNoColon
+// matches "wavegates". Without fence: boundGateFence returns false.
+func TestParseGatesLines_NearMiss_R3D_NoBoldNoColon(t *testing.T) {
+	line := "**Wave gates**"
+	nearMiss2JWithFence(t, line)
+	nearMiss2JWithoutFence(t, line)
+}
+
+// TestParseGatesLines_NearMiss_R3D_H3NoColon asserts that "### Wave gates"
+// (ATX H3 heading, no colon) is detected with fence.
+//
+// Reconciliation (ML-2J, R3-D): colonIdx = -1 after all substitutions; step 3
+// strips '#' (in stripSet) and spaces; skeleton = "wavegates"; exact equality
+// matches. The search for the bound fence starts at the line AFTER "### Wave gates"
+// (headerIdx+1), so the fence on the next line is found before any section heading.
+func TestParseGatesLines_NearMiss_R3D_H3NoColon(t *testing.T) {
+	line := "### Wave gates"
+	nearMiss2JWithFence(t, line)
+	nearMiss2JWithoutFence(t, line)
+}
+
+// TestParseGatesLines_NearMiss_R3D_PTNoBoldNoColon asserts that
+// "**Gates da wave**" (bold PT, no colon) is detected with fence.
+//
+// Reconciliation (ML-2J, R3-D): colonIdx = -1; skeleton = "gatesdawave"; exact
+// equality against "gatesdawave" in nearMissGatesTargetsNoColon matches.
+func TestParseGatesLines_NearMiss_R3D_PTNoBoldNoColon(t *testing.T) {
+	line := "**Gates da wave**"
+	nearMiss2JWithFence(t, line)
+	nearMiss2JWithoutFence(t, line)
+}
+
+// TestParseGatesLines_NearMiss_R3E_RatioSymbol asserts that
+// "**Wave gates∶**" (∶ U+2236 Ratio Symbol) is detected with fence.
+//
+// Reconciliation (ML-2J, R3-E): step 1e replaces ∶ U+2236 with ':'; the
+// skeleton becomes "wavegates:"; HasPrefix matches. NFKC alone does not convert
+// U+2236 (Sm category).
+func TestParseGatesLines_NearMiss_R3E_RatioSymbol(t *testing.T) {
+	line := "**Wave gates∶**" // ∶ U+2236
+	nearMiss2JWithFence(t, line)
+	nearMiss2JWithoutFence(t, line)
+}
+
+// TestParseGatesLines_NearMiss_R3E_ModifierLetterColon asserts that
+// "**Wave gates꞉**" (꞉ U+A789 Modifier Letter Colon) is detected with fence.
+//
+// Reconciliation (ML-2J, R3-E): step 1e replaces ꞉ U+A789 with ':'; the
+// skeleton becomes "wavegates:"; HasPrefix matches.
+func TestParseGatesLines_NearMiss_R3E_ModifierLetterColon(t *testing.T) {
+	line := "**Wave gates꞉**" // ꞉ U+A789
+	nearMiss2JWithFence(t, line)
+	nearMiss2JWithoutFence(t, line)
+}
+
+// TestParseGatesLines_NearMiss_R3F_HTMLStrong asserts that
+// "<strong>Wave gates:</strong>" is detected with fence.
+//
+// Reconciliation (ML-2J, R3-F): step 0 removes HTML tags via nearMissHTMLTagRe;
+// "<strong>wave gates:</strong>" becomes "wave gates:"; skeleton = "wavegates:".
+func TestParseGatesLines_NearMiss_R3F_HTMLStrong(t *testing.T) {
+	line := "<strong>Wave gates:</strong>"
+	nearMiss2JWithFence(t, line)
+	nearMiss2JWithoutFence(t, line)
+}
+
+// TestParseGatesLines_NearMiss_R3F_HTMLb asserts that
+// "<b>Gates da wave:</b>" is detected with fence.
+//
+// Reconciliation (ML-2J, R3-F): step 0 removes HTML tags; "<b>gates da wave:</b>"
+// becomes "gates da wave:"; skeleton = "gatesdawave:"; HasPrefix matches.
+func TestParseGatesLines_NearMiss_R3F_HTMLb(t *testing.T) {
+	line := "<b>Gates da wave:</b>"
+	nearMiss2JWithFence(t, line)
+	nearMiss2JWithoutFence(t, line)
+}
+
+// TestParseGatesLines_NearMiss_R3F_HTMLEntity asserts that
+// "**Wave gates&#58;**" (&#58; = ':') is detected with fence.
+//
+// Reconciliation (ML-2J, R3-F): step 0 applies html.UnescapeString; &#58; →
+// ':'; the skeleton becomes "wavegates:"; HasPrefix matches.
+func TestParseGatesLines_NearMiss_R3F_HTMLEntity(t *testing.T) {
+	line := "**Wave gates&#58;**"
+	nearMiss2JWithFence(t, line)
+	nearMiss2JWithoutFence(t, line)
+}
+
+// TestParseGatesLines_NearMiss_R3G_LatinAlpha asserts that
+// "**Wave gɑtes:**" (ɑ U+0251 Latin small letter Alpha) is detected with fence.
+//
+// Reconciliation (ML-2J, R3-G): U+0251 is added to nearMissHomoglyphs (ɑ→a);
+// the skeleton becomes "wavegates:"; HasPrefix matches. Script is Latin, which is
+// outside the declared residual (Latin/Cyrillic/Greek cannot be declared residual).
+func TestParseGatesLines_NearMiss_R3G_LatinAlpha(t *testing.T) {
+	line := "**Wave gɑtes:**" // ɑ U+0251
+	nearMiss2JWithFence(t, line)
+	nearMiss2JWithoutFence(t, line)
+}
+
+// ── R3-H false positive contra-arms ────────────────────────────────────────
+//
+// These tests affirm that prose lines mentioning "Wave gates:" or
+// "Gates da wave:" do NOT trigger the near-miss check when there is no
+// ```bash fence directly after them.
+//
+// Two scenarios per ADR item 2:
+//   - wave WITH a valid gate header (the fence belongs to the valid header)
+//   - wave WITHOUT any gate header
+
+// TestParseGatesLines_NearMiss_R3H_ProseNoFence_WithValidHeader asserts that
+// "Wave gates: see below" in prose, in a wave that has a valid "**Wave gates:**"
+// header BEFORE the prose line, does NOT trigger near-miss.
+//
+// Reconciliation (ML-2J, R3-H): the fence belongs to the valid gate header
+// (it appears before the prose line); boundGateFence starting at the prose line's
+// index finds no fence after it → no near-miss fires.
+func TestParseGatesLines_NearMiss_R3H_ProseNoFence_WithValidHeader(t *testing.T) {
+	doc := "## Wave 1 — test\n" +
+		"**Wave gates:**\n" +
+		"```bash\n" +
+		"echo ok\n" +
+		"```\n" +
+		"Wave gates: see below\n" // prose AFTER the fence; no bound fence after it
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, malformed := ParseWaves(lines, fenced)
+	if len(malformed) > 0 || len(waves) == 0 {
+		t.Fatalf("setup: malformed=%v waves=%d", malformed, len(waves))
+	}
+	w := waves[0]
+	cmds, err := ParseGatesLines(lines, w.Start, w.End)
+	if err != nil {
+		t.Errorf("R3H prose (with valid header): unexpected error: %v", err)
+	}
+	if len(cmds) != 1 || cmds[0].Text != "echo ok" {
+		t.Errorf("R3H prose (with valid header): expected [echo ok], got %v", cmds)
+	}
+}
+
+// TestParseGatesLines_NearMiss_R3H_ProseNoFence_NoValidHeader asserts that
+// "Wave gates: see below" in a wave with NO valid gate header also does NOT
+// trigger near-miss (zero gates remains legal when no fence is bound).
+//
+// Reconciliation (ML-2J, R3-H): no fence anywhere in the wave → boundGateFence
+// returns false → no near-miss. Zero gates (empty non-nil slice) is returned.
+func TestParseGatesLines_NearMiss_R3H_ProseNoFence_NoValidHeader(t *testing.T) {
+	doc := "## Wave 1 — test\n" +
+		"Wave gates: see below\n"
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, malformed := ParseWaves(lines, fenced)
+	if len(malformed) > 0 || len(waves) == 0 {
+		t.Fatalf("setup: malformed=%v waves=%d", malformed, len(waves))
+	}
+	w := waves[0]
+	cmds, err := ParseGatesLines(lines, w.Start, w.End)
+	if err != nil {
+		t.Errorf("R3H prose (no valid header): unexpected error: %v", err)
+	}
+	if len(cmds) != 0 {
+		t.Errorf("R3H prose (no valid header): expected [], got %v", cmds)
+	}
+}
+
+// TestParseGatesLines_NearMiss_R3H_ListItemNoFence_WithValidHeader asserts that
+// "- Gates da wave: rodados pelo Zeus" (a list item mentioning the PT gates
+// header with text after the colon) in a wave with a valid header does NOT fire.
+//
+// Reconciliation (ML-2J, R3-H): "- " is stripped by step 2; skeleton up to the
+// first ':' gives "gatesdawave:"; this is a HasPrefix match against
+// nearMissGatesTargets. However boundGateFence (starting at this line's index+1)
+// finds no fence after the list item → no near-miss.
+func TestParseGatesLines_NearMiss_R3H_ListItemNoFence_WithValidHeader(t *testing.T) {
+	doc := "## Wave 1 — test\n" +
+		"**Gates da wave:**\n" +
+		"```bash\n" +
+		"echo ok\n" +
+		"```\n" +
+		"- Gates da wave: rodados pelo Zeus\n" // list item AFTER the fence
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, malformed := ParseWaves(lines, fenced)
+	if len(malformed) > 0 || len(waves) == 0 {
+		t.Fatalf("setup: malformed=%v waves=%d", malformed, len(waves))
+	}
+	w := waves[0]
+	cmds, err := ParseGatesLines(lines, w.Start, w.End)
+	if err != nil {
+		t.Errorf("R3H list (with valid header): unexpected error: %v", err)
+	}
+	if len(cmds) != 1 || cmds[0].Text != "echo ok" {
+		t.Errorf("R3H list (with valid header): expected [echo ok], got %v", cmds)
+	}
+}
+
+// ── R3 contra-arms ──────────────────────────────────────────────────────────
+
+// TestParseGatesLines_NearMiss_R3_WaveGatewayContraArm asserts that
+// "**Wave gateway:**" with a bound fence does NOT trigger the near-miss check.
+//
+// Reconciliation (ML-2J): skeleton = "wavegateway:"; HasPrefix against
+// "wavegate:" would fire (gateway starts with "wavegate"), but "wavegate:" is
+// 9 chars and "wavegateway:"[8] = 'w', not ':'. The colon-terminated target
+// provides a natural word boundary. This test guards against future overshoots.
+func TestParseGatesLines_NearMiss_R3_WaveGatewayContraArm(t *testing.T) {
+	doc := "## Wave 1 — test\n" +
+		"**Wave gateway:**\n" +
+		"```bash\n" +
+		"echo gateway\n" +
+		"```\n"
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, malformed := ParseWaves(lines, fenced)
+	if len(malformed) > 0 || len(waves) == 0 {
+		t.Fatalf("setup: malformed=%v waves=%d", malformed, len(waves))
+	}
+	w := waves[0]
+	cmds, err := ParseGatesLines(lines, w.Start, w.End)
+	if err != nil {
+		t.Errorf("Wave gateway contra-arm: unexpected near-miss: %v", err)
+	}
+	_ = cmds
+}
+
+// TestParseGatesLines_NearMiss_R3_WaveGatesAreListedBelow asserts that
+// "Wave gates are listed below" (no colon, with extra words, with bound fence)
+// does NOT trigger near-miss.
+//
+// Reconciliation (ML-2J, R3-D): colonIdx = -1 after all substitutions; step 3
+// strips the whole string; skeleton = "wavegatesarelistedbelow"; exact equality
+// against "wavegates" in nearMissGatesTargetsNoColon does NOT match (because the
+// skeleton has extra letters after "wavegates").
+func TestParseGatesLines_NearMiss_R3_WaveGatesAreListedBelow(t *testing.T) {
+	doc := "## Wave 1 — test\n" +
+		"Wave gates are listed below\n" +
+		"```bash\n" +
+		"echo ok\n" +
+		"```\n"
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, malformed := ParseWaves(lines, fenced)
+	if len(malformed) > 0 || len(waves) == 0 {
+		t.Fatalf("setup: malformed=%v waves=%d", malformed, len(waves))
+	}
+	w := waves[0]
+	cmds, err := ParseGatesLines(lines, w.Start, w.End)
+	if err != nil {
+		t.Errorf("WaveGatesAreListedBelow contra-arm: unexpected near-miss: %v", err)
+	}
+	// No valid gate header → zero gates.
+	if len(cmds) != 0 {
+		t.Errorf("WaveGatesAreListedBelow contra-arm: expected [], got %v", cmds)
+	}
+}
+
+// ── ML-2J (corretivo) — R3-H: near-miss não atravessa cabeçalho válido ────────
+//
+// Risco 4 do relatório do ML-2J: `boundGateFence` parte da linha de prosa,
+// atravessa um `**Wave gates:**` válido (que não para a busca) e encontra a
+// cerca dele, disparando falso quase-cabeçalho. A decisão do arquiteto:
+// uma cerca pertence ao cabeçalho mais próximo acima dela; em `boundGateFence`
+// a busca para ao encontrar uma linha que case `GatesHeaderRe` fora de máscara.
+//
+// Três novos testes (nomes exatos do handoff):
+//   TestParseGatesLines_NearMiss_R3H_ProseBeforeValidHeader_NoFire
+//   TestParseGatesLines_NearMiss_R3H_ListBeforeValidHeader_NoFire
+//   TestParseGatesLines_NearMiss_OwnFenceBeforeValidHeader_Fires   (contra-braço)
+
+// nearMissSkeletonMatchesBool is a test-side wrapper around gatesNearMissSkeleton
+// that checks whether the skeleton of line matches any near-miss target.
+// Used by the NoFire tests to guard against vacuity: without this assertion,
+// a future skeleton change that stops matching prose would make the test pass trivially.
+func nearMissSkeletonMatchesBool(line string) bool {
+	skel := gatesNearMissSkeleton(line)
+	for _, target := range nearMissGatesTargets {
+		if strings.HasPrefix(skel, target) {
+			return true
+		}
+	}
+	for _, target := range nearMissGatesTargetsNoColon {
+		if skel == target {
+			return true
+		}
+	}
+	return false
+}
+
+// TestParseGatesLines_NearMiss_R3H_ProseBeforeValidHeader_NoFire asserts that
+// prose "Wave gates: see below" appearing BEFORE a valid "**Wave gates:**"
+// header and its fence does NOT trigger a near-miss error — the gates from the
+// valid header are returned (err=nil, cmds=[echo ok]).
+//
+// Reconciliation (ML-2J corretivo): a fence belongs to the nearest unmasked
+// header above it; boundGateFence stops at GatesHeaderRe so the fence after
+// the valid header is not bound to the prose line.
+func TestParseGatesLines_NearMiss_R3H_ProseBeforeValidHeader_NoFire(t *testing.T) {
+	proseLine := "Wave gates: see below"
+
+	// Guard: the prose line skeleton must actually match (otherwise the test is vacuous).
+	if !nearMissSkeletonMatchesBool(proseLine) {
+		t.Fatalf("vacuity guard: skeleton of %q does not match a near-miss target — test is pointless", proseLine)
+	}
+
+	// line 1: ## Wave 1 — test
+	// line 2: Wave gates: see below       ← near-miss prose, no bound fence
+	// line 3: **Wave gates:**             ← valid header
+	// line 4: ```bash
+	// line 5: echo ok
+	// line 6: ```
+	doc := "## Wave 1 — test\n" +
+		proseLine + "\n" +
+		"**Wave gates:**\n" +
+		"```bash\n" +
+		"echo ok\n" +
+		"```\n"
+
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, malformed := ParseWaves(lines, fenced)
+	if len(malformed) > 0 || len(waves) != 1 {
+		t.Fatalf("setup: malformed=%v waves=%d", malformed, len(waves))
+	}
+	w := waves[0]
+
+	cmds, err := ParseGatesLines(lines, w.Start, w.End)
+	if err != nil {
+		t.Errorf("R3H prose before valid header: unexpected error: %v", err)
+	}
+	if len(cmds) != 1 || cmds[0].Text != "echo ok" {
+		t.Errorf("R3H prose before valid header: expected [echo ok], got %v", cmds)
+	}
+}
+
+// TestParseGatesLines_NearMiss_R3H_ListBeforeValidHeader_NoFire asserts that
+// "- Gates da wave: rodados pelo Zeus" (a list item matching the near-miss
+// skeleton) appearing BEFORE a valid "**Wave gates:**" header does NOT trigger
+// a near-miss error — the gates from the valid header are returned.
+//
+// Reconciliation (ML-2J corretivo): same reasoning as ProseBeforeValidHeader;
+// boundGateFence stops at GatesHeaderRe before finding the fence that belongs
+// to the valid header.
+func TestParseGatesLines_NearMiss_R3H_ListBeforeValidHeader_NoFire(t *testing.T) {
+	listLine := "- Gates da wave: rodados pelo Zeus"
+
+	// Guard: the list line skeleton must match (otherwise the test is vacuous).
+	if !nearMissSkeletonMatchesBool(listLine) {
+		t.Fatalf("vacuity guard: skeleton of %q does not match a near-miss target — test is pointless", listLine)
+	}
+
+	// line 1: ## Wave 1 — test
+	// line 2: - Gates da wave: rodados pelo Zeus  ← near-miss list item
+	// line 3: **Wave gates:**                      ← valid header
+	// line 4: ```bash
+	// line 5: echo ok
+	// line 6: ```
+	doc := "## Wave 1 — test\n" +
+		listLine + "\n" +
+		"**Wave gates:**\n" +
+		"```bash\n" +
+		"echo ok\n" +
+		"```\n"
+
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, malformed := ParseWaves(lines, fenced)
+	if len(malformed) > 0 || len(waves) != 1 {
+		t.Fatalf("setup: malformed=%v waves=%d", malformed, len(waves))
+	}
+	w := waves[0]
+
+	cmds, err := ParseGatesLines(lines, w.Start, w.End)
+	if err != nil {
+		t.Errorf("R3H list before valid header: unexpected error: %v", err)
+	}
+	if len(cmds) != 1 || cmds[0].Text != "echo ok" {
+		t.Errorf("R3H list before valid header: expected [echo ok], got %v", cmds)
+	}
+}
+
+// TestParseGatesLines_NearMiss_OwnFenceBeforeValidHeader_Fires is the
+// contra-braço: "**Wave gates**" (bold, no colon) with its OWN fence before a
+// valid "**Wave gates:**" header DOES trigger a near-miss error at line 2.
+//
+// Reconciliation (ML-2J corretivo): the near-miss line at line 2 has a bound
+// ```bash at line 3 — found BEFORE the valid GatesHeaderRe header at line 5.
+// The stop at GatesHeaderRe only blocks the fence that belongs to the valid
+// header; the fence bound to the near-miss comes first and still fires.
+func TestParseGatesLines_NearMiss_OwnFenceBeforeValidHeader_Fires(t *testing.T) {
+	// line 1: ## Wave 1 — test
+	// line 2: **Wave gates**           ← near-miss (no colon, R3-D)
+	// line 3: ```bash                  ← fence bound to near-miss at line 2
+	// line 4: exit 1
+	// line 5: ```
+	// line 6: **Wave gates:**          ← valid header
+	// line 7: ```bash                  ← fence bound to valid header
+	// line 8: echo ok
+	// line 9: ```
+	doc := "## Wave 1 — test\n" +
+		"**Wave gates**\n" +
+		"```bash\n" +
+		"exit 1\n" +
+		"```\n" +
+		"**Wave gates:**\n" +
+		"```bash\n" +
+		"echo ok\n" +
+		"```\n"
+
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, malformed := ParseWaves(lines, fenced)
+	if len(malformed) > 0 || len(waves) != 1 {
+		t.Fatalf("setup: malformed=%v waves=%d", malformed, len(waves))
+	}
+	w := waves[0]
+
+	_, err := ParseGatesLines(lines, w.Start, w.End)
+	if err == nil {
+		t.Fatal("expected near-miss error for **Wave gates** with own fence, got nil")
+	}
+	if !strings.Contains(err.Error(), "near-miss gates header at line 2") {
+		t.Errorf("error %q does not name near-miss at line 2", err.Error())
 	}
 }

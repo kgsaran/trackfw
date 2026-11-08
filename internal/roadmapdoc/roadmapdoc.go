@@ -11,6 +11,7 @@ package roadmapdoc
 
 import (
 	"fmt"
+	"html"
 	"regexp"
 	"sort"
 	"strconv"
@@ -1283,24 +1284,32 @@ var nearMissOrderedListRe = regexp.MustCompile(`^\d+[.)]\s+`)
 
 // nearMissHomoglyphs maps visually confusable non-ASCII runes to their ASCII
 // equivalents for the letters that appear in "gates da wave" / "wave gates".
-// Only Cyrillic and Greek characters that are frequently mistaken for the
-// target ASCII letter are included; each mapping is justified below.
+// Only Cyrillic, Greek and Latin confusables are included; each mapping is
+// justified below.
+//
+// ML-2J: gatesNearMissSkeleton now applies ToLower BEFORE this map, so only
+// lowercase keys are reached at runtime. The uppercase entries (А, Е, Ѕ, Ѵ, Т)
+// are dead code after the reorder but are kept as documentation. The former Т→T
+// entry now needs а corresponding т→t (Cyrillic small TE, U+0442) because ToLower
+// maps Т (U+0422) to т, not to ASCII T. Without т→t, **Wave gaТes:** would escape.
 //
 // Cyrillic confusables (a, e, s, d, w, v, t):
 //   - U+0430 а → a   Cyrillic small letter A, indistinguishable in many fonts
-//   - U+0410 А → A   Cyrillic capital letter A
+//   - U+0410 А → A   Cyrillic capital A (dead code post-ML-2J; kept for doc)
 //   - U+0435 е → e   Cyrillic small letter IE, indistinguishable
-//   - U+0415 Е → E   Cyrillic capital letter IE
+//   - U+0415 Е → E   Cyrillic capital IE (dead code post-ML-2J; kept for doc)
 //   - U+0455 ѕ → s   Cyrillic small letter DZE
-//   - U+0405 Ѕ → S   Cyrillic capital letter DZE
+//   - U+0405 Ѕ → S   Cyrillic capital DZE (dead code post-ML-2J; kept for doc)
 //   - U+0501 ԁ → d   Cyrillic small letter KOMI DE (identical glyph to 'd')
 //   - U+051D ԝ → w   Cyrillic small letter WE
 //   - U+0475 ѵ → v   Cyrillic small letter IZHITSA (looks like 'v')
-//   - U+0474 Ѵ → V   Cyrillic capital letter IZHITSA
-//   - U+0422 Т → T   Cyrillic capital letter TE (identical glyph in many fonts)
+//   - U+0474 Ѵ → V   Cyrillic capital IZHITSA (dead code post-ML-2J; kept for doc)
+//   - U+0422 Т → T   Cyrillic capital TE (dead code post-ML-2J; kept for doc)
+//   - U+0442 т → t   Cyrillic small TE — added ML-2J (ToLower of Т U+0422 is т U+0442)
 //
-// Latin-script confusable (g):
+// Latin-script confusables (g, a):
 //   - U+0261 ɡ → g   Latin small letter SCRIPT G (a typographic variant of g)
+//   - U+0251 ɑ → a   Latin small letter ALPHA — added ML-2J (R3-G; script Latin)
 //
 // Greek confusables (a, e, v, w, t):
 //   - U+03B1 α → a   Greek small letter ALPHA (looks like italic 'a' in many fonts)
@@ -1309,24 +1318,25 @@ var nearMissOrderedListRe = regexp.MustCompile(`^\d+[.)]\s+`)
 //   - U+03C9 ω → w   Greek small letter OMEGA (glyph ≈ 'w')
 //   - U+03C4 τ → t   Greek small letter TAU (glyph ≈ 't')
 //
-// Residual (not included): characters that require a different font or context
-// to be confused, characters not in the target letter set, and capitals not
-// visually similar in common typefaces. The table is intentionally small and
-// explicit — a broad NFKC fold would map too many characters and generate
-// false positives on legitimate prose.
+// Residual (not included): characters outside Latin/Cyrillic/Greek scripts, rare
+// confusables, and those requiring a different font or context to be confused.
+// The table is intentionally small and explicit — a broad NFKC fold would map
+// too many characters and generate false positives on legitimate prose.
 var nearMissHomoglyphs = map[rune]rune{
 	'а': 'a', // а Cyrillic small a
-	'А': 'A', // А Cyrillic capital A
+	'А': 'A', // А Cyrillic capital A (dead code post-ML-2J)
 	'е': 'e', // е Cyrillic small IE
-	'Е': 'E', // Е Cyrillic capital IE
+	'Е': 'E', // Е Cyrillic capital IE (dead code post-ML-2J)
 	'ѕ': 's', // ѕ Cyrillic small DZE
-	'Ѕ': 'S', // Ѕ Cyrillic capital DZE
+	'Ѕ': 'S', // Ѕ Cyrillic capital DZE (dead code post-ML-2J)
 	'ԁ': 'd', // ԁ Cyrillic small Komi DE
 	'ԝ': 'w', // ԝ Cyrillic small WE
 	'ѵ': 'v', // ѵ Cyrillic small IZHITSA
-	'Ѵ': 'V', // Ѵ Cyrillic capital IZHITSA
-	'Т': 'T', // Т Cyrillic capital TE
+	'Ѵ': 'V', // Ѵ Cyrillic capital IZHITSA (dead code post-ML-2J)
+	'Т': 'T', // Т Cyrillic capital TE (dead code post-ML-2J)
+	'т': 't', // т Cyrillic small TE — added ML-2J (ToLower of Т is т, not T)
 	'ɡ': 'g', // ɡ Latin small script G
+	'ɑ': 'a', // ɑ Latin small letter ALPHA — added ML-2J (R3-G)
 	'α': 'a', // α Greek ALPHA
 	'ε': 'e', // ε Greek EPSILON
 	'ν': 'v', // ν Greek NU
@@ -1349,58 +1359,94 @@ var nearMissGatesTargets = []string{
 	"gatedawave:",
 }
 
+// nearMissGatesTargetsNoColon is the same set without the trailing colon, used
+// for exact-equality matching when the skeleton has no ':' after step 3
+// (ML-2J, R3-D: forms like "**Wave gates**" or "### Wave gates" without a colon).
+var nearMissGatesTargetsNoColon = []string{
+	"wavegates",
+	"wavegate",
+	"gatesdawave",
+	"gatedawave",
+}
+
+// nearMissHTMLTagRe matches a single HTML tag (open, close, or self-closing).
+// Used by gatesNearMissSkeleton step 0 to remove HTML markup before skeleton
+// computation (ML-2J, R3-F).
+var nearMissHTMLTagRe = regexp.MustCompile(`<[^>]*>`)
+
 // gatesNearMissSkeleton computes the normalised skeleton of a line for the
-// near-miss gates-header detection (D8, ADR-2026-11-08 / ML-2G, ML-2I-bis).
-// The four-step algorithm (ML-2I-bis, replaces the old e/e1/e2/e3 steps):
+// near-miss gates-header detection (D8, ADR-2026-11-08 / ML-2G, ML-2I-bis,
+// ML-2J).
 //
-//  1. Remove every rune in unicode.Cf, unicode.Other_Default_Ignorable_Code_Point
-//     and VS16 (U+FE0F). Apply NFKC normalization (maps full-width letters and
-//     Unicode math bold/italic/fraktur to their ASCII base forms). Apply the
-//     nearMissHomoglyphs table. Convert to lowercase.
+// The pipeline (ML-2J revises ML-2I-bis):
+//
+//  0. html.UnescapeString (&#58; → :, &amp; → &, etc.). Remove all HTML tags
+//     (<[^>]*>), so <strong>Wave gates:</strong> reduces to "Wave gates:".
+//
+//  1a. Remove every rune in unicode.Mn (covers VS1–VS14 U+FE00–U+FE0E),
+//     unicode.Cf, unicode.Other_Default_Ignorable_Code_Point, and U+2800
+//     (Braille Blank, category So). Also removes VS16 (U+FE0F, Mn).
+//
+//  1b. Apply NFKC normalization (maps full-width letters and Unicode math
+//     bold/italic/fraktur to their ASCII base forms).
+//
+//  1c. Convert to lowercase. This step runs BEFORE the homoglyph map so that
+//     capital confusables (Ԝ U+051C, Α U+0391, Ε U+0395) fold to their
+//     lowercase forms (ԝ, α, ε) which are already in the map.
+//
+//  1d. Apply nearMissHomoglyphs table (lowercase runes only are reached here).
+//
+//  1e. Treat ratio/modifier colons as ASCII ':': replace ∶ U+2236 (Sm) and
+//     ꞉ U+A789 (Lm) with ':'. NFKC does not map these.
 //
 //  2. Repeatedly strip leading ordered-list markers (`\d+[.)]\s+`) and other
-//     list/blockquote prefixes (>, -, *, + followed by space) until no prefix
-//     remains. This step is needed because digits and '.'/')' are NOT in the
-//     step-3 removal set, so "1. **Wave gates:**" would otherwise leave "1."
-//     before the target letters. Steps for '>', '-', '*', '+' are redundant
-//     after step 3 but kept in the loop so nested markers like "> 1. …" are
-//     fully stripped.
+//     list/blockquote prefixes (>, -, *, + followed by space).
 //
 //  3. Remove all runes from the set {*, _, #, |, >, -, +, ~} and all
-//     unicode.IsSpace runes from anywhere in the prefix up to and including the
-//     first ':'. Everything after the first ':' is kept as-is (only the prefix
-//     is compared). Backtick (`) is intentionally NOT in the set: a header
-//     cited in backtick prose (e.g. "`**Wave gates:**`") must not trigger the
-//     check.
-//
-//  4. The skeleton is the result. nearMissGatesTargets contains the bare
-//     letter+colon prefixes (e.g. "wavegates:", "gatesdawave:") that the
-//     skeleton is compared against using strings.HasPrefix.
-//
-// This single removal in step 3 handles all markdown delimiter variations
-// without needing a per-variant enumeration: **, __, ##, |…|, single *,
-// leading space, mixed delimiters, space before ':', colon outside bold, etc.
+//     unicode.IsSpace runes.
+//     - With colon: process up to and including the first ':'; leave the tail
+//       unchanged. The skeleton is compared with HasPrefix against
+//       nearMissGatesTargets ("wavegates:", etc.).
+//     - Without colon: process the entire string. The skeleton is compared
+//       with exact equality against nearMissGatesTargetsNoColon ("wavegates",
+//       etc.) — covers forms like "**Wave gates**" and "### Wave gates".
+//     Backtick (`) is intentionally NOT in the strip set: a header cited in
+//     backtick prose (e.g. "`**Wave gates:**`") must not trigger the check.
 func gatesNearMissSkeleton(line string) string {
-	// Step 1a: remove Cf, ODIP, VS16.
+	// Step 0: HTML entity decode and tag removal.
+	s := html.UnescapeString(line)
+	s = nearMissHTMLTagRe.ReplaceAllString(s, "")
+
+	// Step 1a: remove Mn (VS1–VS14 and other nonspacing marks), Cf, ODIP, U+2800.
+	// U+2800 is Braille Blank (category So): not Mn/Cf/ODIP, not IsSpace, but
+	// renders as a space in all tested Markdown renderers (R3-C, ML-2J).
 	var b strings.Builder
-	b.Grow(len(line))
-	for _, r := range line {
-		if r == vs16 ||
+	b.Grow(len(s))
+	for _, r := range s {
+		if r == 0x2800 || r == vs16 ||
+			unicode.Is(unicode.Mn, r) ||
 			unicode.Is(unicode.Cf, r) ||
 			unicode.Is(unicode.Other_Default_Ignorable_Code_Point, r) {
 			continue
 		}
 		b.WriteRune(r)
 	}
-	s := b.String()
+	s = b.String()
 
-	// Step 1-NFKC: apply NFKC normalization before the homoglyph map.
+	// Step 1b: NFKC normalization.
 	// norm.NFKC maps full-width letters (ｗ → w) and Unicode math bold/italic
 	// (𝐖 → W) to their ASCII base forms. Safe: NFKC does NOT change ASCII
 	// punctuation including *, _, :, # or the markdown delimiters.
 	s = norm.NFKC.String(s)
 
-	// Step 1-homoglyphs: apply homoglyph table.
+	// Step 1c: convert to lowercase BEFORE the homoglyph map.
+	// Ordering is critical (ML-2J, R3-A): capital confusables Ԝ U+051C, Α U+0391,
+	// Ε U+0395 lower to ԝ, α, ε respectively (via unicode.ToLower), which ARE in
+	// the map. Applying the map first would miss them because the uppercase forms
+	// were only in the map as dead code.
+	s = strings.ToLower(s)
+
+	// Step 1d: apply homoglyph table (lowercase keys only are reached here).
 	var hb strings.Builder
 	hb.Grow(len(s))
 	for _, r := range s {
@@ -1412,8 +1458,10 @@ func gatesNearMissSkeleton(line string) string {
 	}
 	s = hb.String()
 
-	// Step 1-lowercase: convert to lowercase.
-	s = strings.ToLower(s)
+	// Step 1e: treat alternative colon symbols as ASCII ':'.
+	// NFKC does not map ∶ U+2236 (Sm) or ꞉ U+A789 (Lm) to ':' (R3-E, ML-2J).
+	s = strings.ReplaceAll(s, "∶", ":")
+	s = strings.ReplaceAll(s, "꞉", ":")
 
 	// Step 2: repeatedly strip leading whitespace, blockquote, and list markers.
 	// Needed because digits and '.'/')' (ordered-list markers) survive step 3.
@@ -1452,19 +1500,25 @@ func gatesNearMissSkeleton(line string) string {
 		}
 	}
 
-	// Step 3: remove all runes from the strip set and all unicode.IsSpace runes
-	// from anywhere in the string up to and including the first ':'.
-	// Everything after the first ':' is kept unchanged (only the prefix
-	// participates in the target comparison). Backtick is NOT in the set
-	// so that "`**Wave gates:**`" in prose does not trigger detection.
+	// Step 3: remove strip-set runes and unicode.IsSpace from the prefix.
+	// Backtick is NOT in the strip set so that "`**Wave gates:**`" in prose
+	// does not trigger detection.
 	const stripSet = "*_#|>-+~"
 	colonIdx := strings.IndexByte(s, ':')
-	if colonIdx < 0 {
-		// No colon: strings.HasPrefix against any target will fail.
-		return s
-	}
 	var sb strings.Builder
 	sb.Grow(len(s))
+	if colonIdx < 0 {
+		// No colon: strip the entire string and return.
+		// The caller uses exact equality against nearMissGatesTargetsNoColon
+		// (R3-D, ML-2J: "**Wave gates**", "### Wave gates", "**Gates da wave**").
+		for _, r := range s {
+			if strings.ContainsRune(stripSet, r) || unicode.IsSpace(r) {
+				continue
+			}
+			sb.WriteRune(r)
+		}
+		return sb.String()
+	}
 	for _, r := range s[:colonIdx+1] { // process up to and including ':'
 		if strings.ContainsRune(stripSet, r) || unicode.IsSpace(r) {
 			continue
@@ -1473,6 +1527,72 @@ func gatesNearMissSkeleton(line string) string {
 	}
 	sb.WriteString(s[colonIdx+1:]) // tail after ':' unchanged
 	return sb.String()
+}
+
+// nearMissSkeletonMatches reports whether the skeleton of line matches any
+// entry in nearMissGatesTargets (HasPrefix) or nearMissGatesTargetsNoColon
+// (exact equality). It is extracted from the near-miss loop in ParseGatesLines
+// so that boundGateFence can reuse the same predicate: a fence belongs to the
+// nearest unmasked header above it, so the search must stop when it encounters
+// a line whose skeleton also matches — another near-miss sitting between the
+// original near-miss and its apparent fence would claim that fence first.
+// (ML-2J corretivo, R3-H)
+func nearMissSkeletonMatches(line string) bool {
+	skel := gatesNearMissSkeleton(line)
+	for _, target := range nearMissGatesTargets {
+		if strings.HasPrefix(skel, target) {
+			return true
+		}
+	}
+	for _, target := range nearMissGatesTargetsNoColon {
+		if skel == target {
+			return true
+		}
+	}
+	return false
+}
+
+// boundGateFence searches forward from lines[headerIdx+1] for the first
+// unmasked "```bash" line before the next section heading (## or ###) within
+// [headerIdx+1, waveEnd). It returns the 0-based index of the fence and true
+// when found, or -1 and false otherwise.
+//
+// This is the same gate-fence binding used by the valid-header path in
+// ParseGatesLines (the former inline j := i+1 loop), extracted into a function
+// (ML-2J) so that the near-miss check can reuse it: a near-miss line is only
+// an error when a fence is bound to it, anchoring the detection to the case
+// where the near-miss would actually be used as a gate declaration.
+//
+// The search skips masked lines (fenced or HTML-commented) exactly as the
+// valid-header path does. It stops at any unmasked ## or ### heading, treating
+// it as a section boundary — a fence belonging to a different section must not
+// be claimed as the gate fence.
+//
+// ML-2J corretivo (R3-H): the search also stops when it encounters an unmasked
+// line that matches GatesHeaderRe (a valid gate header). A fence belongs to the
+// nearest unmasked header above it; a valid header between the near-miss and
+// the fence owns that fence, so the near-miss has no bound fence and must not
+// fire. Without this stop, prose like "Wave gates: see below" appearing before
+// a valid "**Wave gates:**" would traverse past the valid header, find its fence,
+// and produce a false near-miss error.
+func boundGateFence(lines []string, fenced, htmlMask []bool, headerIdx, waveEnd int) (fenceIdx int, ok bool) {
+	for j := headerIdx + 1; j < waveEnd; j++ {
+		if fenced[j] || htmlMask[j] {
+			continue
+		}
+		if strings.TrimSpace(lines[j]) == "```bash" {
+			return j, true
+		}
+		// A valid gate header (or another near-miss) claims the fence from here on:
+		// stop and report no bound fence for headerIdx.
+		if GatesHeaderRe.MatchString(lines[j]) {
+			return -1, false
+		}
+		if strings.HasPrefix(lines[j], "## ") || strings.HasPrefix(lines[j], "### ") {
+			return -1, false
+		}
+	}
+	return -1, false
 }
 
 // ParseGatesLines implements rule 5. It returns each gate command together
@@ -1537,17 +1657,23 @@ func ParseGatesLines(lines []string, waveStart, waveEnd int) ([]GateCmd, error) 
 			htmlOpenLine)
 	}
 
-	// D8 near-miss check (ADR-2026-11-08 / ML-2G): scan every unmasked line in
-	// [waveStart, waveEnd) that does NOT match GatesHeaderRe. Compute its skeleton
-	// (see gatesNearMissSkeleton) and test whether it starts with one of the two
-	// canonical header strings. If so, return an error naming the line.
+	// D8 near-miss check (ADR-2026-11-08 / ML-2G, ML-2J): scan every unmasked line
+	// in [waveStart, waveEnd) that does NOT match GatesHeaderRe. Compute its
+	// skeleton (see gatesNearMissSkeleton) and test whether it matches one of the
+	// canonical header strings. If it does AND a gate fence is bound to it
+	// (boundGateFence), return an error naming the line.
+	//
+	// ML-2J fence-anchoring: a near-miss is only an error when the next unmasked
+	// "```bash" before the next section heading belongs to that line — the same
+	// binding rule as the valid gate header. Without a bound fence nothing is
+	// silently lost (the barrier would count zero gates either way), so the check
+	// would only produce false positives (R3-H prose lines like "Wave gates: see
+	// below"). Anchoring removes those false positives while keeping every case
+	// where the near-miss would actually be mistaken for a real gate declaration.
 	//
 	// Ordering rationale: this check runs BEFORE D3 so that a near-miss error is
 	// always reported first — a document with a near-miss plus a D3 (duplicate)
-	// violation is most usefully diagnosed at the near-miss level, since fixing it
-	// also removes the duplicate. Running it before D3 also ensures the check fires
-	// even when a valid header is present in the same wave (the ADR says "the rule
-	// holds even when a valid header exists").
+	// violation is most usefully diagnosed at the near-miss level.
 	//
 	// Masked lines (fenced or HTML-commented) are excluded: a near-miss inside a
 	// fence or comment is not visible to the author as a potential header and
@@ -1557,8 +1683,24 @@ func ParseGatesLines(lines []string, waveStart, waveEnd int) ([]GateCmd, error) 
 			continue
 		}
 		skel := gatesNearMissSkeleton(lines[i])
+		matched := false
 		for _, target := range nearMissGatesTargets {
 			if strings.HasPrefix(skel, target) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			// No-colon form: exact equality against no-colon targets.
+			for _, target := range nearMissGatesTargetsNoColon {
+				if skel == target {
+					matched = true
+					break
+				}
+			}
+		}
+		if matched {
+			if _, bound := boundGateFence(lines, fenced, htmlMask, i, waveEnd); bound {
 				return nil, fmt.Errorf(
 					"near-miss gates header at line %d: the line looks like a gates header but does not match the accepted form exactly (leading space, list/blockquote marker, invisible character, homoglyph or case) — write '**Wave gates:**' or '**Gates da wave:**' at column 0 (D8, ADR-2026-11-08)",
 					i+1)
@@ -1619,27 +1761,12 @@ func ParseGatesLines(lines []string, waveStart, waveEnd int) ([]GateCmd, error) 
 	// corpo de um ML, por exemplo — e o gate passaria a ser um comando que ninguem
 	// declarou como gate. Parar no heading mantem a cerca na MESMA secao do
 	// marcador, que e o vinculo que o formato promete.
-	j := i + 1
-	for j < waveEnd {
-		// A2/A1 (D8, ADR-2026-11-08 / ML-2C): skip lines that are masked by a
-		// code fence or HTML comment. A "```bash" inside an example fence (4-tick
-		// outer, 3-tick inner) or inside <!-- ... --> is not the gate fence.
-		if fenced[j] || htmlMask[j] {
-			j++
-			continue
-		}
-		t := strings.TrimSpace(lines[j])
-		if t == "```bash" {
-			break
-		}
-		if strings.HasPrefix(lines[j], "## ") || strings.HasPrefix(lines[j], "### ") {
-			// Chegou na proxima secao sem achar a cerca.
-			j = waveEnd
-			break
-		}
-		j++
-	}
-	if j >= waveEnd {
+	//
+	// ML-2J: the fence search is now performed by boundGateFence, which is also
+	// used by the near-miss check to determine whether a near-miss is bound to a
+	// fence. The logic is identical to the former inline j := i+1 loop.
+	j, bound := boundGateFence(lines, fenced, htmlMask, i, waveEnd)
+	if !bound {
 		return nil, fmt.Errorf("gates block not found: gates header at line %d is not followed by a ```bash fence before the next heading", i+1)
 	}
 	fenceStart := j

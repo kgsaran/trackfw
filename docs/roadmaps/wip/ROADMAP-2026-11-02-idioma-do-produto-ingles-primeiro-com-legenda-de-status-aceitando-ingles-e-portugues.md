@@ -403,7 +403,7 @@ positivo em prosa. O Zeus parou o ciclo de grafias: a emenda da ADR (rodada 3) f
 ML-2J e rodada 4 no ML-2K.
 
 ### ML-2J — Quase-cabeçalho ancorado na cerca, classes por categoria
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Files affected:**
 - `internal/roadmapdoc/roadmapdoc.go`
@@ -416,10 +416,19 @@ pelo cabeçalho válido e pelo quase-cabeçalho. Medir o acervo antes e parar se
 na regra.
 
 **Acceptance criteria:**
-- [ ] Teste por vetor acidental da rodada 3 (capitais, VS1, U+2800, sem dois-pontos em negrito e em `###`, `∶`, `꞉`, `<strong>`, `&#58;`, `ɑ`), com contra-braço
-- [ ] Falso positivo da rodada 3 coberto: prosa "Wave gates: …" sem cerca ligada não dispara, com e sem cabeçalho válido
-- [ ] Medição do acervo reportada; nenhum roadmap em `wip/` passa a reprovar
-- [ ] `go test ./internal/roadmapdoc/ ./internal/commands/ ./internal/validator/` verde
+- [x] Teste por vetor acidental da rodada 3 (capitais, VS1, U+2800, sem dois-pontos em negrito e em `###`, `∶`, `꞉`, `<strong>`, `&#58;`, `ɑ`), com contra-braço
+- [x] Falso positivo da rodada 3 coberto: prosa "Wave gates: …" sem cerca ligada não dispara, com e sem cabeçalho válido
+- [x] Medição do acervo reportada; nenhum roadmap em `wip/` passa a reprovar
+- [x] `go test ./internal/roadmapdoc/ ./internal/commands/ ./internal/validator/` verde
+
+*Auditoria (Zeus, 2026-11-08):* `boundGateFence` agora é a ligação única entre cabeçalho e cerca, usada pelo
+cabeçalho válido e pelo quase-cabeçalho. Ela para em `## `/`### ` e, desde o corretivo, também em
+`GatesHeaderRe`: uma cerca pertence ao cabeçalho mais próximo acima dela. Esse corretivo fecha o falso positivo
+da prosa escrita antes de um cabeçalho válido. Os fixtures antigos de quase-cabeçalho, que não tinham cerca,
+ganharam uma, e essa mudança está declarada. No acervo, um falso positivo de prosa em `done/` deixou de
+disparar; 0 em `wip/`; 2 erros de quase-cabeçalho continuam em `done/`. Gates rodados pelo Zeus: falsificação
+285, contrato do barrier 49 e `go test` dos três pacotes, todos rc=0. Os 22 testes novos existem pelos nomes
+reportados.
 
 ### ML-2K — Quarta rodada do red team (critério de convergência)
 **Status:** ⬜ Pendente

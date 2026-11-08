@@ -3050,26 +3050,52 @@ These are literal parsing rules. The binary implements them.
    (captured in `gates.error` for `show --json`, causes exit 2 for `barrier`). The E3 residual
    is closed. The rule applies only when the wave has **no** unmasked gate header, and covers a
    header inside a closed HTML comment as well; a masked example next to a real header is allowed.
-   **Near-miss gates header (D8, ADR-2026-11-08, ML-2G, ML-2I, ML-2I-bis):** an unmasked line
-   that does not match `GatesHeaderRe` but whose letters-only skeleton matches a target prefix
-   is a parse error naming the line. The skeleton is computed by `gatesNearMissSkeleton`:
-   (1) remove Unicode format chars (`Cf`), `Other_Default_Ignorable_Code_Point` chars and VS16
-   (`U+FE0F`); apply NFKC normalization (maps full-width letters and Unicode mathematical
-   bold/italic codepoints to ASCII base forms); apply homoglyph table (Cyrillic and Greek
-   homoglyphs → ASCII, see `nearMissHomoglyphs` in `roadmapdoc.go`); lowercase.
-   (2) repeatedly strip leading whitespace, blockquote `>`, and list markers (`-`, `*`, `+`
+   **Near-miss gates header (D8, ADR-2026-11-08, ML-2G, ML-2I, ML-2I-bis, ML-2J, ML-2J corretivo):** an
+   unmasked line that does not match `GatesHeaderRe` but whose skeleton matches a target is a
+   parse error naming the line, **provided** a ` ```bash ` fence is bound to it
+   (`boundGateFence` finds one between the near-miss line and the next section heading,
+   valid `GatesHeaderRe` line, or wave end). The search stops at the first unmasked
+   `GatesHeaderRe` line because a fence belongs to the nearest header above it; without this
+   stop, prose like `Wave gates: see below` before a valid `**Wave gates:**` would traverse
+   past the valid header, claim its fence, and produce a false near-miss error (ML-2J
+   corretivo, R3-H). Lines without a bound fence are not flagged, eliminating prose false-positives.
+   The skeleton is computed by `gatesNearMissSkeleton` (seven-step pipeline, ML-2J):
+   (0) `html.UnescapeString` + HTML-tag removal (`<[^>]*>`), so `<strong>Wave gates:</strong>`
+   reduces to `Wave gates:`.
+   (1a) Remove every rune in `unicode.Mn` (covers VS1–VS14 `U+FE00–U+FE0E` and other
+   non-spacing marks), `unicode.Cf`, `unicode.Other_Default_Ignorable_Code_Point`, and
+   `U+2800` (Braille Blank, category So — renders as a space but is none of the above).
+   (1b) NFKC normalization (maps full-width letters and Unicode math bold/italic/fraktur to
+   ASCII base forms).
+   (1c) `strings.ToLower` **before** the homoglyph table — capital confusables (Ԝ `U+051C`,
+   Α `U+0391`, Ε `U+0395`) fold to their lowercase forms (ԝ, α, ε) which are already in the
+   map; applying the map first would miss them.
+   (1d) Apply homoglyph table (`nearMissHomoglyphs` in `roadmapdoc.go`; Cyrillic/Greek/Latin
+   confusables → ASCII — only lowercase keys are reached after step 1c).
+   (1e) Replace `∶` (`U+2236`, Sm) and `꞉` (`U+A789`, Lm) with ASCII `:` — NFKC does not
+   map these.
+   (2) Repeatedly strip leading whitespace, blockquote `>`, and list markers (`-`, `*`, `+`
    followed by a space, or `\d+[.)]` followed by whitespace).
-   (3) remove ALL runes in the set `{*, _, #, |, >, -, +, ~}` and all `unicode.IsSpace` runes
-   from every position **up to and including the first `:`**; everything after the first `:` is
-   kept verbatim. Backtick (`` ` ``) is intentionally **not** in the strip set, so a header
-   quoted in backticks in prose does not fire.
-   If the resulting skeleton begins with `wavegates:`, `wavegate:`, `gatesdawave:`, or
-   `gatedawave:`, the line is a near-miss. The check runs for every unmasked non-matching line
-   in `[waveStart, waveEnd)`, **even when a valid header is also present**; it runs before D3
-   so a near-miss error is always reported first. Note: a `## Wave gates:` heading (ATX H2)
-   closes the preceding wave at that line index, placing the near-miss line at exactly
-   `waveEnd` (exclusive), so ParseGatesLines never scans it; `###` and deeper headings stay
-   inside the wave and do fire.
+   (3) Remove all runes in `{*, _, #, |, >, -, +, ~}` and all `unicode.IsSpace` runes.
+   With a colon: process only up to and including the first `:`; leave the tail verbatim.
+   The skeleton is compared with `HasPrefix` against `nearMissGatesTargets`
+   (`wavegates:`, `wavegate:`, `gatesdawave:`, `gatedawave:`).
+   Without a colon: process the entire string and compare with **exact equality** against
+   `nearMissGatesTargetsNoColon` (`wavegates`, `wavegate`, `gatesdawave`, `gatedawave`) —
+   catches forms like `**Wave gates**` and `### Wave gates`.
+   Backtick (`` ` ``) is intentionally **not** in the strip set, so a header quoted in
+   backticks in prose does not fire.
+   The check runs for every unmasked non-matching line in `[waveStart, waveEnd)`, **even
+   when a valid header is also present**; it runs before D3 so a near-miss error is always
+   reported first. Note: a `## Wave gates:` heading (ATX H2) closes the preceding wave at
+   that line index, placing the near-miss line at exactly `waveEnd` (exclusive), so
+   ParseGatesLines never scans it; `###` and deeper headings stay inside the wave and do fire.
+   **Declared residual:** homoglyph confusables outside the Latin/Cyrillic/Greek scripts
+   covered by `nearMissHomoglyphs`, and deliberate obfuscation that survives the full pipeline
+   (e.g. mixed-script homoglyphs, paraphrased wording). These are accepted residuals: a
+   document author who goes to that length to disguise a gate header could equally delete the
+   header — the net result is the same (no gate runs) and both are already within the author's
+   legitimate control.
    **`Lapsed:`/`Caducou:` invisible-filler guard (D8, ADR-2026-11-08, ML-2G):** the
    `lapsedLineHasContent` function rejects a continuation line whose post-colon content
    consists entirely of `Other_Default_Ignorable_Code_Point` characters (which includes the
