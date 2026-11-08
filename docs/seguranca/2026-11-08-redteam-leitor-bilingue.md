@@ -1084,3 +1084,121 @@ $ git diff --cached --stat
 (vazio)
 ```
 
+---
+
+## Rodada 5 (2026-11-08) — verificação
+
+**Binário branch:** `go build -o $SCRATCH/hades5/trackfw ./cmd/trackfw` sobre HEAD `7758b8ce` (ML-2L). Versão: `11.5.1`.
+**Escopo:** verificação fechada nos mecanismos A e B da Rodada 4, corrigidos no ML-2L. Critério ADR itens 1–5 (emenda rodada 4): APROVA quando nenhum vetor ACIDENTAL dos mecanismos A/B faz o gate sumir em silêncio.
+**Scratchpad:** `/private/tmp/claude-501/-Users-kgsaran-Sistemas-Desenvolvimento-workspace-trackfw/a247cc38-463b-4f99-8cb2-7400f9dec171/scratchpad/hades5/`
+**Instrumento:** `roadmap show --json` (wave 1) + `barrier --wave 1 --trust-local-gates` (exit codes). Fixtures em `$SCRATCH/hades5/proj/docs/roadmaps/wip/` sem `git init` (ml_scope: skipped em todos).
+
+---
+
+### Reverificação N2, N3, N4, N7, N8, N9
+
+| Vetor (Rodada 4) | Comando | Saída (wave 1 gates) | rc | Mecanismo do fix | Veredito R5 |
+|---|---|---|---|---|---|
+| N2 `**Wave 1 gates:**` + ` ```bash` | `barrier n2-wave1gates-fence --wave 1` | near-miss error at line 23 | 2 | step 4: `1` é dígito, removido do prefix → skeleton `wavegates:` → near-miss | **FECHADO** |
+| N3 `**Gates da wave 0:**` + ` ```bash` | `barrier n3-gatesdawave0-fence --wave 1` | near-miss error at line 23 | 2 | step 4: `0` removido → `gatesdawave:` → near-miss | **FECHADO** |
+| N4 `**Wave gates (blocking):**` + ` ```bash` | `barrier n4-wavegates-blocking --wave 1` | near-miss error at line 23 | 2 | step 4: `(blocking)` removido → `wavegates:` → near-miss | **FECHADO** |
+| N7 `**Wave gates** (run by Zeus)` + ` ```bash` | `barrier n7-wavegates-suffix --wave 1` | near-miss error at line 23 | 2 | step 4 no-colon path: `(run by Zeus)` removido → skeleton `wavegates` = exact-equality target → near-miss | **FECHADO** |
+| N8 `**Wave Gates:**` + ` ```shell` fence | `barrier n8-WaveGates-shell --wave 1` | near-miss error at line 23 | 2 | `boundGateFence` para no primeiro opener (` ```shell`): near-miss skeleton `wavegates:` → match → error | **FECHADO** |
+| N9 canonical + ` ```sh` gate | `barrier n9-canonical-sh --wave 1` | gates fence error "found ` ```sh`" | 2 | `boundGateFence` para em ` ```sh`; caller verifica info-string ≠ `bash` → error; nenhum bloco executado | **FECHADO** |
+| N9b canonical + ` ```sh` gate + ` ```bash` exemplo | `barrier n9b-canonical-sh-then-bash-example --wave 1` | gates fence error "found ` ```sh`" | 2 | boundGateFence para no ` ```sh` (primeiro opener) e nunca avança ao exemplo; `echo EXAMPLE_PICKED` não executado | **FECHADO** |
+
+**Contra-braço ctrl-canonical:** `**Wave gates:**` + ` ```bash` + `exit 1` → barrier rc=1, `gates: blocked`, `commands=['exit 1']` — gate executado corretamente.
+
+---
+
+### Etiquetas de info-string (mecanismo B, cabeçalho canônico)
+
+Todos via `barrier <fixture> --wave 1 --trust-local-gates`:
+
+| Info-string | Linha no fixture | Saída barrier | rc | Classificação |
+|---|---|---|---|---|
+| ` ```sh` | 25 | "gates fence ... must open with exactly ` ```bash` (found ` ```sh`)" | 2 | fail-closed, erro visível |
+| ` ```shell` | 25 | idem (found ` ```shell`) | 2 | fail-closed |
+| ` ```Bash` | 25 | idem (found ` ```Bash`) | 2 | fail-closed — case-sensitive por design |
+| ` ```bash ` (trailing space) | 25 | `gates: passed`, `commands=['echo TRAILSPACE']` | 1 (gate OK, outros bloqueiam) | ACEITO — TrimSpace remove espaço final; gate executa. Ficção, não silêncio. |
+| `~~~bash` | 25 | "gates fence ... (found `~~~bash`)" | 2 | fail-closed |
+
+Nenhuma dessas etiquetas faz o gate sumir em silêncio. Os rc=2 são erro explícito, não `status=passed` com `commands=[]`.
+
+---
+
+### Vetores acidentais adicionais dentro dos mecanismos A e B
+
+Medidos com `roadmap show --json` (wave 1):
+
+| Vetor | Mecanismo | Resultado wave 1 | Classificação |
+|---|---|---|---|
+| ` ```bash  # comment` (info-string com comentário) | B | error "found ` ```bash # a comment`" | fail-closed — TrimSpace não remove o comentário |
+| ` ````bash` (quatro crases) | B | error "found ` ````bash`" | fail-closed — DetectFenceMarker detecta 4 crases como opener válido; comparação ≠ ` ```bash` |
+| Cerca indentada 1–3 espaços (`   ```bash`) | B | `commands=['echo INDENTED_GATE']` — ACEITO | **FRICÇÃO** — TrimSpace remove o recuo; ` ```bash` indentado equivale ao raso por CommonMark. Gate executa corretamente. Sem silêncio. |
+| `**Wave gates [ci]:**` + ` ```bash` | A | near-miss error at line 23 | FECHADO — step 4: `[ci]` removido → `wavegates:` |
+| `**Wave gates (a (b)):**` + ` ```bash` | A | near-miss error at line 23 | FECHADO — step 4 rastreia profundidade; `(a (b))` inteiramente removido → `wavegates:` |
+
+---
+
+### Barrier ponta a ponta
+
+**Caso 1 — cabeçalho válido + ` ```bash` + `exit 1`:**
+
+```
+$ barrier ctrl-canonical --wave 1 --trust-local-gates --json
+{"checks":[...,{"name":"gates","status":"blocked","commands":["exit 1"],"evidence":[],"failures":["exit 1: exit 1"]},...]}
+rc=1
+```
+
+`exit 1` foi executado; gates=blocked. Barrier REPROVA — correto.
+
+**Caso 2 — cabeçalho válido + ` ```sh` gate:**
+
+```
+$ barrier ctrl-sh-only --wave 1 --trust-local-gates
+trackfw barrier: gates fence at line 25 must open with exactly '```bash' (found "```sh") — the barrier never skips to a later fence (D8, ADR-2026-11-08)
+rc=2
+```
+
+Barrier sai com rc=2 e erro explícito; nenhum bloco executado.
+
+---
+
+### Tabela de residual / fora do escopo
+
+| Classe | ADR item | Status |
+|---|---|---|
+| Homóglifo fora da tabela fechada (scripts não-latino/cirílico/grego) | Item 4 | Residual declarado — equivale a apagar o cabeçalho |
+| Ofuscação deliberada (zero-width splicing, fragmentação de bytes) | Item 4 | Residual declarado — defesa é revisão de diff |
+| Cerca indentada 1–3 espaços: aceita sem aviso | B (by design) | Ficção — CommonMark válido; gate executa; sem silêncio |
+| ` ```bash` com trailing space: aceita sem aviso | B (by design) | Ficção — TrimSpace intencional |
+| rc=2 não emite JSON válido com `--json` | B infra | Ficção — barrier falha antes de avaliar; formato de erro é texto, não JSON |
+
+Nenhum item desta tabela faz gate sumir em silêncio.
+
+---
+
+### Veredito da Rodada 5
+
+**APROVA**
+
+Todos os vetores dos mecanismos A e B da Rodada 4 (N2, N3, N4, N7, N8, N9) estão fechados no HEAD `7758b8ce`. Nenhum vetor acidental testado nesta rodada (dentro dos mecanismos A e B) faz o gate sumir em silêncio — todos produzem erro visível (rc=2) ou executam o gate corretamente.
+
+Ficções documentadas (nenhuma bloqueia o merge):
+1. ` ```bash ` com trailing space é aceito como gate válido sem aviso. TrimSpace intencional; o author não recebe diagnóstico, mas o gate executa.
+2. Cerca indentada 1–3 espaços é aceita como gate válido sem aviso. CommonMark por design.
+3. Etiquetas não-bash e ` ```bash  # comment` e ` ````bash` produzem rc=2 com erro legível em texto; o formato não é JSON mesmo com `--json`. Ficção de integração para orquestradores que dependem de `--json` em todos os casos de erro.
+
+---
+
+### Saída dos comandos git (Rodada 5)
+
+```
+$ git status --short
+(nada — working tree clean)
+
+$ git diff --cached --stat
+(vazio)
+```
+

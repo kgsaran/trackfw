@@ -468,11 +468,17 @@ roadmap continua sem erro nas cinco waves (`roadmap show --json`). Rodado pelo Z
 contrato do barrier 49 e `go test` do pacote, todos rc=0; o hash do arquivo confere com o reportado.
 
 ### ML-2M — Verificação do red team (rodada 5, escopo fechado)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** hades-tf
 **Files affected:** `docs/seguranca/2026-11-08-redteam-leitor-bilingue.md` (seção nova "Rodada 5")
 **Acceptance criteria:**
-- [ ] Vetores da rodada 4 refeitos com veredito; vetores novos só nos mecanismos A e B; veredito pelo critério do item 5 da emenda da rodada 3
+- [x] Vetores da rodada 4 refeitos com veredito; vetores novos só nos mecanismos A e B; veredito pelo critério do item 5 da emenda da rodada 3
+
+*Resultado:* **APROVA**. N2 a N9 estão FECHADOS. No barrier ponta a ponta, ```` ```bash ```` com `exit 1` reprova
+(rc=1) e ```` ```sh ```` sai com erro sem executar bloco nenhum (rc=2). Três fricções foram aceitas pelo Zeus
+sem ML: cerca indentada 1–3 espaços e ```` ```bash ```` com espaço no fim são aceitas e o gate roda (nada some);
+erro de parse sai com rc=2 em texto, sem JSON, mesmo com `--json`, que é o comportamento anterior desta REQ
+para qualquer erro de parse. O ciclo de red team convergiu.
 
 ### ML-2B — Merge e tag do leitor (Zeus)
 
