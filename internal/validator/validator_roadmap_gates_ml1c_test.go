@@ -1,7 +1,7 @@
 package validator
 
-// validator_roadmap_gates_ml1c_test.go — ML-1C (REQ de idioma, ADR-2026-11-08):
-// Wave0GateDuplicate messages and bilingual header citation in validate.
+// validator_roadmap_gates_ml1c_test.go — ML-1C + ML-1D (REQ de idioma, ADR-2026-11-08):
+// Wave0GateDuplicate messages, bilingual header citation, and parser-detail surfacing in validate.
 //
 // AC11 reconciliation (Regra Dura de Reconciliação): one sentence per test.
 //
@@ -20,6 +20,12 @@ package validator
 //     Affirms: a wip roadmap whose Wave 0 has no gate header at all emits a
 //     roadmap_gate_coverage message that cites both '**Wave gates:**' and
 //     '**Gates da wave:**'.
+//
+//   TestValidateRoadmapGateCoverage_MalformedUnterminatedFence_UsesParserDetail (ML-1D)
+//     Affirms: a wip roadmap whose Wave 0 gate block contains a ```bash fence that is never
+//     closed in the document triggers a roadmap_gate_coverage message that contains the
+//     parser's detail text (via the FenceMaskCheck fail-closed path) and does NOT contain
+//     "is not followed by" — the residual fix of ML-1D.
 
 import (
 	"os"
@@ -177,6 +183,77 @@ func TestValidateRoadmapGateCoverage_MalformedMessage_CitesEnAndPt(t *testing.T)
 	}
 	if !strings.Contains(found, "**Gates da wave:**") {
 		t.Errorf("malformed message must cite '**Gates da wave:**' (PT form), got: %q", found)
+	}
+}
+
+// roadmapWithUnterminatedGateFence is a wip roadmap whose Wave 0 gate block opens a
+// ```bash fence that is never closed in the document. This triggers the fail-closed
+// path in Wave0GateDiagnosisDetail (FenceMaskCheck catches the unterminated fence
+// before ParseGates runs), so the detail string is "unterminated code fence starting
+// at line N" — not the "gates block not found:" prefix — and the validator (ML-1D)
+// surfaces it verbatim instead of the bilingual "not followed by" form.
+const roadmapWithUnterminatedGateFence = `---
+status: wip
+---
+
+# Roadmap: Unterminated Fence Test
+
+## Wave 0 — Threat Model
+
+### ML-0A — work
+**Status:** ✅ Concluído
+
+**Wave gates:**
+` + "```bash\n" + `bash scripts/check.sh
+`
+
+// TestValidateRoadmapGateCoverage_MalformedUnterminatedFence_UsesParserDetail asserts
+// that an unterminated gate fence triggers a roadmap_gate_coverage message that
+// includes the parser's error detail and does NOT contain "is not followed by".
+func TestValidateRoadmapGateCoverage_MalformedUnterminatedFence_UsesParserDetail(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/roadmaps/wip", "docs/roadmaps/backlog", "docs/roadmaps/blocked",
+		"docs/roadmaps/done", "docs/roadmaps/analyzing", "docs/req", "docs/adr")
+	if err := os.WriteFile(dir+"/trackfw.yaml", []byte(minimalTrackfwYaml), 0644); err != nil {
+		t.Fatalf("write trackfw.yaml: %v", err)
+	}
+	if err := os.WriteFile(dir+"/docs/roadmaps/wip/ROADMAP-unterminated-fence.md", []byte(roadmapWithUnterminatedGateFence), 0644); err != nil {
+		t.Fatalf("write roadmap: %v", err)
+	}
+	chdir(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	violations, warnings, err := Validate()
+	if err != nil {
+		t.Fatalf("Validate() error: %v", err)
+	}
+
+	all := append(violations, warnings...)
+
+	// Find the gate coverage message — must contain "Wave 0 gate block is malformed"
+	// (the ML-1D form) and the parser's detail text. Anchoring on "is malformed" avoids
+	// accidentally picking up the roadmap_unterminated_fence message whose format is
+	// "<basename>: unterminated code fence starting at line N" (no "is malformed").
+	var found string
+	for _, msg := range all {
+		if strings.Contains(msg, "ROADMAP-unterminated-fence") && strings.Contains(msg, "is malformed") {
+			found = msg
+			break
+		}
+	}
+	if found == "" {
+		t.Fatalf("expected roadmap_gate_coverage violation with 'is malformed' for unterminated fence fixture, got violations=%v warnings=%v", violations, warnings)
+	}
+	// The message must contain the parser detail text — not a generic fixed string.
+	if !strings.Contains(found, "unterminated") {
+		t.Errorf("message should contain parser detail 'unterminated', got: %q", found)
+	}
+	// Regression guard: the old "is not followed by" text must NOT appear for this case.
+	for _, msg := range all {
+		if strings.Contains(msg, "ROADMAP-unterminated-fence") && strings.Contains(msg, "is not followed by") {
+			t.Errorf("unterminated-fence case must not emit the no-fence message, got: %q", msg)
+		}
 	}
 }
 

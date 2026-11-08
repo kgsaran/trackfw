@@ -1371,9 +1371,11 @@ func Wave0GateDiagnosis(data string) Wave0GateCause {
 func Wave0GateDiagnosisDetail(data string) (Wave0GateCause, string) {
 	lines := SplitRoadmapLines(data)
 	// Fail-closed on unterminated fence: a malformed document whose fence never
-	// closes can hide wave 0 entirely. Return Wave0GateMalformed — the cause that
-	// maps to "fence did not close before next heading or at all" (same enum value
-	// as the ParseGates error path below, same message in the validator).
+	// closes can hide wave 0 entirely. Return Wave0GateMalformed with the
+	// FenceMaskCheck error as the detail string. The validator (ML-1D) surfaces
+	// the detail verbatim when it is not the "gates block not found:" prefix — so
+	// this path produces "Wave 0 gate block is malformed: unterminated code fence
+	// starting at line N" rather than the bilingual "not followed by a fence" form.
 	if _, err := FenceMaskCheck(lines); err != nil {
 		return Wave0GateMalformed, err.Error()
 	}

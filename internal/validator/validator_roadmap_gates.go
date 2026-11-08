@@ -120,10 +120,24 @@ func validateRoadmapGatesCoverage() (wave0Msgs []string, wave0ExemptNotice []str
 					base,
 				))
 			case roadmapdoc.Wave0GateMalformed:
-				gateMsgs = append(gateMsgs, fmt.Sprintf(
-					"roadmap %q (wip) Wave 0 gate block was not found: '**Wave gates:**' or '**Gates da wave:**' is not followed by a ```bash fence before the next heading (AC7, ADR-2026-09-18 decision 4)",
-					base,
-				))
+				// ML-1D: surface the parser's detail verbatim when it names a cause
+				// other than "not followed by a fence" (e.g. unterminated fence caught
+				// by FenceMaskCheck, or unterminated gates fence caught by ParseGates).
+				// The "gates block not found:" prefix identifies the no-fence path —
+				// same discriminator style as the D3 "duplicate gates header:" check
+				// above. The no-fence case keeps the bilingual form because it names
+				// both header forms to help the author recognise the expected syntax.
+				if detail != "" && !strings.HasPrefix(detail, "gates block not found:") {
+					gateMsgs = append(gateMsgs, fmt.Sprintf(
+						"roadmap %q (wip) Wave 0 gate block is malformed: %s (AC7, ADR-2026-09-18 decision 4)",
+						base, detail,
+					))
+				} else {
+					gateMsgs = append(gateMsgs, fmt.Sprintf(
+						"roadmap %q (wip) Wave 0 gate block was not found: '**Wave gates:**' or '**Gates da wave:**' is not followed by a ```bash fence before the next heading (AC7, ADR-2026-09-18 decision 4)",
+						base,
+					))
+				}
 			case roadmapdoc.Wave0GateDuplicate:
 				gateMsgs = append(gateMsgs, fmt.Sprintf(
 					"roadmap %q (wip) Wave 0 gate block has a duplicate header: %s (AC7, ADR-2026-09-18 decision 4)",

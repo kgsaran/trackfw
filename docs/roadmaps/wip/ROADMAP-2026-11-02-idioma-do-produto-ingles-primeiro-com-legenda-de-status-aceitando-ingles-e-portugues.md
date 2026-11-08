@@ -179,7 +179,9 @@ na Wave 0 aparece com a mensagem errada. Mesma causa (contrato dos cabeçalhos),
 - [x] `go test ./internal/validator/ ./internal/roadmapdoc/` verde
 
 ### ML-1D — O validate repassa a causa real do bloco de gates malformado
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
+
+*Auditoria (Zeus, 2026-11-08):* `TestValidateRoadmapGateCoverage_MalformedUnterminatedFence_UsesParserDetail` existe e passa; os 13 testes de `roadmap_gate_coverage` verdes. Observação para o red team: `ParseGatesLines` só fecha a cerca de gates com ```` ``` ```` exato, enquanto o `FenceMask` aceita fechamento mais longo; o efeito é erro (fail-closed), não gate perdido.
 **Squad:** apolo-tf
 **Files affected:** `internal/validator/validator_roadmap_gates.go`, `internal/roadmapdoc/roadmapdoc.go` (só `Wave0GateDiagnosisDetail`) e testes
 
@@ -188,9 +190,9 @@ na Wave 0 aparece com a mensagem errada. Mesma causa (contrato dos cabeçalhos),
 que esconde a causa do parser, tocada no ML-1C; defeito conhecido se corrige agora.
 
 **Acceptance criteria:**
-- [ ] Cerca de gates não fechada na Wave 0: a mensagem do validate traz o texto do erro do parser
-- [ ] Bloco sem cerca continua com a mensagem atual (as duas formas de cabeçalho)
-- [ ] `go test ./internal/validator/ ./internal/roadmapdoc/` verde
+- [x] Cerca de gates não fechada na Wave 0: a mensagem do validate traz o texto do erro do parser
+- [x] Bloco sem cerca continua com a mensagem atual (as duas formas de cabeçalho)
+- [x] `go test ./internal/validator/ ./internal/roadmapdoc/` verde
 
 **Gates da wave:**
 ```bash
