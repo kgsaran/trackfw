@@ -316,11 +316,45 @@ não tiver o campo, o oráculo remove `gates` dos dois lados e só resume a head
 base e head passa a valer depois que o leitor bilíngue chegar à `main` (ADR D2).
 
 ### ML-2E — Segunda rodada do red team
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** hades-tf
 **Files affected:** `docs/seguranca/2026-11-08-redteam-leitor-bilingue.md` (seção nova "Rodada 2")
 **Acceptance criteria:**
-- [ ] Os sete achados da rodada 1 refeitos contra a branch, com veredito
+- [x] Os sete achados da rodada 1 refeitos contra a branch, com veredito
+
+*Resultado:* REPROVA. Seis achados estão fechados. O F está PARCIAL, porque os preenchedores Hangul
+(U+3164, U+115F, U+1160, U+FFA0, categoria Lo) ainda passam como razão. A sondagem (a) mediu o
+quase-cabeçalho silencioso: espaço inicial, lista, blockquote e homóglifo. O red team o classificou como
+residual aceito. O Zeus reclassificou: o sintoma é o mesmo do D8 (gate some em silêncio) e é defeito
+conhecido, então entra nesta REQ (emenda da ADR). As duas correções ficam no ML-2G e a rodada 3 no ML-2H.
+
+### ML-2G — Quase-cabeçalho de gates e razão só com preenchedor invisível são erro
+**Status:** ⬜ Pendente
+**Squad:** apolo-tf
+**Files affected:**
+- `internal/roadmapdoc/roadmapdoc.go`
+- `internal/roadmapdoc/gates_lines_test.go`
+- `internal/roadmapdoc/acceptance_lapsed_test.go`
+- `internal/roadmapdoc/compare_baseline_test.go`
+- `docs/cli-parity.md`
+
+**Actions:**
+1. `lapsedLineHasContent`: uma runa só conta se também não estiver em `unicode.Other_Default_Ignorable_Code_Point`.
+2. `ParseGatesLines`: uma linha fora de máscara na wave que não é cabeçalho válido, mas cujo esqueleto casa com um
+   dos cabeçalhos, retorna erro que nomeia a linha (emenda da ADR, rodada 2). Medir o acervo antes; se algum
+   roadmap em `wip/` cair na regra, parar e reportar.
+
+**Acceptance criteria:**
+- [ ] Teste por vetor (1 a 3 espaços, lista, blockquote, homóglifo cirílico, maiúsculas, U+3164/U+115F/U+1160/U+FFA0), com contra-braço
+- [ ] Medição do acervo reportada; nenhum roadmap em `wip/` passa a reprovar
+- [ ] `go test ./internal/roadmapdoc/ ./internal/commands/ ./internal/validator/` verde
+
+### ML-2H — Terceira rodada do red team
+**Status:** ⬜ Pendente
+**Squad:** hades-tf
+**Files affected:** `docs/seguranca/2026-11-08-redteam-leitor-bilingue.md` (seção nova "Rodada 3")
+**Acceptance criteria:**
+- [ ] N-1 e os vetores da sondagem (a) refeitos contra a branch, com veredito; veredito final APROVA ou REPROVA
 
 ### ML-2B — Merge e tag do leitor (Zeus)
 **Status:** ⬜ Pendente

@@ -106,6 +106,17 @@ máscara. Por isso: uma wave sem cabeçalho de gates válido que tenha cabeçalh
 comentário HTML falha com erro que nomeia a linha. Com um cabeçalho válido presente, exemplos mascarados
 continuam permitidos.
 
+**Emenda 2026-11-08 (Wave 2, red team rodada 2) — D8 cobre o quase-cabeçalho.** A rodada 2 mediu que
+`**Wave gates:**` com 1 a 3 espaços antes, como item de lista, em blockquote ou com homóglifo (`gаtes` em
+cirílico) não casa `GatesHeaderRe`, e a wave conta zero gates. Os casos com espaço e com homóglifo são
+visualmente idênticos ao cabeçalho válido, então a revisão humana não protege. A rodada 1 tinha aceitado
+isso como residual "por design"; esta emenda revoga essa aceitação. Uma linha fora de máscara que não é
+cabeçalho válido, mas cujo esqueleto (sem espaço inicial, sem marcador de lista ou blockquote, sem
+caracteres invisíveis, homóglifos levados ao ASCII, minúsculas) começa com um dos dois cabeçalhos, é erro
+que nomeia a linha. O conjunto de grafias aceitas continua fechado: o quase-cabeçalho é recusado, não
+aceito. Na mesma linha, a razão de `Lapsed:`/`Caducou:` não pode ter só caracteres
+`Other_Default_Ignorable_Code_Point` (preenchedores Hangul, de categoria Lo).
+
 ## Consequences
 
 - O acervo continua passando; roadmaps novos nascem em inglês depois da segunda tag.

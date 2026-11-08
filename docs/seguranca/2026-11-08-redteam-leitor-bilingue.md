@@ -316,3 +316,151 @@ $ git status --short
 $ git diff --cached --name-only
 (vazio)
 ```
+
+---
+
+## Rodada 2 (2026-11-08)
+
+**Binário:** `go build -o $SCRATCH/trackfw ./cmd/trackfw` sobre `feat/idioma-do-produto-ingles-primeiro` HEAD `7b2e30e9`. Versão reportada: `11.5.1`.
+**Binário main:** `git archive origin/main | tar -x` seguido de `go build`, mesma versão reportada `11.5.1`.
+**Fixtures:** `$SCRATCH/roadmaps/wip/` sem `git init` (ml_scope: skipped em todos).
+**Scratchpad:** `/private/tmp/claude-501/-Users-kgsaran-Sistemas-Desenvolvimento-workspace-trackfw/a247cc38-463b-4f99-8cb2-7400f9dec171/scratchpad/hades/`
+
+---
+
+### Reverificação dos sete achados da Rodada 1
+
+| Achado | Veredito R2 | Mecanismo do fix | Medição |
+|---|---|---|---|
+| A2 — j-loop aceita `\`\`\`bash\`` dentro de cerca de exemplo | FECHADO | `fenced[j] \|\| htmlMask[j]` guard adicionado ao j-loop (linha 1390) | barrier wave 1 fixture (4-tick outer + inner \`\`\`bash) → commands=["echo PICKED_REAL_GATE","exit 1"], status=blocked (exit 1 falhou) |
+| A1-EN — comentário HTML mascara gate EN | FECHADO | mesmo guard, `htmlMask[j]` impede parada em \`\`\`bash\` dentro de `<!-- -->` | barrier wave 1 → commands=["echo PICKED_REAL_GATE","exit 1"], status=blocked |
+| D1-EN — comentário HTML não fechado mascara cabeçalho | FECHADO | `HTMLCommentMaskCheck` detecta `<!--` não fechado antes do fim da wave → rc=2 | `trackfw barrier: unclosed HTML comment at line 13 may hide the gates header (D8, ADR-2026-11-08); rc=2` |
+| E3-EN — cerca balanceada mascara cabeçalho (ML-2F) | FECHADO | quando nenhum cabeçalho válido existe mas há um mascarado → erro explícito | `trackfw barrier: gates header at line 20 is inside a code fence or HTML comment and no unmasked gates header exists in this wave; rc=2` |
+| F — `Lapsed: ` NBSP / ZWSP passam como lapsed | PARCIAL → ver N-1 | `lapsedLineHasContent` foi adicionada: exige `\p{L}\|\p{N}\|\p{P}` | NBSP → `1 unmet acceptance criteria` (bloqueado ✓); ZWSP → `1 unmet acceptance criteria` (bloqueado ✓); mas Hangul Fillers (Lo) ainda bypassam — ver N-1 |
+| G — `abandoñed` Terminated em StatusCategory, Pending em StatusIsComplete | FECHADO | `hasDisallowedCombiningMark` adicionado a StatusCategory (linha 247) | decomposed `abando`+`ñ`+`ed`: barrier mls_complete → blocked ✓; roadmap move done → `cannot move: 1 blocker(s): ML-0A` rc=1 ✓. Ambas as superfícies bloqueiam. Caso precomposto (U+00F1 → "abandonñed" não aplicável; `abandoñed` = abandoñed): barrier blocks (not complete, como esperado — abandoned ∉ statusVocabulary), move-to-done passa (terminated, design correto). Plain `abandoned`: mesmo padrão — intencional (terminated ≠ complete). |
+| Oracle — script não executava `barrier` | FECHADO (parcial: inerte para este PR, fechado para runs futuros) | ML-2D adicionou `gates {commands, error}` ao schema de `roadmap show --json`; oracle compara quando base tem o campo | `TRACKFW_BASE_BIN=main bash scripts/check-marker-corpus-parity.sh` → `base lacked gates field` (old-binary mode); 243 roadmaps, rc=0. Com main como base, oracle está em modo strip — ParseGatesLines changes desta PR não são detectadas (documentado no cabeçalho do script). Inerte para este diff; fecha para futuros. |
+
+**Detalhe de G:** o advisor apontou que o fixture original da Rodada 1 estava com `abanñoned` (typo). O fixture corrigido usou `abando`+`ñ`+`ed` = `abandoñed` (combinação real). Medição re-executada com fixture correto — G confirmado FECHADO.
+
+---
+
+### N-1 — Hangul Filler (Lo) bypassa `lapsedLineHasContent` (BLOQUEANTE · MÉDIO · mesma causa que F)
+
+**Localização:** `internal/roadmapdoc/roadmapdoc.go` — `lapsedLineHasContent` (linha 1099)
+
+**Mecanismo:** `lapsedLineHasContent` aceita um rune se `unicode.IsLetter(r) || unicode.IsNumber(r) || unicode.IsPunct(r)`. Hangul Fillers têm categoria Unicode `Lo` (Letter, Other) → `unicode.IsLetter` retorna `true`. Nenhum dos quatro tem glifo visível em contexto padrão. O NBSP/ZWSP corrigido pela ML-2C é `Zs`/`Cf` — fora de `\p{L}` → correto. Os Hangul Fillers estão dentro de `\p{L}` → passam.
+
+**Classe medida:**
+
+| Code Point | Nome | Categoria | `IsLetter` | `IsODIP` | Resultado `acceptance_evidence` |
+|---|---|---|---|---|---|
+| U+3164 | Hangul Filler | Lo | true | true | `passed` (1 lapsed) — BYPASSA |
+| U+115F | Hangul Choseong Filler | Lo | true | true | `passed` (1 lapsed) — BYPASSA |
+| U+1160 | Hangul Jungseong Filler | Lo | true | true | `passed` (1 lapsed) — BYPASSA |
+| U+FFA0 | Halfwidth Hangul Filler | Lo | true | true | `passed` (1 lapsed) — BYPASSA |
+| U+2800 | Braille Blank | So | false | false | `blocked` (1 unmet) — CORRETO |
+
+Contra-braço: U+2800 (So, não letra) → `acceptance_evidence: blocked`. Texto real → `acceptance_evidence: passed`.
+
+**Medição direta:**
+
+```
+Fixture: ML-0A ✅ Done, [x] met, [ ] unmet seguido de "  Lapsed:ㅤ"
+branch: barrier --wave 0 --trust-local-gates --json
+  → acceptance_evidence: status=passed, lapsed=["ML-0A: 1 lapsed acceptance criteria"]
+  → lapsed_details: [{line:16, text:"ㅤ"}]
+  → gates: passed (echo OK: exit 0)
+  → overall: blocked apenas por validate (fixture sem governança — 86 violations)
+```
+
+Em repositório real com `validate` passando (como o próprio acervo desta branch), `acceptance_evidence` passaria e `barrier` passaria.
+
+**Fix path verificado:** `unicode.Other_Default_Ignorable_Code_Point` (tabela nativa do Go) cobre todos os 4 Hangul Fillers. Fix correto em `lapsedLineHasContent`:
+```go
+// antes:
+if unicode.IsLetter(r) || unicode.IsNumber(r) || unicode.IsPunct(r) {
+    return true
+}
+// depois:
+if (unicode.IsLetter(r) || unicode.IsNumber(r) || unicode.IsPunct(r)) &&
+    !unicode.Is(unicode.Other_Default_Ignorable_Code_Point, r) {
+    return true
+}
+```
+
+**Por que é BLOQUEANTE:** mesma causa que F (ML-2C fechou Zs/Cf mas não Lo fillers). Regra Dura: mesma causa → mesma REQ → mesmo PR. ML-2C declarou no commit "F: razão de Lapsed:/Caducou: só com NBSP/ZWSP não conta como caducado" — o fix foi parcial. Adicionar alias EN sem fechar a classe completa expande a superfície sem declarar como residual.
+
+---
+
+### Probe (a) — Variantes de cabeçalho próximas ao fechado (PRÉ-EXISTENTES, não bloqueiam)
+
+Medidos os vetores nomeados pelo revisor: 1-3 espaços ASCII antes de `**Wave gates:**`, lista (`- **Wave gates:**`), blockquote sem cabeçalho real, homóglifo cirílico (`gаtes`).
+
+| Variante | Comportamento | Compensação wave 0 | Compensação wave 1+ |
+|---|---|---|---|
+| ` **Wave gates:**` (1 espaço) | gates: passed cmds=[] — gate ignorado silenciosamente | `validate roadmap_gate_coverage` dispara | NENHUMA |
+| `  **Wave gates:**` (2 espaços) | idem | idem | NENHUMA |
+| `   **Wave gates:**` (3 espaços) | idem | idem | NENHUMA |
+| `- **Wave gates:**` (lista) | idem | idem | NENHUMA |
+| blockquote-only | idem | idem | NENHUMA |
+| `**Wave gаtes:**` (Cirílico) | idem | NENHUMA | NENHUMA |
+
+1-3 espaços ASCII e homóglifo cirílico renderizam identicamente ao cabeçalho correto na maioria dos renderizadores Markdown — o controle de revisão visual que justifica o conjunto fechado (G3-1) não funciona para eles.
+
+**Argumento de classificação:** estes são vetores da residual #4 da Rodada 1 ("near-miss de cabeçalho, fail-open em wave 1+, por design"). O mecanismo é `GatesHeaderRe` não corresponder — diferente do mecanismo D8 (cabeçalho mascarado dentro de cerca/comentário). A branch não introduziu este comportamento: `**Gates da wave:**` em `origin/main` tem a mesma falha para os mesmos vetores. A branch replica para `**Wave gates:**`.
+
+**Por que não bloqueia:** pré-existente em PT, coberto pela residual declarada, mecanismo diferente do D8. Wave 0 tem controle compensador. Wave 1+ não tem — é o trade-off declarado como aceitável.
+
+**Nota:** o vetor Cirílico não tem controle compensador em nenhuma wave. Para completar a postura D8 em wave 1+, o fix teria a forma "verificar se a linha satisfaz GatesHeaderRe após strip de whitespace/Cf/ODIP e emitir erro se a versão stripped matches mas a original não" — ML separado, REQ própria se a causa for considerada diferente do D8 mascarado.
+
+---
+
+### Probe (b) — Outros chars invisíveis em `Lapsed:` (resultado incorporado em N-1)
+
+U+2060 (Cf), U+FEFF (Cf), U+180E (Cf): todos BLOQUEADOS corretamente (`1 unmet acceptance criteria`). Cf não é `\p{L}`, o fix da ML-2C cobre. Apenas a classe Lo (Hangul Fillers) escapa — documentado em N-1.
+
+---
+
+### Probe (c) — Concordância `barrier` / `roadmap show --json` por wave
+
+Testados: (1) fixture normal (commands=[`echo wave0`]) — `show` retorna `gates.commands=["echo wave0"]`, barrier executa corretamente. (2) Fixture D1 (HTML não fechado) — `show` retorna `gates.error="unclosed HTML comment at line 13..."`, barrier retorna mesmo erro rc=2. (3) Fixture 2-wave: sed strip correto, `mls` não afetado. Ambas as superfícies concordam. PASS.
+
+---
+
+### Probe (d) — Oracle sed sem falso verde
+
+`sed '/^      "gates": {/,/^      },/d'` sobre fixture de 2 waves com comandos reais:
+```
+wave 0: gates stripped, mls intacto
+wave 1: gates stripped, mls intacto
+```
+Sem bleed entre waves. Sem remoção de `mls`. Sem falso verde. PASS.
+
+Oracle com main como base (`TRACKFW_BASE_BIN=main`): `base lacked gates field` → modo strip. Comparação de 243 roadmaps, validate idêntico. rc=0. Confirma que o oracle é correto mas **não detecta** as mudanças em `ParseGatesLines` desta PR (ML-2C/2D) quando main é base — inerte para este diff. Para futuros PRs onde HEAD usa gates e base também, o campo é comparado diretamente (ST-P4 testado; rc=1 quando commands diferem). Declarado explicitamente no cabeçalho do script.
+
+---
+
+### Veredito da Rodada 2
+
+**REPROVA**
+
+Motivo único de bloqueio:
+
+**N-1 — F parcial: Hangul Filler class (U+3164, U+115F, U+1160, U+FFA0) bypassa `lapsedLineHasContent` (BLOQUEANTE MÉDIO).** Todos os quatro são `IsLetter=true`, `IsODIP=true`. `acceptance_evidence` passa com `lapsed_details.text` = glifo invisível. Mesma causa que F (ML-2C). Regra Dura exige fechar no mesmo PR. Fix: `!unicode.Is(unicode.Other_Default_Ignorable_Code_Point, r)` como guarda adicional.
+
+Achados não bloqueantes:
+- Probe (a) variantes de near-miss: pré-existentes em PT, cobertos pela residual #4, mecanismo diferente do D8.
+- Probe (c) concordância barrier/show: PASS.
+- Probe (d) oracle sed: sem falso verde; modo strip-base documenta a janela de indetectabilidade.
+
+---
+
+### Saída dos comandos git (Rodada 2)
+
+```
+$ git status --short
+?? docs/seguranca/2026-11-08-redteam-leitor-bilingue.md
+
+$ git diff --cached --stat
+(vazio)
+```
