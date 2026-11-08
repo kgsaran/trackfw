@@ -236,9 +236,17 @@ func StatusCategory(marker string) StatusCat {
 		return StatusPending
 	}
 	first := stripVS16(fields[0])
-	// hasDisallowedCombiningMark check not needed here: even if it fires, the
-	// marker isn't complete (StatusIsComplete already returned false) and we fall
-	// through to Pending, which is the safe default.
+	// G (D8, ADR-2026-11-08 / ML-2C): a combining mark (e.g. ñ in "abandoñed")
+	// must not cause normalizeStatusToken to strip the diacritic and find the clean
+	// form in terminatedVocabulary. The comment that existed here claimed
+	// "falls through to Pending, which is the safe default" — this was factually
+	// wrong: normalizeStatusToken DOES strip combining marks and returns the base
+	// form, so "abandoñed" would normalise to "abandoned" and return StatusTerminated
+	// instead of StatusPending. StatusIsComplete guards with the same predicate; we
+	// apply it here too for consistency and correctness (ML-2C, red team finding G).
+	if hasDisallowedCombiningMark(first) {
+		return StatusPending
+	}
 	firstNorm := normalizeStatusToken(first)
 
 	if terminatedVocabulary[firstNorm] {
@@ -246,7 +254,13 @@ func StatusCategory(marker string) StatusCat {
 	}
 	// ❌ is ambiguous by first token: check second token.
 	if first == "❌" && len(fields) >= 2 {
-		secondNorm := normalizeStatusToken(fields[1])
+		second := stripVS16(fields[1])
+		// G: same guard on the second token — "❌ cañceled" must not normalize to
+		// "❌ canceled" and return StatusTerminated.
+		if hasDisallowedCombiningMark(second) {
+			return StatusPending
+		}
+		secondNorm := normalizeStatusToken(second)
 		if isCanceledToken(secondNorm) {
 			return StatusTerminated
 		}
@@ -890,6 +904,120 @@ func HTMLCommentMask(lines []string, fenced []bool) []bool {
 	return htmlCommentMask(lines, fenced)
 }
 
+// HTMLCommentMaskCheck reports whether the slice lines[0:waveEnd] (clamped to
+// len(lines)) has any unclosed HTML comment at the end of the range.
+// If there is, it returns (openLine, err) where openLine is the 1-based line number
+// of the unclosed "<!--" opener and the error message matches:
+// "unclosed HTML comment starting at line <n>".
+// If all comments close within [0, waveEnd), it returns (0, nil).
+//
+// Mirrors FenceMaskCheck: uses the same htmlCommentMaskKernel but over a prefix of
+// the document so that the check is scoped to a wave interval — a comment that opens
+// and closes before waveEnd does not trigger a false positive.
+//
+// D8 (ADR-2026-11-08 / ML-2C): ParseGatesLines uses this to detect an unclosed comment
+// that could silently hide the gates header, returning an error instead of zero gates.
+func HTMLCommentMaskCheck(lines []string, fenced []bool, waveEnd int) (int, error) {
+	if waveEnd > len(lines) {
+		waveEnd = len(lines)
+	}
+	_, openLine := htmlCommentMaskKernel(lines[:waveEnd], fenced[:waveEnd])
+	if openLine != 0 {
+		return openLine, fmt.Errorf("unclosed HTML comment starting at line %d", openLine)
+	}
+	return 0, nil
+}
+
+// htmlCommentMaskKernel is the shared implementation of htmlCommentMask and
+// HTMLCommentMaskCheck. It walks lines once, running the full state machine, and
+// returns:
+//   - mask: for each line index, true when the line's column 0 is inside a comment
+//     opened on a previous line (column-0 semantics — opening and closing lines are
+//     never masked).
+//   - openLine: the 1-based line number of the last unclosed "<!--" opener, or 0 if
+//     all comments are closed by the end of the slice.
+//
+// Splitting the kernel from the wrappers mirrors FenceMask/FenceMaskCheck/scanFences:
+// htmlCommentMask discards openLine, HTMLCommentMaskCheck uses it.
+func htmlCommentMaskKernel(lines []string, fenced []bool) (mask []bool, openLine int) {
+	mask = make([]bool, len(lines))
+	inComment := false
+	commentOpenLine := 0 // 1-based line of the last opened, unclosed comment
+	inCodeSpanN := 0     // > 0: currently inside a multi-line code span of this run length
+	for i, line := range lines {
+		if fenced[i] {
+			inCodeSpanN = 0 // fenced line interrupts any in-progress code span
+			continue
+		}
+		// Column-0 semantics: mask[i] reflects inComment at the START of the line.
+		mask[i] = inComment
+		pos := 0
+
+		// Handle continuation of a multi-line code span started on a previous line.
+		if inCodeSpanN > 0 {
+			if interruptsParagraph(line) {
+				// Paragraph-interrupting line ends the span. The opening backtick run
+				// was literal. Reset span state and let the state machine re-scan this
+				// line (it may contain a "<!--" that should open a comment).
+				inCodeSpanN = 0
+				// Fall through to the state machine below.
+			} else {
+				closeEnd := findCodeSpanClose(line, 0, inCodeSpanN)
+				if closeEnd < 0 {
+					// No close on this line; entire line is span interior. Skip it.
+					continue
+				}
+				// Close found: resume normal state-machine scanning from after close.
+				inCodeSpanN = 0
+				pos = closeEnd
+			}
+		}
+
+		// Walk the line as a state machine to determine inComment for the next line.
+		for pos < len(line) {
+			if inComment {
+				idx := strings.Index(line[pos:], "-->")
+				if idx < 0 {
+					break // comment still open at end of line
+				}
+				inComment = false
+				commentOpenLine = 0 // comment closed
+				pos += idx + 3
+			} else {
+				// findCommentOpenerOrSpan distinguishes a real "<!--" from an unclosed
+				// backtick run, enabling the multi-line span lookahead below.
+				openerPos, spanN, resumePos := findCommentOpenerOrSpan(line, pos)
+				if spanN > 0 {
+					// Unclosed backtick run. Check whether a matching close exists on a
+					// later line without crossing a paragraph-interrupting boundary.
+					if lookAheadCodeSpanClose(lines, fenced, i, spanN) {
+						// Multi-line span confirmed: enter span state and stop processing
+						// this line (the rest is span interior).
+						inCodeSpanN = spanN
+						break
+					}
+					// No close found across safe lines: treat the run as literal and
+					// continue scanning for "<!--" from after the run.
+					pos = resumePos
+					continue
+				}
+				if openerPos < 0 {
+					break // no opener found; stays closed
+				}
+				inComment = true
+				commentOpenLine = i + 1 // 1-based line number of this opener
+				// Advance past "<!--" before resuming (mirrors StripInlineHTMLComments
+				// "after := openerPos+4" — "-->x" at opener+0 is not a valid close).
+				pos = openerPos + 4
+			}
+		}
+	}
+	if inComment {
+		return mask, commentOpenLine
+	}
+	return mask, 0
+}
+
 // htmlCommentMask returns a boolean slice (same length as lines) where true means the
 // line's column 0 is inside an HTML comment block (<!-- ... -->). Used by
 // AcceptanceEvaluateFull (Caducou: detection) and MLStatusMarker (status detection)
@@ -944,77 +1072,41 @@ func HTMLCommentMask(lines []string, fenced []bool) []bool {
 // repeated per ML in mlScopeWaveIsStarted. For typical roadmaps (hundreds of lines,
 // tens of MLs) this is acceptable. If it becomes a bottleneck, elevate the mask to
 // the caller.
+//
+// This function is a thin wrapper over htmlCommentMaskKernel (D8, ADR-2026-11-08
+// ML-2C): HTMLCommentMaskCheck uses the same kernel to check for unclosed comments
+// within a wave interval without duplicating the state machine.
 func htmlCommentMask(lines []string, fenced []bool) []bool {
-	mask := make([]bool, len(lines))
-	inComment := false
-	inCodeSpanN := 0 // > 0: currently inside a multi-line code span of this run length
-	for i, line := range lines {
-		if fenced[i] {
-			inCodeSpanN = 0 // fenced line interrupts any in-progress code span
-			continue
-		}
-		// Column-0 semantics: mask[i] reflects inComment at the START of the line.
-		mask[i] = inComment
-		pos := 0
+	mask, _ := htmlCommentMaskKernel(lines, fenced)
+	return mask
+}
 
-		// Handle continuation of a multi-line code span started on a previous line.
-		if inCodeSpanN > 0 {
-			if interruptsParagraph(line) {
-				// Paragraph-interrupting line ends the span. The opening backtick run
-				// was literal. Reset span state and let the state machine re-scan this
-				// line (it may contain a "<!--" that should open a comment).
-				inCodeSpanN = 0
-				// Fall through to the state machine below.
-			} else {
-				closeEnd := findCodeSpanClose(line, 0, inCodeSpanN)
-				if closeEnd < 0 {
-					// No close on this line; entire line is span interior. Skip it.
-					continue
+// lapsedLineHasContent reports whether a lapsed continuation line (already matched
+// by LapsedContinuationRe) contains at least one visible character — a rune whose
+// Unicode category is Letter (\p{L}), Number (\p{N}), or Punctuation (\p{P}) — after
+// the "Caducou:"/"Lapsed:" prefix. Symbols (\p{S}) are intentionally excluded from
+// the allowed set (spec: \p{L}|\p{N}|\p{P} only).
+//
+// This check is performed BEFORE calling extractLapsedReason, which uses
+// strings.TrimSpace. TrimSpace strips NBSP (U+00A0, Zs) but does NOT strip ZWSP
+// (U+200B, Cf). Both satisfy the ASCII-only \S in LapsedContinuationRe yet carry
+// no visible glyph. A post-truncation check would also be wrong: extractLapsedReason
+// appends "…" (U+2026, IsPunct) when the input exceeds 120 runes, so 121 ZWSPs
+// would falsely pass a check on the returned text (F, D8, ADR-2026-11-08 / ML-2C).
+func lapsedLineHasContent(line string) bool {
+	stripped := strings.TrimLeft(line, " \t")
+	for _, prefix := range []string{"Caducou:", "Lapsed:"} {
+		rest, found := strings.CutPrefix(stripped, prefix)
+		if found {
+			for _, r := range rest {
+				if unicode.IsLetter(r) || unicode.IsNumber(r) || unicode.IsPunct(r) {
+					return true
 				}
-				// Close found: resume normal state-machine scanning from after close.
-				inCodeSpanN = 0
-				pos = closeEnd
 			}
-		}
-
-		// Walk the line as a state machine to determine inComment for the next line.
-		for pos < len(line) {
-			if inComment {
-				idx := strings.Index(line[pos:], "-->")
-				if idx < 0 {
-					break // comment still open at end of line
-				}
-				inComment = false
-				pos += idx + 3
-			} else {
-				// findCommentOpenerOrSpan distinguishes a real "<!--" from an unclosed
-				// backtick run, enabling the multi-line span lookahead below.
-				openerPos, spanN, resumePos := findCommentOpenerOrSpan(line, pos)
-				if spanN > 0 {
-					// Unclosed backtick run. Check whether a matching close exists on a
-					// later line without crossing a paragraph-interrupting boundary.
-					if lookAheadCodeSpanClose(lines, fenced, i, spanN) {
-						// Multi-line span confirmed: enter span state and stop processing
-						// this line (the rest is span interior).
-						inCodeSpanN = spanN
-						break
-					}
-					// No close found across safe lines: treat the run as literal and
-					// continue scanning for "<!--" from after the run.
-					pos = resumePos
-					continue
-				}
-				if openerPos < 0 {
-					break // no opener found; stays closed
-				}
-				inComment = true
-				// Advance past "<!--" before resuming (mirrors StripInlineHTMLComments
-				// "after := openerPos+4" — "-->x" at opener+0 is not a valid close).
-				pos = openerPos + 4
-			}
+			return false
 		}
 	}
-	return mask
+	return false
 }
 
 // extractLapsedReason parses a valid lapsed continuation line (already matched by
@@ -1119,10 +1211,16 @@ func AcceptanceEvaluateFull(lines []string, fenced []bool, ml MLBlock) Acceptanc
 			detail.Met++
 
 		case UnmetCriterionRe.MatchString(line):
-			// Check for valid Caducou: continuation on the very next line.
+			// Check for valid Caducou:/Lapsed: continuation on the very next line.
+			// F (D8, ADR-2026-11-08 / ML-2C): lapsedLineHasContent is checked BEFORE
+			// extractLapsedReason. LapsedContinuationRe uses ASCII-only \S, so NBSP
+			// (U+00A0) and ZWSP (U+200B) satisfy the regex but carry no visible glyph.
+			// Without this guard, "  Lapsed: <NBSP>" counts as a lapsed criterion with
+			// an empty reason — a silent classification error.
 			next := i + 1
 			if next < blockEnd && !fenced[next] && !htmlMask[next] &&
-				LapsedContinuationRe.MatchString(lines[next]) {
+				LapsedContinuationRe.MatchString(lines[next]) &&
+				lapsedLineHasContent(lines[next]) {
 				detail.Lapsed++
 				detail.LapsedReasons = append(detail.LapsedReasons, extractLapsedReason(lines[next], next+1))
 			} else {
@@ -1195,8 +1293,31 @@ type GateCmd struct {
 // A wave with no valid gate header returns an empty, non-nil slice — zero gates is
 // legal and the barrier never invents one.
 func ParseGatesLines(lines []string, waveStart, waveEnd int) ([]GateCmd, error) {
-	fenced := FenceMask(lines)
+	// Use scanFences directly (instead of FenceMask) to get both the mask and the
+	// 1-based line number of any unclosed fence opener — required for the D8 check.
+	fenced, openFenceLine := scanFences(lines)
 	htmlMask := htmlCommentMask(lines, fenced)
+
+	// D8 fail-closed (ADR-2026-11-08 / ML-2C): a mask anomaly spanning any part of
+	// [0, waveEnd) may silently hide the gates header. Return an error instead of
+	// falling through to "zero gates" (fail-open). The check is unconditional —
+	// an unclosed comment after the real header can hide a duplicate (D3) that
+	// would otherwise trigger a different error.
+	//
+	// Unclosed code fence: openFenceLine is 1-based; convert to 0-based index to
+	// compare with the exclusive waveEnd boundary.
+	if openFenceLine > 0 && openFenceLine-1 < waveEnd {
+		return nil, fmt.Errorf(
+			"unclosed code fence at line %d may hide the gates header (D8, ADR-2026-11-08)",
+			openFenceLine)
+	}
+	// Unclosed HTML comment in [0, waveEnd): HTMLCommentMaskCheck runs the kernel
+	// on lines[:waveEnd] so a comment that opens and closes before waveEnd is clean.
+	if htmlOpenLine, _ := HTMLCommentMaskCheck(lines, fenced, waveEnd); htmlOpenLine > 0 {
+		return nil, fmt.Errorf(
+			"unclosed HTML comment at line %d may hide the gates header (D8, ADR-2026-11-08)",
+			htmlOpenLine)
+	}
 
 	// ADR D3: pre-scan for every valid gate header in [waveStart, waveEnd).
 	// A valid header is one that matches GatesHeaderRe AND is not inside a fenced
@@ -1235,6 +1356,13 @@ func ParseGatesLines(lines []string, waveStart, waveEnd int) ([]GateCmd, error) 
 	// marcador, que e o vinculo que o formato promete.
 	j := i + 1
 	for j < waveEnd {
+		// A2/A1 (D8, ADR-2026-11-08 / ML-2C): skip lines that are masked by a
+		// code fence or HTML comment. A "```bash" inside an example fence (4-tick
+		// outer, 3-tick inner) or inside <!-- ... --> is not the gate fence.
+		if fenced[j] || htmlMask[j] {
+			j++
+			continue
+		}
 		t := strings.TrimSpace(lines[j])
 		if t == "```bash" {
 			break

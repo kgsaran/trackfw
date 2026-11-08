@@ -501,3 +501,52 @@ func TestLapsedContinuationRe_EN_TabRejects(t *testing.T) {
 		t.Error("LapsedContinuationRe must NOT match tab-indented '\\tLapsed: reason'")
 	}
 }
+
+// ── New tests (F, D8, ADR-2026-11-08 / ML-2C — lapsed visible-character guard) ──
+//
+//   TestAcceptanceEvaluateFull_F_LapsedNBSPOnly
+//     Affirms: a "  Lapsed: <NBSP>" continuation (NBSP = U+00A0, satisfies ASCII \S
+//     but has no visible glyph) causes the criterion to be counted as Unmet, not
+//     Lapsed — the lapsedLineHasContent guard rejects NBSP-only content (F fix).
+//
+//   TestAcceptanceEvaluateFull_F_LapsedZWSPOnly
+//     Affirms: a "  Lapsed:<ZWSP>" continuation (ZWSP = U+200B, satisfies ASCII \S
+//     and is not stripped by strings.TrimSpace, but has no visible glyph) causes the
+//     criterion to be counted as Unmet, not Lapsed (F fix).
+
+// TestAcceptanceEvaluateFull_F_LapsedNBSPOnly tests the F fix for NBSP.
+//
+// Contra-arm: detail.Lapsed must be 0, detail.Unmet must be 1.
+func TestAcceptanceEvaluateFull_F_LapsedNBSPOnly(t *testing.T) {
+	// F (D8, ADR-2026-11-08 / ML-2C): "  Lapsed: <NBSP>" satisfies LapsedContinuationRe
+	// because NBSP (U+00A0) matches ASCII \S, but lapsedLineHasContent rejects it
+	// (NBSP is Zs category, not Letter/Number/Punct/Symbol) — criterion is Unmet.
+	content := "### ML-1A — test\n**Status:** 🔄 In progress\n**Acceptance criteria:**\n- [ ] criterion\n  Lapsed:  \n"
+	lines, fenced, mls := mustParseMLs(t, content)
+	detail := AcceptanceEvaluateFull(lines, fenced, mls[0])
+	if detail.Lapsed != 0 {
+		t.Errorf("F-NBSP: detail.Lapsed = %d, want 0 — NBSP-only continuation must not classify as Lapsed", detail.Lapsed)
+	}
+	if detail.Unmet != 1 {
+		t.Errorf("F-NBSP: detail.Unmet = %d, want 1 — criterion with NBSP-only continuation must be Unmet", detail.Unmet)
+	}
+}
+
+// TestAcceptanceEvaluateFull_F_LapsedZWSPOnly tests the F fix for ZWSP.
+//
+// Contra-arm: detail.Lapsed must be 0, detail.Unmet must be 1.
+func TestAcceptanceEvaluateFull_F_LapsedZWSPOnly(t *testing.T) {
+	// F (D8, ADR-2026-11-08 / ML-2C): "  Lapsed:<ZWSP>" satisfies LapsedContinuationRe
+	// because ZWSP (U+200B) matches ASCII \S, and strings.TrimSpace does NOT strip it
+	// (not in unicode.IsSpace for Go). lapsedLineHasContent rejects ZWSP (Cf category,
+	// not Letter/Number/Punct/Symbol) — criterion is Unmet, not Lapsed.
+	content := "### ML-1A — test\n**Status:** 🔄 In progress\n**Acceptance criteria:**\n- [ ] criterion\n  Lapsed:​\n"
+	lines, fenced, mls := mustParseMLs(t, content)
+	detail := AcceptanceEvaluateFull(lines, fenced, mls[0])
+	if detail.Lapsed != 0 {
+		t.Errorf("F-ZWSP: detail.Lapsed = %d, want 0 — ZWSP-only continuation must not classify as Lapsed", detail.Lapsed)
+	}
+	if detail.Unmet != 1 {
+		t.Errorf("F-ZWSP: detail.Unmet = %d, want 1 — criterion with ZWSP-only continuation must be Unmet", detail.Unmet)
+	}
+}

@@ -2988,6 +2988,35 @@ These are literal parsing rules. The binary implements them.
    A wave with no gate header outside a fence or HTML comment declares zero gates
    — that is legal and yields a `gates` check with `status: "passed"` and an empty `commands`
    array. The barrier **never** invents a gate.
+   **D8 — fail-closed on anomalous masks (ADR-2026-11-08):** if an unclosed code fence or an
+   unclosed HTML comment spans any part of the wave boundary, `ParseGatesLines` returns a
+   non-nil error instead of silently returning zero gates. This is the "gate never disappears in
+   silence" guarantee. Concretely, before scanning for the gate header, the parser runs two
+   checks using the full-document fence map produced by `scanFences(lines)`:
+   - **Fence check:** `openFenceLine` from `scanFences` is non-zero (fence never closed in the
+     full document) and `openFenceLine-1 < waveEnd` — the unclosed fence starts before the wave
+     boundary. This catches the unclosed-fence scenario (an unclosed ```` ``` ```` swallows the
+     gate header).
+   - **HTML comment check:** `HTMLCommentMaskCheck(lines, fenced, waveEnd)` returns a non-zero
+     open line — an `<!--` opened within `[0, waveEnd)` never closes. This catches red-team
+     scenario D1 (unclosed `<!-- … -->` masks the gate header entirely).
+   Note: A1 and A2 are j-loop fixes (`fenced[j] || htmlMask[j]` guard), independent of D8.
+   They prevent a masked ```` ```bash ```` from being mistaken for the gate fence opener; they
+   do not make ParseGatesLines return an error.
+   Per-surface consequences:
+   - `barrier` with unclosed `<!--` (measured): `ParseGatesLines` returns error → `usageExit` →
+     **exit 2, stderr message, no JSON output** (even with `--json`).
+   - `barrier` with unclosed fence: D8's fence-check branch is **unreachable** from `barrier`'s
+     `runBarrier` — the document-level `FenceMaskCheck` call in that function fires first (before
+     `ParseGatesLines`) and exits with the same exit-2 message.
+   - `validate` with a wip roadmap whose Wave 0 triggers D8: `roadmap_gate_coverage` violation,
+     message `"Wave 0 gate block is malformed: <error>"`. `Wave0GateDiagnosisDetail` only inspects
+     Wave 0; D8 errors in Wave 1+ are not surfaced by validate.
+   - `serve` (live board): does not call `ParseGatesLines`; D8 errors are not surfaced here.
+   **Declared residual E3 (open vector; candidate ML in this REQ):** a 3-tick fence that opens,
+   masks the gate header, and closes — all within the wave — returns `openFenceLine=0` from
+   `scanFences` (fence is closed), so D8's fence check cannot fire. This scenario requires a
+   `scanFences` rework.
    **Consequence of per-line execution:** each gate command runs in its own `sh -c` process.
    There is no shared state between lines: `export`, `cd`, and variable assignments do not
    survive to the next line. Multi-line constructs — unbalanced quotes, `$(`, heredoc openers,

@@ -806,3 +806,272 @@ func TestParseGatesLines_D3_FencedPlusRealNoError(t *testing.T) {
 	}
 }
 
+// ── New tests (D8, ADR-2026-11-08 / ML-2C — red team fixes) ──────────────────
+//
+//   TestParseGatesLines_A2_ExampleFenceMaskedBash
+//     Affirms: a "```bash" that appears inside a 4-backtick outer example fence
+//     (fenced[j]=true) is NOT treated as the gate fence opener — the j-loop skips
+//     it and continues to the real "```bash" that follows the outer fence (A2 fix).
+//
+//   TestParseGatesLines_A1_HTMLCommentMaskedBash
+//     Affirms: a "```bash" that appears on its own line inside a multi-line HTML
+//     comment (htmlMask[j]=true) is NOT treated as the gate fence opener — the
+//     j-loop skips it and continues to the real "```bash" outside the comment (A1 fix).
+//
+//   TestParseGatesLines_D1_UnclosedHTMLCommentReturnsError
+//     Affirms: a wave containing an unclosed HTML comment (<!-- without -->) causes
+//     ParseGatesLines to return a non-nil error instead of silently returning zero
+//     gates (D8 fail-closed, ADR-2026-11-08 / ML-2C D1).
+//
+//   TestParseGatesLines_D8_UnclosedFenceBeforeHeaderReturnsError
+//     Affirms: when a code fence opens (and never closes anywhere in the document)
+//     before waveEnd, ParseGatesLines returns a non-nil error and nil cmds (D8
+//     fail-closed for unclosed fence). Contra-arm: same doc with the fence closed
+//     returns no error and finds the gate.
+//     Note: in `barrier`, the document-level FenceMaskCheck in runBarrier fires first
+//     for this scenario, so this D8 fence check is reachable via validator/Wave0GateDiagnosis
+//     but unreachable from `barrier`'s runBarrier codepath.
+//
+//   TestParseGatesLines_E3_CommonMark_ClosedFenceMasksHeader_Residual
+//     Affirms: when a 3-tick fence opens at line 1 and its interior ```bash-with-info-string
+//     does NOT close it (CommonMark: closing fence must have no info string), but the
+//     plain ``` later in the doc closes it — masking the gates header the whole time —
+//     ParseGatesLines returns zero gates WITHOUT error (E3 residual, cause is distinct
+//     from D1/A2: scanFences returns openLine=0 since all fences close). Open vector;
+//     candidate ML in this REQ.
+
+// TestParseGatesLines_A2_ExampleFenceMaskedBash tests the A2 fix.
+//
+// Contra-arm: the wrong gate text ("echo \"example gate\"") must NOT be returned.
+func TestParseGatesLines_A2_ExampleFenceMaskedBash(t *testing.T) {
+	// A2 (D8, ADR-2026-11-08 / ML-2C): a "```bash" inside a 4-backtick outer fence
+	// (fenced[j]=true) must be skipped — only the real "```bash" after the outer
+	// fence closes is the gate fence opener.
+	doc := "## Wave 0 — A2 test\n" +
+		"**Wave gates:**\n" +
+		"````\n" +
+		"This is an example fence:\n" +
+		"```bash\n" +
+		"echo \"example gate\"\n" +
+		"```\n" +
+		"````\n" +
+		"```bash\n" +
+		"echo \"real gate\"\n" +
+		"```\n"
+
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, _ := ParseWaves(lines, fenced)
+	if len(waves) != 1 {
+		t.Fatalf("expected 1 wave, got %d", len(waves))
+	}
+	w := waves[0]
+
+	gcmds, err := ParseGatesLines(lines, w.Start, w.End)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(gcmds) != 1 {
+		t.Fatalf("expected 1 GateCmd (real gate), got %d: %v", len(gcmds), gcmds)
+	}
+	if gcmds[0].Text == `echo "example gate"` {
+		t.Error("A2 not fixed: returned the gate from inside the example fence instead of the real gate")
+	}
+	if gcmds[0].Text != `echo "real gate"` {
+		t.Errorf("gcmds[0].Text = %q, want %q", gcmds[0].Text, `echo "real gate"`)
+	}
+}
+
+// TestParseGatesLines_A1_HTMLCommentMaskedBash tests the A1 fix.
+//
+// Contra-arm: the wrong gate text ("echo \"inside-comment gate\"") must NOT be returned.
+func TestParseGatesLines_A1_HTMLCommentMaskedBash(t *testing.T) {
+	// A1 (D8, ADR-2026-11-08 / ML-2C): a "```bash" that is inside an HTML comment
+	// (htmlMask[j]=true) must be skipped by the j-loop. The real "```bash" after
+	// "-->" must be used as the gate fence opener.
+	doc := "## Wave 0 — A1 test\n" +
+		"**Wave gates:**\n" +
+		"<!--\n" +
+		"```bash\n" +
+		"echo \"inside-comment gate\"\n" +
+		"```\n" +
+		"-->\n" +
+		"```bash\n" +
+		"echo \"real gate\"\n" +
+		"```\n"
+
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, _ := ParseWaves(lines, fenced)
+	if len(waves) != 1 {
+		t.Fatalf("expected 1 wave, got %d", len(waves))
+	}
+	w := waves[0]
+
+	gcmds, err := ParseGatesLines(lines, w.Start, w.End)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(gcmds) != 1 {
+		t.Fatalf("expected 1 GateCmd (real gate), got %d: %v", len(gcmds), gcmds)
+	}
+	if gcmds[0].Text == `echo "inside-comment gate"` {
+		t.Error("A1 not fixed: returned the gate from inside the HTML comment instead of the real gate")
+	}
+	if gcmds[0].Text != `echo "real gate"` {
+		t.Errorf("gcmds[0].Text = %q, want %q", gcmds[0].Text, `echo "real gate"`)
+	}
+}
+
+// TestParseGatesLines_D1_UnclosedHTMLCommentReturnsError tests the D1 / D8 fix.
+//
+// Contra-arm: the returned slice must be nil (error path, not empty-gates path).
+func TestParseGatesLines_D1_UnclosedHTMLCommentReturnsError(t *testing.T) {
+	// D1 fail-closed (D8, ADR-2026-11-08 / ML-2C): an unclosed HTML comment that
+	// spans the wave boundary forces ParseGatesLines to return an error — the
+	// comment could hide the gates header, so "zero gates" is not a safe result.
+	doc := "## Wave 0 — D1 test\n" +
+		"<!--\n" +
+		"**Wave gates:**\n" +
+		"```bash\n" +
+		"echo \"hidden gate\"\n" +
+		"```\n"
+	// No closing "-->" — the HTML comment is left unclosed.
+
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, _ := ParseWaves(lines, fenced)
+	if len(waves) != 1 {
+		t.Fatalf("expected 1 wave, got %d", len(waves))
+	}
+	w := waves[0]
+
+	gcmds, err := ParseGatesLines(lines, w.Start, w.End)
+	if err == nil {
+		t.Fatalf("expected an error for unclosed HTML comment, got nil (cmds=%v)", gcmds)
+	}
+	if !strings.Contains(err.Error(), "unclosed HTML comment") {
+		t.Errorf("D1: error %q does not contain \"unclosed HTML comment\"", err.Error())
+	}
+	if gcmds != nil {
+		t.Errorf("expected nil cmds on error path, got %v", gcmds)
+	}
+}
+
+// TestParseGatesLines_D8_UnclosedFenceBeforeHeaderReturnsError tests the D8 fail-closed
+// rule for the unclosed-fence branch.
+//
+// Contra-arm: the same wave with the fence closed (before the gates header) returns
+// no error and finds the real gate command.
+//
+// Note on reachability: in `trackfw barrier`, the document-level FenceMaskCheck in
+// runBarrier fires before ParseGatesLines is called, so this D8 branch is unreachable
+// from barrier's runBarrier. It is reachable via validator/Wave0GateDiagnosis and
+// direct unit callers. The test exercises ParseGatesLines directly.
+func TestParseGatesLines_D8_UnclosedFenceBeforeHeaderReturnsError(t *testing.T) {
+	// D8 unclosed fence (ADR-2026-11-08 / ML-2C): a 3-tick fence opens at line 2
+	// and is never closed anywhere in the document. openFenceLine=2 (1-based), and
+	// 2-1=1 < waveEnd=5. ParseGatesLines must return an error (fail-closed).
+	docUnclosed := "## Wave 0 — D8 unclosed fence\n" +
+		"```\n" +
+		"**Wave gates:**\n" +
+		"```bash\n" +
+		"echo \"hidden gate\"\n"
+	// No closing ``` — fence is never closed.
+
+	lines := SplitRoadmapLines(docUnclosed)
+	fenced := FenceMask(lines)
+	waves, _ := ParseWaves(lines, fenced)
+	if len(waves) != 1 {
+		t.Fatalf("expected 1 wave, got %d", len(waves))
+	}
+	w := waves[0]
+
+	gcmds, err := ParseGatesLines(lines, w.Start, w.End)
+	if err == nil {
+		t.Fatalf("D8 unclosed fence: expected error, got nil (cmds=%v)", gcmds)
+	}
+	if !strings.Contains(err.Error(), "unclosed code fence") {
+		t.Errorf("D8 unclosed fence: error %q does not contain \"unclosed code fence\"", err.Error())
+	}
+	if gcmds != nil {
+		t.Errorf("D8 unclosed fence: expected nil cmds on error path, got %v", gcmds)
+	}
+
+	// Contra-arm: a doc where the fence closes BEFORE the gate header — no error, gate found.
+	// (Note: adding a closing ``` to docUnclosed would give the E3 scenario: zero gates, no
+	// error, because the fence still masks the header throughout. So the contra-arm uses a
+	// structurally different doc where the closed fence precedes the gate header.)
+	docClosed := "## Wave 0 — D8 closed fence\n" +
+		"```\n" +
+		"some prose\n" +
+		"```\n" +
+		"**Wave gates:**\n" +
+		"```bash\n" +
+		"echo \"real gate\"\n" +
+		"```\n"
+	lines2 := SplitRoadmapLines(docClosed)
+	fenced2 := FenceMask(lines2)
+	waves2, _ := ParseWaves(lines2, fenced2)
+	if len(waves2) != 1 {
+		t.Fatalf("contra-arm: expected 1 wave, got %d", len(waves2))
+	}
+	w2 := waves2[0]
+	gcmds2, err2 := ParseGatesLines(lines2, w2.Start, w2.End)
+	if err2 != nil {
+		t.Fatalf("contra-arm: expected no error (fence closed), got %v", err2)
+	}
+	if len(gcmds2) != 1 || gcmds2[0].Text != `echo "real gate"` {
+		t.Errorf("contra-arm: expected [echo \"real gate\"], got %v", gcmds2)
+	}
+}
+
+// TestParseGatesLines_E3_CommonMark_ClosedFenceMasksHeader_Residual documents E3.
+//
+// E3 (red team, ADR-2026-11-08): a 3-tick fence that OPENS AND CLOSES WITHIN the wave
+// but masks the gates header due to CommonMark fence semantics. Because scanFences
+// returns openLine=0 (all fences close), D8's unclosed-fence check cannot fire.
+// ParseGatesLines returns zero gates without error — this is a fail-open residual.
+// Open vector; candidate ML in this REQ (cause is distinct from D1/A2 — scanFences
+// rework required, not j-loop or comment-mask fix).
+//
+// Contra-arm: scanFences must confirm openLine=0 (the residual characterisation).
+func TestParseGatesLines_E3_CommonMark_ClosedFenceMasksHeader_Residual(t *testing.T) {
+	// E3 residual: a 3-tick fence opens at line 2 (``` with no info string), masks
+	// the gates header at line 3. The ```bash at line 4 has an info string so it does
+	// NOT close the outer fence per CommonMark (closing fence must have no trailing
+	// content). The outer fence closes at line 6 (plain ```). scanFences returns
+	// openLine=0. ParseGatesLines sees no unmasked gate header → zero gates, no error.
+	doc := "## Wave 0 — E3 CommonMark residual\n" +
+		"```\n" +
+		"**Wave gates:**\n" +
+		"```bash\n" +
+		"echo \"gate\"\n" +
+		"```\n"
+	// The final ``` closes the outer fence (plain ```, no info string).
+
+	lines := SplitRoadmapLines(doc)
+	fenced := FenceMask(lines)
+	waves, _ := ParseWaves(lines, fenced)
+	if len(waves) != 1 {
+		t.Fatalf("expected 1 wave, got %d", len(waves))
+	}
+	w := waves[0]
+
+	gcmds, err := ParseGatesLines(lines, w.Start, w.End)
+	if err != nil {
+		t.Fatalf("E3 residual: expected no error (open vector), got %v", err)
+	}
+	if gcmds == nil {
+		t.Fatal("E3 residual: expected non-nil empty slice, got nil")
+	}
+	if len(gcmds) != 0 {
+		t.Errorf("E3 residual: expected zero gates, got %d: %v", len(gcmds), gcmds)
+	}
+	// Contra-arm: scanFences returns openLine=0 — confirms the residual characterisation.
+	_, openFenceLine := scanFences(lines)
+	if openFenceLine != 0 {
+		t.Errorf("E3: scanFences returned openFenceLine=%d, expected 0 — residual characterisation changed", openFenceLine)
+	}
+}
+

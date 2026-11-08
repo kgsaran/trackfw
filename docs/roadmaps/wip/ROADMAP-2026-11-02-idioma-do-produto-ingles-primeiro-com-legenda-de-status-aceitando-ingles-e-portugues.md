@@ -224,7 +224,7 @@ wave.
 - [x] Parecer com veredito e evidência por achado
 
 ### ML-2C — Gate nunca some em silêncio: correções do red team no parser
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Files affected:**
 - `internal/roadmapdoc/roadmapdoc.go`
@@ -232,6 +232,7 @@ wave.
 - `internal/roadmapdoc/acceptance_lapsed_test.go`
 - `internal/roadmapdoc/roadmapdoc_test.go`
 - `docs/cli-parity.md`
+- `internal/roadmapdoc/compare_baseline_test.go`
 
 *Por que existe:* red team da Wave 2 (`docs/seguranca/2026-11-08-redteam-leitor-bilingue.md`). Os aliases
 novos ampliaram superfícies que já falhavam em português.
@@ -249,7 +250,38 @@ novos ampliaram superfícies que já falhavam em português.
    comparando a função antiga e a nova num teste temporário.
 
 **Acceptance criteria:**
-- [ ] Um teste por achado (A2, A1, D1, E3, F com NBSP e ZWSP, G), cada um com contra-braço
+- [x] Um teste por achado (A2, A1, D1, E3, F com NBSP e ZWSP, G), cada um com contra-braço
+- [x] Medição do acervo reportada; nenhum roadmap em `wip/` passa a reprovar
+- [x] `go test ./internal/roadmapdoc/ ./internal/commands/ ./internal/validator/` verde
+
+*Auditoria (Zeus, 2026-11-08):* 806 waves medidas entre HEAD~1 e a árvore, diff de seleção de gates vazio;
+os 14 erros são D3 nas duas árvores. `compare_baseline_test.go` entrou no escopo porque o corpus congelado
+de testdata tem uma cerca de três crases nunca fechada na wave 2, e o D8 passou a reprovar ali. O E3 ficou
+com teste que **afirma o residual** (cerca balanceada que mascara o cabeçalho conta zero gates): a correção
+não cabia no item 2, que trata só de máscara não fechada. Vai para o ML-2F. A forma NFC pré-composta
+(`abandoñed` com U+00F1) não é divergência: `StatusIsComplete` e `StatusCategory` dobram o diacrítico do
+mesmo jeito, que é a política da ADR de 2026-08-29 (`concluído` → `concluido`).
+
+### ML-2F — E3: cabeçalho de gates só mascarado é erro
+**Status:** ⬜ Pendente
+**Squad:** apolo-tf
+**Files affected:**
+- `internal/roadmapdoc/roadmapdoc.go`
+- `internal/roadmapdoc/gates_lines_test.go`
+- `internal/roadmapdoc/compare_baseline_test.go`
+
+*Por que existe:* E3 do red team. Cerca de três crases com um ```` ```bash ```` interno fecha cedo pela
+regra CommonMark; a cerca de "fechamento" abre outra que cobre o cabeçalho real. As cercas ficam
+balanceadas, o D8 não dispara e a wave conta zero gates. O red team pediu REQ própria por ser outro
+mecanismo (`scanFences`, não o laço do bloco), mas a ADR D8 governa o sintoma ("gate nunca some em
+silêncio"), então fica nesta REQ.
+
+**Actions:** em `ParseGatesLines`, uma wave sem cabeçalho de gates válido que tenha linha casando
+`GatesHeaderRe` sob `fenced` ou `htmlMask` retorna erro que nomeia a linha. Medir antes no acervo quantas
+waves caem na regra; se algum roadmap em `wip/` cair, parar e reportar.
+
+**Acceptance criteria:**
+- [ ] O teste do residual E3 passa a afirmar erro, com contra-braço (wave sem cabeçalho nenhum continua zero gates sem erro)
 - [ ] Medição do acervo reportada; nenhum roadmap em `wip/` passa a reprovar
 - [ ] `go test ./internal/roadmapdoc/ ./internal/commands/ ./internal/validator/` verde
 
@@ -263,7 +295,7 @@ novos ampliaram superfícies que já falhavam em português.
 
 **Actions:** `roadmap show --json` ganha, por wave, a lista de comandos de gate e o erro de parse (campo
 aditivo). O oráculo compara esse campo quando os dois binários o emitem; enquanto a base não o tiver,
-compara com o campo retirado e imprime a lista da head. Depende do ML-2C (mesmo `docs/cli-parity.md`).
+compara com o campo retirado e imprime a lista da head. Depende do ML-2C (mesmo `docs/cli-parity.md`). Roda em paralelo ao ML-2F (arquivos disjuntos) e documenta a regra do E3 em `docs/cli-parity.md`, porque o ML-2F não toca esse arquivo.
 
 **Acceptance criteria:**
 - [ ] `go test` do pacote verde; `bash scripts/check-marker-corpus-parity.sh --self-test` e execução rc=0

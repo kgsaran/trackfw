@@ -439,6 +439,62 @@ func TestStatusCategory_BlockedStillPending(t *testing.T) {
 	}
 }
 
+// TestStatusCategory_G_CombiningMarkInFirstToken asserts that a combining mark in
+// the first token prevents classification as StatusTerminated (G fix, D8,
+// ADR-2026-11-08 / ML-2C). "abandoñed" must NOT normalize to "abandoned" and
+// return StatusTerminated — it must return StatusPending.
+//
+// Reconciliation: affirms the G fix that hasDisallowedCombiningMark now gates the
+// terminatedVocabulary lookup in StatusCategory, matching the guard in StatusIsComplete.
+func TestStatusCategory_G_CombiningMarkInFirstToken(t *testing.T) {
+	// G (D8, ADR-2026-11-08 / ML-2C): a combining mark (Mn codepoint) on the first
+	// token must cause StatusCategory to return StatusPending, not StatusTerminated.
+	// Without the fix, normalizeStatusToken would strip the combining mark and return
+	// "abandoned", which is in terminatedVocabulary.
+	//
+	// Note: only NFD forms (explicit Mn codepoints) are caught by hasDisallowedCombiningMark.
+	// NFC precomposed forms (e.g. ñ = U+00F1, category Ll) are not caught — this is
+	// documented in the hasDisallowedCombiningMark comment and is a declared residual.
+	for _, marker := range []string{
+		"abandoñed", // NFD: n + U+0303 combining tilde (Mn)
+	} {
+		cat := StatusCategory(marker)
+		if cat != StatusPending {
+			t.Errorf("G: StatusCategory(%q) = %v, want StatusPending — combining mark must not normalize to terminated form", marker, cat)
+		}
+	}
+	// Contra-arm: "abandoned" (clean, no combining mark) must still return StatusTerminated.
+	if cat := StatusCategory("abandoned"); cat != StatusTerminated {
+		t.Errorf("G contra-arm: StatusCategory(%q) = %v, want StatusTerminated", "abandoned", cat)
+	}
+}
+
+// TestStatusCategory_G_CombiningMarkInSecondToken asserts that a combining mark in
+// the second token of an "❌ ..." marker prevents classification as StatusTerminated.
+// "❌ cañceled" must return StatusPending, not StatusTerminated (G fix, D8).
+//
+// Reconciliation: affirms that the hasDisallowedCombiningMark guard applies to
+// fields[1] in the ❌ branch of StatusCategory, not only to fields[0].
+func TestStatusCategory_G_CombiningMarkInSecondToken(t *testing.T) {
+	// G (D8, ADR-2026-11-08 / ML-2C): combining mark in second token (ñ in "cañceled")
+	// must cause StatusCategory to return StatusPending, not StatusTerminated. Without
+	// the fix, normalizeStatusToken would strip the mark and isCanceledToken would match.
+	// Note: only NFD forms (explicit Mn codepoints) are caught by hasDisallowedCombiningMark.
+	// NFC precomposed forms are not caught — declared residual.
+	for _, marker := range []string{
+		"❌ cãnceled", // NFD: a + U+0303 combining tilde (Mn)
+	} {
+		cat := StatusCategory(marker)
+		if cat != StatusPending {
+			t.Errorf("G: StatusCategory(%q) = %v, want StatusPending — combining mark in second token must not normalize to canceled form", marker, cat)
+		}
+	}
+	// Contra-arm: "❌ canceled" (clean) must still return StatusTerminated.
+	if cat := StatusCategory("❌ canceled"); cat != StatusTerminated {
+		t.Errorf("G contra-arm: StatusCategory(%q) = %v, want StatusTerminated", "❌ canceled", cat)
+	}
+}
+
 // ── Corpus measurement — report-only, never fails ─────────────────────────────
 
 // TestCorpusMeasurement_ReportOnly logs the current count of done/ roadmaps with
