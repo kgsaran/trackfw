@@ -557,7 +557,9 @@ que só **alimentam** PT ao parser (§4(ii)) ficam como estão.
 - `internal/generators/agentfiles.go`
 - `internal/generators/update.go`
 - `internal/identity/preset.go`
-- os `_test.go` correspondentes
+- `internal/generators/claudemd_test.go`
+- `internal/generators/scaffold_test.go`
+- `internal/generators/update_test.go`
 - `.claude/commands/trackfw/*.md` (9 cópias versionadas, regeneradas a partir de `scaffold.go`)
 
 `claudemd.go` e `agentfiles.go` são meta-geradores: instruem o agente consumidor a escrever `⬜ Pendente` e
@@ -590,7 +592,10 @@ cerca e passado a `ParseGatesLines` não dá erro na Wave 0 e retorna o gate `ex
 - `internal/commands/baseline.go`
 - `internal/commands/barrier.go` (só a mensagem G1 da linha ~1842; o leitor G3-6 continua bilíngue)
 - `internal/commands/doctor.go`, `internal/commands/init.go` (mensagens G1 achadas pelo grep do ML)
-- os `_test.go` correspondentes
+- `internal/commands/barrier_lapsed_test.go`
+- `internal/commands/branch_new_base_e2e_test.go`
+- `internal/commands/commit_test.go`
+- `internal/commands/help_test.go`
 **Acceptance criteria:**
 - [x] Texto descritivo dos presets em `identity_wizard.go` em inglês, nomes mantidos (AC5, ADR D6)
 - [x] Mensagens emitidas por esses arquivos em inglês; testes que afirmavam o texto PT atualizados
@@ -619,7 +624,9 @@ cerca e passado a `ParseGatesLines` não dá erro na Wave 0 e retorna o gate `ex
 - `internal/generators/roadmap.go` (só mensagens G1, ~linhas 350–468; o leitor G3-12 continua bilíngue)
 - `scripts/check-gates-falsify.sh` (cenário `update-config-loader/go-baseline` e qualquer outro que fixe mensagem PT agora traduzida)
 - `scripts/check-agent-models-parity.sh` (3 cópias congeladas de mensagens de `config.go`)
-- os `_test.go` correspondentes
+- `internal/identity/identity_test.go`
+- `internal/validator/validator_git_branch_guard_test.go`
+- `internal/validator/validator_req_contained_test.go`
 **Acceptance criteria:**
 - [x] Mensagens emitidas por esses arquivos em inglês; testes que afirmavam o texto PT atualizados
 - [x] `bash scripts/check-gates-falsify.sh` com rc=0
@@ -633,6 +640,7 @@ cerca e passado a `ParseGatesLines` não dá erro na Wave 0 e retorna o gate `ex
 **Files affected:**
 - `internal/i18nguard/pt_literals_test.go` e `internal/i18nguard/doc.go` (novos)
 - Literais PT residuais achados pelo teste: `internal/commands/init.go`, `internal/commands/roadmap.go`, `internal/generators/roadmap.go`, `internal/generators/scaffold.go`, `internal/generators/scaffold_doctor.go`, com os goldens de `internal/generators/testdata/ci-trigger/` e os hashes AC6 de `consumer_install_test.go`
+- `internal/generators/consumer_install_test.go`
 - `internal/validator/validator_req_done_criteria.go` (mensagem da linha ~373 passa a citar `Lapsed:` com `Caducou:` como alternativa) e o teste que a afirmar
 
 **Actions:** teste Go que percorre com `go/ast` os arquivos de produto de `internal/` e `cmd/` (sem
