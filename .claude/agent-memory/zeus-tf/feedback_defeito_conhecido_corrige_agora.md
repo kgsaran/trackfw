@@ -17,3 +17,11 @@ apresentei como "não é falha hoje" ("se sabemos do defeito devemos corrigi-lo 
 medido no código que a REQ toca. Se for, abra o ML corretivo antes de oferecer o PR. Residual legítimo só o que
 depende de algo externo (conta que não temos, decisão de produto pendente) — e com o motivo escrito.
 Ver [[ler-a-req-nao-o-adr-vizinho]].
+
+**Exceção validada pelo KG (2026-11-08, REQ de idioma):** o red team ficou 3 rodadas achando grafias novas de
+cabeçalho de gates. Eu propus declarar residual a **ofuscação deliberada**, porque apagar o cabeçalho já é legal
+e a regra só protege contra acidente. O KG aceitou. A pergunta que decide é esta: o defeito é acessível por
+**acidente**, ou só por quem já poderia fazer o mesmo de forma legal? No primeiro caso, corrige agora; no
+segundo, é residual com o argumento escrito na ADR. Sinal de que estou nesse caso: cada rodada acha mais
+variantes. Nessa hora, fixe o modelo de ameaça e o critério de convergência antes de despachar mais
+correções, e pergunte ao KG em vez de decidir sozinho.

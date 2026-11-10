@@ -34,6 +34,32 @@ package roadmapdoc
 //     every marker that StatusIsComplete accepts is also classified as StatusComplete by
 //     the three-category function.
 //
+// ── New tests (D1, ADR-2026-11-08 / ML-1A — EN aliases for terminated/canceled) ──
+//
+//   TestStatusCategory_AbandonedEN
+//     Affirms: "abandoned" (bare EN form) classifies as StatusTerminated — the EN alias
+//     enters terminatedVocabulary with the same first-token rule as "abandonado".
+//
+//   TestStatusCategory_AbandonedENWithSuffix
+//     Affirms: "abandoned-task" does NOT classify as StatusTerminated — only the exact
+//     token "abandoned" is in the vocabulary; prefix matching would create false positives.
+//
+//   TestStatusCategory_CanceledEN
+//     Affirms: "❌ canceled" classifies as StatusTerminated — the American spelling enters
+//     the ❌ disambiguation alongside "cancelado" (ADR D1, ML-1A).
+//
+//   TestStatusCategory_CancelledEN
+//     Affirms: "❌ cancelled" classifies as StatusTerminated — the British spelling enters
+//     the ❌ disambiguation alongside "canceled" and "cancelado" (ADR D1, ML-1A).
+//
+//   TestStatusCategory_CancellationPendingStillPending
+//     Affirms: "❌ cancellation-pending" classifies as StatusPending — the token comparison
+//     is exact, so "cancellation-pending" is NOT one of {cancelado, canceled, cancelled}.
+//
+//   TestStatusCategory_BlockedStillPending
+//     Affirms: "❌ Blocked" classifies as StatusPending — ADR D1 explicitly states that
+//     "blocked" continues to mean Pending, same as "bloqueado".
+//
 //   TestCorpusMeasurement_ReportOnly
 //     Affirms: when docs/roadmaps/done/ exists (flat layout), the test logs the current
 //     corpus count without asserting a specific number; when the directory is absent (by_agent
@@ -331,6 +357,141 @@ func TestStatusCategory_CompleteVariants(t *testing.T) {
 		if cat != StatusComplete {
 			t.Errorf("StatusCategory(%q) = %d, want StatusComplete(%d)", marker, cat, StatusComplete)
 		}
+	}
+}
+
+// ── StatusCategory — EN alias tests (D1, ADR-2026-11-08 / ML-1A) ─────────────
+
+// TestStatusCategory_AbandonedEN verifies that the bare English token "abandoned"
+// is classified as StatusTerminated.
+//
+// Reconciliation (Regra Dura): implements the ML-1A conclusion that "abandoned"
+// enters terminatedVocabulary with exact-token semantics (ADR D1).
+func TestStatusCategory_AbandonedEN(t *testing.T) {
+	for _, marker := range []string{"abandoned", "ABANDONED", "abandoned — approach reverted"} {
+		cat := StatusCategory(marker)
+		if cat != StatusTerminated {
+			t.Errorf("StatusCategory(%q) = %d, want StatusTerminated(%d)", marker, cat, StatusTerminated)
+		}
+	}
+}
+
+// TestStatusCategory_AbandonedENWithSuffix verifies that "abandoned-task" is NOT
+// classified as StatusTerminated — only exact first-token match counts.
+//
+// Reconciliation (Regra Dura): implements the ML-1A conclusion that the
+// terminatedVocabulary check is first-token exact, never prefix (ADR D1).
+func TestStatusCategory_AbandonedENWithSuffix(t *testing.T) {
+	cat := StatusCategory("abandoned-task")
+	if cat != StatusPending {
+		t.Errorf("StatusCategory(%q) = %d, want StatusPending(%d) (exact token only)", "abandoned-task", cat, StatusPending)
+	}
+}
+
+// TestStatusCategory_CanceledEN verifies that "❌ canceled" (American spelling)
+// is classified as StatusTerminated.
+//
+// Reconciliation (Regra Dura): implements the ML-1A conclusion that "canceled"
+// enters the ❌ disambiguation set alongside "cancelado" (ADR D1).
+func TestStatusCategory_CanceledEN(t *testing.T) {
+	cat := StatusCategory("❌ canceled")
+	if cat != StatusTerminated {
+		t.Errorf("StatusCategory(%q) = %d, want StatusTerminated(%d)", "❌ canceled", cat, StatusTerminated)
+	}
+}
+
+// TestStatusCategory_CancelledEN verifies that "❌ cancelled" (British spelling)
+// is classified as StatusTerminated.
+//
+// Reconciliation (Regra Dura): implements the ML-1A conclusion that "cancelled"
+// enters the ❌ disambiguation set alongside "canceled" and "cancelado" (ADR D1).
+func TestStatusCategory_CancelledEN(t *testing.T) {
+	cat := StatusCategory("❌ cancelled")
+	if cat != StatusTerminated {
+		t.Errorf("StatusCategory(%q) = %d, want StatusTerminated(%d)", "❌ cancelled", cat, StatusTerminated)
+	}
+}
+
+// TestStatusCategory_CancellationPendingStillPending verifies that
+// "❌ cancellation-pending" is NOT classified as StatusTerminated.
+//
+// Reconciliation (Regra Dura): implements the ML-1A conclusion that the ❌
+// second-token check is exact — "cancellation-pending" is not in the set
+// {cancelado, canceled, cancelled} (ADR D1).
+func TestStatusCategory_CancellationPendingStillPending(t *testing.T) {
+	cat := StatusCategory("❌ cancellation-pending")
+	if cat != StatusPending {
+		t.Errorf("StatusCategory(%q) = %d, want StatusPending(%d) (exact token only)", "❌ cancellation-pending", cat, StatusPending)
+	}
+}
+
+// TestStatusCategory_BlockedStillPending verifies that "❌ Blocked" is NOT
+// classified as StatusTerminated.
+//
+// Reconciliation (Regra Dura): implements the ML-1A conclusion that ADR D1
+// keeps "blocked" / "Blocked" as StatusPending — same rule as "bloqueado".
+func TestStatusCategory_BlockedStillPending(t *testing.T) {
+	for _, marker := range []string{"❌ Blocked", "❌ blocked"} {
+		cat := StatusCategory(marker)
+		if cat != StatusPending {
+			t.Errorf("StatusCategory(%q) = %d, want StatusPending(%d)", marker, cat, StatusPending)
+		}
+	}
+}
+
+// TestStatusCategory_G_CombiningMarkInFirstToken asserts that a combining mark in
+// the first token prevents classification as StatusTerminated (G fix, D8,
+// ADR-2026-11-08 / ML-2C). "abandoñed" must NOT normalize to "abandoned" and
+// return StatusTerminated — it must return StatusPending.
+//
+// Reconciliation: affirms the G fix that hasDisallowedCombiningMark now gates the
+// terminatedVocabulary lookup in StatusCategory, matching the guard in StatusIsComplete.
+func TestStatusCategory_G_CombiningMarkInFirstToken(t *testing.T) {
+	// G (D8, ADR-2026-11-08 / ML-2C): a combining mark (Mn codepoint) on the first
+	// token must cause StatusCategory to return StatusPending, not StatusTerminated.
+	// Without the fix, normalizeStatusToken would strip the combining mark and return
+	// "abandoned", which is in terminatedVocabulary.
+	//
+	// Note: only NFD forms (explicit Mn codepoints) are caught by hasDisallowedCombiningMark.
+	// NFC precomposed forms (e.g. ñ = U+00F1, category Ll) are not caught — this is
+	// documented in the hasDisallowedCombiningMark comment and is a declared residual.
+	for _, marker := range []string{
+		"abandoñed", // NFD: n + U+0303 combining tilde (Mn)
+	} {
+		cat := StatusCategory(marker)
+		if cat != StatusPending {
+			t.Errorf("G: StatusCategory(%q) = %v, want StatusPending — combining mark must not normalize to terminated form", marker, cat)
+		}
+	}
+	// Contra-arm: "abandoned" (clean, no combining mark) must still return StatusTerminated.
+	if cat := StatusCategory("abandoned"); cat != StatusTerminated {
+		t.Errorf("G contra-arm: StatusCategory(%q) = %v, want StatusTerminated", "abandoned", cat)
+	}
+}
+
+// TestStatusCategory_G_CombiningMarkInSecondToken asserts that a combining mark in
+// the second token of an "❌ ..." marker prevents classification as StatusTerminated.
+// "❌ cañceled" must return StatusPending, not StatusTerminated (G fix, D8).
+//
+// Reconciliation: affirms that the hasDisallowedCombiningMark guard applies to
+// fields[1] in the ❌ branch of StatusCategory, not only to fields[0].
+func TestStatusCategory_G_CombiningMarkInSecondToken(t *testing.T) {
+	// G (D8, ADR-2026-11-08 / ML-2C): combining mark in second token (ñ in "cañceled")
+	// must cause StatusCategory to return StatusPending, not StatusTerminated. Without
+	// the fix, normalizeStatusToken would strip the mark and isCanceledToken would match.
+	// Note: only NFD forms (explicit Mn codepoints) are caught by hasDisallowedCombiningMark.
+	// NFC precomposed forms are not caught — declared residual.
+	for _, marker := range []string{
+		"❌ cãnceled", // NFD: a + U+0303 combining tilde (Mn)
+	} {
+		cat := StatusCategory(marker)
+		if cat != StatusPending {
+			t.Errorf("G: StatusCategory(%q) = %v, want StatusPending — combining mark in second token must not normalize to canceled form", marker, cat)
+		}
+	}
+	// Contra-arm: "❌ canceled" (clean) must still return StatusTerminated.
+	if cat := StatusCategory("❌ canceled"); cat != StatusTerminated {
+		t.Errorf("G contra-arm: StatusCategory(%q) = %v, want StatusTerminated", "❌ canceled", cat)
 	}
 }
 

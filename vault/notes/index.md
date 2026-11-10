@@ -3,6 +3,8 @@
 > Ponto de entrada de conhecimento do projeto para agentes e pessoas.
 
 ## Índice
+- [d8-fail-closed-gate-mascara-reachability-2026-11-08](d8-fail-closed-gate-mascara-reachability-2026-11-08.md) — D8 HTML check reachável via `barrier`, D8 fence check irrechável via `barrier` (doc-level FenceMaskCheck dispara antes); residual E3 (CommonMark); testdata vs live usa 3-tick vs 4-tick causando divergência no corpus congelado
+- [wave0gatediagnosis-d3-mensagem-errada-2026-11-08](wave0gatediagnosis-d3-mensagem-errada-2026-11-08.md) — `Wave0GateDiagnosis` mapeia D3 para `Wave0GateMalformed`; validate emite "fence ausente" em vez de "cabeçalho duplicado"; novo ML necessário; `internal/validator/validator_roadmap_gates.go:119-123`
 - [guard-credencial-comentarios-de-teste-disparam-o-guard-2026-11-06](guard-credencial-comentarios-de-teste-disparam-o-guard-2026-11-06.md) — comentário de docstring com token completo dispara o guard tanto quanto código; ADR D3 se aplica a comentários; `TestFixturesSemTokenLiteral` detecta regressão (ML-1B)
 - [guard-git-divisao-antes-da-extracao-de-substituicao-2026-11-05](guard-git-divisao-antes-da-extracao-de-substituicao-2026-11-05.md) — 🔴 **guard de git dividia em `|`/`&&` antes de extrair `$( )`/crase/`<( )`: `echo $(git push | cat)` passava; extraia o aninhado da string crua antes do split; sem `trackfw.yaml` no cwd o guard fica inativo e toda medição dá rc=0** (#663 ML-2G)
 - [gitignore-negation-override-by-append-2026-11-01](gitignore-negation-override-by-append-2026-11-01.md) — MEDIUM: `hasGitIgnoreAgentMemoryRule` skips `!` lines as "absent" → append after negation overrides opt-out via last-match-wins; fix: return true if any `!agent-memory` line exists (#646 ML-2A A-1)

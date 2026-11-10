@@ -2,8 +2,8 @@
 status: Open
 date: 2026-11-02
 author: "Zeus (trackfw_architect)"
-adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-11-02-idioma-do-produto-ingles-primeiro-com-legenda-de-status-aceitando-ingles-e-portugues.md"
+adr: "docs/adr/ADR-2026-11-08-contrato-de-marcadores-do-roadmap-bilingue-parser-aceita-ingles-e-portugues-antes-de-o-gerador-emitir-ingles.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-11-02-idioma-do-produto-ingles-primeiro-com-legenda-de-status-aceitando-ingles-e-portugues.md"
 ---
 
 # REQ: Idioma do produto: inglês primeiro, com legenda de status aceitando inglês e português
@@ -36,22 +36,31 @@ As mensagens do guard já são tratadas pela REQ de primeira experiência e fica
   mensagens emitidas.
 - [ ] **AC3 — Conteúdo gerado em inglês** (grupo 2). Consumidores existentes recebem a versão nova pelo
   `trackfw update`, sem perder edição local; o contrato atual do `update` decide o que é sobrescrito.
-- [ ] **AC4 — Marcadores de status bilíngues** (grupo 3): `barrier` e `validate` aceitam os marcadores em
-  inglês e em português. O acervo existente, deste repositório e de consumidores, continua passando sem
-  edição, medido sobre `docs/roadmaps/`. Os roadmaps novos nascem em inglês.
+- [ ] **AC4 — Marcadores de contrato bilíngues** (grupo 3): `barrier` e `validate` aceitam em inglês e em
+  português todo marcador que leem do roadmap e da REQ, inclusive `**Wave gates:**` / `**Gates da wave:**`,
+  `Lapsed:` / `Caducou:` e as palavras de término (`abandoned`, `cancelled`/`canceled`). O conjunto fechado
+  de grafias está na ADR-2026-11-08. O acervo existente, deste repositório e de consumidores, continua
+  passando sem edição: a saída de `barrier` e `validate` sobre `docs/roadmaps/` é idêntica entre o binário
+  da `main` e o da branch. Os roadmaps novos nascem em inglês, numa tag **posterior** à que publica o leitor
+  bilíngue (ADR D2).
+
+  *Por que o escopo cresceu (2026-11-08):* a REQ original citava só a legenda e o `**Status:**`. A leitura
+  dos parsers antes da ADR mostrou que `**Gates da wave:**`, `Caducou:` e as palavras de término também só
+  existem em português, e que uma wave sem cabeçalho de gates reconhecido conta zero gates e passa. É a
+  mesma causa (contrato lido pelo binário fixado em português), então entra na mesma REQ.
 - [ ] **AC5 — Presets de identidade** com nomes próprios em português (por exemplo `chaves` e `turma`):
   decisão escrita sobre manter ou traduzir.
 
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->
-ADR: 
+ADR: docs/adr/ADR-2026-11-08-contrato-de-marcadores-do-roadmap-bilingue-parser-aceita-ingles-e-portugues-antes-de-o-gerador-emitir-ingles.md
 
 ## Blocked by ADRs
 <!-- none -->
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/backlog/ROADMAP-2026-11-02-idioma-do-produto-ingles-primeiro-com-legenda-de-status-aceitando-ingles-e-portugues.md
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-11-02-idioma-do-produto-ingles-primeiro-com-legenda-de-status-aceitando-ingles-e-portugues.md
 
 ## Negative scope
 

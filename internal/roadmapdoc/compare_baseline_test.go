@@ -194,10 +194,15 @@ var corrigidosPela470 = []registroCorrigido{
 	// Os dois bloqueiam; o novo e erro de uso, nomeia a causa e nao finge existir uma wave
 	// vazia. Nenhum caminho fail-open novo — era a duvida que fez esta medicao existir.
 	//
-	// A cerca nao terminada deste arquivo (linha 460) e defeito DIFERENTE e fica fora deste
-	// PR: a regra 6 do docs/cli-parity.md promete que cerca nao terminada e erro de uso
-	// (exit 2), e o produto so implementa isso para a cerca de gates ("unterminated gates
-	// fence"). Sao 2 arquivos em 193 do corpus. Causa outra, issue propria.
+	// D8 (ADR-2026-11-08, ML-2C) age sobre a cerca nao terminada APENAS no corpus congelado
+	// (testdata/corpus/), nao no arquivo live (docs/roadmaps/done/). A diferenca e que o
+	// corpus congelado usa 3 backticks nas linhas 223 e 236 enquanto o arquivo live usa 4;
+	// com 3 backticks o balanceamento desloca ate a linha 460, que abre uma cerca nunca
+	// fechada (openFenceLine=460). Como a wave=2 do corpus congelado termina depois da linha
+	// 460 (o D8 checa openFenceLine-1 < waveEnd do par wave start/end de ParseGates),
+	// ParseGatesLines retorna erro em vez de zero gates. O novo registro "gates" abaixo
+	// declara essa mudanca. Os blocos wave_presence para 2-bis/3/4 (ja presentes antes do
+	// ML-2C) refletem o desbalanceamento de autoria original, nao o D8.
 	{
 		caminho: "docs/roadmaps/done/ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md",
 		wave:    "2-bis",
@@ -215,6 +220,79 @@ var corrigidosPela470 = []registroCorrigido{
 		wave:    "4",
 		check:   "wave_presence",
 		motivo:  "idem",
+	},
+	// ── D8 (ADR-2026-11-08, ML-2C): cerca nao terminada em wave=2 do corpus congelado ──
+	//
+	// No corpus congelado deste arquivo a cerca na linha 223 usa 3 backticks (nao 4);
+	// a 227 abre ```bash dentro da cerca, e a 231 fecha — mas so a cerca interna, nao
+	// a de 3 backticks. O balanceamento anda deslocado ate o fim do arquivo: a cerca de
+	// 3 backticks aberta na 223 nunca fecha, logo openFenceLine=460 (a ultima cerca aberta
+	// no documento inteiro). Como a wave=2 do corpus congelado vai ate a linha 469 (o
+	// heading de wave 2-bis esta dentro da cerca e so aparece em ParseWaves como content),
+	// 460 < 469, e o D8 dispara: ParseGatesLines retorna erro em vez de zero gates.
+	// Este comportamento e CORRETO per D8; o baseline registrava gates.status="passed".
+	{
+		caminho: "docs/roadmaps/done/ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md",
+		wave:    "2",
+		check:   "gates",
+		motivo: "D8 (ADR-2026-11-08, ML-2C): a cerca nao terminada na linha 460 cai dentro de " +
+			"wave=2 (fim=469 no corpus congelado) — ParseGatesLines retorna erro em vez de zero gates; " +
+			"baseline registrava gates.status=passed",
+	},
+	// ── D8 near-miss (ML-2I): "**Gate da wave:**" (singular PT) em wave=0 ──────
+	//
+	// Ambos os arquivos abaixo trazem "**Gate da wave:**" (singular, sem 's') como
+	// cabecalho de gates na wave=0. Esse cabecalho nao casa GatesHeaderRe (que exige
+	// "Gates" plural), mas o esqueleto computado por gatesNearMissSkeleton resulta
+	// em "gatedawave:" que casa o alvo "gatedawave:" do ML-2I. ParseGatesLines
+	// retorna erro de near-miss em vez do zero-gates silencioso anterior.
+	// O baseline registrava gates.status="passed" para essas waves.
+	{
+		caminho: "docs/roadmaps/done/ROADMAP-2026-09-11-by-agent-req-new-e-roadmap-new-agents-install-nao-registra-e-escreve-sempre-no-primeiro.md",
+		wave:    "0",
+		check:   "gates",
+		motivo: "D8 near-miss (ML-2I): cabecalho singular \"**Gate da wave:**\" na linha 67 dispara " +
+			"gatedawave: — ParseGatesLines retorna erro de near-miss; baseline registrava gates.status=passed",
+	},
+	{
+		caminho: "docs/roadmaps/done/ROADMAP-2026-09-11-self-test-do-ratchet-escreve-no-canal-do-gate-real-e-quebra-em-cp1252-e-no-runner.md",
+		wave:    "0",
+		check:   "gates",
+		motivo: "D8 near-miss (ML-2I): cabecalho singular \"**Gate da wave:**\" na linha 81 dispara " +
+			"gatedawave: — ParseGatesLines retorna erro de near-miss; baseline registrava gates.status=passed",
+	},
+	// ── D8 near-miss (ML-2L): "**Gates da wave 0:**" (numero na rotulo) em wave=0 ──
+	//
+	// Os tres arquivos abaixo usam "**Gates da wave 0:**" (com o numero 0 no rotulo)
+	// como cabecalho de gates na wave=0. Esse cabecalho nao casa GatesHeaderRe (que
+	// exige "Gates da wave:" ou "Wave gates:" sem numero), mas o esqueleto computado
+	// por gatesNearMissSkeleton resulta — apos o passo 4 de ML-2L (remocao de digitos)
+	// — em "gatesdawave:" que casa o alvo "gatesdawave:" da lista de near-miss.
+	// ParseGatesLines retorna erro de near-miss em vez do zero-gates silencioso anterior.
+	// O baseline registrava gates.status="passed" com commands=[] para essas waves.
+	{
+		caminho: "docs/roadmaps/done/ROADMAP-2026-09-17-gate-escreve-na-arvore-que-audita-e-a-guarda-existente-nao-cobre-o-culpado.md",
+		wave:    "0",
+		check:   "gates",
+		motivo: "D8 near-miss (ML-2L): cabecalho \"**Gates da wave 0:**\" na linha 50 — apos remocao " +
+			"de digito (passo 4) o esqueleto vira gatesdawave: — ParseGatesLines retorna erro de " +
+			"near-miss; baseline registrava gates.status=passed com commands=[]",
+	},
+	{
+		caminho: "docs/roadmaps/done/ROADMAP-2026-09-17-gerador-aplica-o-template-de-consumidor-ao-proprio-produtor-e-o-doctor-prescreve-desfazer-a-correcao.md",
+		wave:    "0",
+		check:   "gates",
+		motivo: "D8 near-miss (ML-2L): cabecalho \"**Gates da wave 0:**\" na linha 48 — apos remocao " +
+			"de digito (passo 4) o esqueleto vira gatesdawave: — ParseGatesLines retorna erro de " +
+			"near-miss; baseline registrava gates.status=passed com commands=[]",
+	},
+	{
+		caminho: "docs/roadmaps/done/ROADMAP-2026-09-17-jira-base-url-do-repositorio-vira-destino-de-post-autenticado-e-um-pr-que-edita-so-a-config-exfiltra-a-credencial-do-ci.md",
+		wave:    "0",
+		check:   "gates",
+		motivo: "D8 near-miss (ML-2L): cabecalho \"**Gates da wave 0:**\" na linha 66 — apos remocao " +
+			"de digito (passo 4) o esqueleto vira gatesdawave: — ParseGatesLines retorna erro de " +
+			"near-miss; baseline registrava gates.status=passed com commands=[]",
 	},
 }
 
@@ -399,8 +477,12 @@ func TestParsingMatchesBaseline(t *testing.T) {
 		blGates := baselineByName["gates"]
 		gotCmds, gateErr := ParseGates(lines, target.Start, target.End)
 		if gateErr != nil {
-			// Baseline would have reported a usage error; compare by checking baseline status.
-			if blGates.Status != "blocked" && blGates.Status != "not_evaluated" {
+			if motivo, ok := corrigidoPela470(rec.path, rec.wave, "gates"); ok {
+				// D8 or similar intentional change — log and continue.
+				marcaObservado(rec.path, rec.wave, "gates")
+				t.Logf("#470 %s wave=%s (gates): %s", rec.path, rec.wave, motivo)
+			} else if blGates.Status != "blocked" && blGates.Status != "not_evaluated" {
+				// Baseline would have reported a usage error; compare by checking baseline status.
 				t.Errorf("gates parse error MISMATCH %s wave=%s: got error, baseline status=%s",
 					rec.path, rec.wave, blGates.Status)
 				mismatches++

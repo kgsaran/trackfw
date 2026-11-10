@@ -428,3 +428,231 @@ func TestAcceptanceEvaluate_LapsedCountsAsUnmetInWrapper(t *testing.T) {
 		t.Fatalf("expected unmet=1 (lapsed included in legacy unmet), got %d", unmet)
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// D1: English alias for Lapsed continuation — ADR-2026-11-08 / ML-1A
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestAcceptanceEvaluateFull_LapsedENAlias asserts that "  Lapsed: reason" is
+// accepted as a lapsed continuation with the reason text preserved, confirming
+// that the EN alias for the PT-only "  Caducou:" form is wired end-to-end
+// (ADR D1, ADR-2026-11-08 / ML-1A).
+//
+// Reconciliation (Regra Dura): implements the ML-1A conclusion that
+// LapsedContinuationRe now accepts "  Lapsed:" with the same semantics as
+// "  Caducou:", including extraction of the justification text.
+func TestAcceptanceEvaluateFull_LapsedENAlias(t *testing.T) {
+	content := strings.Join([]string{
+		"### ML-1A — Lapsed EN",
+		"**Status:** ✅",
+		"**Critérios de aceite:**",
+		"- [x] met criterion",
+		"- [ ] lapsed criterion",
+		"  Lapsed: justified by deadline",
+	}, "\n")
+	lines, fenced, mls := mustParseMLs(t, content)
+	d := AcceptanceEvaluateFull(lines, fenced, mls[0])
+	if !d.HasBlock {
+		t.Fatal("expected HasBlock=true")
+	}
+	if d.Met != 1 {
+		t.Fatalf("expected Met=1, got %d", d.Met)
+	}
+	if d.Unmet != 0 {
+		t.Fatalf("expected Unmet=0, got %d", d.Unmet)
+	}
+	if d.Lapsed != 1 {
+		t.Fatalf("expected Lapsed=1, got %d", d.Lapsed)
+	}
+	if len(d.LapsedReasons) != 1 {
+		t.Fatalf("expected 1 LapsedReason, got %d", len(d.LapsedReasons))
+	}
+	if d.LapsedReasons[0].Text != "justified by deadline" {
+		t.Errorf("LapsedReasons[0].Text = %q, want %q", d.LapsedReasons[0].Text, "justified by deadline")
+	}
+}
+
+// TestLapsedContinuationRe_EN_EmptyRejects asserts that "  Lapsed:" (without
+// any text after the colon) does NOT match LapsedContinuationRe, confirming
+// that the EN alias preserves the same "text must follow" rule as "  Caducou:"
+// (ADR D1 says ≥2 spaces, not tab, text non-empty after colon — ML-1A).
+//
+// Reconciliation (Regra Dura): implements the ML-1A conclusion that the EN
+// alias carries the same constraints as the PT form; a bare "  Lapsed:" with
+// no justification is not a valid continuation.
+func TestLapsedContinuationRe_EN_EmptyRejects(t *testing.T) {
+	if LapsedContinuationRe.MatchString("  Lapsed:") {
+		t.Error("LapsedContinuationRe must NOT match '  Lapsed:' (no text after colon)")
+	}
+	if LapsedContinuationRe.MatchString("  Lapsed: ") {
+		t.Error("LapsedContinuationRe must NOT match '  Lapsed: ' (only whitespace after colon)")
+	}
+}
+
+// TestLapsedContinuationRe_EN_TabRejects asserts that "\tLapsed: reason" does
+// NOT match LapsedContinuationRe, confirming the indentation rule (≥2 spaces,
+// never tab) applies equally to the EN alias (ADR D1, ML-1A).
+//
+// Reconciliation (Regra Dura): implements the ML-1A conclusion that
+// LapsedContinuationRe's space-only indentation constraint is not relaxed for
+// the EN alias — tab-indented continuations are invalid in both languages.
+func TestLapsedContinuationRe_EN_TabRejects(t *testing.T) {
+	if LapsedContinuationRe.MatchString("\tLapsed: reason") {
+		t.Error("LapsedContinuationRe must NOT match tab-indented '\\tLapsed: reason'")
+	}
+}
+
+// ── New tests (F, D8, ADR-2026-11-08 / ML-2C — lapsed visible-character guard) ──
+//
+//   TestAcceptanceEvaluateFull_F_LapsedNBSPOnly
+//     Affirms: a "  Lapsed: <NBSP>" continuation (NBSP = U+00A0, satisfies ASCII \S
+//     but has no visible glyph) causes the criterion to be counted as Unmet, not
+//     Lapsed — the lapsedLineHasContent guard rejects NBSP-only content (F fix).
+//
+//   TestAcceptanceEvaluateFull_F_LapsedZWSPOnly
+//     Affirms: a "  Lapsed:<ZWSP>" continuation (ZWSP = U+200B, satisfies ASCII \S
+//     and is not stripped by strings.TrimSpace, but has no visible glyph) causes the
+//     criterion to be counted as Unmet, not Lapsed (F fix).
+
+// TestAcceptanceEvaluateFull_F_LapsedNBSPOnly tests the F fix for NBSP.
+//
+// Contra-arm: detail.Lapsed must be 0, detail.Unmet must be 1.
+func TestAcceptanceEvaluateFull_F_LapsedNBSPOnly(t *testing.T) {
+	// F (D8, ADR-2026-11-08 / ML-2C): "  Lapsed: <NBSP>" satisfies LapsedContinuationRe
+	// because NBSP (U+00A0) matches ASCII \S, but lapsedLineHasContent rejects it
+	// (NBSP is Zs category, not Letter/Number/Punct/Symbol) — criterion is Unmet.
+	content := "### ML-1A — test\n**Status:** 🔄 In progress\n**Acceptance criteria:**\n- [ ] criterion\n  Lapsed:  \n"
+	lines, fenced, mls := mustParseMLs(t, content)
+	detail := AcceptanceEvaluateFull(lines, fenced, mls[0])
+	if detail.Lapsed != 0 {
+		t.Errorf("F-NBSP: detail.Lapsed = %d, want 0 — NBSP-only continuation must not classify as Lapsed", detail.Lapsed)
+	}
+	if detail.Unmet != 1 {
+		t.Errorf("F-NBSP: detail.Unmet = %d, want 1 — criterion with NBSP-only continuation must be Unmet", detail.Unmet)
+	}
+}
+
+// TestAcceptanceEvaluateFull_F_LapsedZWSPOnly tests the F fix for ZWSP.
+//
+// Contra-arm: detail.Lapsed must be 0, detail.Unmet must be 1.
+func TestAcceptanceEvaluateFull_F_LapsedZWSPOnly(t *testing.T) {
+	// F (D8, ADR-2026-11-08 / ML-2C): "  Lapsed:<ZWSP>" satisfies LapsedContinuationRe
+	// because ZWSP (U+200B) matches ASCII \S, and strings.TrimSpace does NOT strip it
+	// (not in unicode.IsSpace for Go). lapsedLineHasContent rejects ZWSP (Cf category,
+	// not Letter/Number/Punct/Symbol) — criterion is Unmet, not Lapsed.
+	content := "### ML-1A — test\n**Status:** 🔄 In progress\n**Acceptance criteria:**\n- [ ] criterion\n  Lapsed:​\n"
+	lines, fenced, mls := mustParseMLs(t, content)
+	detail := AcceptanceEvaluateFull(lines, fenced, mls[0])
+	if detail.Lapsed != 0 {
+		t.Errorf("F-ZWSP: detail.Lapsed = %d, want 0 — ZWSP-only continuation must not classify as Lapsed", detail.Lapsed)
+	}
+	if detail.Unmet != 1 {
+		t.Errorf("F-ZWSP: detail.Unmet = %d, want 1 — criterion with ZWSP-only continuation must be Unmet", detail.Unmet)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// N-1 (D8, ADR-2026-11-08 / ML-2G): Hangul Filler bypass in lapsedLineHasContent
+//
+// The four Hangul Fillers (U+3164, U+115F, U+1160, U+FFA0) have category Lo
+// (Letter, Other), so unicode.IsLetter returns true. All four are in
+// unicode.Other_Default_Ignorable_Code_Point. Without the ODIP guard, a
+// "  Lapsed:<filler>" line would pass lapsedLineHasContent and classify the
+// criterion as Lapsed instead of Unmet. The fix adds:
+//   !unicode.Is(unicode.Other_Default_Ignorable_Code_Point, r)
+// as a secondary guard so that ODIP runes never count as content, regardless
+// of their primary category.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// lapsedHangulFixtureFor builds a minimal ML with one unmet criterion followed
+// by a "  Lapsed:" line whose suffix consists only of the given filler rune.
+func lapsedHangulFixtureFor(filler rune) string {
+	return "### ML-1A — test\n**Status:** 🔄 In progress\n**Acceptance criteria:**\n" +
+		"- [ ] criterion\n  Lapsed:" + string(filler) + "\n"
+}
+
+// TestAcceptanceEvaluateFull_N1_LapsedHangulFiller_U3164 asserts that
+// "  Lapsed:ㅤ" (U+3164 HANGUL FILLER) is rejected by lapsedLineHasContent
+// and the criterion counts as Unmet, not Lapsed.
+//
+// Reconciliation (ML-2G): this test affirms that the ODIP guard closes the
+// Hangul Filler bypass — the same root cause as F (ML-2C) but for Lo-category
+// characters that IsLetter accepts.
+func TestAcceptanceEvaluateFull_N1_LapsedHangulFiller_U3164(t *testing.T) {
+	content := lapsedHangulFixtureFor('ㅤ')
+	lines, fenced, mls := mustParseMLs(t, content)
+	detail := AcceptanceEvaluateFull(lines, fenced, mls[0])
+	if detail.Lapsed != 0 {
+		t.Errorf("N1-U3164: Lapsed=%d want 0 — HANGUL FILLER must not count as Lapsed content", detail.Lapsed)
+	}
+	if detail.Unmet != 1 {
+		t.Errorf("N1-U3164: Unmet=%d want 1 — criterion must be Unmet when filler is only content", detail.Unmet)
+	}
+}
+
+// TestAcceptanceEvaluateFull_N1_LapsedHangulFiller_U115F asserts that
+// "  Lapsed:ᅟ" (U+115F HANGUL CHOSEONG FILLER) is rejected.
+//
+// Reconciliation (ML-2G): affirms same as U+3164 for a different ODIP filler.
+func TestAcceptanceEvaluateFull_N1_LapsedHangulFiller_U115F(t *testing.T) {
+	content := lapsedHangulFixtureFor('ᅟ')
+	lines, fenced, mls := mustParseMLs(t, content)
+	detail := AcceptanceEvaluateFull(lines, fenced, mls[0])
+	if detail.Lapsed != 0 {
+		t.Errorf("N1-U115F: Lapsed=%d want 0 — HANGUL CHOSEONG FILLER must not count as Lapsed content", detail.Lapsed)
+	}
+	if detail.Unmet != 1 {
+		t.Errorf("N1-U115F: Unmet=%d want 1", detail.Unmet)
+	}
+}
+
+// TestAcceptanceEvaluateFull_N1_LapsedHangulFiller_U1160 asserts that
+// "  Lapsed:ᅠ" (U+1160 HANGUL JUNGSEONG FILLER) is rejected.
+//
+// Reconciliation (ML-2G): affirms same as U+3164 for a different ODIP filler.
+func TestAcceptanceEvaluateFull_N1_LapsedHangulFiller_U1160(t *testing.T) {
+	content := lapsedHangulFixtureFor('ᅠ')
+	lines, fenced, mls := mustParseMLs(t, content)
+	detail := AcceptanceEvaluateFull(lines, fenced, mls[0])
+	if detail.Lapsed != 0 {
+		t.Errorf("N1-U1160: Lapsed=%d want 0 — HANGUL JUNGSEONG FILLER must not count as Lapsed content", detail.Lapsed)
+	}
+	if detail.Unmet != 1 {
+		t.Errorf("N1-U1160: Unmet=%d want 1", detail.Unmet)
+	}
+}
+
+// TestAcceptanceEvaluateFull_N1_LapsedHangulFiller_UFFA0 asserts that
+// "  Lapsed:ﾠ" (U+FFA0 HALFWIDTH HANGUL FILLER) is rejected.
+//
+// Reconciliation (ML-2G): affirms same as U+3164 for a different ODIP filler.
+func TestAcceptanceEvaluateFull_N1_LapsedHangulFiller_UFFA0(t *testing.T) {
+	content := lapsedHangulFixtureFor('ﾠ')
+	lines, fenced, mls := mustParseMLs(t, content)
+	detail := AcceptanceEvaluateFull(lines, fenced, mls[0])
+	if detail.Lapsed != 0 {
+		t.Errorf("N1-UFFA0: Lapsed=%d want 0 — HALFWIDTH HANGUL FILLER must not count as Lapsed content", detail.Lapsed)
+	}
+	if detail.Unmet != 1 {
+		t.Errorf("N1-UFFA0: Unmet=%d want 1", detail.Unmet)
+	}
+}
+
+// TestAcceptanceEvaluateFull_N1_LapsedRealText_ContraArm is the contra-arm:
+// a continuation with real text ("superseded by D3") must still classify as
+// Lapsed after the ODIP guard is added.
+//
+// Reconciliation (ML-2G): confirms the ODIP guard does not reject legitimate
+// justification text — only invisible fillers are blocked.
+func TestAcceptanceEvaluateFull_N1_LapsedRealText_ContraArm(t *testing.T) {
+	content := "### ML-1A — test\n**Status:** 🔄 In progress\n**Acceptance criteria:**\n" +
+		"- [ ] criterion\n  Lapsed: superseded by D3\n"
+	lines, fenced, mls := mustParseMLs(t, content)
+	detail := AcceptanceEvaluateFull(lines, fenced, mls[0])
+	if detail.Lapsed != 1 {
+		t.Errorf("N1-contra-arm: Lapsed=%d want 1 — real text must still classify as Lapsed", detail.Lapsed)
+	}
+	if detail.Unmet != 0 {
+		t.Errorf("N1-contra-arm: Unmet=%d want 0", detail.Unmet)
+	}
+}

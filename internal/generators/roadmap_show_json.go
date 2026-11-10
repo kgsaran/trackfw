@@ -46,10 +46,34 @@ type malformedWaveJSON struct {
 	Token string `json:"token"`
 }
 
+// gatesJSON is the gates sub-document emitted per wave.
+//
+// 🔴 Gates MUST sit between Line and MLs in the struct.  The oracle script
+// (scripts/check-marker-corpus-parity.sh) strips the gates block from head
+// output using a sed range that relies on this exact position:
+//   start: /^      "gates": {/   (6-space indent, wave field level)
+//   end:   /^      },/           (closing of the gates object, comma because
+//                                  mls follows — always present)
+// Moving Gates after MLs would change the closing line from `},` to `}` and
+// break the sed stripper.
+type gatesJSON struct {
+	// Commands is the list of gate command texts parsed by ParseGatesLines.
+	// Always non-nil: an empty []string{} is used both when there are no gates
+	// and when an error prevents parsing — consumers must check Error first.
+	Commands []string `json:"commands"`
+	// Error is set when ParseGatesLines returns a non-nil error for this wave
+	// (D3 duplicate header, D8 unclosed fence/comment, unterminated fence, etc.).
+	// Omitted from JSON when empty. When set, Commands is [].
+	Error string `json:"error,omitempty"`
+}
+
 type waveJSON struct {
-	Label string   `json:"label"`
-	Line  int      `json:"line"`
-	MLs   []mlJSON `json:"mls"`
+	Label string    `json:"label"`
+	Line  int       `json:"line"`
+	// Gates is the parsed gate block for this wave (ML-2D, REQ-2026-11-02).
+	// See gatesJSON for the struct-ordering constraint.
+	Gates gatesJSON `json:"gates"`
+	MLs   []mlJSON  `json:"mls"`
 }
 
 type mlJSON struct {
@@ -164,7 +188,22 @@ func buildRoadmapShowDoc(path, data string) roadmapShowDoc {
 	}
 
 	for _, w := range waves {
-		wj := waveJSON{Label: w.Label, Line: w.Start + 1, MLs: []mlJSON{}}
+		// ParseGatesLines recomputes fenced/htmlMask internally (via scanFences).
+		// The document-level FenceMaskCheck in ShowRoadmapJSON already aborted if
+		// the document has an unclosed fence, so the D8 fence-check branch inside
+		// ParseGatesLines is unreachable here — a D8 error is only possible from
+		// the HTML-comment check (wave-level). That error is captured in gj.Error;
+		// show --json never exits 2 for a per-wave gate error (unlike barrier).
+		gcmds, gErr := roadmapdoc.ParseGatesLines(lines, w.Start, w.End)
+		gj := gatesJSON{Commands: []string{}}
+		if gErr != nil {
+			gj.Error = gErr.Error()
+		} else {
+			for _, gc := range gcmds {
+				gj.Commands = append(gj.Commands, gc.Text)
+			}
+		}
+		wj := waveJSON{Label: w.Label, Line: w.Start + 1, Gates: gj, MLs: []mlJSON{}}
 		for _, ml := range roadmapdoc.ParseMLs(lines, fenced, w.Start, w.End) {
 			marker, found := roadmapdoc.MLStatusMarker(lines, fenced, ml)
 			// D3 (ADR-2026-10-04, REQ #514 ML-1B): use AcceptanceEvaluateFull to expose

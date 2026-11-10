@@ -114,6 +114,14 @@ func TestWave0GateDiagnosis_NamesTheCause(t *testing.T) {
 			"**Gates da wave:**\n\n> explicação do gate\n\n```bash\nbash scripts/check.sh\n```\n",
 			Wave0GateOK,
 		},
+		// D3: dois cabeçalhos de gates na mesma wave — ADR-2026-11-08.
+		// AFIRMA: Wave0GateDiagnosis retorna Wave0GateDuplicate (não Wave0GateMalformed) quando
+		// ParseGates detecta dois cabeçalhos válidos fora de cercas na Wave 0.
+		{
+			"dois cabeçalhos de gates — D3",
+			"**Gates da wave:**\n\n```bash\nbash scripts/check.sh\n```\n\n**Wave gates:**\n\n```bash\nbash scripts/other.sh\n```\n",
+			Wave0GateDuplicate,
+		},
 	}
 
 	for _, c := range casos {

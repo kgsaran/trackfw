@@ -723,7 +723,7 @@ ML-1C closed only the arm that could act on an arbitrary artifact.
 
 #### `roadmap show <name> --json` — o mesmo resolvedor, outra saída
 
-<!-- trackfw-contract: gate=internal/generators/roadmap_show_json_test.go partial=o gate cobre a normalizacao do vocabulario de status (as 8 grafias medidas na #407 nas 3 categorias), a cerca de codigo ignorada, a wave malformada exposta, o status ausente distinguivel e o heading cru; NAO cobre a divergencia de stdout na ambiguidade (o teste exercita buildRoadmapShowDoc, que e a montagem pura, e nao o caminho de resolucao de nome); a checagem de cerca aberta (REQ #476, ML-2B/ML-2C) está em internal/commands/roadmap_show_fence_test.go -->
+<!-- trackfw-contract: gate=internal/generators/roadmap_show_json_test.go partial=o gate cobre a normalizacao do vocabulario de status (as 8 grafias medidas na #407 nas 3 categorias), a cerca de codigo ignorada, a wave malformada exposta, o status ausente distinguivel, o heading cru, e o campo gates por wave (cabecalho EN e PT, wave sem cabecalho, cabecalho duplicado D3); NAO cobre a divergencia de stdout na ambiguidade (o teste exercita buildRoadmapShowDoc, que e a montagem pura, e nao o caminho de resolucao de nome); a checagem de cerca aberta (REQ #476, ML-2B/ML-2C) está em internal/commands/roadmap_show_fence_test.go -->
 
 **Unterminated fence (REQ #476, ML-2B/ML-2C):** `roadmap show` and `show --json` both return
 exit 2 when the roadmap contains an unterminated code fence, before any output is written.
@@ -742,6 +742,25 @@ intercepts that type and calls `os.Exit(2)` directly, bypassing cobra's exit-1 e
 `roadmapdoc.StatusCategory` — nem uma a mais), mais `acceptance` (`met`, `unmet`, `has_block`). Waves
 com heading malformado aparecem em `malformed_waves` com linha e token, em vez de sumirem.
 
+**Campo `gates` por wave (ML-2D, REQ-2026-11-02):** cada wave inclui um sub-documento `gates`:
+
+```json
+"gates": {
+  "commands": ["echo foo", "make test"],
+  "error": "..."
+}
+```
+
+- `commands` — array de textos de comando, na ordem de declaração. Sempre não-nulo: wave sem
+  cabeçalho de gate algum emite `[]`. Nunca `null`.
+- `error` — string não-vazia quando `ParseGatesLines` retorna erro (cabeçalho duplicado D3,
+  máscara não fechada D8, E3 após ML-2F). Omitido do JSON quando vazio (`omitempty`). Quando
+  presente, `commands` é `[]`.
+- **Ordering constraint:** `gates` aparece entre `line` e `mls` no JSON emitido. O script
+  `check-marker-corpus-parity.sh` detecta binários antigos (sem o campo) por `grep '"gates": {'`
+  no output do base e, quando ausente, faz strip com sed antes de comparar — a adição do campo
+  não dispara falso-positivo na comparação.
+
 **Uma divergência deliberada com a saída de texto, e é a única:** com `--json` a lista de candidatos
 de um casamento ambíguo **não** vai para o stdout — ela viaja dentro do erro, como em `roadmap move`.
 Com `--json` o stdout é o documento ou nada; imprimir texto humano ali quebraria todo consumidor.
@@ -753,26 +772,38 @@ nome vazio, o glob e a contagem de casamentos não podem divergir.
 dialeto para descrever um dialeto, que é o defeito que esta saída existe para eliminar.
 
 **`acceptance.lapsed` — critérios caducados (D3, ADR-2026-10-04, REQ #514 ML-1B):** o campo
-`lapsed` expõe a contagem de itens `- [ ]` com uma linha de continuação `Caducou:` válida (D3).
-Estes itens **não** são `unmet` — eles foram explicitamente reconhecidos como permanentemente
-inverificáveis com justificativa. A forma do marcador é:
+`lapsed` expõe a contagem de itens `- [ ]` com uma linha de continuação `Caducou:` ou `Lapsed:`
+válida (D3, D1). Estes itens **não** são `unmet` — eles foram explicitamente reconhecidos como
+permanentemente inverificáveis com justificativa. As formas do marcador são:
 
 ```markdown
 - [ ] critério que nunca poderá ser verificado
   Caducou: <justificativa obrigatória — linha seguinte, ≥ 2 espaços, sem linha em branco entre elas>
 ```
 
+```markdown
+- [ ] criterion that can never be verified
+  Lapsed: <mandatory justification — next line, ≥ 2 spaces, no blank line between them>
+```
+
 Regras do parser (`AcceptanceEvaluateFull`, `internal/roadmapdoc`):
-- A linha `Caducou:` deve estar imediatamente após o `- [ ]`, sem linha em branco intercalada.
-- A linha `Caducou:` deve ter ≥ 2 espaços de indentação (não pode estar na coluna 0).
-- `Caducou:` sem texto após os dois-pontos não é aceito — a justificativa é obrigatória (D2).
-- `Caducou:` dentro de cerca de código (```` ``` ````) é ignorado pelo fence-mask.
-- O campo `unmet` do JSON agora é estrito: só conta `- [ ]` sem continuação `Caducou:` válida.
+- A linha de continuação (`Caducou:` ou `Lapsed:`) deve estar imediatamente após o `- [ ]`, sem
+  linha em branco intercalada.
+- A linha de continuação deve ter ≥ 2 espaços de indentação (não pode estar na coluna 0; tab não é aceito).
+- `Caducou:` / `Lapsed:` sem texto após os dois-pontos não é aceito — a justificativa é obrigatória (D2).
+- A justificativa deve conter ao menos um rune de categoria `\p{L}`, `\p{N}` ou `\p{P}` que NÃO
+  esteja em `unicode.Other_Default_Ignorable_Code_Point` (N-1, D8, ADR-2026-11-08, ML-2G): os
+  quatro Hangul Fillers (U+3164, U+115F, U+1160, U+FFA0) têm categoria Lo (Letter, Other) mas
+  não carregam glifo visível — uma continuação com apenas esses caracteres é tratada como Unmet.
+- A linha de continuação dentro de cerca de código (```` ``` ````) é ignorada pelo fence-mask.
+- O conjunto aceito é exatamente `{"Caducou:", "Lapsed:"}` — outras grafias não são aceitas (ADR D1,
+  ADR-2026-11-08).
+- O campo `unmet` do JSON agora é estrito: só conta `- [ ]` sem continuação válida.
   Consumidores que dependiam do comportamento anterior (`unmet = unmet + lapsed`) devem somar
   `unmet + lapsed` para recuperar a semântica antiga.
 - O campo `lapsed_details` no JSON do `barrier` (ML-1D, REQ #514) expõe, para cada critério
   caducado, um objeto `{"line": N, "text": "<justificativa>"}` onde `line` é o número de linha
-  (1-based) da continuação `Caducou:` e `text` é o texto trimado após os dois-pontos, truncado
+  (1-based) da continuação e `text` é o texto trimado após os dois-pontos, truncado
   a 120 caracteres Unicode com `…`; o campo é omitido quando não há critérios caducados
   (`omitempty`). Na saída textual, cada justificativa aparece como `      line N: Caducou: <text>`.
 
@@ -2955,13 +2986,21 @@ These are literal parsing rules. The binary implements them.
    outside HTML comments. **An ML with no acceptance block at all is `blocked`, not vacuously
    passed.** A `- [x]` criterion forged inside `<!-- … -->` is not counted as Met (AC9,
    ADR-2026-10-31; closes the T4 residual from REQ-2026-08-29).
-5. **Wave gates.** Gates are declared per wave by a `**Gates da wave:**` line followed by a
-   fenced ```` ```bash ```` block. Each non-empty, non-comment line in that block is one gate
-   command, executed from the repository root, in declaration order.
-   **The `**Gates da wave:**` marker must not be inside a fenced code block** (F1, REQ #491)
+5. **Wave gates.** Gates are declared per wave by a `**Gates da wave:**` or `**Wave gates:**`
+   line followed by a fenced ```` ```bash ```` block. Each non-empty, non-comment line in that
+   block is one gate command, executed from the repository root, in declaration order.
+   Both forms are accepted by the parser (bilingual contract, ADR D1, ADR-2026-11-08); the
+   accepted set is exactly `{"**Gates da wave:**", "**Wave gates:**"}` — both are case-sensitive,
+   no other spellings are accepted.
+   **A wave must have at most one gate header outside fences and comments.** If a wave contains
+   two or more valid gate headers (in any combination of PT/EN) outside fenced code blocks and
+   HTML comments, the barrier fails with an error naming both line numbers (D3,
+   ADR-2026-11-08):
+   `duplicate gates header: lines N and M both declare a gates block outside fences and comments — use exactly one gates header per wave (ADR D3)`
+   **The gate header marker must not be inside a fenced code block** (F1, REQ #491)
    or **inside an HTML comment block** (`<!-- … -->`) (AC11, ML-3C, REQ-2026-10-31). A marker
    whose column 0 is inside a multi-line HTML comment is silently skipped — the scan continues
-   so that a real marker later in the same wave is still found. A `**Gates da wave:**` block
+   so that a real marker later in the same wave is still found. A marker block
    entirely inside `<!-- … -->` produces zero gates, not a malformed-block error.
    **Prose is allowed between the marker and the fence** (#460): blank lines, blockquotes and
    paragraphs are skipped. 🔴 The search stops at the **next heading** (`## ` or `### `) — without
@@ -2969,9 +3008,123 @@ These are literal parsing rules. The binary implements them.
    example inside an ML body, and the product would run a command nobody declared as a gate.
    A marker with no fence before the next heading is a malformed block, and the message says so
    instead of blaming the gate's content.
-   A wave with no `**Gates da wave:**` block outside a fence or HTML comment declares zero gates
+   A wave with no gate header outside a fence or HTML comment declares zero gates
    — that is legal and yields a `gates` check with `status: "passed"` and an empty `commands`
    array. The barrier **never** invents a gate.
+   **D8 — fail-closed on anomalous masks (ADR-2026-11-08):** if an unclosed code fence or an
+   unclosed HTML comment spans any part of the wave boundary, `ParseGatesLines` returns a
+   non-nil error instead of silently returning zero gates. This is the "gate never disappears in
+   silence" guarantee. Concretely, before scanning for the gate header, the parser runs two
+   checks using the full-document fence map produced by `scanFences(lines)`:
+   - **Fence check:** `openFenceLine` from `scanFences` is non-zero (fence never closed in the
+     full document) and `openFenceLine-1 < waveEnd` — the unclosed fence starts before the wave
+     boundary. This catches the unclosed-fence scenario (an unclosed ```` ``` ```` swallows the
+     gate header).
+   - **HTML comment check:** `HTMLCommentMaskCheck(lines, fenced, waveEnd)` returns a non-zero
+     open line — an `<!--` opened within `[0, waveEnd)` never closes. This catches red-team
+     scenario D1 (unclosed `<!-- … -->` masks the gate header entirely).
+   Note: A1 is a j-loop fix (`fenced[j] || htmlMask[j]` guard in `boundGateFence`), independent
+   of D8. It prevents a masked ```` ```bash ```` from being mistaken for the gate fence opener.
+   A2 (outer fence skips to later ```bash) was reachable before ML-2L; after ML-2L mecanismo B,
+   `boundGateFence` stops at the FIRST fence opener regardless of tag, so a document with an
+   outer example fence before the gate fence now produces a fence-tag error rather than adopting
+   the later bash fence. The legal layout is: ```bash gate block first, outer example fence after.
+   Per-surface consequences:
+   - `barrier` with unclosed `<!--` (measured): `ParseGatesLines` returns error → `usageExit` →
+     **exit 2, stderr message, no JSON output** (even with `--json`).
+   - `barrier` with unclosed fence: D8's fence-check branch is **unreachable** from `barrier`'s
+     `runBarrier` — the document-level `FenceMaskCheck` call in that function fires first (before
+     `ParseGatesLines`) and exits with the same exit-2 message.
+   - `validate` with a wip roadmap whose Wave 0 triggers D8: `roadmap_gate_coverage` violation,
+     message `"Wave 0 gate block is malformed: <error>"`. `Wave0GateDiagnosisDetail` only inspects
+     Wave 0; D8 errors in Wave 1+ are not surfaced by validate.
+   - `serve` (live board): does not call `ParseGatesLines`; D8 errors are not surfaced here.
+   - `show --json`: D8 errors (e.g., unclosed `<!--` spanning the wave boundary) are captured in
+     the per-wave `gates.error` field — the JSON document is still emitted normally (exit 0).
+     Unlike `barrier`, `show --json` never exits 2 for a per-wave gate error; the document-level
+     `FenceMaskCheck` in `ShowRoadmapJSON` aborts with exit 2 before `ParseGatesLines` is reached
+     when the roadmap itself has an unclosed fence, so D8's fence-check branch is unreachable from
+     `show --json` as well.
+   **E3 — closed fence masking the gate header (ADR-2026-11-08, ML-2F):** a 3-tick fence that
+   opens, masks the gate header, and closes — all within the wave — was previously a declared
+   residual: `scanFences` returned `openFenceLine=0` (fence IS closed), so D8's fence check could
+   not fire and the scenario silently produced zero gates. ML-2F implements the fix: when the
+   per-wave scan finds the gate header masked by a closed fence it returns a non-nil error
+   (captured in `gates.error` for `show --json`, causes exit 2 for `barrier`). The E3 residual
+   is closed. The rule applies only when the wave has **no** unmasked gate header, and covers a
+   header inside a closed HTML comment as well; a masked example next to a real header is allowed.
+   **Near-miss gates header (D8, ADR-2026-11-08, ML-2G, ML-2I, ML-2I-bis, ML-2J, ML-2J corretivo, ML-2L):** an
+   unmasked line that does not match `GatesHeaderRe` but whose skeleton matches a target is a
+   parse error naming the line, **provided** a fence opener is bound to it (`boundGateFence`
+   finds the first unmasked fence opener — any info-string — before the next section heading,
+   valid `GatesHeaderRe` line, or wave end). The search stops at the first unmasked
+   `GatesHeaderRe` line because a fence belongs to the nearest header above it; without this
+   stop, prose like `Wave gates: see below` before a valid `**Wave gates:**` would traverse
+   past the valid header, claim its fence, and produce a false near-miss error (ML-2J
+   corretivo, R3-H). Lines without a bound fence are not flagged, eliminating prose false-positives.
+   **Fence binding (ML-2L mecanismo B, ADR-2026-11-08 rodada 4):** `boundGateFence` now stops
+   at the FIRST fence opener regardless of info-string (using `DetectFenceMarker` tolerance).
+   The caller is responsible for the tag check:
+   - **Near-miss path:** any fence opener bound to the near-miss line triggers the near-miss
+     error (the info-string is irrelevant — the near-miss error always fires when a fence is bound).
+   - **Valid-header path:** after the fence is found, `ParseGatesLines` verifies that the
+     trimmed fence line equals exactly `\`\`\`bash` (three backticks immediately followed by
+     `bash`, no leading or trailing space on the trimmed string). If the tag differs, the error is:
+     `"gates fence at line N must open with exactly '```bash' (found %q) — the barrier never skips to a later fence (D8, ADR-2026-11-08)"`.
+     The barrier **never** skips to a later fence to find one with the correct tag.
+   The skeleton is computed by `gatesNearMissSkeleton` (eight-step pipeline, step 4 added ML-2L):
+   (0) `html.UnescapeString` + HTML-tag removal (`<[^>]*>`), so `<strong>Wave gates:</strong>`
+   reduces to `Wave gates:`.
+   (1a) Remove every rune in `unicode.Mn` (covers VS1–VS14 `U+FE00–U+FE0E` and other
+   non-spacing marks), `unicode.Cf`, `unicode.Other_Default_Ignorable_Code_Point`, and
+   `U+2800` (Braille Blank, category So — renders as a space but is none of the above).
+   (1b) NFKC normalization (maps full-width letters and Unicode math bold/italic/fraktur to
+   ASCII base forms).
+   (1c) `strings.ToLower` **before** the homoglyph table — capital confusables (Ԝ `U+051C`,
+   Α `U+0391`, Ε `U+0395`) fold to their lowercase forms (ԝ, α, ε) which are already in the
+   map; applying the map first would miss them.
+   (1d) Apply homoglyph table (`nearMissHomoglyphs` in `roadmapdoc.go`; Cyrillic/Greek/Latin
+   confusables → ASCII — only lowercase keys are reached after step 1c).
+   (1e) Replace `∶` (`U+2236`, Sm) and `꞉` (`U+A789`, Lm) with ASCII `:` — NFKC does not
+   map these.
+   (2) Repeatedly strip leading whitespace, blockquote `>`, and list markers (`-`, `*`, `+`
+   followed by a space, or `\d+[.)]` followed by whitespace).
+   (3) Remove all runes in `{*, _, #, |, >, -, +, ~}` and all `unicode.IsSpace` runes.
+   With a colon: process only up to and including the first `:`; leave the tail verbatim.
+   (4) _(ML-2L mecanismo A, ADR-2026-11-08 rodada 4)_ Remove ASCII digit sequences and
+   substrings enclosed in matching `(`…`)` or `[`…`]` (non-nested) from the **prefix only**
+   (up to the first `:`, or the whole string when no colon is present). This allows numeric
+   wave labels (`**Wave 1 gates:**`, `**Gates da wave 0:**`) and parenthetical qualifiers
+   (`**Wave gates (blocking):**`, `**Wave gates** (run by Zeus)`) to match the same targets as
+   the canonical forms. Declared behaviours: an unbalanced `(` consumes to the end of the
+   prefix; a colon inside parentheses (e.g. `(note: x)`) is part of the removed group;
+   digits and groups after the first `:` are preserved.
+   The skeleton is compared with `HasPrefix` against `nearMissGatesTargets`
+   (`wavegates:`, `wavegate:`, `gatesdawave:`, `gatedawave:`).
+   Without a colon: process the entire string and compare with **exact equality** against
+   `nearMissGatesTargetsNoColon` (`wavegates`, `wavegate`, `gatesdawave`, `gatedawave`) —
+   catches forms like `**Wave gates**` and `### Wave gates`.
+   Backtick (`` ` ``) is intentionally **not** in the strip set, so a header quoted in
+   backticks in prose does not fire.
+   The check runs for every unmasked non-matching line in `[waveStart, waveEnd)`, **even
+   when a valid header is also present**; it runs before D3 so a near-miss error is always
+   reported first. Note: a `## Wave gates:` heading (ATX H2) closes the preceding wave at
+   that line index, placing the near-miss line at exactly `waveEnd` (exclusive), so
+   ParseGatesLines never scans it; `###` and deeper headings stay inside the wave and do fire.
+   **Declared residual:** homoglyph confusables outside the Latin/Cyrillic/Greek scripts
+   covered by `nearMissHomoglyphs`, and deliberate obfuscation that survives the full pipeline
+   (e.g. mixed-script homoglyphs, paraphrased wording). These are accepted residuals: a
+   document author who goes to that length to disguise a gate header could equally delete the
+   header — the net result is the same (no gate runs) and both are already within the author's
+   legitimate control.
+   **`Lapsed:`/`Caducou:` invisible-filler guard (D8, ADR-2026-11-08, ML-2G):** the
+   `lapsedLineHasContent` function rejects a continuation line whose post-colon content
+   consists entirely of `Other_Default_Ignorable_Code_Point` characters (which includes the
+   four Hangul Fillers U+3164, U+115F, U+1160, U+FFA0). These have Unicode category Lo
+   (Letter, Other) so `unicode.IsLetter` returns true, but they carry no visible glyph. A
+   continuation whose only characters are ODIP runes is treated as Unmet, not Lapsed. The
+   guard is an additional `!unicode.Is(unicode.Other_Default_Ignorable_Code_Point, r)` check
+   applied after the existing `IsLetter || IsNumber || IsPunct` test.
    **Consequence of per-line execution:** each gate command runs in its own `sh -c` process.
    There is no shared state between lines: `export`, `cd`, and variable assignments do not
    survive to the next line. Multi-line constructs — unbalanced quotes, `$(`, heredoc openers,
@@ -3355,7 +3508,7 @@ Every `.md` file under `roadmap_dir` that (a) appears in the branch diff, (b) ex
 | `date:` before 2026-07-18 | — | Orchestration only |
 | All other cases | — | Orchestration + patterns from started waves (ADR-2026-10-31 D2) |
 
-**Started wave** (for both the target and members): a wave with at least one ML satisfying the K match-positive predicate: `StatusIsComplete` (✅), `StatusTerminated` (❌ Cancelado, 🚫 Abandonado), or `StatusPending` with first emoji `🔄` or `❌` (🔄 Em andamento, ❌ Bloqueado). VS16 (U+FE0F) appended to the emoji is normalised before comparison. A wave ⬜ is never started. All-`⬜` members contribute only orchestration. A missing `date:` field is treated as post-cutoff.
+**Started wave** (for both the target and members): a wave with at least one ML satisfying the K match-positive predicate: `StatusIsComplete` (✅), `StatusTerminated` (❌ Cancelado / ❌ canceled / ❌ cancelled, 🚫 Abandonado, `abandonado` / `abandoned`), or `StatusPending` with first emoji `🔄` or `❌` (🔄 Em andamento, ❌ Bloqueado). `❌ Blocked` is StatusPending (not Terminated); only the exact tokens `{cancelado, canceled, cancelled}` resolve `❌` as Terminated (ADR D1, ADR-2026-11-08). VS16 (U+FE0F) appended to the emoji is normalised before comparison. A wave ⬜ is never started. All-`⬜` members contribute only orchestration. A missing `date:` field is treated as post-cutoff.
 
 **Note:** the target roadmap and members use the same started-wave predicate. For members, K (the highest started wave number) is still computed to detect the all-`⬜` case early; the wave loop then contributes only started waves, not the contiguous range 0..K (ADR-2026-10-31 D2).
 

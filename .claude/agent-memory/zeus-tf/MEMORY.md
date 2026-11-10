@@ -29,14 +29,14 @@
 - [Nunca sobrepor o modelo do agente](feedback_nunca_sobrepor_o_modelo_do_agente.md) — 🔴 não passe `model` no Agent tool; o frontmatter decide, e o roteamento existe para economizar tokens
 - [Agente não roda init na árvore](feedback_agente_nao_roda_init_na_arvore.md) — `trackfw init` reescreve o `trackfw.yaml`; 170 warnings viraram 156 violations e o executor chamou de pré-existente
 - [Replace sem assert mente](feedback_replace_sem_assert_mente.md) — edição que não casa devolve o texto intacto; commitei dizendo que marquei ACs que não marquei
-- [Proibir make quality cega o executor](feedback_proibir_make_quality_cega_o_executor.md) — certo com frente paralela; autorize no ML final; script novo → `make parity-rest` no handoff (2x no #517)
+- [Proibir make quality cega o executor](feedback_proibir_make_quality_cega_o_executor.md) — certo com frente paralela; autorize no ML final; script novo → `make parity-rest` no handoff (3x: #517 e idioma)
 - [Nome de teste no relatório se verifica](feedback_nome_de_teste_no_relatorio_se_verifica.md) — 3 de 7 nomes reportados como PASS não existiam; `go test -run` com nome inexistente imprime `ok`
 - [Gate de wave é uma linha por comando](feedback_gate_de_wave_e_uma_linha_por_comando.md) — barrier roda cada linha como sh -c; testei com bash e reprovava no real; conferir com o barrier
 - [Contribuição externa: Discussion antes, gate verde sempre](project_contribuicao_externa_discussion_e_gates.md) — REQ nossa/backlog exige Discussion; PR vermelho não entra; avisar na issue ao abrir REQ
 - [Pré-existente exige medição na main](feedback_preexistente_exige_medicao_na_main.md) — 4 "pré-existentes" falsos na REQ-2026-09-05; mesmo gate em worktree de origin/main ou não vale
 - [make quality com máquina ociosa](feedback_make_quality_com_maquina_ociosa.md) — #504: 5/5 limpas ociosa; as 3 "penduradas" tinham concorrência; capture ps antes de matar
 - [req new já cria a roadmap](project_req_new_ja_cria_roadmap.md) — `roadmap new` depois sobrescreve sem vínculo; só o push pega; não rode os dois
-- [Defeito conhecido se corrige agora](feedback_defeito_conhecido_corrige_agora.md) — residual de red-team ou inconsistência vista na auditoria vira ML no mesmo PR (KG 2x em 2026-10-09)
+- [Defeito conhecido se corrige agora](feedback_defeito_conhecido_corrige_agora.md) — residual de red-team vira ML no mesmo PR; exceção: ofuscação deliberada quando apagar já é legal (KG, 11-08)
 - [Mudar contrato: auditar quem afirma o antigo](feedback_mudar_contrato_auditar_quem_afirma_o_antigo.md) — testes E cenários de `scripts/check-gates-falsify.sh` fixam a forma antiga; 2x no #663
 - [Proibir sem rota legítima vira contorno](feedback_proibir_sem_rota_legitima_vira_contorno.md) — medição git que escreve: dê a rota (teste Go em t.TempDir); hades contornou o guard por script
 - [Red team executou interpretador real](feedback_red_team_executa_interprete_real.md) — 🔴 Hades rodou git push via pwsh (11-05) e sujou o índice real (11-06); `git diff --cached` após medição

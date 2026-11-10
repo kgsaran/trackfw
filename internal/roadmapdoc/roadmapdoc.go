@@ -11,6 +11,7 @@ package roadmapdoc
 
 import (
 	"fmt"
+	"html"
 	"regexp"
 	"sort"
 	"strconv"
@@ -48,14 +49,20 @@ var (
 	MetCriterionRe = regexp.MustCompile(`^- \[[xX]\]`)
 	CriterionLineRe = regexp.MustCompile(`^- \[.\]`)
 	BoldLineRe      = regexp.MustCompile(`^\*\*`)
-	GatesHeaderRe   = regexp.MustCompile(`^\*\*Gates da wave:\*\*`)
-	// LapsedContinuationRe matches a valid Caducou: continuation line (D2, REQ #514 / ML-1A):
-	// ≥2 leading spaces (not tabs), "Caducou:", optional whitespace, then at least one
-	// non-whitespace character. Using \s* (not \s+) allows "Caducou:text" (no space), which
-	// is valid per D2 ("texto não vazio depois dos dois-pontos"). A bare "  Caducou:" or
-	// "  Caducou:\r" still fails: \r is whitespace, so \s* consumes it, but then \S requires
+	// GatesHeaderRe matches the gates-block header in its Portuguese and English forms
+	// (D1, ADR-2026-11-08 / ML-1A). Both forms are case-sensitive (same rule as PT was
+	// before the alias was added). Accepted: "**Gates da wave:**", "**Wave gates:**".
+	// Rejected: "**Wave gate:**" (singular), "**Wave  gates:**" (double space),
+	// "**wave gates:**" (lower-case first letter).
+	GatesHeaderRe = regexp.MustCompile(`^\*\*(?:Gates da wave|Wave gates):\*\*`)
+	// LapsedContinuationRe matches a valid lapsed-criterion continuation line
+	// (D2, REQ #514 / ML-1A; alias D1, ADR-2026-11-08 / ML-1A):
+	// ≥2 leading spaces (not tabs), "Caducou:" or "Lapsed:", optional whitespace, then at
+	// least one non-whitespace character. Using \s* (not \s+) allows "Caducou:text" (no
+	// space after the colon), which is valid per D2. A bare "  Caducou:" / "  Lapsed:" or
+	// "  Lapsed:\r" still fails: \r is whitespace, so \s* consumes it, but \S then requires
 	// a real (non-whitespace) character which is absent.
-	LapsedContinuationRe = regexp.MustCompile(`^ {2,}Caducou:\s*\S`)
+	LapsedContinuationRe = regexp.MustCompile(`^ {2,}(?:Caducou|Lapsed):\s*\S`)
 )
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -192,15 +199,23 @@ const (
 // terminatedVocabulary covers explicit termination markers (first token, lower-cased
 // and diacritics-folded). These release a done transition because the omission was
 // deliberate and recorded, not forgotten.
+// D1 (ADR-2026-11-08 / ML-1A): "abandoned" is the English alias for "abandonado".
 var terminatedVocabulary = map[string]bool{
 	"abandonado": true,
+	"abandoned":  true,
 	"🚫":          true,
 }
 
-// canceladoToken is the second-token disambiguator for the ❌ first-token case.
-// "❌ Cancelado" → Terminated; "❌ Bloqueado" → Pending.
-// Both strings are compared after normalizeStatusToken.
-const canceladoNormalized = "cancelado"
+// isCanceledToken reports whether norm (a normalizeStatusToken result) is one of
+// the recognised cancellation second-tokens for the ❌ first-token case:
+// "❌ Cancelado" / "❌ canceled" / "❌ cancelled" → Terminated; "❌ Bloqueado" /
+// "❌ Blocked" → Pending.
+// D1 (ADR-2026-11-08 / ML-1A): "canceled" and "cancelled" are English aliases.
+// Exact token comparison only — "❌ cancellation-pending" must stay Pending (D1 §threat model,
+// wave 0 §5.1). Never use prefix matching here.
+func isCanceledToken(norm string) bool {
+	return norm == "cancelado" || norm == "canceled" || norm == "cancelled"
+}
 
 // StatusCategory returns the three-way classification of a "**Status:**" marker.
 // It does NOT alter StatusIsComplete — that function remains the binary gate
@@ -222,9 +237,17 @@ func StatusCategory(marker string) StatusCat {
 		return StatusPending
 	}
 	first := stripVS16(fields[0])
-	// hasDisallowedCombiningMark check not needed here: even if it fires, the
-	// marker isn't complete (StatusIsComplete already returned false) and we fall
-	// through to Pending, which is the safe default.
+	// G (D8, ADR-2026-11-08 / ML-2C): a combining mark (e.g. ñ in "abandoñed")
+	// must not cause normalizeStatusToken to strip the diacritic and find the clean
+	// form in terminatedVocabulary. The comment that existed here claimed
+	// "falls through to Pending, which is the safe default" — this was factually
+	// wrong: normalizeStatusToken DOES strip combining marks and returns the base
+	// form, so "abandoñed" would normalise to "abandoned" and return StatusTerminated
+	// instead of StatusPending. StatusIsComplete guards with the same predicate; we
+	// apply it here too for consistency and correctness (ML-2C, red team finding G).
+	if hasDisallowedCombiningMark(first) {
+		return StatusPending
+	}
 	firstNorm := normalizeStatusToken(first)
 
 	if terminatedVocabulary[firstNorm] {
@@ -232,8 +255,14 @@ func StatusCategory(marker string) StatusCat {
 	}
 	// ❌ is ambiguous by first token: check second token.
 	if first == "❌" && len(fields) >= 2 {
-		secondNorm := normalizeStatusToken(fields[1])
-		if secondNorm == canceladoNormalized {
+		second := stripVS16(fields[1])
+		// G: same guard on the second token — "❌ cañceled" must not normalize to
+		// "❌ canceled" and return StatusTerminated.
+		if hasDisallowedCombiningMark(second) {
+			return StatusPending
+		}
+		secondNorm := normalizeStatusToken(second)
+		if isCanceledToken(secondNorm) {
 			return StatusTerminated
 		}
 	}
@@ -373,8 +402,11 @@ func scanFences(lines []string) (mask []bool, openLine int) {
 // StatusLineRe and CriteriaHeaderRe must ignore documentation/examples inside
 // a cerca — otherwise a roadmap that cites those literals (as this very
 // roadmap, its REQ and its ADR do, repeatedly) is read as real ML content.
-// ParseGatesLines consults this mask to skip "**Gates da wave:**" markers that
-// appear inside an example fence (F1, REQ #491).
+// ParseGatesLines consults this mask to exclude "**Gates da wave:**" markers that
+// appear inside an example fence from counting as valid declarations (F1, REQ #491).
+// When all gate headers in a wave are masked and none is unmasked, ParseGatesLines
+// returns an error rather than silently returning zero gates (E3, D8, ADR-2026-11-08
+// / ML-2F).
 func FenceMask(lines []string) []bool {
 	mask, _ := scanFences(lines)
 	return mask
@@ -876,6 +908,120 @@ func HTMLCommentMask(lines []string, fenced []bool) []bool {
 	return htmlCommentMask(lines, fenced)
 }
 
+// HTMLCommentMaskCheck reports whether the slice lines[0:waveEnd] (clamped to
+// len(lines)) has any unclosed HTML comment at the end of the range.
+// If there is, it returns (openLine, err) where openLine is the 1-based line number
+// of the unclosed "<!--" opener and the error message matches:
+// "unclosed HTML comment starting at line <n>".
+// If all comments close within [0, waveEnd), it returns (0, nil).
+//
+// Mirrors FenceMaskCheck: uses the same htmlCommentMaskKernel but over a prefix of
+// the document so that the check is scoped to a wave interval — a comment that opens
+// and closes before waveEnd does not trigger a false positive.
+//
+// D8 (ADR-2026-11-08 / ML-2C): ParseGatesLines uses this to detect an unclosed comment
+// that could silently hide the gates header, returning an error instead of zero gates.
+func HTMLCommentMaskCheck(lines []string, fenced []bool, waveEnd int) (int, error) {
+	if waveEnd > len(lines) {
+		waveEnd = len(lines)
+	}
+	_, openLine := htmlCommentMaskKernel(lines[:waveEnd], fenced[:waveEnd])
+	if openLine != 0 {
+		return openLine, fmt.Errorf("unclosed HTML comment starting at line %d", openLine)
+	}
+	return 0, nil
+}
+
+// htmlCommentMaskKernel is the shared implementation of htmlCommentMask and
+// HTMLCommentMaskCheck. It walks lines once, running the full state machine, and
+// returns:
+//   - mask: for each line index, true when the line's column 0 is inside a comment
+//     opened on a previous line (column-0 semantics — opening and closing lines are
+//     never masked).
+//   - openLine: the 1-based line number of the last unclosed "<!--" opener, or 0 if
+//     all comments are closed by the end of the slice.
+//
+// Splitting the kernel from the wrappers mirrors FenceMask/FenceMaskCheck/scanFences:
+// htmlCommentMask discards openLine, HTMLCommentMaskCheck uses it.
+func htmlCommentMaskKernel(lines []string, fenced []bool) (mask []bool, openLine int) {
+	mask = make([]bool, len(lines))
+	inComment := false
+	commentOpenLine := 0 // 1-based line of the last opened, unclosed comment
+	inCodeSpanN := 0     // > 0: currently inside a multi-line code span of this run length
+	for i, line := range lines {
+		if fenced[i] {
+			inCodeSpanN = 0 // fenced line interrupts any in-progress code span
+			continue
+		}
+		// Column-0 semantics: mask[i] reflects inComment at the START of the line.
+		mask[i] = inComment
+		pos := 0
+
+		// Handle continuation of a multi-line code span started on a previous line.
+		if inCodeSpanN > 0 {
+			if interruptsParagraph(line) {
+				// Paragraph-interrupting line ends the span. The opening backtick run
+				// was literal. Reset span state and let the state machine re-scan this
+				// line (it may contain a "<!--" that should open a comment).
+				inCodeSpanN = 0
+				// Fall through to the state machine below.
+			} else {
+				closeEnd := findCodeSpanClose(line, 0, inCodeSpanN)
+				if closeEnd < 0 {
+					// No close on this line; entire line is span interior. Skip it.
+					continue
+				}
+				// Close found: resume normal state-machine scanning from after close.
+				inCodeSpanN = 0
+				pos = closeEnd
+			}
+		}
+
+		// Walk the line as a state machine to determine inComment for the next line.
+		for pos < len(line) {
+			if inComment {
+				idx := strings.Index(line[pos:], "-->")
+				if idx < 0 {
+					break // comment still open at end of line
+				}
+				inComment = false
+				commentOpenLine = 0 // comment closed
+				pos += idx + 3
+			} else {
+				// findCommentOpenerOrSpan distinguishes a real "<!--" from an unclosed
+				// backtick run, enabling the multi-line span lookahead below.
+				openerPos, spanN, resumePos := findCommentOpenerOrSpan(line, pos)
+				if spanN > 0 {
+					// Unclosed backtick run. Check whether a matching close exists on a
+					// later line without crossing a paragraph-interrupting boundary.
+					if lookAheadCodeSpanClose(lines, fenced, i, spanN) {
+						// Multi-line span confirmed: enter span state and stop processing
+						// this line (the rest is span interior).
+						inCodeSpanN = spanN
+						break
+					}
+					// No close found across safe lines: treat the run as literal and
+					// continue scanning for "<!--" from after the run.
+					pos = resumePos
+					continue
+				}
+				if openerPos < 0 {
+					break // no opener found; stays closed
+				}
+				inComment = true
+				commentOpenLine = i + 1 // 1-based line number of this opener
+				// Advance past "<!--" before resuming (mirrors StripInlineHTMLComments
+				// "after := openerPos+4" — "-->x" at opener+0 is not a valid close).
+				pos = openerPos + 4
+			}
+		}
+	}
+	if inComment {
+		return mask, commentOpenLine
+	}
+	return mask, 0
+}
+
 // htmlCommentMask returns a boolean slice (same length as lines) where true means the
 // line's column 0 is inside an HTML comment block (<!-- ... -->). Used by
 // AcceptanceEvaluateFull (Caducou: detection) and MLStatusMarker (status detection)
@@ -930,89 +1076,70 @@ func HTMLCommentMask(lines []string, fenced []bool) []bool {
 // repeated per ML in mlScopeWaveIsStarted. For typical roadmaps (hundreds of lines,
 // tens of MLs) this is acceptable. If it becomes a bottleneck, elevate the mask to
 // the caller.
+//
+// This function is a thin wrapper over htmlCommentMaskKernel (D8, ADR-2026-11-08
+// ML-2C): HTMLCommentMaskCheck uses the same kernel to check for unclosed comments
+// within a wave interval without duplicating the state machine.
 func htmlCommentMask(lines []string, fenced []bool) []bool {
-	mask := make([]bool, len(lines))
-	inComment := false
-	inCodeSpanN := 0 // > 0: currently inside a multi-line code span of this run length
-	for i, line := range lines {
-		if fenced[i] {
-			inCodeSpanN = 0 // fenced line interrupts any in-progress code span
-			continue
-		}
-		// Column-0 semantics: mask[i] reflects inComment at the START of the line.
-		mask[i] = inComment
-		pos := 0
-
-		// Handle continuation of a multi-line code span started on a previous line.
-		if inCodeSpanN > 0 {
-			if interruptsParagraph(line) {
-				// Paragraph-interrupting line ends the span. The opening backtick run
-				// was literal. Reset span state and let the state machine re-scan this
-				// line (it may contain a "<!--" that should open a comment).
-				inCodeSpanN = 0
-				// Fall through to the state machine below.
-			} else {
-				closeEnd := findCodeSpanClose(line, 0, inCodeSpanN)
-				if closeEnd < 0 {
-					// No close on this line; entire line is span interior. Skip it.
-					continue
-				}
-				// Close found: resume normal state-machine scanning from after close.
-				inCodeSpanN = 0
-				pos = closeEnd
-			}
-		}
-
-		// Walk the line as a state machine to determine inComment for the next line.
-		for pos < len(line) {
-			if inComment {
-				idx := strings.Index(line[pos:], "-->")
-				if idx < 0 {
-					break // comment still open at end of line
-				}
-				inComment = false
-				pos += idx + 3
-			} else {
-				// findCommentOpenerOrSpan distinguishes a real "<!--" from an unclosed
-				// backtick run, enabling the multi-line span lookahead below.
-				openerPos, spanN, resumePos := findCommentOpenerOrSpan(line, pos)
-				if spanN > 0 {
-					// Unclosed backtick run. Check whether a matching close exists on a
-					// later line without crossing a paragraph-interrupting boundary.
-					if lookAheadCodeSpanClose(lines, fenced, i, spanN) {
-						// Multi-line span confirmed: enter span state and stop processing
-						// this line (the rest is span interior).
-						inCodeSpanN = spanN
-						break
-					}
-					// No close found across safe lines: treat the run as literal and
-					// continue scanning for "<!--" from after the run.
-					pos = resumePos
-					continue
-				}
-				if openerPos < 0 {
-					break // no opener found; stays closed
-				}
-				inComment = true
-				// Advance past "<!--" before resuming (mirrors StripInlineHTMLComments
-				// "after := openerPos+4" — "-->x" at opener+0 is not a valid close).
-				pos = openerPos + 4
-			}
-		}
-	}
+	mask, _ := htmlCommentMaskKernel(lines, fenced)
 	return mask
 }
 
-// extractLapsedReason parses a valid Caducou: continuation line (already matched
-// by LapsedContinuationRe) and returns a LapsedReason for AcceptanceEvaluateFull.
-// lineNo is 1-based. The text is the trimmed content after "Caducou:", truncated at
-// 120 runes with "…" (ML-1D, REQ #514).
+// lapsedLineHasContent reports whether a lapsed continuation line (already matched
+// by LapsedContinuationRe) contains at least one visible character — a rune whose
+// Unicode category is Letter (\p{L}), Number (\p{N}), or Punctuation (\p{P}) and
+// that is NOT in the Other_Default_Ignorable_Code_Point table — after the
+// "Caducou:"/"Lapsed:" prefix. Symbols (\p{S}) are intentionally excluded from the
+// allowed set (spec: \p{L}|\p{N}|\p{P} only).
+//
+// The ODIP guard (N-1, D8, ADR-2026-11-08 / ML-2G) closes the Hangul Filler bypass:
+// U+3164, U+115F, U+1160, U+FFA0 have category Lo (Letter, Other) so IsLetter returns
+// true, yet they carry no visible glyph. All four are in
+// unicode.Other_Default_Ignorable_Code_Point. Adding the negative guard makes the
+// function consistent: a rune counts as content only if it is both in \p{L}|\p{N}|\p{P}
+// AND outside the ODIP table.
+//
+// This check is performed BEFORE calling extractLapsedReason, which uses
+// strings.TrimSpace. TrimSpace strips NBSP (U+00A0, Zs) but does NOT strip ZWSP
+// (U+200B, Cf). Both satisfy the ASCII-only \S in LapsedContinuationRe yet carry
+// no visible glyph. A post-truncation check would also be wrong: extractLapsedReason
+// appends "…" (U+2026, IsPunct) when the input exceeds 120 runes, so 121 ZWSPs
+// would falsely pass a check on the returned text (F, D8, ADR-2026-11-08 / ML-2C).
+func lapsedLineHasContent(line string) bool {
+	stripped := strings.TrimLeft(line, " \t")
+	for _, prefix := range []string{"Caducou:", "Lapsed:"} {
+		rest, found := strings.CutPrefix(stripped, prefix)
+		if found {
+			for _, r := range rest {
+				if (unicode.IsLetter(r) || unicode.IsNumber(r) || unicode.IsPunct(r)) &&
+					!unicode.Is(unicode.Other_Default_Ignorable_Code_Point, r) {
+					return true
+				}
+			}
+			return false
+		}
+	}
+	return false
+}
+
+// extractLapsedReason parses a valid lapsed continuation line (already matched by
+// LapsedContinuationRe) and returns a LapsedReason for AcceptanceEvaluateFull.
+// lineNo is 1-based. The text is the trimmed content after "Caducou:" or "Lapsed:"
+// (D1, ADR-2026-11-08 / ML-1A), truncated at 120 runes with "…" (ML-1D, REQ #514).
+//
+// Search order: strip leading spaces, then try each known prefix. The match is
+// positional after the leading whitespace, not a substring search, so a line like
+// "  Lapsed: superseded, Caducou: x" uses "Lapsed:" correctly and does not bleed
+// into the "Caducou:" substring inside the justification text.
 func extractLapsedReason(line string, lineNo int) LapsedReason {
-	const prefix = "Caducou:"
-	idx := strings.Index(line, prefix)
+	stripped := strings.TrimLeft(line, " \t")
 	text := ""
-	if idx >= 0 {
-		text = strings.TrimSpace(line[idx+len(prefix):])
+	for _, prefix := range []string{"Caducou:", "Lapsed:"} {
+		rest, found := strings.CutPrefix(stripped, prefix)
+		if found {
+			text = strings.TrimSpace(rest)
+			break
+		}
 	}
 	runes := []rune(text)
 	if len(runes) > 120 {
@@ -1097,10 +1224,16 @@ func AcceptanceEvaluateFull(lines []string, fenced []bool, ml MLBlock) Acceptanc
 			detail.Met++
 
 		case UnmetCriterionRe.MatchString(line):
-			// Check for valid Caducou: continuation on the very next line.
+			// Check for valid Caducou:/Lapsed: continuation on the very next line.
+			// F (D8, ADR-2026-11-08 / ML-2C): lapsedLineHasContent is checked BEFORE
+			// extractLapsedReason. LapsedContinuationRe uses ASCII-only \S, so NBSP
+			// (U+00A0) and ZWSP (U+200B) satisfy the regex but carry no visible glyph.
+			// Without this guard, "  Lapsed: <NBSP>" counts as a lapsed criterion with
+			// an empty reason — a silent classification error.
 			next := i + 1
 			if next < blockEnd && !fenced[next] && !htmlMask[next] &&
-				LapsedContinuationRe.MatchString(lines[next]) {
+				LapsedContinuationRe.MatchString(lines[next]) &&
+				lapsedLineHasContent(lines[next]) {
 				detail.Lapsed++
 				detail.LapsedReasons = append(detail.LapsedReasons, extractLapsedReason(lines[next], next+1))
 			} else {
@@ -1144,104 +1277,567 @@ type GateCmd struct {
 	Text string // trimmed command text
 }
 
+// nearMissOrderedListRe matches a leading ordered-list marker (digits + . or ) +
+// one or more whitespace characters). Compiled once at package initialisation
+// to avoid per-call overhead inside ParseGatesLines.
+var nearMissOrderedListRe = regexp.MustCompile(`^\d+[.)]\s+`)
+
+// nearMissHomoglyphs maps visually confusable non-ASCII runes to their ASCII
+// equivalents for the letters that appear in "gates da wave" / "wave gates".
+// Only Cyrillic, Greek and Latin confusables are included; each mapping is
+// justified below.
+//
+// ML-2J: gatesNearMissSkeleton now applies ToLower BEFORE this map, so only
+// lowercase keys are reached at runtime. The uppercase entries (А, Е, Ѕ, Ѵ, Т)
+// are dead code after the reorder but are kept as documentation. The former Т→T
+// entry now needs а corresponding т→t (Cyrillic small TE, U+0442) because ToLower
+// maps Т (U+0422) to т, not to ASCII T. Without т→t, **Wave gaТes:** would escape.
+//
+// Cyrillic confusables (a, e, s, d, w, v, t):
+//   - U+0430 а → a   Cyrillic small letter A, indistinguishable in many fonts
+//   - U+0410 А → A   Cyrillic capital A (dead code post-ML-2J; kept for doc)
+//   - U+0435 е → e   Cyrillic small letter IE, indistinguishable
+//   - U+0415 Е → E   Cyrillic capital IE (dead code post-ML-2J; kept for doc)
+//   - U+0455 ѕ → s   Cyrillic small letter DZE
+//   - U+0405 Ѕ → S   Cyrillic capital DZE (dead code post-ML-2J; kept for doc)
+//   - U+0501 ԁ → d   Cyrillic small letter KOMI DE (identical glyph to 'd')
+//   - U+051D ԝ → w   Cyrillic small letter WE
+//   - U+0475 ѵ → v   Cyrillic small letter IZHITSA (looks like 'v')
+//   - U+0474 Ѵ → V   Cyrillic capital IZHITSA (dead code post-ML-2J; kept for doc)
+//   - U+0422 Т → T   Cyrillic capital TE (dead code post-ML-2J; kept for doc)
+//   - U+0442 т → t   Cyrillic small TE — added ML-2J (ToLower of Т U+0422 is т U+0442)
+//
+// Latin-script confusables (g, a):
+//   - U+0261 ɡ → g   Latin small letter SCRIPT G (a typographic variant of g)
+//   - U+0251 ɑ → a   Latin small letter ALPHA — added ML-2J (R3-G; script Latin)
+//
+// Greek confusables (a, e, v, w, t):
+//   - U+03B1 α → a   Greek small letter ALPHA (looks like italic 'a' in many fonts)
+//   - U+03B5 ε → e   Greek small letter EPSILON (looks like 'e')
+//   - U+03BD ν → v   Greek small letter NU (glyph is ν ≈ v in many sans-serif fonts)
+//   - U+03C9 ω → w   Greek small letter OMEGA (glyph ≈ 'w')
+//   - U+03C4 τ → t   Greek small letter TAU (glyph ≈ 't')
+//
+// Residual (not included): characters outside Latin/Cyrillic/Greek scripts, rare
+// confusables, and those requiring a different font or context to be confused.
+// The table is intentionally small and explicit — a broad NFKC fold would map
+// too many characters and generate false positives on legitimate prose.
+var nearMissHomoglyphs = map[rune]rune{
+	'а': 'a', // а Cyrillic small a
+	'А': 'A', // А Cyrillic capital A (dead code post-ML-2J)
+	'е': 'e', // е Cyrillic small IE
+	'Е': 'E', // Е Cyrillic capital IE (dead code post-ML-2J)
+	'ѕ': 's', // ѕ Cyrillic small DZE
+	'Ѕ': 'S', // Ѕ Cyrillic capital DZE (dead code post-ML-2J)
+	'ԁ': 'd', // ԁ Cyrillic small Komi DE
+	'ԝ': 'w', // ԝ Cyrillic small WE
+	'ѵ': 'v', // ѵ Cyrillic small IZHITSA
+	'Ѵ': 'V', // Ѵ Cyrillic capital IZHITSA (dead code post-ML-2J)
+	'Т': 'T', // Т Cyrillic capital TE (dead code post-ML-2J)
+	'т': 't', // т Cyrillic small TE — added ML-2J (ToLower of Т is т, not T)
+	'ɡ': 'g', // ɡ Latin small script G
+	'ɑ': 'a', // ɑ Latin small letter ALPHA — added ML-2J (R3-G)
+	'α': 'a', // α Greek ALPHA
+	'ε': 'e', // ε Greek EPSILON
+	'ν': 'v', // ν Greek NU
+	'ω': 'w', // ω Greek OMEGA
+	'τ': 't', // τ Greek TAU
+}
+
+// nearMissGatesTargets is the closed set of skeleton prefixes that identify a
+// near-miss gates header (D8, ADR-2026-11-08 / ML-2G, ML-2I-bis). After the skeleton
+// is computed by gatesNearMissSkeleton, the line is a near-miss when strings.HasPrefix
+// matches one of these strings.
+//
+// ML-2I-bis switched to the letters-only skeleton: after stripping all markdown
+// punctuation and whitespace from the prefix up to the first ':', the targets are
+// the bare letter+colon sequences. All lowercase.
+var nearMissGatesTargets = []string{
+	"wavegates:",
+	"wavegate:",
+	"gatesdawave:",
+	"gatedawave:",
+}
+
+// nearMissGatesTargetsNoColon is the same set without the trailing colon, used
+// for exact-equality matching when the skeleton has no ':' after step 3
+// (ML-2J, R3-D: forms like "**Wave gates**" or "### Wave gates" without a colon).
+var nearMissGatesTargetsNoColon = []string{
+	"wavegates",
+	"wavegate",
+	"gatesdawave",
+	"gatedawave",
+}
+
+// nearMissHTMLTagRe matches a single HTML tag (open, close, or self-closing).
+// Used by gatesNearMissSkeleton step 0 to remove HTML markup before skeleton
+// computation (ML-2J, R3-F).
+var nearMissHTMLTagRe = regexp.MustCompile(`<[^>]*>`)
+
+// gatesNearMissSkeleton computes the normalised skeleton of a line for the
+// near-miss gates-header detection (D8, ADR-2026-11-08 / ML-2G, ML-2I-bis,
+// ML-2J).
+//
+// The pipeline (ML-2J revises ML-2I-bis):
+//
+//  0. html.UnescapeString (&#58; → :, &amp; → &, etc.). Remove all HTML tags
+//     (<[^>]*>), so <strong>Wave gates:</strong> reduces to "Wave gates:".
+//
+//  1a. Remove every rune in unicode.Mn (covers VS1–VS14 U+FE00–U+FE0E),
+//     unicode.Cf, unicode.Other_Default_Ignorable_Code_Point, and U+2800
+//     (Braille Blank, category So). Also removes VS16 (U+FE0F, Mn).
+//
+//  1b. Apply NFKC normalization (maps full-width letters and Unicode math
+//     bold/italic/fraktur to their ASCII base forms).
+//
+//  1c. Convert to lowercase. This step runs BEFORE the homoglyph map so that
+//     capital confusables (Ԝ U+051C, Α U+0391, Ε U+0395) fold to their
+//     lowercase forms (ԝ, α, ε) which are already in the map.
+//
+//  1d. Apply nearMissHomoglyphs table (lowercase runes only are reached here).
+//
+//  1e. Treat ratio/modifier colons as ASCII ':': replace ∶ U+2236 (Sm) and
+//     ꞉ U+A789 (Lm) with ':'. NFKC does not map these.
+//
+//  2. Repeatedly strip leading ordered-list markers (`\d+[.)]\s+`) and other
+//     list/blockquote prefixes (>, -, *, + followed by space).
+//
+//  3. Remove all runes from the set {*, _, #, |, >, -, +, ~} and all
+//     unicode.IsSpace runes.
+//     - With colon: process up to and including the first ':'; leave the tail
+//       unchanged. The skeleton is compared with HasPrefix against
+//       nearMissGatesTargets ("wavegates:", etc.).
+//     - Without colon: process the entire string. The skeleton is compared
+//       with exact equality against nearMissGatesTargetsNoColon ("wavegates",
+//       etc.) — covers forms like "**Wave gates**" and "### Wave gates".
+//     Backtick (`) is intentionally NOT in the strip set: a header cited in
+//     backtick prose (e.g. "`**Wave gates:**`") must not trigger the check.
+func gatesNearMissSkeleton(line string) string {
+	// Step 0: HTML entity decode and tag removal.
+	s := html.UnescapeString(line)
+	s = nearMissHTMLTagRe.ReplaceAllString(s, "")
+
+	// Step 1a: remove Mn (VS1–VS14 and other nonspacing marks), Cf, ODIP, U+2800.
+	// U+2800 is Braille Blank (category So): not Mn/Cf/ODIP, not IsSpace, but
+	// renders as a space in all tested Markdown renderers (R3-C, ML-2J).
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if r == 0x2800 || r == vs16 ||
+			unicode.Is(unicode.Mn, r) ||
+			unicode.Is(unicode.Cf, r) ||
+			unicode.Is(unicode.Other_Default_Ignorable_Code_Point, r) {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	s = b.String()
+
+	// Step 1b: NFKC normalization.
+	// norm.NFKC maps full-width letters (ｗ → w) and Unicode math bold/italic
+	// (𝐖 → W) to their ASCII base forms. Safe: NFKC does NOT change ASCII
+	// punctuation including *, _, :, # or the markdown delimiters.
+	s = norm.NFKC.String(s)
+
+	// Step 1c: convert to lowercase BEFORE the homoglyph map.
+	// Ordering is critical (ML-2J, R3-A): capital confusables Ԝ U+051C, Α U+0391,
+	// Ε U+0395 lower to ԝ, α, ε respectively (via unicode.ToLower), which ARE in
+	// the map. Applying the map first would miss them because the uppercase forms
+	// were only in the map as dead code.
+	s = strings.ToLower(s)
+
+	// Step 1d: apply homoglyph table (lowercase keys only are reached here).
+	var hb strings.Builder
+	hb.Grow(len(s))
+	for _, r := range s {
+		if mapped, ok := nearMissHomoglyphs[r]; ok {
+			hb.WriteRune(mapped)
+		} else {
+			hb.WriteRune(r)
+		}
+	}
+	s = hb.String()
+
+	// Step 1e: treat alternative colon symbols as ASCII ':'.
+	// NFKC does not map ∶ U+2236 (Sm) or ꞉ U+A789 (Lm) to ':' (R3-E, ML-2J).
+	s = strings.ReplaceAll(s, "∶", ":")
+	s = strings.ReplaceAll(s, "꞉", ":")
+
+	// Step 2: repeatedly strip leading whitespace, blockquote, and list markers.
+	// Needed because digits and '.'/')' (ordered-list markers) survive step 3.
+	// The '>', '-', '*', '+' branches are redundant with step 3 but kept so
+	// that nested prefixes like "> 1. **…**" are fully unwrapped.
+	for {
+		advanced := false
+		// Leading whitespace (including NBSP U+00A0).
+		trimmed := strings.TrimLeftFunc(s, unicode.IsSpace)
+		if trimmed != s {
+			s = trimmed
+			advanced = true
+		}
+		// Blockquote '>'.
+		if strings.HasPrefix(s, ">") {
+			s = s[1:]
+			advanced = true
+			continue
+		}
+		// Ordered list: \d+[.)]\s+
+		if loc := nearMissOrderedListRe.FindStringIndex(s); loc != nil && loc[0] == 0 {
+			s = s[loc[1]:]
+			advanced = true
+			continue
+		}
+		// Unordered list: - * + followed by space.
+		for _, m := range []string{"-", "*", "+"} {
+			if len(s) >= len(m)+1 && s[:len(m)] == m && s[len(m)] == ' ' {
+				s = s[len(m)+1:]
+				advanced = true
+				break
+			}
+		}
+		if !advanced {
+			break
+		}
+	}
+
+	// Step 3: remove strip-set runes and unicode.IsSpace from the prefix.
+	// Backtick is NOT in the strip set so that "`**Wave gates:**`" in prose
+	// does not trigger detection.
+	const stripSet = "*_#|>-+~"
+	colonIdx := strings.IndexByte(s, ':')
+	var sb strings.Builder
+	sb.Grow(len(s))
+	var step3Out string
+	if colonIdx < 0 {
+		// No colon: strip the entire string.
+		// The caller uses exact equality against nearMissGatesTargetsNoColon
+		// (R3-D, ML-2J: "**Wave gates**", "### Wave gates", "**Gates da wave**").
+		for _, r := range s {
+			if strings.ContainsRune(stripSet, r) || unicode.IsSpace(r) {
+				continue
+			}
+			sb.WriteRune(r)
+		}
+		step3Out = sb.String()
+	} else {
+		for _, r := range s[:colonIdx+1] { // process up to and including ':'
+			if strings.ContainsRune(stripSet, r) || unicode.IsSpace(r) {
+				continue
+			}
+			sb.WriteRune(r)
+		}
+		sb.WriteString(s[colonIdx+1:]) // tail after ':' unchanged
+		step3Out = sb.String()
+	}
+
+	// Step 4 (ML-2L, ADR-2026-11-08 rodada 4 mecanismo A): remove ASCII digit sequences
+	// and substrings enclosed in matching parentheses or square brackets (non-nested)
+	// from the prefix — up to the first ':' in step3Out, or the whole string when
+	// there is no colon. This allows numeric wave labels ("**Wave 1 gates:**",
+	// "**Gates da wave 0:**") and parenthetical qualifiers ("**Wave gates (blocking):**",
+	// "**Wave gates** (run by Zeus)") to match the same targets as the canonical forms.
+	// Square brackets are included for symmetric coverage.
+	// Declared behaviours:
+	//   - Non-nested: an unbalanced '(' consumes to the end of the prefix.
+	//   - A colon inside parentheses, e.g. "(note: x)", is part of the removed group.
+	//   - Removal is prefix-only: digits and groups after the first ':' are preserved.
+	colonInStep3 := strings.IndexByte(step3Out, ':')
+	var pref4, tail4 string
+	if colonInStep3 >= 0 {
+		pref4 = step3Out[:colonInStep3]
+		tail4 = step3Out[colonInStep3:] // includes ':'
+	} else {
+		pref4 = step3Out
+		tail4 = ""
+	}
+	var s4 strings.Builder
+	s4.Grow(len(pref4))
+	depth4 := 0
+	for _, r := range pref4 {
+		switch {
+		case r == '(' || r == '[':
+			depth4++
+		case r == ')' || r == ']':
+			if depth4 > 0 {
+				depth4--
+			}
+		case depth4 == 0 && r >= '0' && r <= '9':
+			// skip digit
+		case depth4 == 0:
+			s4.WriteRune(r)
+		}
+	}
+	return s4.String() + tail4
+}
+
+// nearMissSkeletonMatches reports whether the skeleton of line matches any
+// entry in nearMissGatesTargets (HasPrefix) or nearMissGatesTargetsNoColon
+// (exact equality). Used by the near-miss loop in ParseGatesLines and by
+// test helpers. The skeleton includes all pipeline steps from
+// gatesNearMissSkeleton, including the ML-2L digit/paren removal (step 4).
+// (ML-2J corretivo, R3-H; step 4 added ML-2L)
+func nearMissSkeletonMatches(line string) bool {
+	skel := gatesNearMissSkeleton(line)
+	for _, target := range nearMissGatesTargets {
+		if strings.HasPrefix(skel, target) {
+			return true
+		}
+	}
+	for _, target := range nearMissGatesTargetsNoColon {
+		if skel == target {
+			return true
+		}
+	}
+	return false
+}
+
+// boundGateFence searches forward from lines[headerIdx+1] for the first
+// unmasked fence opener (backtick or tilde, any info-string, same grammar as
+// DetectFenceMarker) before the next section heading (## or ###) or unmasked
+// GatesHeaderRe match within [headerIdx+1, waveEnd). It returns the 0-based
+// index of the opener and true when found, or -1 and false otherwise.
+//
+// ML-2L (ADR-2026-11-08 rodada 4, mecanismo B): the search now stops at the
+// FIRST fence opener regardless of info-string. The caller is responsible for
+// checking whether the info-string is exactly "```bash": any other tag is an
+// error that the caller should report. The barrier never skips to a later
+// fence.
+//
+// This function is used by both the valid-header path and the near-miss check
+// in ParseGatesLines. For the near-miss check: the near-miss error fires when
+// any fence is bound (N8-class: near-miss + non-bash fence). For the valid-
+// header path: the caller checks the tag and returns the appropriate error.
+//
+// The search skips masked lines (fenced or HTML-commented) exactly as the
+// valid-header path does. It stops at any unmasked ## or ### heading, treating
+// it as a section boundary — a fence belonging to a different section must not
+// be claimed as the gate fence.
+//
+// ML-2J corretivo (R3-H): the search also stops when it encounters an unmasked
+// line that matches GatesHeaderRe (a valid gate header). A fence belongs to the
+// nearest unmasked header above it; a valid header between the near-miss and
+// the fence owns that fence, so the near-miss has no bound fence and must not
+// fire. Without this stop, prose like "Wave gates: see below" appearing before
+// a valid "**Wave gates:**" would traverse past the valid header, find its fence,
+// and produce a false near-miss error.
+func boundGateFence(lines []string, fenced, htmlMask []bool, headerIdx, waveEnd int) (fenceIdx int, ok bool) {
+	for j := headerIdx + 1; j < waveEnd; j++ {
+		if fenced[j] || htmlMask[j] {
+			continue
+		}
+		trimmed := strings.TrimSpace(lines[j])
+		_, _, isFenceOpener := DetectFenceMarker(trimmed)
+		if isFenceOpener {
+			return j, true
+		}
+		// A valid gate header claims the fence from here on:
+		// stop and report no bound fence for headerIdx.
+		if GatesHeaderRe.MatchString(lines[j]) {
+			return -1, false
+		}
+		if strings.HasPrefix(lines[j], "## ") || strings.HasPrefix(lines[j], "### ") {
+			return -1, false
+		}
+	}
+	return -1, false
+}
+
 // ParseGatesLines implements rule 5. It returns each gate command together
 // with its 1-based line number so that the caller can attribute fragments to
 // the exact source line.
 //
-// Grammar (same as ParseGates):
-//   - The marker "**Gates da wave:**" must not be inside a fenced code block
-//     (F1, REQ #491): FenceMask is consulted so that a marker inside an example
-//     fence is silently skipped rather than treated as a real gate declaration.
-//     The scan continues past a skipped marker — a real marker after an example
-//     marker in the same wave is found and used.
+// Grammar:
+//   - GatesHeaderRe matches both "**Gates da wave:**" (PT) and "**Wave gates:**" (EN).
+//     Both forms are case-sensitive (D1, ADR-2026-11-08 / ML-1A).
+//   - The marker must not be inside a fenced code block (F1, REQ #491): FenceMask is
+//     consulted so that a marker inside an example fence does not count as a real gate
+//     declaration. If that masked marker is the ONLY gate header in the wave, see E3.
 //   - The marker must not be inside an HTML comment block (<!-- … -->)
-//     (AC11, ML-3C, REQ-2026-10-31): a "**Gates da wave:**" whose column 0 is
-//     inside a multi-line comment is silently skipped (same continue behaviour
-//     as F1). The opening line of the comment is NOT masked (column-0 semantics),
-//     so a line starting with <!-- can never match GatesHeaderRe anyway.
-//   - The ```bash fence is found by scanning forward to the next heading
-//     boundary (## / ###), same as before. Headings and fence-delimiter lines
-//     are never included.
-//   - Empty lines and lines whose first non-space character is '#' are ignored.
+//     (AC11, ML-3C, REQ-2026-10-31): column-0 semantics — a marker whose column 0 is
+//     inside a multi-line comment does not count as a real declaration. If it is the
+//     ONLY gate header in the wave, see E3. A line starting with <!-- cannot match
+//     GatesHeaderRe, so the opening line is never masked.
+//   - D3 (ADR-2026-11-08 / ML-1A): two or more valid headers in the same wave is an
+//     error. The error names the 1-based line numbers of the first two headers.
+//     Fusion would hide the author's intent; silent first-wins would discard gates.
+//   - E3 (D8, ADR-2026-11-08 / ML-2F): when zero valid (unmasked) gate headers exist
+//     in [waveStart, waveEnd) but at least one line matches GatesHeaderRe while being
+//     masked (fenced or HTML-commented), that is an error naming the first masked line.
+//     The previously fail-open "zero gates" is now a named failure — the author must
+//     add a real gate header or remove the masked one. Exception: if no masked header
+//     exists either (wave genuinely has no gate header), zero gates remains legal.
+//   - The gate fence is found by scanning forward using boundGateFence, which now stops
+//     at the FIRST unmasked fence opener (any info-string, ML-2L mecanismo B). The caller
+//     then verifies that the trimmed opener line equals exactly "```bash"; any other tag
+//     is a parse error. The search skips prose, blank lines and paragraphs (#460): a real
+//     gate block may have an explanatory sentence between the header and the fence.
+//     🔴 The boundary is the NEXT HEADING, not the end of the wave: without it, a
+//     fence that belongs to another section (e.g. an ML body example) would be adopted
+//     as the gate fence and run code nobody declared as a gate.
+//   - Empty lines and lines whose first non-space character is '#' are ignored inside
+//     the fence block.
 //
-// A wave with no "**Gates da wave:**" block outside a fence or comment returns
-// an empty, non-nil slice — zero gates is legal and the barrier never invents one.
+// A wave with no gate header of any kind returns an empty, non-nil slice — zero gates
+// is legal when no GatesHeaderRe match exists in the wave at all.
 func ParseGatesLines(lines []string, waveStart, waveEnd int) ([]GateCmd, error) {
-	fenced := FenceMask(lines)
+	// Use scanFences directly (instead of FenceMask) to get both the mask and the
+	// 1-based line number of any unclosed fence opener — required for the D8 check.
+	fenced, openFenceLine := scanFences(lines)
 	htmlMask := htmlCommentMask(lines, fenced)
-	for i := waveStart; i < waveEnd; i++ {
-		if !GatesHeaderRe.MatchString(lines[i]) {
-			continue
-		}
-		// F1 (REQ #491): skip markers that appear inside an example fence.
-		// Use continue (not return) so that a real marker later in the same wave
-		// is still found.
-		if fenced[i] {
-			continue
-		}
-		// AC11 (ML-3C, REQ-2026-10-31): skip markers that appear inside an HTML
-		// comment block. Same continue behaviour as F1 above.
-		if htmlMask[i] {
-			continue
-		}
-		// #460: a busca pula PROSA, nao so linha em branco. Escrever um gate real
-		// convida a explica-lo — o proprio template diz "replace this placeholder
-		// with a project-specific check", e um check especifico costuma precisar de
-		// uma frase de contexto. Exigir a cerca na linha seguinte fazia a forma mais
-		// natural de escrever ser a unica recusada.
-		//
-		// 🔴 A BORDA e o proximo heading, e nao o fim da wave. Sem ela, a varredura
-		// acharia uma cerca ```bash que pertence a outra secao — um exemplo dentro do
-		// corpo de um ML, por exemplo — e o gate passaria a ser um comando que ninguem
-		// declarou como gate. Parar no heading mantem a cerca na MESMA secao do
-		// marcador, que e o vinculo que o formato promete.
-		j := i + 1
-		for j < waveEnd {
-			t := strings.TrimSpace(lines[j])
-			if t == "```bash" {
-				break
-			}
-			if strings.HasPrefix(lines[j], "## ") || strings.HasPrefix(lines[j], "### ") {
-				// Chegou na proxima secao sem achar a cerca.
-				j = waveEnd
-				break
-			}
-			j++
-		}
-		if j >= waveEnd {
-			return nil, fmt.Errorf("gates block not found: '**Gates da wave:**' at line %d is not followed by a ```bash fence before the next heading", i+1)
-		}
-		fenceStart := j
-		var cmds []GateCmd
-		k := j + 1
-		closed := false
-		for k < waveEnd {
-			if strings.TrimSpace(lines[k]) == "```" {
-				closed = true
-				break
-			}
-			line := strings.TrimSpace(lines[k])
-			if line != "" && !strings.HasPrefix(line, "#") {
-				cmds = append(cmds, GateCmd{Line: k + 1, Text: line})
-			}
-			k++
-		}
-		if !closed {
-			return nil, fmt.Errorf("unterminated gates fence starting at line %d", fenceStart+1)
-		}
-		if cmds == nil {
-			cmds = []GateCmd{}
-		}
-		return cmds, nil
+
+	// D8 fail-closed (ADR-2026-11-08 / ML-2C): a mask anomaly spanning any part of
+	// [0, waveEnd) may silently hide the gates header. Return an error instead of
+	// falling through to "zero gates" (fail-open). The check is unconditional —
+	// an unclosed comment after the real header can hide a duplicate (D3) that
+	// would otherwise trigger a different error.
+	//
+	// Unclosed code fence: openFenceLine is 1-based; convert to 0-based index to
+	// compare with the exclusive waveEnd boundary.
+	if openFenceLine > 0 && openFenceLine-1 < waveEnd {
+		return nil, fmt.Errorf(
+			"unclosed code fence at line %d may hide the gates header (D8, ADR-2026-11-08)",
+			openFenceLine)
 	}
-	return []GateCmd{}, nil
+	// Unclosed HTML comment in [0, waveEnd): HTMLCommentMaskCheck runs the kernel
+	// on lines[:waveEnd] so a comment that opens and closes before waveEnd is clean.
+	if htmlOpenLine, _ := HTMLCommentMaskCheck(lines, fenced, waveEnd); htmlOpenLine > 0 {
+		return nil, fmt.Errorf(
+			"unclosed HTML comment at line %d may hide the gates header (D8, ADR-2026-11-08)",
+			htmlOpenLine)
+	}
+
+	// D8 near-miss check (ADR-2026-11-08 / ML-2G, ML-2J): scan every unmasked line
+	// in [waveStart, waveEnd) that does NOT match GatesHeaderRe. Compute its
+	// skeleton (see gatesNearMissSkeleton) and test whether it matches one of the
+	// canonical header strings. If it does AND a gate fence is bound to it
+	// (boundGateFence), return an error naming the line.
+	//
+	// ML-2J fence-anchoring: a near-miss is only an error when the next unmasked
+	// "```bash" before the next section heading belongs to that line — the same
+	// binding rule as the valid gate header. Without a bound fence nothing is
+	// silently lost (the barrier would count zero gates either way), so the check
+	// would only produce false positives (R3-H prose lines like "Wave gates: see
+	// below"). Anchoring removes those false positives while keeping every case
+	// where the near-miss would actually be mistaken for a real gate declaration.
+	//
+	// Ordering rationale: this check runs BEFORE D3 so that a near-miss error is
+	// always reported first — a document with a near-miss plus a D3 (duplicate)
+	// violation is most usefully diagnosed at the near-miss level.
+	//
+	// Masked lines (fenced or HTML-commented) are excluded: a near-miss inside a
+	// fence or comment is not visible to the author as a potential header and
+	// therefore does not carry the same visual-confusion risk.
+	for i := waveStart; i < waveEnd; i++ {
+		if fenced[i] || htmlMask[i] || GatesHeaderRe.MatchString(lines[i]) {
+			continue
+		}
+		if nearMissSkeletonMatches(lines[i]) {
+			if _, bound := boundGateFence(lines, fenced, htmlMask, i, waveEnd); bound {
+				return nil, fmt.Errorf(
+					"near-miss gates header at line %d: the line looks like a gates header but does not match the accepted form exactly (leading space, list/blockquote marker, invisible character, homoglyph or case) — write '**Wave gates:**' or '**Gates da wave:**' at column 0 (D8, ADR-2026-11-08)",
+					i+1)
+			}
+		}
+	}
+
+	// ADR D3: pre-scan for every valid gate header in [waveStart, waveEnd).
+	// A valid header is one that matches GatesHeaderRe AND is not inside a fenced
+	// code block AND is not inside an HTML comment. Count them before processing.
+	var validHeaderLines []int
+	for i := waveStart; i < waveEnd; i++ {
+		if GatesHeaderRe.MatchString(lines[i]) && !fenced[i] && !htmlMask[i] {
+			validHeaderLines = append(validHeaderLines, i)
+		}
+	}
+
+	// D3: two or more valid headers → error naming the first two (1-based).
+	if len(validHeaderLines) >= 2 {
+		return nil, fmt.Errorf(
+			"duplicate gates header: lines %d and %d both declare a gates block outside fences and comments — use exactly one gates header per wave (ADR D3)",
+			validHeaderLines[0]+1, validHeaderLines[1]+1)
+	}
+
+	if len(validHeaderLines) == 0 {
+		// E3 (D8, ADR-2026-11-08 / ML-2F): when there is no valid (unmasked) gate header
+		// in the wave but at least one line matches GatesHeaderRe while being masked
+		// (inside a code fence or HTML comment), the gates block would be silently
+		// ignored. Return an error naming the first masked occurrence instead of
+		// returning zero gates — a fail-open that an attacker (or accident) can exploit.
+		//
+		// The matching uses the same predicate as the D3 pre-scan above, inverted:
+		// GatesHeaderRe matches AND (fenced[i] OR htmlMask[i]).
+		//
+		// If there is no masked header either (the wave genuinely has no gate header),
+		// this branch is not entered and the existing zero-gates-is-legal path applies.
+		for i := waveStart; i < waveEnd; i++ {
+			if GatesHeaderRe.MatchString(lines[i]) && (fenced[i] || htmlMask[i]) {
+				return nil, fmt.Errorf(
+					"gates header at line %d is inside a code fence or HTML comment and no unmasked gates header exists in this wave — the gates block would be silently ignored (D8, ADR-2026-11-08)",
+					i+1)
+			}
+		}
+		return []GateCmd{}, nil
+	}
+
+	// Single valid header: process it.
+	i := validHeaderLines[0]
+
+	// #460: a busca pula PROSA, nao so linha em branco. Escrever um gate real
+	// convida a explica-lo — o proprio template diz "replace this placeholder
+	// with a project-specific check", e um check especifico costuma precisar de
+	// uma frase de contexto. Exigir a cerca na linha seguinte fazia a forma mais
+	// natural de escrever ser a unica recusada.
+	//
+	// 🔴 A BORDA e o proximo heading, e nao o fim da wave. Sem ela, a varredura
+	// acharia uma cerca ```bash que pertence a outra secao — um exemplo dentro do
+	// corpo de um ML, por exemplo — e o gate passaria a ser um comando que ninguem
+	// declarou como gate. Parar no heading mantem a cerca na MESMA secao do
+	// marcador, que e o vinculo que o formato promete.
+	//
+	// ML-2J: the fence search is now performed by boundGateFence, which is also
+	// used by the near-miss check to determine whether a near-miss is bound to a
+	// fence. The logic is identical to the former inline j := i+1 loop.
+	j, bound := boundGateFence(lines, fenced, htmlMask, i, waveEnd)
+	if !bound {
+		return nil, fmt.Errorf("gates block not found: gates header at line %d is not followed by a ```bash fence before the next heading", i+1)
+	}
+	// ML-2L (ADR-2026-11-08 rodada 4, mecanismo B): the linked fence must open
+	// with exactly "```bash". The barrier never skips to a later fence.
+	if tag := strings.TrimSpace(lines[j]); tag != "```bash" {
+		return nil, fmt.Errorf(
+			"gates fence at line %d must open with exactly '```bash' (found %q) — the barrier never skips to a later fence (D8, ADR-2026-11-08)",
+			j+1, tag)
+	}
+	fenceStart := j
+	var cmds []GateCmd
+	k := j + 1
+	closed := false
+	for k < waveEnd {
+		if strings.TrimSpace(lines[k]) == "```" {
+			closed = true
+			break
+		}
+		line := strings.TrimSpace(lines[k])
+		if line != "" && !strings.HasPrefix(line, "#") {
+			cmds = append(cmds, GateCmd{Line: k + 1, Text: line})
+		}
+		k++
+	}
+	if !closed {
+		return nil, fmt.Errorf("unterminated gates fence starting at line %d", fenceStart+1)
+	}
+	if cmds == nil {
+		cmds = []GateCmd{}
+	}
+	return cmds, nil
 }
 
-// ParseGates implements rule 5. A wave with no "**Gates da wave:**" block
-// outside a fenced example returns an empty, non-nil slice — zero gates is
-// legal and the barrier never invents one. It is a thin wrapper around
-// ParseGatesLines that discards line-number information for callers that do
-// not need it.
+// ParseGates implements rule 5. A wave with NO gate-header of any kind (neither
+// outside nor inside a fence or HTML comment) returns an empty, non-nil slice —
+// zero gates is legal when no GatesHeaderRe match exists at all. When a gate header
+// exists but is entirely masked (E3, D8, ADR-2026-11-08 / ML-2F), an error is
+// returned. It is a thin wrapper around ParseGatesLines that discards line-number
+// information for callers that do not need it.
 func ParseGates(lines []string, waveStart, waveEnd int) ([]string, error) {
 	gcmds, err := ParseGatesLines(lines, waveStart, waveEnd)
 	if err != nil {
@@ -1309,21 +1905,40 @@ const (
 	// Wave0GateAbsent — nao ha bloco de gates, ou ele esta vazio (so comentarios).
 	Wave0GateAbsent
 	// Wave0GateMalformed — o marcador existe e a cerca ```bash nao foi encontrada
-	// antes do proximo heading, ou a cerca nao fecha.
+	// antes do proximo heading, ou a cerca nao fecha (nao cobre duplicata — ver Wave0GateDuplicate).
 	Wave0GateMalformed
+	// Wave0GateDuplicate — a wave tem dois ou mais cabecalhos de gates validos fora
+	// de cercas e comentarios HTML (ADR D3). O detalhe com os numeros de linha vem
+	// de Wave0GateDiagnosisDetail.
+	Wave0GateDuplicate
 )
 
 // Wave0GateDiagnosis e o predicado COM a causa. Wave0HasPlaceholderOrMissingGate
 // passa a ser a leitura booleana dele, entao nao existem duas derivacoes do mesmo
 // veredito que possam divergir.
 func Wave0GateDiagnosis(data string) Wave0GateCause {
+	cause, _ := Wave0GateDiagnosisDetail(data)
+	return cause
+}
+
+// Wave0GateDiagnosisDetail returns the cause AND the detail string from ParseGates.
+// The detail string is non-empty only when cause is Wave0GateDuplicate or
+// Wave0GateMalformed — it carries the original parser error message so the caller
+// can surface it verbatim instead of using a fixed template.
+//
+// Wave0GateDuplicate is returned when ParseGatesLines detects two or more valid gate
+// headers in Wave 0 outside fences and HTML comments (prefix "duplicate gates header:").
+// Wave0GateMalformed covers all other ParseGates errors (fence absent or unclosed).
+func Wave0GateDiagnosisDetail(data string) (Wave0GateCause, string) {
 	lines := SplitRoadmapLines(data)
 	// Fail-closed on unterminated fence: a malformed document whose fence never
-	// closes can hide wave 0 entirely. Return Wave0GateMalformed — the cause that
-	// maps to "fence did not close before next heading or at all" (same enum value
-	// as the ParseGates error path below, same message in the validator).
+	// closes can hide wave 0 entirely. Return Wave0GateMalformed with the
+	// FenceMaskCheck error as the detail string. The validator (ML-1D) surfaces
+	// the detail verbatim when it is not the "gates block not found:" prefix — so
+	// this path produces "Wave 0 gate block is malformed: unterminated code fence
+	// starting at line N" rather than the bilingual "not followed by a fence" form.
 	if _, err := FenceMaskCheck(lines); err != nil {
-		return Wave0GateMalformed
+		return Wave0GateMalformed, err.Error()
 	}
 	waves, _ := ParseWaves(lines, FenceMask(lines))
 	for _, w := range waves {
@@ -1332,30 +1947,34 @@ func Wave0GateDiagnosis(data string) Wave0GateCause {
 		}
 		cmds, err := ParseGates(lines, w.Start, w.End)
 		if err != nil {
-			// Bloco malformado — fail closed, como antes. O que muda e o NOME da causa.
-			if hasAnyNonPendingML(data) {
-				return Wave0GateMalformed
+			if !hasAnyNonPendingML(data) {
+				return Wave0GateOK, ""
 			}
-			return Wave0GateOK
+			// D3: duplicate gate header is its own cause so the validator can
+			// surface the line numbers from the parser error verbatim.
+			if strings.HasPrefix(err.Error(), "duplicate gates header:") {
+				return Wave0GateDuplicate, err.Error()
+			}
+			return Wave0GateMalformed, err.Error()
 		}
 		if len(cmds) == 0 {
 			if hasAnyNonPendingML(data) {
-				return Wave0GateAbsent
+				return Wave0GateAbsent, ""
 			}
-			return Wave0GateOK
+			return Wave0GateOK, ""
 		}
 		for _, cmd := range cmds {
 			if !strings.HasPrefix(cmd, "exit 1") {
-				return Wave0GateOK
+				return Wave0GateOK, ""
 			}
 		}
 		if hasAnyNonPendingML(data) {
-			return Wave0GatePlaceholder
+			return Wave0GatePlaceholder, ""
 		}
-		return Wave0GateOK
+		return Wave0GateOK, ""
 	}
 	// Wave 0 nao encontrada — dominio do AC7-bis.
-	return Wave0GateOK
+	return Wave0GateOK, ""
 }
 
 func Wave0HasPlaceholderOrMissingGate(data string) bool {
