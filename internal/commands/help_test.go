@@ -74,8 +74,8 @@ func TestHelpUnknownTopicHasNoSuggestionWhenTooDistant(t *testing.T) {
 	if err == nil {
 		t.Fatal("esperava erro para assunto desconhecido, obteve nil")
 	}
-	if strings.Contains(err.Error(), "Você quis dizer") {
-		t.Errorf("não esperava sugestão para um assunto sem candidato próximo, obteve: %v", err)
+	if strings.Contains(err.Error(), "Did you mean") {
+		t.Errorf("did not expect a suggestion for a topic with no close candidate, got: %v", err)
 	}
 }
 
@@ -87,8 +87,8 @@ func TestHelpUnknownTopicSuggestsNearMatch(t *testing.T) {
 	if err == nil {
 		t.Fatal("esperava erro para assunto desconhecido, obteve nil")
 	}
-	if !strings.Contains(err.Error(), "Você quis dizer: wip_limit?") {
-		t.Errorf("esperava sugestão 'wip_limit', obteve: %v", err)
+	if !strings.Contains(err.Error(), "Did you mean: wip_limit?") {
+		t.Errorf("expected suggestion 'wip_limit', got: %v", err)
 	}
 }
 

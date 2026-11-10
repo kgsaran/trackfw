@@ -17,7 +17,7 @@ func ValidateAgentModelValue(tier, v string) error {
 		return nil // empty = no-pin, not an error
 	}
 	if !isValidModelPinValue(v) {
-		return fmt.Errorf("agent_models.%s: valor %q inválido (esperado apenas caracteres [a-zA-Z0-9._:@/+-], sem espaço, #, {, }, [, ], ', \")", tier, v)
+		return fmt.Errorf("agent_models.%s: value %q is invalid (expected only characters [a-zA-Z0-9._:@/+-], no space, #, {, }, [, ], ', \")", tier, v)
 	}
 	return nil
 }

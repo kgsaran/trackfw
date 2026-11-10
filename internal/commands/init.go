@@ -232,10 +232,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 		if shouldSave {
 			if err := identity.Validate(cfg, identity.KnownAgentIDs()); err != nil {
-				return fmt.Errorf("init: identidade invalida: %w", err)
+				return fmt.Errorf("init: invalid identity: %w", err)
 			}
 			if err := identity.Save(home, cfg); err != nil {
-				return fmt.Errorf("init: falha ao gravar identidade: %w", err)
+				return fmt.Errorf("init: failed to save identity: %w", err)
 			}
 		}
 	}
@@ -593,7 +593,7 @@ func installAITools(aiTools []string, cwd string, scope string) error {
 	// on the next install even though ~/.trackfw/identity.json is present.
 	ident, err := identity.Load(home)
 	if err != nil {
-		return fmt.Errorf("instalando AI tools: identidade invalida: %w", err)
+		return fmt.Errorf("installing AI tools: invalid identity: %w", err)
 	}
 	initAgentModels, initWarnMsg := config.ResolveAgentModels(scope, home, cwd)
 	if initWarnMsg != "" {
@@ -611,7 +611,7 @@ func installAITools(aiTools []string, cwd string, scope string) error {
 		plans = append(plans, selected...)
 	}
 	// D5 — transparency: print resolved destinations before writing anything.
-	fmt.Printf("Destino (%s):\n", scope)
+	fmt.Printf("Destination (%s):\n", scope)
 	for _, plan := range plans {
 		fmt.Printf("  %s\n", plan.Destination)
 	}

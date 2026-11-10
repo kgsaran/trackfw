@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -33,7 +33,7 @@
   <!-- Header / Nav -->
   <header class="bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-6 shadow-sm">
     <span class="font-bold text-lg tracking-tight text-blue-600">trackfw</span>
-    <nav class="flex gap-2" role="navigation" aria-label="Navegação principal">
+    <nav class="flex gap-2" role="navigation" aria-label="Main navigation">
       <button
         id="tab-board"
         onclick="switchView('board')"
@@ -74,7 +74,7 @@
     <span class="opacity-80 font-mono text-xs" id="attention-context"></span>
     <span class="mx-1 opacity-60">—</span>
     <span id="attention-message" class="flex-1"></span>
-    <button onclick="dismissAttention()" class="ml-auto text-sm font-medium underline opacity-80 hover:opacity-100 whitespace-nowrap" aria-label="Dispensar alerta">✕ Dispensar</button>
+    <button onclick="dismissAttention()" class="ml-auto text-sm font-medium underline opacity-80 hover:opacity-100 whitespace-nowrap" aria-label="Dismiss alert">✕ Dismiss</button>
   </div>
 
   <!-- Conteúdo principal -->
@@ -86,14 +86,14 @@
       <!-- Toolbar: filtro por agente + controles de auto-refresh -->
       <div class="flex items-center gap-3 flex-wrap mb-4">
         <div id="agent-filter-container" class="hidden">
-          <label for="agent-filter" class="text-sm font-medium text-gray-600 mr-2">Filtrar por agente:</label>
+          <label for="agent-filter" class="text-sm font-medium text-gray-600 mr-2">Filter by agent:</label>
           <select
             id="agent-filter"
             onchange="filterByAgent(this.value)"
             class="text-sm border border-gray-300 rounded px-2 py-1 bg-white"
-            aria-label="Filtrar roadmaps por agente"
+            aria-label="Filter roadmaps by agent"
           >
-            <option value="">Todos</option>
+            <option value="">All</option>
           </select>
         </div>
         <!-- Auto-refresh controls -->
@@ -103,7 +103,7 @@
             id="refresh-interval"
             onchange="setRefreshInterval(parseInt(this.value))"
             class="text-xs border border-gray-300 rounded px-2 py-1 bg-white"
-            aria-label="Intervalo de atualização automática"
+            aria-label="Auto-refresh interval"
           >
             <option value="15">15s</option>
             <option value="30">30s</option>
@@ -115,12 +115,12 @@
             id="refresh-toggle"
             onclick="toggleRefreshPause()"
             class="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded hover:bg-gray-200 transition-colors"
-          >⏸ Pausar</button>
+          >⏸ Pause</button>
           <button
             onclick="manualRefresh()"
             class="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded hover:bg-gray-200 transition-colors"
-            aria-label="Atualizar board agora"
-            title="Atualizar agora"
+            aria-label="Refresh board now"
+            title="Refresh now"
           >↻</button>
         </div>
       </div>
@@ -133,7 +133,7 @@
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
           </svg>
-          Carregando board...
+          Loading board...
         </div>
       </div>
 
@@ -148,35 +148,35 @@
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
         </svg>
-        Carregando cadeia...
+        Loading chain...
       </div>
       <div id="chain-error" class="hidden text-red-600 text-sm p-6" role="alert"></div>
       <svg id="chain-svg" class="w-full" style="height: calc(100vh - 60px);"></svg>
     </section>
 
     <!-- View: Metrics -->
-    <section id="view-metrics" class="view-section w-full hidden p-6 overflow-auto" aria-label="Métricas do projeto">
+    <section id="view-metrics" class="view-section w-full hidden p-6 overflow-auto" aria-label="Project metrics">
       <div id="metrics-loading" class="flex items-center gap-2 text-gray-500 text-sm">
         <svg class="animate-spin h-4 w-4 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
         </svg>
-        Carregando métricas...
+        Loading metrics...
       </div>
       <div id="metrics-error" class="hidden text-red-600 text-sm" role="alert"></div>
 
       <!-- KPI cards -->
       <div id="kpi-cards" class="hidden grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         <div class="bg-white rounded-lg border border-gray-200 p-5 shadow-sm">
-          <p class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Lead Time Médio</p>
+          <p class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Avg Lead Time</p>
           <p id="kpi-lead-time" class="text-2xl font-bold text-gray-900">—</p>
         </div>
         <div class="bg-white rounded-lg border border-gray-200 p-5 shadow-sm">
-          <p class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Cycle Time Médio</p>
+          <p class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Avg Cycle Time</p>
           <p id="kpi-cycle-time" class="text-2xl font-bold text-gray-900">—</p>
         </div>
         <div class="bg-white rounded-lg border border-gray-200 p-5 shadow-sm">
-          <p class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Taxa de Abandono</p>
+          <p class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Abandonment Rate</p>
           <p id="kpi-abandonment" class="text-2xl font-bold text-gray-900">—</p>
         </div>
       </div>
@@ -184,17 +184,17 @@
       <!-- Gráficos -->
       <div id="charts-container" class="hidden grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div class="bg-white rounded-lg border border-gray-200 p-5 shadow-sm">
-          <h2 class="text-sm font-semibold text-gray-700 mb-4">Distribuição por Estado</h2>
+          <h2 class="text-sm font-semibold text-gray-700 mb-4">Distribution by State</h2>
           <div class="flex justify-center" style="height: 260px;">
-            <canvas id="donut-chart" aria-label="Gráfico donut: distribuição por estado"></canvas>
+            <canvas id="donut-chart" aria-label="Donut chart: distribution by state"></canvas>
           </div>
         </div>
         <div class="bg-white rounded-lg border border-gray-200 p-5 shadow-sm">
           <h2 class="text-sm font-semibold text-gray-700 mb-4">Burndown</h2>
           <div id="burndown-empty" class="hidden text-sm text-gray-500 flex items-center justify-center h-48">
-            Sem dados suficientes no .trackfw-log
+            Not enough data in .trackfw-log
           </div>
-          <canvas id="burndown-chart" style="height: 240px;" aria-label="Gráfico de burndown: abertos e fechados ao longo do tempo"></canvas>
+          <canvas id="burndown-chart" style="height: 240px;" aria-label="Burndown chart: open and closed over time"></canvas>
         </div>
       </div>
     </section>
@@ -206,18 +206,18 @@
           type="search"
           id="adr-search"
           oninput="onListSearch('adr', this.value)"
-          placeholder="Buscar por título ou identificador..."
+          placeholder="Search by title or identifier..."
           class="text-sm border border-gray-300 rounded px-3 py-1.5 bg-white flex-1 min-w-[220px]"
-          aria-label="Buscar ADRs por título ou identificador"
+          aria-label="Search ADRs by title or identifier"
         />
         <label for="adr-status-filter" class="text-sm font-medium text-gray-600 sr-only">Filtrar por status</label>
         <select
           id="adr-status-filter"
           onchange="onListStatusChange('adr', this.value)"
           class="text-sm border border-gray-300 rounded px-2 py-1.5 bg-white"
-          aria-label="Filtrar ADRs por status"
+          aria-label="Filter ADRs by status"
         >
-          <option value="">Todos</option>
+          <option value="">All</option>
         </select>
         <span id="adr-count" class="text-xs text-gray-500 ml-auto" aria-live="polite"></span>
       </div>
@@ -227,7 +227,7 @@
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
         </svg>
-        Carregando ADRs...
+        Loading ADRs...
       </div>
       <div id="adr-error" class="hidden text-red-600 text-sm mt-4" role="alert"></div>
       <div id="adr-empty" class="hidden text-sm text-gray-400 text-center py-8"></div>
@@ -241,18 +241,18 @@
           type="search"
           id="req-search"
           oninput="onListSearch('req', this.value)"
-          placeholder="Buscar por título ou identificador..."
+          placeholder="Search by title or identifier..."
           class="text-sm border border-gray-300 rounded px-3 py-1.5 bg-white flex-1 min-w-[220px]"
-          aria-label="Buscar REQs por título ou identificador"
+          aria-label="Search REQs by title or identifier"
         />
         <label for="req-status-filter" class="text-sm font-medium text-gray-600 sr-only">Filtrar por status</label>
         <select
           id="req-status-filter"
           onchange="onListStatusChange('req', this.value)"
           class="text-sm border border-gray-300 rounded px-2 py-1.5 bg-white"
-          aria-label="Filtrar REQs por status"
+          aria-label="Filter REQs by status"
         >
-          <option value="">Todos</option>
+          <option value="">All</option>
         </select>
         <span id="req-count" class="text-xs text-gray-500 ml-auto" aria-live="polite"></span>
       </div>
@@ -262,7 +262,7 @@
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
         </svg>
-        Carregando REQs...
+        Loading REQs...
       </div>
       <div id="req-error" class="hidden text-red-600 text-sm mt-4" role="alert"></div>
       <div id="req-empty" class="hidden text-sm text-gray-400 text-center py-8"></div>
@@ -285,7 +285,7 @@
     class="fixed top-0 right-0 h-full bg-white shadow-2xl z-50 flex flex-col drawer-slide"
     style="width: 40%; display: none;"
     role="complementary"
-    aria-label="Detalhes do arquivo"
+    aria-label="File details"
   >
     <!-- Header do drawer -->
     <div class="flex items-center justify-between px-5 py-4 border-b border-gray-200 bg-gray-50">
@@ -293,7 +293,7 @@
       <button
         onclick="closeDrawer()"
         class="text-gray-400 hover:text-gray-700 transition-colors p-1 rounded"
-        aria-label="Fechar drawer"
+        aria-label="Close drawer"
       >
         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
           <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
@@ -307,7 +307,7 @@
         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
       </svg>
-      Carregando arquivo...
+      Loading file...
     </div>
 
     <!-- Erro do drawer -->
@@ -317,7 +317,7 @@
     <div id="drawer-content" class="flex-1 overflow-y-auto p-5 hidden">
       <!-- Frontmatter como tabela -->
       <div id="drawer-frontmatter" class="mb-5 hidden">
-        <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Metadados</h3>
+        <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Metadata</h3>
         <table id="frontmatter-table" class="w-full text-sm border border-gray-200 rounded overflow-hidden">
           <tbody></tbody>
         </table>

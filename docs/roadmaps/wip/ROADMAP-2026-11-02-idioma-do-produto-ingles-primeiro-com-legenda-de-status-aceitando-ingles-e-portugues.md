@@ -574,7 +574,7 @@ cerca e passado a `ParseGatesLines` não dá erro na Wave 0 e retorna o gate `ex
 *Auditoria (Zeus, 2026-11-10):* `scaffold.go`, `claudemd.go`, `agentfiles.go`, `update.go` e `preset.go` estão em EN, e o modelo de `roadmap.md` está na coluna 0 com `**Wave gates:**` e `⬜ Pending`. Testes novos, com nomes conferidos: `TestScaffold_RoadmapMD_GatesModelParseable` (o modelo passa em `ParseGatesLines` com `exit 1`) e `TestUpdate_AgentRulesBlockContainsENLifecycleMarkers` (o `update` entrega os marcadores EN e preserva o conteúdo fora do bloco gerenciado). Os nomes de preset não mudaram (D6). O texto descritivo dos presets ("Panteão grego…") está em `identity_wizard.go`, então o AC5 se completa no ML-3B1. Efeito colateral medido por Zeus: o cenário `falsify/update-config-loader/go-baseline` de `check-gates-falsify.sh` (~linha 3852) fixa a mensagem PT `trackfw-validate injetado` e reprova; a correção foi para o ML-3B2.
 
 ### ML-3B1 — Mensagens do CLI: pacote `commands` (AC2)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Files affected:**
 - `internal/commands/help.go`
@@ -589,13 +589,16 @@ cerca e passado a `ParseGatesLines` não dá erro na Wave 0 e retorna o gate `ex
 - `internal/commands/adr.go`
 - `internal/commands/baseline.go`
 - `internal/commands/barrier.go` (só a mensagem G1 da linha ~1842; o leitor G3-6 continua bilíngue)
+- `internal/commands/doctor.go`, `internal/commands/init.go` (mensagens G1 achadas pelo grep do ML)
 - os `_test.go` correspondentes
 **Acceptance criteria:**
-- [ ] Texto descritivo dos presets em `identity_wizard.go` em inglês, nomes mantidos (AC5, ADR D6)
-- [ ] Mensagens emitidas por esses arquivos em inglês; testes que afirmavam o texto PT atualizados
+- [x] Texto descritivo dos presets em `identity_wizard.go` em inglês, nomes mantidos (AC5, ADR D6)
+- [x] Mensagens emitidas por esses arquivos em inglês; testes que afirmavam o texto PT atualizados
+
+*Auditoria (Zeus, 2026-11-10):* o primeiro agente caiu por ENOTFOUND (falha de rede) e um segundo terminou a partir da árvore. O barrier emite `Lapsed:` e o leitor G3-6 não foi tocado. Os presets (`identity_wizard.go`) têm descrição EN, e os nomes e valores de opção foram mantidos; Chaves e Turma da Mônica são nomes próprios. O AC5 está fechado. Testes alterados, com nomes conferidos: `TestBarrierLapsed_JustificationInTextAndJSON`, `TestHelpUnknownTopicSuggestsNearMatch` e `TestCommit_Suggest_*`. `go test -count=1 ./internal/...` rodado por Zeus: rc=0.
 
 ### ML-3B2 — Mensagens do CLI: demais pacotes e dashboard (AC2)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Files affected:**
 - `internal/validator/validator.go`
@@ -615,17 +618,21 @@ cerca e passado a `ParseGatesLines` não dá erro na Wave 0 e retorna o gate `ex
 - `internal/serve/static/index.html`
 - `internal/generators/roadmap.go` (só mensagens G1, ~linhas 350–468; o leitor G3-12 continua bilíngue)
 - `scripts/check-gates-falsify.sh` (cenário `update-config-loader/go-baseline` e qualquer outro que fixe mensagem PT agora traduzida)
+- `scripts/check-agent-models-parity.sh` (3 cópias congeladas de mensagens de `config.go`)
 - os `_test.go` correspondentes
 **Acceptance criteria:**
-- [ ] Mensagens emitidas por esses arquivos em inglês; testes que afirmavam o texto PT atualizados
-- [ ] `bash scripts/check-gates-falsify.sh` com rc=0
-- [ ] Dashboard do `serve` verificado em navegador headless por Zeus (sem texto PT visível)
+- [x] Mensagens emitidas por esses arquivos em inglês; testes que afirmavam o texto PT atualizados
+- [x] `bash scripts/check-gates-falsify.sh` com rc=0
+- [x] Dashboard do `serve` verificado em navegador headless por Zeus (sem texto PT visível)
+
+*Auditoria (Zeus, 2026-11-10):* o primeiro agente também caiu por ENOTFOUND e um segundo terminou. Os leitores PT estão preservados (`AcceptanceMarkers`, `reqACHeadingRe`, o leitor de `roadmap.go`, as palavras-chave de `probes.go` e a sonda `docs/requisições`). Medido por Zeus: `go test -count=1 ./internal/...` rc=0; `check-gates-falsify.sh` rc=0 (285 cenários); `check-agent-models-parity.sh` rc=0. Dashboard: `trackfw serve` com captura em Chrome headless; a interface (Board, Chain, Metrics, No items, Auto-refresh, Pause) está em EN, e os títulos de roadmap ficam em PT porque são dados de `docs/` (escopo negativo). Em `app.js`/`index.html` sobra PT só em comentários. Resta a mensagem da linha ~373 de `validator_req_done_criteria.go`, que está em EN mas cita só `Caducou:`; foi para o ML-3D.
 
 ### ML-3D — Teste que reprova o retorno do português (AC2)
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Squad:** apolo-tf
 **Files affected:**
 - `internal/i18nguard/pt_literals_test.go` (novo)
+- `internal/validator/validator_req_done_criteria.go` (mensagem da linha ~373 passa a citar `Lapsed:` com `Caducou:` como alternativa) e o teste que a afirmar
 
 **Actions:** teste Go que percorre com `go/ast` os arquivos de produto de `internal/` e `cmd/` (sem
 `_test.go` e `testdata/`) e reprova literal de string executável com palavra portuguesa. Lista de permissão

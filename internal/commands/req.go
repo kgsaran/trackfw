@@ -176,9 +176,9 @@ func runReqNewFull(_ *cobra.Command, args []string, agentFlag string, noRoadmap 
 	scopeForm := huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
-				Title("Escopo dos ADRs desta REQ").
+				Title("Scope of ADRs for this REQ").
 				Options(
-					huh.NewOption("Local (padrão)", "local"),
+					huh.NewOption("Local (default)", "local"),
 					huh.NewOption("Global (~/.trackfw/adr, cross-project)", "global"),
 				).
 				Value(&adrScope),

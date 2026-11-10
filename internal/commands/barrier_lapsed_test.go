@@ -239,13 +239,13 @@ func TestBarrierLapsed_JustificationInTextAndJSON(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
 	}
-	wantFragment := "Caducou: " + justification
+	wantFragment := "Lapsed: " + justification
 	if !strings.Contains(stdout, wantFragment) {
 		t.Fatalf("text output must contain justification %q\nstdout: %s", wantFragment, stdout)
 	}
 	// The line must be indented with "      line N:" prefix.
 	if !strings.Contains(stdout, "      line ") {
-		t.Fatalf("text output must contain '      line N: Caducou: ...' indented block\nstdout: %s", stdout)
+		t.Fatalf("text output must contain '      line N: Lapsed: ...' indented block\nstdout: %s", stdout)
 	}
 
 	// ── JSON mode: lapsed_details must contain line and text ─────────────────

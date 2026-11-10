@@ -192,7 +192,7 @@ func defaultGitCheckout(branchName, startPoint string) error {
 		// point contains a different version of a file with uncommitted changes.
 		if exitErr.ExitCode() == 1 && startPoint != "" &&
 			strings.Contains(stderrBuf.String(), "would be overwritten") {
-			fmt.Fprintf(os.Stderr, "\nhint: commite ou faça stash das suas alterações antes de trocar a base, ou use --from HEAD para criar a branch a partir do HEAD atual sem mover arquivos.\n")
+			fmt.Fprintf(os.Stderr, "\nhint: commit or stash your changes before switching the base, or use --from HEAD to create the branch from the current HEAD without moving files.\n")
 		}
 		os.Exit(exitErr.ExitCode())
 	}
@@ -254,7 +254,7 @@ func runBranchNew(spec string, dryRun bool, deps branchNewDeps) error {
 		// Exit 0: the gate measures governance, not base availability; a branch that passes
 		// governance must print "would create" regardless of base state.
 		if dryRun {
-			fmt.Fprintf(deps.out, "[dry-run] would create branch %q (base não resolvida: %s; a execução real requer --from HEAD ou um remote 'origin')\n", branchName, err.Error())
+			fmt.Fprintf(deps.out, "[dry-run] would create branch %q (base not resolved: %s; actual execution requires --from HEAD or an 'origin' remote)\n", branchName, err.Error())
 			return nil
 		}
 		return err
@@ -298,7 +298,7 @@ func resolveBranchStartPoint(deps branchNewDeps, branchName string) (startPoint,
 		// would interpret as options, silently discarding uncommitted work via e.g. -f/--force).
 		if strings.HasPrefix(deps.fromRef, "-") {
 			return "", "", fmt.Errorf(
-				"trackfw branch new: --from %q: a ref não pode começar com '-' — use o nome de uma branch, tag ou SHA",
+				"trackfw branch new: --from %q: the ref must not start with '-' — use a branch name, tag, or SHA",
 				deps.fromRef,
 			)
 		}
@@ -311,7 +311,7 @@ func resolveBranchStartPoint(deps branchNewDeps, branchName string) (startPoint,
 		sha, resolveErr := deps.gitExec("rev-parse", "--verify", "--quiet", "--end-of-options", deps.fromRef+"^{commit}")
 		if resolveErr != nil {
 			return "", "", fmt.Errorf(
-				"trackfw branch new: --from %q: a ref não foi encontrada ou não é um commit válido",
+				"trackfw branch new: --from %q: the ref was not found or is not a valid commit",
 				deps.fromRef,
 			)
 		}
@@ -328,10 +328,9 @@ func resolveBranchStartPoint(deps branchNewDeps, branchName string) (startPoint,
 
 	// Check that origin exists before attempting fetch or symref resolution.
 	if _, err := deps.gitExec("remote", "get-url", "origin"); err != nil {
-		// Single message, in Portuguese. Execute() in root.go prints err.Error() to stderr.
 		return "", "", fmt.Errorf(
-			"trackfw branch new: nenhum remote 'origin' encontrado — use --from HEAD para criar"+
-				" a partir do HEAD atual, ou adicione um remote com 'git remote add origin <url>'.",
+			"trackfw branch new: no 'origin' remote found — use --from HEAD to create from the current HEAD,"+
+				" or add a remote with 'git remote add origin <url>'.",
 		)
 	}
 
@@ -353,9 +352,8 @@ func resolveBranchStartPoint(deps branchNewDeps, branchName string) (startPoint,
 	sha, resolveErr := deps.gitExec("rev-parse", "--verify", "-q", "--end-of-options", remoteRef+"^{commit}")
 	if resolveErr != nil {
 		return "", "", fmt.Errorf(
-			"trackfw branch new: a ref base '%s' não foi encontrada — verifique se o remote foi"+
-				" configurado corretamente e tente 'git fetch origin', ou use --from HEAD para criar"+
-				" a partir do HEAD atual.",
+			"trackfw branch new: the base ref '%s' was not found — check that the remote is configured"+
+				" correctly and try 'git fetch origin', or use --from HEAD to create from the current HEAD.",
 			remoteRef,
 		)
 	}

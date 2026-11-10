@@ -30,7 +30,7 @@ func NewNote(title string) error {
 
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.MkdirAll(vaultDir, 0755); err != nil {
-		return fmt.Errorf("criando vault/notes: %w", err)
+		return fmt.Errorf("creating vault/notes: %w", err)
 	}
 
 	slug := toSlug(title)
@@ -40,7 +40,7 @@ func NewNote(title string) error {
 
 	// Idempotência: falha se nota já existir
 	if _, err := os.Stat(notePath); err == nil {
-		return fmt.Errorf("nota %q já existe — não sobrescrita", filename)
+		return fmt.Errorf("note %q already exists — not overwritten", filename)
 	}
 
 	body := fmt.Sprintf(`---
@@ -54,7 +54,7 @@ related: []
 
 ## Problem
 
-<!-- Descreva o problema ou situação que motivou esta nota. -->
+<!-- Describe the problem or situation that motivated this note. -->
 
 ## Root cause
 
@@ -74,11 +74,11 @@ related: []
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.WriteFile(notePath, []byte(body), 0644); err != nil {
-		return fmt.Errorf("escrevendo nota: %w", err)
+		return fmt.Errorf("writing note: %w", err)
 	}
 
 	if err := appendNoteToIndex(filename); err != nil {
-		return fmt.Errorf("atualizando index.md: %w", err)
+		return fmt.Errorf("updating index.md: %w", err)
 	}
 
 	fmt.Printf("created %s\n", notePath)
@@ -105,23 +105,23 @@ func appendNoteToIndex(filename string) error {
 
 	// Garante que index.md existe
 	if _, err := os.Stat(vaultIndexFile); os.IsNotExist(err) {
-		initial := `# Vault de Conhecimento
+		initial := `# Knowledge Vault
 
-> Ponto de entrada de conhecimento do projeto para agentes e pessoas.
+> Project knowledge entry point for agents and people.
 
-## Índice
+## Index
 
 `
 		// write-containment-allowed: pathguard.RejectAndReport(indexRoot, absIndex) at the top of this function dominates this write unconditionally; an unresolvable root refuses via RefuseUnverifiableRoot
 		if err := os.WriteFile(vaultIndexFile, []byte(initial), 0644); err != nil {
-			return fmt.Errorf("criando index.md: %w", err)
+			return fmt.Errorf("creating index.md: %w", err)
 		}
 	}
 
 	// Lê conteúdo atual
 	data, err := os.ReadFile(vaultIndexFile)
 	if err != nil {
-		return fmt.Errorf("lendo index.md: %w", err)
+		return fmt.Errorf("reading index.md: %w", err)
 	}
 
 	// Verifica se já está linkado (evita duplicata)
@@ -139,7 +139,7 @@ func appendNoteToIndex(filename string) error {
 	// write-containment-allowed: pathguard.RejectAndReport(indexRoot, absIndex) at the top of this function dominates this append unconditionally; an unresolvable root refuses via RefuseUnverifiableRoot
 	f, err := os.OpenFile(vaultIndexFile, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
-		return fmt.Errorf("abrindo index.md para append: %w", err)
+		return fmt.Errorf("opening index.md for append: %w", err)
 	}
 	defer f.Close()
 	_, err = f.WriteString(link)
@@ -151,7 +151,7 @@ func appendNoteToIndex(filename string) error {
 func NoteFiles() ([]string, error) {
 	matches, err := filepath.Glob(filepath.Join(vaultDir, "*.md"))
 	if err != nil {
-		return nil, fmt.Errorf("listando vault/notes: %w", err)
+		return nil, fmt.Errorf("listing vault/notes: %w", err)
 	}
 	var notes []string
 	for _, m := range matches {

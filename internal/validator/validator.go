@@ -1359,7 +1359,7 @@ func Validate() (violations []string, warnings []string, err error) {
 func filterBaselineTagged(violations, warnings []TaggedMsg) ([]TaggedMsg, []TaggedMsg, error) {
 	baseline, bErr := LoadBaseline()
 	if bErr != nil {
-		return nil, nil, fmt.Errorf("erro ao carregar baseline: %w", bErr)
+		return nil, nil, fmt.Errorf("error loading baseline: %w", bErr)
 	}
 	if baseline == nil {
 		return violations, warnings, nil
@@ -3445,11 +3445,11 @@ var getwdFn func() (string, error) = os.Getwd
 func checkREQDirContained(reqDir string) error {
 	cwd, err := getwdFn()
 	if err != nil {
-		return fmt.Errorf("não foi possível resolver o diretório de trabalho — contenção de req_dir não pode ser verificada: %w", err)
+		return fmt.Errorf("could not resolve the working directory — req_dir containment cannot be verified: %w", err)
 	}
 	physCWD, err := filepath.EvalSymlinks(cwd)
 	if err != nil {
-		return fmt.Errorf("não foi possível resolver o diretório de trabalho fisicamente (EvalSymlinks falhou) — contenção de req_dir não pode ser verificada: %w", err)
+		return fmt.Errorf("could not resolve the working directory physically (EvalSymlinks failed) — req_dir containment cannot be verified: %w", err)
 	}
 
 	expanded := config.ExpandPath(reqDir)
@@ -4663,7 +4663,7 @@ func validateNoteOrphan() ([]string, error) {
 
 	matches, err := filepath.Glob(filepath.Join(vaultNotesDir, "*.md"))
 	if err != nil {
-		return nil, fmt.Errorf("listando vault/notes: %w", err)
+		return nil, fmt.Errorf("listing vault/notes: %w", err)
 	}
 
 	// Lê conteúdo do index.md (pode não existir ainda — estado legítimo, sem diagnóstico). Erro

@@ -1248,8 +1248,8 @@ func validateGuardHookD2InlineWarnings(subcmdMarker, subcmdName string) ([]strin
 		for _, m := range subcmdCommands {
 			if m.raw == legacyD2Line && m.raw != expectedLine {
 				warnings = append(warnings, fmt.Sprintf(
-					"%s (%s) has %q — linha antiga, falha aberta sem o trackfw no PATH; "+
-						"rode `trackfw update` para migrar para a forma D11 fail-closed",
+					"%s (%s) has %q — legacy line, fail-open without trackfw in PATH; "+
+						"run `trackfw update` to migrate to the D11 fail-closed form",
 					hf.path, hf.cli, m.raw,
 				))
 				break // um aviso por arquivo é suficiente
@@ -1302,8 +1302,8 @@ func validateGuardHookD11LegacyWarnings(subcmdMarker, subcmdName string) ([]stri
 		for _, m := range subcmdCommands {
 			if m.raw == legacyD11Line && m.raw != expectedLine {
 				warnings = append(warnings, fmt.Sprintf(
-					"%s (%s) has %q — forma D11 pré-ML-6C, passa saídas ≠{0,2} íntegras no PowerShell; "+
-						"rode `trackfw update` para migrar para a forma D11 revista",
+					"%s (%s) has %q — D11 form pre-ML-6C, passes non-{0,2} outputs intact on PowerShell; "+
+						"run `trackfw update` to migrate to the revised D11 form",
 					hf.path, hf.cli, m.raw,
 				))
 				break // um aviso por arquivo é suficiente
@@ -1355,8 +1355,8 @@ func validateGuardHookD11RevisedLegacyWarnings(subcmdMarker, subcmdName string) 
 		for _, m := range subcmdCommands {
 			if m.raw == legacyD11RevLine && m.raw != expectedLine {
 				warnings = append(warnings, fmt.Sprintf(
-					"%s (%s) has %q — forma D11 revised pré-REQ-2026-10-20, aborta no zsh (EQUALS/NOMATCH); "+
-						"rode `trackfw update` para migrar para a forma REQ-2026-10-20 com o prefixo `emulate -R sh`",
+					"%s (%s) has %q — D11 revised form pre-REQ-2026-10-20, aborts on zsh (EQUALS/NOMATCH); "+
+						"run `trackfw update` to migrate to the REQ-2026-10-20 form with the `emulate -R sh` prefix",
 					hf.path, hf.cli, m.raw,
 				))
 				break // um aviso por arquivo é suficiente

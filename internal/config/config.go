@@ -162,7 +162,7 @@ var (
 // different format, so the only way for the three CLIs to emit an identical message is for none
 // of them to surface the library-native text. See ADR-2026-08-02-parsing-de-config-por-
 // biblioteca-yaml-com-normalizacao-para-string-na-fronteira.md (ML-1B addendum).
-const MalformedConfigMessage = "trackfw: erro ao carregar \"trackfw.yaml\": YAML malformado. Corrija a sintaxe do arquivo antes de continuar."
+const MalformedConfigMessage = "trackfw: error loading \"trackfw.yaml\": malformed YAML. Fix the file syntax before continuing."
 
 // osExit is a var (not a direct os.Exit call) so tests can override it and observe the fatal
 // path without terminating the test process.
@@ -188,17 +188,17 @@ const (
 // exists but fails to parse as valid YAML. Unlike MalformedConfigMessage (project config, fatal),
 // a malformed global config degrades gracefully to canonical tier.
 // Must be byte-identical across Go, Node.js and Python — ADR-2026-08-23.
-const MalformedGlobalConfigMessage = `trackfw: aviso: "~/.trackfw/trackfw.yaml" tem YAML malformado — config global de modelo ignorada; usando tier canônico.`
+const MalformedGlobalConfigMessage = `trackfw: warning: "~/.trackfw/trackfw.yaml" has malformed YAML — global model config ignored; using canonical tier.`
 
 // GlobalAgentModelsNoneMessage is emitted to stderr when agent_models is not configured in the
 // global config and not found in cwd's trackfw.yaml either. Non-fatal.
 // Must be byte-identical across Go, Node.js and Python — ADR-2026-08-23.
-const GlobalAgentModelsNoneMessage = `trackfw: agents global: agent_models não configurado em ~/.trackfw/trackfw.yaml — usando tier canônico. Configure em ~/.trackfw/trackfw.yaml para pinar versões.`
+const GlobalAgentModelsNoneMessage = `trackfw: agents global: agent_models not configured in ~/.trackfw/trackfw.yaml — using canonical tier. Configure in ~/.trackfw/trackfw.yaml to pin versions.`
 
 // GlobalAgentModelsProjectOnlyMessage is emitted to stderr when agent_models is found in the
 // project's trackfw.yaml but not in the global config (AC4/AC14). The value is NOT applied.
 // Must be byte-identical across Go, Node.js and Python — ADR-2026-08-23.
-const GlobalAgentModelsProjectOnlyMessage = `trackfw: agents global: agent_models configurado em trackfw.yaml do projeto mas não vale para escopo global. Mova a chave para ~/.trackfw/trackfw.yaml.`
+const GlobalAgentModelsProjectOnlyMessage = `trackfw: agents global: agent_models configured in project trackfw.yaml but does not apply to global scope. Move the key to ~/.trackfw/trackfw.yaml.`
 
 // LoadGlobalAgentModels reads agent_models from ~/.trackfw/trackfw.yaml, bypassing the Load()
 // singleton. homeDir is the user home directory (e.g. from homedir.Dir()); cwd is the

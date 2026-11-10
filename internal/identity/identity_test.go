@@ -388,8 +388,8 @@ func TestLoadRejectsInvalidSlug(t *testing.T) {
 				if err == nil {
 					t.Fatalf("Load deve rejeitar: %s; obteve nil", tc.name)
 				}
-				if !strings.Contains(err.Error(), "inválido") {
-					t.Fatalf("mensagem deve conter 'inválido', obteve: %v", err)
+				if !strings.Contains(err.Error(), "invalid") {
+					t.Fatalf("message must contain 'invalid', got: %v", err)
 				}
 			} else {
 				if err != nil {

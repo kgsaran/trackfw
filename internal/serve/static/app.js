@@ -55,7 +55,7 @@ function truncate(str, max = 30) {
 
 function stateLabel(state) {
   const labels = {
-    wip: 'WIP', backlog: 'BACKLOG', analyzing: 'Analisando', blocked: 'BLOCKED', done: 'DONE', abandoned: 'ABANDONED',
+    wip: 'WIP', backlog: 'BACKLOG', analyzing: 'Analyzing', blocked: 'BLOCKED', done: 'DONE', abandoned: 'ABANDONED',
   };
   return labels[state] || state.toUpperCase();
 }
@@ -113,7 +113,7 @@ function switchView(view) {
 
 const COLUMNS_ORDER = ['backlog', 'analyzing', 'wip', 'blocked', 'done', 'abandoned'];
 const COLUMNS_LABEL = {
-  wip: 'WIP', backlog: 'Backlog', analyzing: 'Analisando', blocked: 'Blocked', done: 'Done', abandoned: 'Abandoned',
+  wip: 'WIP', backlog: 'Backlog', analyzing: 'Analyzing', blocked: 'Blocked', done: 'Done', abandoned: 'Abandoned',
 };
 
 async function loadBoard() {
@@ -132,7 +132,7 @@ async function loadBoard() {
         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
       </svg>
-      Carregando board...
+      Loading board...
     </div>`;
   hide('board-error');
 
@@ -163,7 +163,7 @@ async function loadBoard() {
     container.innerHTML = '';
     const errEl = el('board-error');
     if (errEl) {
-      errEl.textContent = `Erro ao carregar board: ${err.message}`;
+      errEl.textContent = `Error loading board: ${err.message}`;
       errEl.classList.remove('hidden');
     }
   }
@@ -186,7 +186,7 @@ function renderBoard(data, agentFilter) {
 
     const col = document.createElement('div');
     col.className = 'kanban-column bg-white rounded-lg border border-gray-200 shadow-sm flex flex-col';
-    col.setAttribute('aria-label', `Coluna ${COLUMNS_LABEL[state]}`);
+    col.setAttribute('aria-label', `Column ${COLUMNS_LABEL[state]}`);
 
     // Header da coluna
     const header = document.createElement('div');
@@ -204,7 +204,7 @@ function renderBoard(data, agentFilter) {
     if (cards.length === 0) {
       const empty = document.createElement('p');
       empty.className = 'text-xs text-gray-400 text-center py-4';
-      empty.textContent = 'Nenhum item';
+      empty.textContent = 'No items';
       cardsContainer.appendChild(empty);
     } else {
       cards.forEach(card => {
@@ -227,7 +227,7 @@ function createCard(card) {
   div.className = `kanban-card bg-gray-50 border border-gray-200 rounded-md p-3 hover:bg-white${isActive ? ' card-active' : ''}`;
   div.setAttribute('tabindex', '0');
   div.setAttribute('role', 'button');
-  div.setAttribute('aria-label', `Abrir: ${card.title || card.file}`);
+  div.setAttribute('aria-label', `Open: ${card.title || card.file}`);
   div.setAttribute('data-file', card.file || '');
 
   const total    = card.ml_total  || 0;
@@ -253,7 +253,7 @@ function createCard(card) {
   // Contagem: quando malformado, exibe "?" como total para deixar claro
   // que o número de MLs não é confiável.
   const mlCountLabel = isMalformed
-    ? `${done}/<span aria-label="total desconhecido" title="total de MLs não confiável — roadmap malformado">?</span>`
+    ? `${done}/<span aria-label="unknown total" title="total ML count unreliable — malformed roadmap">?</span>`
     : `${done}/${total}`;
 
   const progressHTML = total > 0 ? `
@@ -270,11 +270,11 @@ function createCard(card) {
 
   // Monta o tooltip de causa para o selo
   const malformedCauses = [];
-  if (fenceLine > 0) malformedCauses.push(`cerca de código aberta na linha ${fenceLine}`);
-  if (badWaves  > 0) malformedCauses.push(`${badWaves} cabeçalho(s) de wave inválido(s)`);
+  if (fenceLine > 0) malformedCauses.push(`open code fence at line ${fenceLine}`);
+  if (badWaves  > 0) malformedCauses.push(`${badWaves} invalid wave heading(s)`);
   const malformedTitle  = malformedCauses.join('; ');
   const malformedBadge  = isMalformed
-    ? `<span class="badge-malformed" title="${escapeHtml(malformedTitle)}" aria-label="roadmap malformado: ${escapeHtml(malformedTitle)}">⚠ roadmap malformado</span>`
+    ? `<span class="badge-malformed" title="${escapeHtml(malformedTitle)}" aria-label="malformed roadmap: ${escapeHtml(malformedTitle)}">⚠ malformed roadmap</span>`
     : '';
 
   div.innerHTML = `
@@ -283,7 +283,7 @@ function createCard(card) {
     <div class="flex flex-wrap items-center gap-1">
       ${card.agent ? `<span class="inline-block text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-medium">${escapeHtml(card.agent)}</span>` : ''}
       <span class="badge-${card.state} inline-block text-xs px-1.5 py-0.5 rounded font-medium">${stateLabel(card.state)}</span>
-      ${isActive ? '<span class="inline-block text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium">ATIVO</span>' : ''}
+      ${isActive ? '<span class="inline-block text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium">ACTIVE</span>' : ''}
       ${malformedBadge}
     </div>
     ${progressHTML}`;
@@ -340,7 +340,7 @@ function manualRefresh() {
 function updateRefreshUI() {
   const btn = el('refresh-toggle');
   if (!btn) return;
-  btn.textContent = _refreshPaused ? '▶ Retomar' : '⏸ Pausar';
+  btn.textContent = _refreshPaused ? '▶ Resume' : '⏸ Pause';
 }
 
 function initRefreshUI() {
@@ -384,7 +384,7 @@ function showAttentionBanner(data) {
   const msgEl = el('attention-message');
 
   if (iconEl)  iconEl.textContent  = isAction ? '⚠️' : 'ℹ️';
-  if (labelEl) labelEl.textContent = isAction ? 'Ação necessária' : 'Aviso';
+  if (labelEl) labelEl.textContent = isAction ? 'Action required' : 'Notice';
   if (ctxEl)   ctxEl.textContent   = [data.roadmap, data.ml].filter(Boolean).join(' · ');
   if (msgEl)   msgEl.textContent   = data.message || '';
 
@@ -461,7 +461,7 @@ async function loadChain() {
     hide('chain-loading');
     const errEl = el('chain-error');
     if (errEl) {
-      errEl.textContent = `Erro ao carregar cadeia: ${err.message}`;
+      errEl.textContent = `Error loading chain: ${err.message}`;
       errEl.classList.remove('hidden');
     }
   }
@@ -639,7 +639,7 @@ async function loadListView(type) {
     hide(`${type}-loading`);
     const errEl = el(`${type}-error`);
     if (errEl) {
-      errEl.textContent = `Erro ao carregar ${type === 'adr' ? 'ADRs' : 'REQs'}: ${err.message}`;
+      errEl.textContent = `Error loading ${type === 'adr' ? 'ADRs' : 'REQs'}: ${err.message}`;
       errEl.classList.remove('hidden');
     }
   }
@@ -661,7 +661,7 @@ function populateStatusFilter(type, nodes) {
   const current = select.value;
   const states = Array.from(new Set(nodes.map(n => n.state || 'unknown'))).sort((a, b) => a.localeCompare(b));
 
-  select.innerHTML = '<option value="">Todos</option>';
+  select.innerHTML = '<option value="">All</option>';
   states.forEach(state => {
     const opt = document.createElement('option');
     opt.value = state;
@@ -724,8 +724,8 @@ function renderListRows(type, filtered, total) {
   if (filtered.length === 0) {
     if (emptyEl) {
       emptyEl.textContent = total === 0
-        ? `Nenhum ${type === 'adr' ? 'ADR' : 'REQ'} encontrado.`
-        : 'Nenhum item corresponde à busca/filtro atual.';
+        ? `No ${type === 'adr' ? 'ADR' : 'REQ'} found.`
+        : 'No item matches the current search/filter.';
       emptyEl.classList.remove('hidden');
     }
     return;
@@ -748,7 +748,7 @@ function createListRow(node) {
   row.className = 'list-row';
   row.setAttribute('tabindex', '0');
   row.setAttribute('role', 'button');
-  row.setAttribute('aria-label', `Abrir: ${title}`);
+  row.setAttribute('aria-label', `Open: ${title}`);
 
   row.innerHTML = `
     <span class="list-row-id">${escapeHtml(identifier)}</span>
@@ -784,7 +784,7 @@ async function loadMetrics() {
     hide('metrics-loading');
     const errEl = el('metrics-error');
     if (errEl) {
-      errEl.textContent = `Erro ao carregar métricas: ${err.message}`;
+      errEl.textContent = `Error loading metrics: ${err.message}`;
       errEl.classList.remove('hidden');
     }
   }
@@ -796,8 +796,8 @@ function renderMetrics(data) {
   const cycleEl = el('kpi-cycle-time');
   const abandonEl = el('kpi-abandonment');
 
-  if (leadEl)   leadEl.textContent   = `${(data.lead_time_avg_days  || 0).toFixed(1)} dias`;
-  if (cycleEl)  cycleEl.textContent  = `${(data.cycle_time_avg_days || 0).toFixed(1)} dias`;
+  if (leadEl)   leadEl.textContent   = `${(data.lead_time_avg_days  || 0).toFixed(1)} days`;
+  if (cycleEl)  cycleEl.textContent  = `${(data.cycle_time_avg_days || 0).toFixed(1)} days`;
   if (abandonEl) abandonEl.textContent = `${(((data.abandonment_rate || 0) * 100)).toFixed(1)}%`;
 
   show('kpi-cards');
@@ -854,7 +854,7 @@ function renderMetrics(data) {
           labels: burndown.map(b => b.date),
           datasets: [
             {
-              label: 'Abertos',
+              label: 'Open',
               data: burndown.map(b => b.open),
               borderColor: '#ef4444',
               backgroundColor: 'rgba(239,68,68,0.08)',
@@ -863,7 +863,7 @@ function renderMetrics(data) {
               fill: true,
             },
             {
-              label: 'Fechados',
+              label: 'Closed',
               data: burndown.map(b => b.closed),
               borderColor: '#22c55e',
               backgroundColor: 'rgba(34,197,94,0.08)',
@@ -1028,7 +1028,7 @@ async function openDrawer(path) {
         mdEl.textContent = body || raw;
         const errEl = el('drawer-error');
         if (errEl) {
-          errEl.textContent = 'Aviso: sanitizador de HTML indisponível — conteúdo exibido como texto puro.';
+          errEl.textContent = 'Warning: HTML sanitizer unavailable — content displayed as plain text.';
           errEl.classList.remove('hidden');
         }
       } else {
@@ -1064,9 +1064,9 @@ async function openDrawer(path) {
     const errEl = el('drawer-error');
     if (errEl) {
       if (err.status === 403) {
-        errEl.textContent = `Arquivo fora dos diretórios permitidos: ${path}`;
+        errEl.textContent = `File outside allowed directories: ${path}`;
       } else {
-        errEl.textContent = `Erro ao carregar arquivo: ${err.message}`;
+        errEl.textContent = `Error loading file: ${err.message}`;
       }
       errEl.classList.remove('hidden');
     }

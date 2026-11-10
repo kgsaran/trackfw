@@ -347,7 +347,7 @@ func NewRoadmapFromContent(content RoadmapContent) error {
 			// Arquivo existe no destino planejado (backlog/).
 			if !content.Force {
 				// Opção B (idempotente): pular criação, verificar/reparar vínculos, reportar.
-				fmt.Fprintf(os.Stderr, "roadmap %s já existe em %s (criada por `trackfw req new`?) — nada sobrescrito; use --force para recriar\n",
+				fmt.Fprintf(os.Stderr, "roadmap %s already exists at %s (created by `trackfw req new`?) — nothing overwritten; use --force to recreate\n",
 					basename, existingPath)
 				reconcileExistingRoadmapLink(content.REQPath, normalizeRefSeparator(filename), cfg)
 				return nil
@@ -356,10 +356,10 @@ func NewRoadmapFromContent(content RoadmapContent) error {
 		} else {
 			// Arquivo existe em outro estado (ex.: wip/) — nunca criar duplicata.
 			if content.Force {
-				return fmt.Errorf("roadmap %s já existe em %s — --force não cria duplicata em estado diferente; mova ou apague o existente primeiro",
+				return fmt.Errorf("roadmap %s already exists at %s — --force does not create a duplicate in a different state; move or delete the existing one first",
 					basename, existingPath)
 			}
-			fmt.Fprintf(os.Stderr, "roadmap %s já existe em %s — nada sobrescrito; use --force para recriar (apenas no mesmo estado)\n",
+			fmt.Fprintf(os.Stderr, "roadmap %s already exists at %s — nothing overwritten; use --force to recreate (same state only)\n",
 				basename, existingPath)
 			reconcileExistingRoadmapLink(content.REQPath, normalizeRefSeparator(existingPath), cfg)
 			return nil
@@ -377,10 +377,10 @@ func NewRoadmapFromContent(content RoadmapContent) error {
 					ownerLabel = "(flat)"
 				}
 				if content.Force {
-					return fmt.Errorf("roadmap %s já existe em %s (agente %s) — --force não cria duplicata em namespace diferente; mova ou apague o existente primeiro",
+					return fmt.Errorf("roadmap %s already exists at %s (agent %s) — --force does not create a duplicate in a different namespace; move or delete the existing one first",
 						basename, m.path, ownerLabel)
 				}
-				fmt.Fprintf(os.Stderr, "roadmap %s já existe em %s (agente %s) — nada criado em namespace %s; mova o existente ou use o agente correto\n",
+				fmt.Fprintf(os.Stderr, "roadmap %s already exists at %s (agent %s) — nothing created in namespace %s; move the existing one or use the correct agent\n",
 					basename, m.path, ownerLabel, agent)
 				reconcileExistingRoadmapLink(content.REQPath, m.path, cfg)
 				return nil
@@ -391,9 +391,9 @@ func NewRoadmapFromContent(content RoadmapContent) error {
 					if ownerLabel == "" {
 						ownerLabel = "(flat)"
 					}
-					descs = append(descs, fmt.Sprintf("%s (agente %s)", m.path, ownerLabel))
+					descs = append(descs, fmt.Sprintf("%s (agent %s)", m.path, ownerLabel))
 				}
-				fmt.Fprintf(os.Stderr, "roadmap %s encontrada em múltiplos namespaces — nada criado: %s\n",
+				fmt.Fprintf(os.Stderr, "roadmap %s found in multiple namespaces — nothing created: %s\n",
 					basename, strings.Join(descs, "; "))
 				return nil
 			}
@@ -465,7 +465,7 @@ REQ: %s
 		if createErr != nil {
 			if errors.Is(createErr, fs.ErrExist) {
 				// TOCTOU: arquivo criado entre a checagem e o open — tratar como já existente.
-				fmt.Fprintf(os.Stderr, "roadmap %s já existe — nada sobrescrito; use --force para recriar\n", filename)
+				fmt.Fprintf(os.Stderr, "roadmap %s already exists — nothing overwritten; use --force to recreate\n", filename)
 				reconcileExistingRoadmapLink(content.REQPath, normalizeRefSeparator(filename), cfg)
 				return nil
 			}

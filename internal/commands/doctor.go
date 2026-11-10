@@ -99,7 +99,7 @@ func runDoctor(remote bool) ([]integrations.DoctorFinding, error) {
 	}
 	ident, err := identity.Load(manager.HomeDir)
 	if err != nil {
-		return nil, fmt.Errorf("doctor: identidade invalida: %w", err)
+		return nil, fmt.Errorf("doctor: invalid identity: %w", err)
 	}
 	catalogFindings, err := integrations.RunDoctor(catalog, manager, ident, config.Load().AgentModels)
 	if err != nil {

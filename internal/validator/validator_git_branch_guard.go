@@ -527,8 +527,8 @@ func validateGuardGlobalHookD2InlineWarnings(scriptMarker, subcmdMarker, subcmdN
 		for _, m := range subcmdCommands {
 			if m.raw == legacyD2Line && m.raw != expectedLine {
 				warnings = append(warnings, fmt.Sprintf(
-					"~/%s (%s, global scope) has %q — linha antiga, falha aberta sem o trackfw no PATH; "+
-						"rode `trackfw update harness` para migrar para a forma D11 fail-closed",
+					"~/%s (%s, global scope) has %q — legacy line, fail-open without trackfw in PATH; "+
+						"run `trackfw update harness` to migrate to the D11 fail-closed form",
 					relPath, gf.cli, m.raw,
 				))
 				break // um aviso por arquivo é suficiente
@@ -595,16 +595,16 @@ func validateGuardGlobalHookD11LegacyWarnings(scriptMarker, subcmdMarker, subcmd
 		for _, m := range subcmdCommands {
 			if m.raw == legacyD11RevLine && m.raw != expectedLine {
 				warnings = append(warnings, fmt.Sprintf(
-					"~/%s (%s, global scope) has %q — forma D11 revised pré-REQ-2026-10-20, aborta no zsh (EQUALS/NOMATCH); "+
-						"rode `trackfw update harness` para migrar para a forma REQ-2026-10-20 com o prefixo `emulate -R sh`",
+					"~/%s (%s, global scope) has %q — D11 revised form pre-REQ-2026-10-20, aborts on zsh (EQUALS/NOMATCH); "+
+						"run `trackfw update harness` to migrate to the REQ-2026-10-20 form with the `emulate -R sh` prefix",
 					relPath, gf.cli, m.raw,
 				))
 				break // um aviso por arquivo é suficiente
 			}
 			if m.raw == legacyD11Line && m.raw != expectedLine {
 				warnings = append(warnings, fmt.Sprintf(
-					"~/%s (%s, global scope) has %q — forma D11 pré-ML-6C, passa saídas ≠{0,2} íntegras no PowerShell; "+
-						"rode `trackfw update harness` para migrar para a forma D11 revista",
+					"~/%s (%s, global scope) has %q — D11 form pre-ML-6C, passes non-{0,2} outputs intact on PowerShell; "+
+						"run `trackfw update harness` to migrate to the revised D11 form",
 					relPath, gf.cli, m.raw,
 				))
 				break // um aviso por arquivo é suficiente
@@ -665,8 +665,8 @@ func validateGuardGlobalHookD11RevisedLegacyWarnings(scriptMarker, subcmdMarker,
 		for _, m := range subcmdCommands {
 			if m.raw == legacyD11RevLine && m.raw != expectedLine {
 				warnings = append(warnings, fmt.Sprintf(
-					"~/%s (%s, global scope) has %q — forma D11 revised pré-REQ-2026-10-20, aborta no zsh (EQUALS/NOMATCH); "+
-						"rode `trackfw update harness` para migrar para a forma REQ-2026-10-20 com o prefixo `emulate -R sh`",
+					"~/%s (%s, global scope) has %q — D11 revised form pre-REQ-2026-10-20, aborts on zsh (EQUALS/NOMATCH); "+
+						"run `trackfw update harness` to migrate to the REQ-2026-10-20 form with the `emulate -R sh` prefix",
 					relPath, gf.cli, m.raw,
 				))
 				break // um aviso por arquivo é suficiente
