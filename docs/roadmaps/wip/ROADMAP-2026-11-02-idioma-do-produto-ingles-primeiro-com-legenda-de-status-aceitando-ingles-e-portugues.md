@@ -487,7 +487,7 @@ para qualquer erro de parse. O ciclo de red team convergiu.
 *Decisão do KG (2026-11-08):* dois PRs, com uma tag no meio. Este PR leva as Waves 0–2 (leitor bilíngue) e,
 depois do merge, recebe a tag; as Waves 3–4 (gerador em inglês) vão num segundo PR. O KG também aceitou o
 residual de ofuscação deliberada (emenda da ADR, rodada 3, item 4).
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** zeus-tf
 **Files affected:**
 - `CHANGELOG.md`
@@ -500,7 +500,7 @@ residual de ofuscação deliberada (emenda da ADR, rodada 3, item 4).
 O roadmap continua em `wip/` depois desse merge (ADR D2).
 
 **Acceptance criteria:**
-- [ ] Tag publicada nos três canais com o leitor bilíngue
+- [x] Tag publicada nos três canais com o leitor bilíngue
 
 **Gates da wave:**
 ```bash
@@ -510,6 +510,8 @@ test -s docs/seguranca/2026-11-08-redteam-leitor-bilingue.md
 ## Wave 3 — Gerador e mensagens em inglês (AC2, AC3, AC5)
 > Dependencies: tag do ML-2B publicada. MLs detalhados a partir do inventário da Wave 0, com arquivos
 > disjuntos e no máximo dois agentes em paralelo.
+
+*Auditoria (Zeus, 2026-11-10):* o PR 1 (#677) e o PR de release (#678) entraram na `main`. `make check-required-full` deu OK (D\\R, R\\W e D\\W vazios). `trackfw release tag 11.6.0` publicou `v11.6.0` no commit `dc617634`. O run de release 42819567116 terminou em success, incluindo "Verify all release channels". GitHub: `v11.6.0` com pre=false; npm: `latest` = 11.6.0; PyPI: 11.6.0.
 
 ### ML-3A — Gerador de roadmap e REQ na forma canônica (ADR D4)
 **Status:** ⬜ Pendente
