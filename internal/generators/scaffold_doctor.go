@@ -78,9 +78,9 @@ func BuildDiscoverGitHubActionsWorkflowContentWithTrigger(isProducer bool, ciTri
 		// Replace the entire on: body (comment + push + pull_request) with workflow_dispatch.
 		// Neither block contains the value of ciTrigger (T2 mitigation).
 		return strings.Replace(base,
-			"  # push so na main. Com o gatilho de lista (push e pull_request juntos), uma\n"+
-				"  # branch do proprio repositorio dispara os DOIS eventos no mesmo commit e o\n"+
-				"  # gate roda em dobro — medido num PR real: 2 execucoes do mesmo job, mesmo SHA.\n"+
+			"  # push on main only. With a combined trigger (push + pull_request), a branch\n"+
+				"  # from the same repository fires BOTH events on the same commit and the gate\n"+
+				"  # runs twice — measured in a real PR: 2 runs of the same job, same SHA.\n"+
 				"  push:\n    branches: [main]\n  pull_request:\n",
 			"  workflow_dispatch:\n",
 			1)
@@ -96,9 +96,9 @@ func buildDiscoverGitHubActionsWorkflowContentPR(isProducer bool) string {
 	if isProducer {
 		return `name: trackfw validate
 on:
-  # push so na main. Com o gatilho de lista (push e pull_request juntos), uma
-  # branch do proprio repositorio dispara os DOIS eventos no mesmo commit e o
-  # gate roda em dobro — medido num PR real: 2 execucoes do mesmo job, mesmo SHA.
+  # push on main only. With a combined trigger (push + pull_request), a branch
+  # from the same repository fires BOTH events on the same commit and the gate
+  # runs twice — measured in a real PR: 2 runs of the same job, same SHA.
   push:
     branches: [main]
   pull_request:
@@ -137,9 +137,9 @@ jobs:
 	}
 	return `name: trackfw validate
 on:
-  # push so na main. Com o gatilho de lista (push e pull_request juntos), uma
-  # branch do proprio repositorio dispara os DOIS eventos no mesmo commit e o
-  # gate roda em dobro — medido num PR real: 2 execucoes do mesmo job, mesmo SHA.
+  # push on main only. With a combined trigger (push + pull_request), a branch
+  # from the same repository fires BOTH events on the same commit and the gate
+  # runs twice — measured in a real PR: 2 runs of the same job, same SHA.
   push:
     branches: [main]
   pull_request:

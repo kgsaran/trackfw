@@ -628,10 +628,11 @@ cerca e passado a `ParseGatesLines` não dá erro na Wave 0 e retorna o gate `ex
 *Auditoria (Zeus, 2026-11-10):* o primeiro agente também caiu por ENOTFOUND e um segundo terminou. Os leitores PT estão preservados (`AcceptanceMarkers`, `reqACHeadingRe`, o leitor de `roadmap.go`, as palavras-chave de `probes.go` e a sonda `docs/requisições`). Medido por Zeus: `go test -count=1 ./internal/...` rc=0; `check-gates-falsify.sh` rc=0 (285 cenários); `check-agent-models-parity.sh` rc=0. Dashboard: `trackfw serve` com captura em Chrome headless; a interface (Board, Chain, Metrics, No items, Auto-refresh, Pause) está em EN, e os títulos de roadmap ficam em PT porque são dados de `docs/` (escopo negativo). Em `app.js`/`index.html` sobra PT só em comentários. Resta a mensagem da linha ~373 de `validator_req_done_criteria.go`, que está em EN mas cita só `Caducou:`; foi para o ML-3D.
 
 ### ML-3D — Teste que reprova o retorno do português (AC2)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Files affected:**
-- `internal/i18nguard/pt_literals_test.go` (novo)
+- `internal/i18nguard/pt_literals_test.go` e `internal/i18nguard/doc.go` (novos)
+- Literais PT residuais achados pelo teste: `internal/commands/init.go`, `internal/commands/roadmap.go`, `internal/generators/roadmap.go`, `internal/generators/scaffold.go`, `internal/generators/scaffold_doctor.go`, com os goldens de `internal/generators/testdata/ci-trigger/` e os hashes AC6 de `consumer_install_test.go`
 - `internal/validator/validator_req_done_criteria.go` (mensagem da linha ~373 passa a citar `Lapsed:` com `Caducou:` como alternativa) e o teste que a afirmar
 
 **Actions:** teste Go que percorre com `go/ast` os arquivos de produto de `internal/` e `cmd/` (sem
@@ -639,7 +640,9 @@ cerca e passado a `ParseGatesLines` não dá erro na Wave 0 e retorna o gate `ex
 fechada e explícita: as grafias PT dos leitores bilíngues, as palavras-chave de `probes.go`, a sonda
 `"docs/requisições"` e os nomes dos presets. Cada entrada traz o motivo.
 **Acceptance criteria:**
-- [ ] O teste passa na branch e reprova quando um literal PT é reintroduzido (contraprova registrada)
+- [x] O teste passa na branch e reprova quando um literal PT é reintroduzido (contraprova registrada)
+
+*Auditoria (Zeus, 2026-11-10):* `TestNoPTLiteralsInProductGo` varre literais via `go/ast`. A lista de permissão é fechada, e `TestAllowlistIsExhaustive` reprova entrada obsoleta. Os arquivos citados na lista existem (conferido por Zeus). As classes são as quatro do ML mais uma quinta: mensagens EN que citam o marcador PT aceito; aceita porque nomeiam o leitor bilíngue. Contraprova do executor: `"Próximo passo"` em `init.go` reprova. Zeus achou um fail-open: o arquivo que não fazia parse era pulado em silêncio. O corretivo virou `t.Errorf`, com contraprova (`zz_contraprova.go` reprova; o arquivo foi apagado e o teste volta a passar). `go test -count=1 ./internal/...` rodado por Zeus: sem falha. Os nomes dos 4 testes foram conferidos.
 
 **Gates da wave:**
 ```bash

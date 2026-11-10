@@ -209,7 +209,7 @@ func identityFileExists(home string) bool {
 func runInit(cmd *cobra.Command, args []string) error {
 	home, err := homedir.Dir()
 	if err != nil {
-		return fmt.Errorf("init: nao foi possivel resolver o diretorio home: %w", err)
+		return fmt.Errorf("init: could not resolve home directory: %w", err)
 	}
 
 	// Validate --scope early, before any filesystem writes (AC4, P-7).

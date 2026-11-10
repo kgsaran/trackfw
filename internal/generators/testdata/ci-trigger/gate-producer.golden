@@ -23,10 +23,10 @@ jobs:
         # Precedent: quality.yml:545-570 (same refspec, same three-branch discrimination).
         #
         # Three-branch discrimination (two-states-one-observable prevention):
-        #   Braço 1 — ref absent (fetch failed): ::error:: annotation; trackfw validate will emit
-        #             severity-anchor violation (fail closed via Go code).
-        #   Braço 2 — ref present, file absent: ::warning:: annotation; disk-only severities.
-        #   Braço 3 — ref and file present: anchor active.
+        #   Arm 1 — ref absent (fetch failed): ::error:: annotation; trackfw validate will emit
+        #           severity-anchor violation (fail closed via Go code).
+        #   Arm 2 — ref present, file absent: ::warning:: annotation; disk-only severities.
+        #   Arm 3 — ref and file present: anchor active.
         #
         # This step always exits 0 so that trackfw validate always runs (and emits the fail-closed
         # violation if needed). The CI failure surface is trackfw validate, not this fetch step.

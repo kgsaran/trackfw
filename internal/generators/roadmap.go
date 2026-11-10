@@ -1367,7 +1367,7 @@ func ListRoadmaps() error {
 	}
 
 	if !found {
-		fmt.Printf("Nenhum roadmap encontrado. Crie um com '%s'.\n", validator.RoadmapNewLine(cfg))
+		fmt.Printf("No roadmap found. Create one with '%s'.\n", validator.RoadmapNewLine(cfg))
 	}
 	return nil
 }

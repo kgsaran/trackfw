@@ -360,7 +360,7 @@ func installGlobalSkillInner(force bool) error {
 	}
 
 	if _, err := os.Stat(skillPath); err == nil && !force {
-		fmt.Printf("  ✓ %s (já existe — não sobrescrito)\n", skillPath)
+		fmt.Printf("  ✓ %s (already exists — not overwritten)\n", skillPath)
 		return nil
 	}
 
@@ -903,7 +903,7 @@ func generateClaudeCommandsInner(force bool) error {
 		created++
 	}
 	if skipped > 0 {
-		fmt.Printf("  ✓ %s (%d slash commands criados, %d já existiam — não sobrescritos)\n", dir, created, skipped)
+		fmt.Printf("  ✓ %s (%d slash commands created, %d already existed — not overwritten)\n", dir, created, skipped)
 	} else {
 		fmt.Printf("  ✓ %s (%d slash commands)\n", dir, created)
 	}
@@ -1601,10 +1601,10 @@ jobs:
         # Precedent: quality.yml:545-570 (same refspec, same three-branch discrimination).
         #
         # Three-branch discrimination (two-states-one-observable prevention):
-        #   Braço 1 — ref absent (fetch failed): ::error:: annotation; trackfw validate will emit
-        #             severity-anchor violation (fail closed via Go code).
-        #   Braço 2 — ref present, file absent: ::warning:: annotation; disk-only severities.
-        #   Braço 3 — ref and file present: anchor active.
+        #   Arm 1 — ref absent (fetch failed): ::error:: annotation; trackfw validate will emit
+        #           severity-anchor violation (fail closed via Go code).
+        #   Arm 2 — ref present, file absent: ::warning:: annotation; disk-only severities.
+        #   Arm 3 — ref and file present: anchor active.
         #
         # This step always exits 0 so that trackfw validate always runs (and emits the fail-closed
         # violation if needed). The CI failure surface is trackfw validate, not this fetch step.
@@ -1732,7 +1732,7 @@ func generateGitHubActionsWorkflow(cfg Config) error {
 	// Uses discoverWorkflowPresent (os.Lstat) so a symlink at that path is NOT
 	// treated as present and gate.yml is still written — safe direction.
 	if discoverWorkflowPresent(ghRoot) {
-		fmt.Printf("  ℹ %s já existe — %s não será escrito (ADR-2026-09-29 D2)\n",
+		fmt.Printf("  ℹ %s already exists — %s will not be written (ADR-2026-09-29 D2)\n",
 			DiscoverGitHubActionsWorkflowPath, GitHubActionsWorkflowPath)
 		return nil
 	}
@@ -1908,16 +1908,16 @@ func generateVaultIndex() error {
 		// já existe — idempotente
 		return nil
 	}
-	content := `# Vault de Conhecimento
+	content := `# Knowledge Vault
 
-> Ponto de entrada de conhecimento do projeto para agentes e pessoas.
-> Cada nota documenta uma causa-raiz, decisão técnica ou restrição não óbvia.
-> Crie notas com: trackfw note new "<título>"
+> Project knowledge entry point for agents and people.
+> Each note documents a root cause, technical decision or non-obvious constraint.
+> Create notes with: trackfw note new "<title>"
 
-## Índice
+## Index
 
-<!-- As notas serão listadas abaixo. Exemplo:
-- [nome-da-nota-YYYY-MM-DD](nome-da-nota-YYYY-MM-DD.md)
+<!-- Notes will be listed below. Example:
+- [note-name-YYYY-MM-DD](note-name-YYYY-MM-DD.md)
 -->
 `
 	// Guard the leaf file — directory guard above does not detect a symlinked index file.

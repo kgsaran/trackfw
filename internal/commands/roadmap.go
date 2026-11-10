@@ -94,7 +94,7 @@ func newRoadmapNewCmd() *cobra.Command {
 				}
 				// selectedREQ permanece vazio — argumento posicional é o título, não um caminho de REQ
 			} else if len(reqFiles) == 0 {
-				fmt.Fprintf(os.Stderr, "Nenhuma REQ encontrada. Crie uma REQ primeiro com '%s'.\n", validator.ReqNewLine(roadmapCfg))
+				fmt.Fprintf(os.Stderr, "No REQ found. Create a REQ first with '%s'.\n", validator.ReqNewLine(roadmapCfg))
 				return nil
 			}
 

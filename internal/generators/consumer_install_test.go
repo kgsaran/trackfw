@@ -234,7 +234,7 @@ func TestConsumerInstall_ProducerHashesUnchanged(t *testing.T) {
 		{
 			name:    "BuildDiscoverGitHubActionsWorkflowContent(true)/pull_request",
 			content: BuildDiscoverGitHubActionsWorkflowContent(true),
-			want:    "824938490c0748adc02374cf60ee29e369267cb64a9e63035abb475f97f76b61",
+			want:    "4ee6928a851f488e4656e1a9da5b9fbc8d49a2e2f4c266cbaf80cfcbf7fcba74",
 		},
 		{
 			name:    "BuildDiscoverGitHubActionsWorkflowContentWithTrigger(true,manual)",
@@ -244,12 +244,12 @@ func TestConsumerInstall_ProducerHashesUnchanged(t *testing.T) {
 		{
 			name:    "buildGitHubActionsWorkflowContent(true)/pull_request",
 			content: buildGitHubActionsWorkflowContent(true),
-			want:    "017ab0256086924825555ea3af01da498310f8b6382cdb38f529315b227593db",
+			want:    "acc18053949bab9f00f4514a63571ffbfc50df4ee2c338d79b7a4d88b889a4fe",
 		},
 		{
 			name:    "buildGitHubActionsWorkflowContentWithTrigger(true,manual)",
 			content: buildGitHubActionsWorkflowContentWithTrigger(true, "manual"),
-			want:    "bb8439421c28e83420d24786d7d0499b82f6c6557fe4c125161007edf4049166",
+			want:    "20a95651944f9128a4ba3339b3212a6c095bff558f2624a17872d569379ca552",
 		},
 	}
 	for _, c := range cases {
