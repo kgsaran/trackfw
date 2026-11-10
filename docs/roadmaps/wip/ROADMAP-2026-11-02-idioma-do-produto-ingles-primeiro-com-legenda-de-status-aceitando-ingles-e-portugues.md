@@ -527,7 +527,7 @@ ADR D1/D5); as palavras-chave de `probes.go` (`autenticação`, `migração`, `s
 §1 nota 3); a sonda de caminho `"docs/requisições"` em `discover.go`; e os nomes dos presets (ADR D6).
 
 ### ML-3A — Gerador de roadmap e REQ na forma canônica (ADR D4)
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Squad:** apolo-tf
 **Files affected:**
 - `internal/generators/roadmap.go`
@@ -547,7 +547,7 @@ que só **alimentam** PT ao parser (§4(ii)) ficam como estão.
 - [ ] Roadmap gerado passa no `barrier` com o gate `exit 1` reprovando (teste em `t.TempDir`)
 
 ### ML-3C — Conteúdo gerado no consumidor e presets (AC3, AC5)
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Squad:** prometeu-tf
 **Files affected:**
 - `internal/generators/scaffold.go`
