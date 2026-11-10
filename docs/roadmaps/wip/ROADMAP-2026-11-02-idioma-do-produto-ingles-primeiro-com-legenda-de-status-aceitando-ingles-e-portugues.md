@@ -491,6 +491,10 @@ residual de ofuscação deliberada (emenda da ADR, rodada 3, item 4).
 **Squad:** zeus-tf
 **Files affected:**
 - `CHANGELOG.md`
+- `internal/version/version.go`
+- `npm/package.json`
+- `npm/package-lock.json`
+- `pypi/pyproject.toml`
 
 **Actions:** PR das Waves 0–2, merge pelo KG, release minor com o leitor bilíngue via `trackfw release tag`.
 O roadmap continua em `wip/` depois desse merge (ADR D2).
