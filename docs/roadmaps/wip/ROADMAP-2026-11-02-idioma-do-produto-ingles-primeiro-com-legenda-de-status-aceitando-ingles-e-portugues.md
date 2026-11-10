@@ -507,34 +507,58 @@ O roadmap continua em `wip/` depois desse merge (ADR D2).
 test -s docs/seguranca/2026-11-08-redteam-leitor-bilingue.md
 ```
 
+*Auditoria (Zeus, 2026-11-10):* o PR 1 (#677) e o PR de release (#678) entraram na `main`. `make check-required-full` deu OK (D\\R, R\\W e D\\W vazios). `trackfw release tag 11.6.0` publicou `v11.6.0` no commit `dc617634`. O run de release 42819567116 terminou em success, incluindo "Verify all release channels". GitHub: `v11.6.0` com pre=false; npm: `latest` = 11.6.0; PyPI: 11.6.0.
+
 ## Wave 3 — Gerador e mensagens em inglês (AC2, AC3, AC5)
 > Dependencies: tag do ML-2B publicada. MLs detalhados a partir do inventário da Wave 0, com arquivos
 > disjuntos e no máximo dois agentes em paralelo.
 
-*Auditoria (Zeus, 2026-11-10):* o PR 1 (#677) e o PR de release (#678) entraram na `main`. `make check-required-full` deu OK (D\\R, R\\W e D\\W vazios). `trackfw release tag 11.6.0` publicou `v11.6.0` no commit `dc617634`. O run de release 42819567116 terminou em success, incluindo "Verify all release channels". GitHub: `v11.6.0` com pre=false; npm: `latest` = 11.6.0; PyPI: 11.6.0.
+*Detalhamento (Zeus, 2026-11-10):* os MLs abaixo saem do inventário §1 e §4 do parecer da Wave 0
+(`docs/seguranca/2026-11-08-wave0-idioma-ingles-primeiro.md`). O ML-3B original (cerca de 30 arquivos) foi
+dividido em 3B1 e 3B2 por pacote, e o teste do AC2 virou o ML-3D, porque varre arquivos de todos os MLs e
+só pode rodar depois deles. Ordem e paralelismo:
+- **Par 1:** ML-3A (apolo-tf) em paralelo com ML-3C (prometeu-tf); arquivos disjuntos.
+- **Par 2:** ML-3B1 (apolo-tf) em paralelo com ML-3B2 (apolo-tf); arquivos disjuntos.
+- **Por último:** ML-3D (apolo-tf), sozinho.
+
+`update.go` sai do ML-3B e fica inteiro no ML-3C, que tem o AC do `update`. `discover.go` fica inteiro no
+ML-3B2. Os literais que **ficam em português** por desenho: as grafias PT dos leitores bilíngues (grupo 3,
+ADR D1/D5); as palavras-chave de `probes.go` (`autenticação`, `migração`, `senha`, `banco`, `notificação`,
+§1 nota 3); a sonda de caminho `"docs/requisições"` em `discover.go`; e os nomes dos presets (ADR D6).
 
 ### ML-3A — Gerador de roadmap e REQ na forma canônica (ADR D4)
 **Status:** ⬜ Pendente
 **Squad:** apolo-tf
-**Files affected:** `internal/generators/roadmap.go` e testes; lista final após a Wave 0.
+**Files affected:**
+- `internal/generators/roadmap.go`
+- `internal/generators/roadmap_test.go`
+- `scripts/check-roadmap-barrier-contract.sh`
+- `scripts/check-gates-falsify.sh` e `scripts/check-barrier.sh`, só se algum cenário consumir a **saída** do gerador
+
+**Actions:** o gerador emite a forma D4: legenda `⬜ Pending · 🔄 In progress · ✅ Done · ❌ Blocked`,
+`**Status:** ⬜ Pending`, `**Files affected:**`, `**Actions:**`, `**Acceptance criteria:**`, `**Wave gates:**`.
+O leitor dentro de `roadmap.go` (G3-12) continua aceitando a forma PT. Os testes da tabela §4(i) passam a
+afirmar a forma EN. `check-roadmap-barrier-contract.sh` (linha ~230) preenche o roadmap gerado com
+`sed 's/^\*\*Status:\*\* ⬜ Pendente$/…/'`; passa a casar `⬜ Pending` e a escrever `✅ Done`. Cenários
+que só **alimentam** PT ao parser (§4(ii)) ficam como estão.
 **Acceptance criteria:**
 - [ ] Roadmap gerado usa a legenda, o status e os cabeçalhos da ADR D4
 - [ ] `scripts/check-gates-falsify.sh` e testes que fixavam a forma antiga atualizados no mesmo ML
-
-### ML-3B — Mensagens do CLI (AC2)
-**Status:** ⬜ Pendente
-**Squad:** apolo-tf
-**Files affected:** `internal/commands/help.go` e demais apontados pela Wave 0.
-**Acceptance criteria:**
-- [ ] Teste que reprova literal em português nas mensagens emitidas
+- [ ] Roadmap gerado passa no `barrier` com o gate `exit 1` reprovando (teste em `t.TempDir`)
 
 ### ML-3C — Conteúdo gerado no consumidor e presets (AC3, AC5)
 **Status:** ⬜ Pendente
 **Squad:** prometeu-tf
-**Files affected:** `internal/generators/scaffold.go`, `claudemd.go` (linha ~36), `agentfiles.go` (linhas ~112-113),
-`update.go`, `internal/identity/preset.go` e demais da tabela §1 do parecer da Wave 0. `claudemd.go` e
-`agentfiles.go` são meta-geradores: instruem o agente consumidor a escrever `⬜ Pendente`; só mudam depois
-da tag do leitor (Wave 0, achado 4).
+**Files affected:**
+- `internal/generators/scaffold.go`
+- `internal/generators/claudemd.go`
+- `internal/generators/agentfiles.go`
+- `internal/generators/update.go`
+- `internal/identity/preset.go`
+- os `_test.go` correspondentes
+
+`claudemd.go` e `agentfiles.go` são meta-geradores: instruem o agente consumidor a escrever `⬜ Pendente` e
+passam a instruir a forma D4. Isso só é seguro depois da tag do leitor (Wave 0, achado 4), já publicada (v11.6.0).
 
 *Acrescentado (auditoria do ML-2G):* o modelo de roadmap dentro de `roadmap.md` em `scaffold.go` perde a
 indentação de 3 espaços, para que o cabeçalho de gates copiado fique na coluna 0. Teste: o modelo extraído da
@@ -542,6 +566,64 @@ cerca e passado a `ParseGatesLines` não dá erro na Wave 0 e retorna o gate `ex
 **Acceptance criteria:**
 - [ ] `trackfw update` entrega a versão nova sem perder edição local (teste)
 - [ ] Nomes de preset mantidos, descrições em inglês (ADR D6)
+- [ ] Modelo de `roadmap.md` em coluna 0 e aceito por `ParseGatesLines` (teste)
+
+### ML-3B1 — Mensagens do CLI: pacote `commands` (AC2)
+**Status:** ⬜ Pendente
+**Squad:** apolo-tf
+**Files affected:**
+- `internal/commands/help.go`
+- `internal/commands/identity_wizard.go`
+- `internal/commands/branch.go`
+- `internal/commands/configure.go`
+- `internal/commands/metrics.go`
+- `internal/commands/agents_models.go`
+- `internal/commands/integrations_flags.go`
+- `internal/commands/commit.go`
+- `internal/commands/req.go`
+- `internal/commands/adr.go`
+- `internal/commands/baseline.go`
+- `internal/commands/barrier.go` (só a mensagem G1 da linha ~1842; o leitor G3-6 continua bilíngue)
+- os `_test.go` correspondentes
+**Acceptance criteria:**
+- [ ] Mensagens emitidas por esses arquivos em inglês; testes que afirmavam o texto PT atualizados
+
+### ML-3B2 — Mensagens do CLI: demais pacotes e dashboard (AC2)
+**Status:** ⬜ Pendente
+**Squad:** apolo-tf
+**Files affected:**
+- `internal/validator/validator.go`
+- `internal/validator/validator_git_branch_guard.go`
+- `internal/validator/validator_credential_guard.go` (regra do `validate`; as mensagens de `internal/guard/` já estão em inglês pela REQ de primeira experiência, Done)
+- `internal/validator/validator_roadmap_gates.go`
+- `internal/validator/validator_req_done_criteria.go` (só a mensagem G1 da linha ~373)
+- `internal/config/config.go` (só G1; `AcceptanceMarkers` continua bilíngue)
+- `internal/discover/discover.go`
+- `internal/generators/note.go`
+- `internal/generators/nextsteps.go`
+- `internal/generators/probes.go` (só mensagens; palavras-chave PT ficam)
+- `internal/identity/identity.go`
+- `internal/metrics/metrics.go`
+- `internal/integrations/models.go`
+- `internal/serve/static/app.js`
+- `internal/serve/static/index.html`
+- os `_test.go` correspondentes
+**Acceptance criteria:**
+- [ ] Mensagens emitidas por esses arquivos em inglês; testes que afirmavam o texto PT atualizados
+- [ ] Dashboard do `serve` verificado em navegador headless por Zeus (sem texto PT visível)
+
+### ML-3D — Teste que reprova o retorno do português (AC2)
+**Status:** ⬜ Pendente
+**Squad:** apolo-tf
+**Files affected:**
+- `internal/i18nguard/pt_literals_test.go` (novo)
+
+**Actions:** teste Go que percorre com `go/ast` os arquivos de produto de `internal/` e `cmd/` (sem
+`_test.go` e `testdata/`) e reprova literal de string executável com palavra portuguesa. Lista de permissão
+fechada e explícita: as grafias PT dos leitores bilíngues, as palavras-chave de `probes.go`, a sonda
+`"docs/requisições"` e os nomes dos presets. Cada entrada traz o motivo.
+**Acceptance criteria:**
+- [ ] O teste passa na branch e reprova quando um literal PT é reintroduzido (contraprova registrada)
 
 **Gates da wave:**
 ```bash
