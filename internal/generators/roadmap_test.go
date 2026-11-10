@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/roadmapdoc"
 	"github.com/kgsaran/trackfw/internal/translog"
 	"github.com/kgsaran/trackfw/internal/validator"
 )
@@ -68,7 +69,7 @@ func TestNewRoadmap_CreatesFile(t *testing.T) {
 }
 
 // TestNewRoadmap_StatusLegendAndCanonicalForm — AC11: o template escreve a forma canônica de
-// status (⬜ Pendente) e a legenda dos quatro estados, exatamente uma vez; a forma antiga
+// status (⬜ Pending) e a legenda dos quatro estados, exatamente uma vez; a forma antiga
 // "pending" não aparece em lugar nenhum. Falsificação: um regresso que reintroduza "pending" ou
 // duplique/remova a legenda deve reprovar este teste.
 func TestNewRoadmap_StatusLegendAndCanonicalForm(t *testing.T) {
@@ -93,15 +94,15 @@ func TestNewRoadmap_StatusLegendAndCanonicalForm(t *testing.T) {
 	}
 	body := string(content)
 
-	const legendLine = "⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado"
+	const legendLine = "⬜ Pending · 🔄 In progress · ✅ Done · ❌ Blocked"
 	if n := strings.Count(body, legendLine); n != 1 {
 		t.Errorf("legenda deveria aparecer exatamente 1 vez, obteve %d:\n%s", n, body)
 	}
 	if !strings.Contains(body, "## Status Legend") {
 		t.Errorf("arquivo deveria conter o heading '## Status Legend', obteve:\n%s", body)
 	}
-	if !strings.Contains(body, "**Status:** ⬜ Pendente") {
-		t.Errorf("arquivo deveria conter '**Status:** ⬜ Pendente', obteve:\n%s", body)
+	if !strings.Contains(body, "**Status:** ⬜ Pending") {
+		t.Errorf("arquivo deveria conter '**Status:** ⬜ Pending', obteve:\n%s", body)
 	}
 	if strings.Contains(body, "**Status:** pending") {
 		t.Errorf("forma antiga '**Status:** pending' não deveria aparecer, obteve:\n%s", body)
@@ -109,8 +110,11 @@ func TestNewRoadmap_StatusLegendAndCanonicalForm(t *testing.T) {
 	if !strings.Contains(body, "**Acceptance criteria:**") {
 		t.Errorf("'**Acceptance criteria:**' (forma canônica pelo ADR) deveria continuar presente, obteve:\n%s", body)
 	}
-	if !strings.Contains(body, "**Gates da wave:**") {
-		t.Errorf("'**Gates da wave:**' não deveria ter sido tocado, obteve:\n%s", body)
+	if !strings.Contains(body, "**Wave gates:**") {
+		t.Errorf("'**Wave gates:**' (EN form) deveria estar presente, obteve:\n%s", body)
+	}
+	if strings.Contains(body, "**Gates da wave:**") {
+		t.Errorf("forma PT '**Gates da wave:**' não deveria aparecer na saída do gerador, obteve:\n%s", body)
 	}
 }
 
@@ -196,7 +200,7 @@ func TestMoveRoadmap_FrontmatterSync_ValidateAfterMove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile scaffold: %v", err)
 	}
-	completed := strings.ReplaceAll(string(rmBody), "**Status:** ⬜ Pendente", "**Status:** ✅ Concluído")
+	completed := strings.ReplaceAll(string(rmBody), "**Status:** ⬜ Pending", "**Status:** ✅ Done")
 	if err := os.WriteFile(matches[0], []byte(completed), 0644); err != nil {
 		t.Fatalf("WriteFile completed: %v", err)
 	}
@@ -675,10 +679,14 @@ func TestNewRoadmapFromREQ_SingleGateBlockFromLegitREQ(t *testing.T) {
 	content, _ := os.ReadFile(matches[0])
 	body := string(content)
 
-	// O roadmap deve ter exatamente um bloco "**Gates da wave:**" (o legítimo da Wave 0)
-	count := strings.Count(body, "**Gates da wave:**")
+	// O roadmap deve ter exatamente um bloco "**Wave gates:**" (o legítimo da Wave 0, forma EN)
+	count := strings.Count(body, "**Wave gates:**")
 	if count != 1 {
-		t.Errorf("roadmap deveria ter 1 bloco **Gates da wave:**, obteve %d\nbody:\n%s", count, body)
+		t.Errorf("roadmap deveria ter 1 bloco **Wave gates:** (EN), obteve %d\nbody:\n%s", count, body)
+	}
+	// A forma PT injetada pelo corpo da REQ NÃO deve aparecer na saída do gerador
+	if strings.Count(body, "**Gates da wave:**") != 0 {
+		t.Errorf("forma PT '**Gates da wave:**' do corpo da REQ não deveria aparecer no roadmap:\n%s", body)
 	}
 
 	// O comando forjado NÃO deve aparecer no roadmap
@@ -724,16 +732,80 @@ func TestNewRoadmapFromREQ_StatusLegendAndCanonicalForm(t *testing.T) {
 	content, _ := os.ReadFile(matches[0])
 	body := string(content)
 
-	const legendLine = "⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado"
+	const legendLine = "⬜ Pending · 🔄 In progress · ✅ Done · ❌ Blocked"
 	if n := strings.Count(body, legendLine); n != 1 {
 		t.Errorf("legenda deveria aparecer exatamente 1 vez mesmo com 2 MLs derivados, obteve %d:\n%s", n, body)
 	}
-	// ML-0A (Wave 0) + ML-1A + ML-1B derivados dos 2 critérios = 3 ocorrências da forma canônica.
-	if n := strings.Count(body, "**Status:** ⬜ Pendente"); n != 3 {
-		t.Errorf("esperava 3 ocorrências de '**Status:** ⬜ Pendente' (ML-0A, ML-1A, ML-1B), obteve %d:\n%s", n, body)
+	// ML-0A (Wave 0) + ML-1A + ML-1B derivados dos 2 critérios = 3 ocorrências da forma canônica EN.
+	if n := strings.Count(body, "**Status:** ⬜ Pending"); n != 3 {
+		t.Errorf("esperava 3 ocorrências de '**Status:** ⬜ Pending' (ML-0A, ML-1A, ML-1B), obteve %d:\n%s", n, body)
 	}
 	if strings.Contains(body, "**Status:** pending") {
 		t.Errorf("forma antiga '**Status:** pending' não deveria aparecer, obteve:\n%s", body)
+	}
+}
+
+// TestNewRoadmap_ENGatesHeaderRecognizedByParser — bite proof: o gerador emite "**Wave gates:**"
+// (EN), o parser roadmapdoc reconhece o cabeçalho e extrai exatamente 1 GateCmd da Wave 0.
+// Afirma: a migração ML-3A não quebra o pipeline gerador→parser; o leitor bilíngue aceita a
+// forma EN (ADR D4) sem remoção de leitura PT (G3-12).
+func TestNewRoadmap_ENGatesHeaderRecognizedByParser(t *testing.T) {
+	dir := t.TempDir()
+	config.Reset()
+	t.Cleanup(config.Reset)
+	chdirRoadmap(t, dir)
+
+	if err := NewRoadmap("EN Gates Parser Check"); err != nil {
+		t.Fatalf("NewRoadmap() erro: %v", err)
+	}
+
+	matches, err := filepath.Glob("docs/roadmaps/backlog/*.md")
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("esperado 1 arquivo em backlog, obteve %d: %v", len(matches), matches)
+	}
+	content, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	body := string(content)
+
+	// Gerador deve emitir a forma EN e não a forma PT
+	if !strings.Contains(body, "**Wave gates:**") {
+		t.Errorf("gerador deveria emitir '**Wave gates:**' (EN), obteve:\n%s", body)
+	}
+	if strings.Contains(body, "**Gates da wave:**") {
+		t.Errorf("forma PT '**Gates da wave:**' não deveria aparecer na saída do gerador:\n%s", body)
+	}
+
+	// Parser deve reconhecer o cabeçalho EN e extrair 1 GateCmd na Wave 0
+	lines := strings.Split(body, "\n")
+	fenced := roadmapdoc.FenceMask(lines)
+	waves, malformed := roadmapdoc.ParseWaves(lines, fenced)
+	if len(malformed) > 0 {
+		t.Fatalf("ParseWaves() retornou waves malformadas: %v", malformed)
+	}
+	var wave0 *roadmapdoc.WaveBlock
+	for i := range waves {
+		if waves[i].Label == "0" {
+			wave0 = &waves[i]
+			break
+		}
+	}
+	if wave0 == nil {
+		t.Fatalf("Wave 0 não encontrada no roadmap gerado; waves encontradas: %v", waves)
+	}
+	gates, parseErr := roadmapdoc.ParseGatesLines(lines, wave0.Start, wave0.End)
+	if parseErr != nil {
+		t.Fatalf("ParseGatesLines() erro: %v", parseErr)
+	}
+	if len(gates) != 1 {
+		t.Errorf("esperava exatamente 1 GateCmd na Wave 0, obteve %d: %v", len(gates), gates)
+	}
+	if len(gates) == 1 {
+		const wantText = "exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli-parity.md"
+		if gates[0].Text != wantText {
+			t.Errorf("GateCmd.Text = %q;\nwant               %q", gates[0].Text, wantText)
+		}
 	}
 }
 

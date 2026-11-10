@@ -527,7 +527,7 @@ ADR D1/D5); as palavras-chave de `probes.go` (`autenticação`, `migração`, `s
 §1 nota 3); a sonda de caminho `"docs/requisições"` em `discover.go`; e os nomes dos presets (ADR D6).
 
 ### ML-3A — Gerador de roadmap e REQ na forma canônica (ADR D4)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Files affected:**
 - `internal/generators/roadmap.go`
@@ -542,12 +542,14 @@ afirmar a forma EN. `check-roadmap-barrier-contract.sh` (linha ~230) preenche o 
 `sed 's/^\*\*Status:\*\* ⬜ Pendente$/…/'`; passa a casar `⬜ Pending` e a escrever `✅ Done`. Cenários
 que só **alimentam** PT ao parser (§4(ii)) ficam como estão.
 **Acceptance criteria:**
-- [ ] Roadmap gerado usa a legenda, o status e os cabeçalhos da ADR D4
-- [ ] `scripts/check-gates-falsify.sh` e testes que fixavam a forma antiga atualizados no mesmo ML
-- [ ] Roadmap gerado passa no `barrier` com o gate `exit 1` reprovando (teste em `t.TempDir`)
+- [x] Roadmap gerado usa a legenda, o status e os cabeçalhos da ADR D4
+- [x] `scripts/check-gates-falsify.sh` e testes que fixavam a forma antiga atualizados no mesmo ML
+- [x] Roadmap gerado passa no `barrier` com o gate `exit 1` reprovando (teste em `t.TempDir`)
+
+*Auditoria (Zeus, 2026-11-10):* `roadmap.go` emite a forma D4 em 5 sítios, e o leitor G3-12 não foi tocado. Os 4 testes da §4(i) agora afirmam EN. Teste novo `TestNewRoadmap_ENGatesHeaderRecognizedByParser` (nome conferido): o gerador emite `**Wave gates:**` e `ParseGatesLines` extrai o gate `exit 1`; o executor provou que ele reprova com o gerador antigo. `check-roadmap-barrier-contract.sh`: 5 sítios que consomem a saída do gerador, 49 cenários OK. `go test ./internal/generators/ ./internal/identity/ ./internal/roadmapdoc/` rodado por Zeus: ok. Ficaram em PT mensagens G1 do próprio `roadmap.go` (linhas ~350–468); foram para o ML-3B2.
 
 ### ML-3C — Conteúdo gerado no consumidor e presets (AC3, AC5)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** prometeu-tf
 **Files affected:**
 - `internal/generators/scaffold.go`
@@ -556,6 +558,7 @@ que só **alimentam** PT ao parser (§4(ii)) ficam como estão.
 - `internal/generators/update.go`
 - `internal/identity/preset.go`
 - os `_test.go` correspondentes
+- `.claude/commands/trackfw/*.md` (9 cópias versionadas, regeneradas a partir de `scaffold.go`)
 
 `claudemd.go` e `agentfiles.go` são meta-geradores: instruem o agente consumidor a escrever `⬜ Pendente` e
 passam a instruir a forma D4. Isso só é seguro depois da tag do leitor (Wave 0, achado 4), já publicada (v11.6.0).
@@ -564,12 +567,14 @@ passam a instruir a forma D4. Isso só é seguro depois da tag do leitor (Wave 0
 indentação de 3 espaços, para que o cabeçalho de gates copiado fique na coluna 0. Teste: o modelo extraído da
 cerca e passado a `ParseGatesLines` não dá erro na Wave 0 e retorna o gate `exit 1`.
 **Acceptance criteria:**
-- [ ] `trackfw update` entrega a versão nova sem perder edição local (teste)
-- [ ] Nomes de preset mantidos, descrições em inglês (ADR D6)
-- [ ] Modelo de `roadmap.md` em coluna 0 e aceito por `ParseGatesLines` (teste)
+- [x] `trackfw update` entrega a versão nova sem perder edição local (teste)
+- [x] Nomes de preset mantidos, descrições em inglês (ADR D6)
+- [x] Modelo de `roadmap.md` em coluna 0 e aceito por `ParseGatesLines` (teste)
+
+*Auditoria (Zeus, 2026-11-10):* `scaffold.go`, `claudemd.go`, `agentfiles.go`, `update.go` e `preset.go` estão em EN, e o modelo de `roadmap.md` está na coluna 0 com `**Wave gates:**` e `⬜ Pending`. Testes novos, com nomes conferidos: `TestScaffold_RoadmapMD_GatesModelParseable` (o modelo passa em `ParseGatesLines` com `exit 1`) e `TestUpdate_AgentRulesBlockContainsENLifecycleMarkers` (o `update` entrega os marcadores EN e preserva o conteúdo fora do bloco gerenciado). Os nomes de preset não mudaram (D6). O texto descritivo dos presets ("Panteão grego…") está em `identity_wizard.go`, então o AC5 se completa no ML-3B1. Efeito colateral medido por Zeus: o cenário `falsify/update-config-loader/go-baseline` de `check-gates-falsify.sh` (~linha 3852) fixa a mensagem PT `trackfw-validate injetado` e reprova; a correção foi para o ML-3B2.
 
 ### ML-3B1 — Mensagens do CLI: pacote `commands` (AC2)
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Squad:** apolo-tf
 **Files affected:**
 - `internal/commands/help.go`
@@ -586,10 +591,11 @@ cerca e passado a `ParseGatesLines` não dá erro na Wave 0 e retorna o gate `ex
 - `internal/commands/barrier.go` (só a mensagem G1 da linha ~1842; o leitor G3-6 continua bilíngue)
 - os `_test.go` correspondentes
 **Acceptance criteria:**
+- [ ] Texto descritivo dos presets em `identity_wizard.go` em inglês, nomes mantidos (AC5, ADR D6)
 - [ ] Mensagens emitidas por esses arquivos em inglês; testes que afirmavam o texto PT atualizados
 
 ### ML-3B2 — Mensagens do CLI: demais pacotes e dashboard (AC2)
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Squad:** apolo-tf
 **Files affected:**
 - `internal/validator/validator.go`
@@ -607,9 +613,12 @@ cerca e passado a `ParseGatesLines` não dá erro na Wave 0 e retorna o gate `ex
 - `internal/integrations/models.go`
 - `internal/serve/static/app.js`
 - `internal/serve/static/index.html`
+- `internal/generators/roadmap.go` (só mensagens G1, ~linhas 350–468; o leitor G3-12 continua bilíngue)
+- `scripts/check-gates-falsify.sh` (cenário `update-config-loader/go-baseline` e qualquer outro que fixe mensagem PT agora traduzida)
 - os `_test.go` correspondentes
 **Acceptance criteria:**
 - [ ] Mensagens emitidas por esses arquivos em inglês; testes que afirmavam o texto PT atualizados
+- [ ] `bash scripts/check-gates-falsify.sh` com rc=0
 - [ ] Dashboard do `serve` verificado em navegador headless por Zeus (sem texto PT visível)
 
 ### ML-3D — Teste que reprova o retorno do português (AC2)

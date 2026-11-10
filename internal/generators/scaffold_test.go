@@ -104,18 +104,18 @@ func TestSlashRoadmapCommandRequiresCanonicalFrontmatter(t *testing.T) {
 	}
 	body := string(content)
 	required := []string{
-		"```markdown\n   ---",
+		"````markdown\n---",
 		"status: backlog",
 		"date: <YYYY-MM-DD>",
-		`req: "docs/req/<arquivo-selecionado>.md"`,
+		`req: "docs/req/<selected-file>.md"`,
 		`squad: ""`,
-		"---\n\n   # Roadmap:",
+		"---\n\n# Roadmap:",
 		"> Created: <YYYY-MM-DD> | Status: backlog",
 		"docs/roadmaps/backlog/ROADMAP-<YYYY-MM-DD>-<slug>.md",
-		"Preencha `req:` com o caminho relativo completo da REQ selecionada",
-		"### ML-1B — <título> (se independente de ML-1A)",
-		"## Wave 2 — <nome> (depende de Wave 1)",
-		"> Dependências: Wave 1 completa",
+		"Fill `req:` with the full relative path of the selected REQ",
+		"### ML-1B — <title> (if independent of ML-1A)",
+		"## Wave 2 — <name> (depends on Wave 1)",
+		"> Dependencies: Wave 1 complete",
 	}
 	for _, want := range required {
 		if !strings.Contains(body, want) {
@@ -514,6 +514,75 @@ func TestScaffoldStatusVocabularyMatchesGenerator(t *testing.T) {
 			t.Errorf("scaffold teaches **Status:** %q (first token %q) which the roadmap "+
 				"generator does not emit; allowed pending tokens: %v", marker, fields[0], generatorPendingTokens)
 		}
+	}
+}
+
+// TestScaffold_RoadmapMD_GatesModelParseable — ML-3C (REQ-2026-11-02)
+//
+// Regra Dura de Reconciliação:
+//
+//	This test asserts that the roadmap.md slash command template, after the
+//	3-space indentation is removed, produces a Wave 0 section whose "**Wave gates:**"
+//	header sits at column 0, so roadmapdoc.ParseGatesLines accepts it without error
+//	and returns at least one gate command starting with "exit 1".
+func TestScaffold_RoadmapMD_GatesModelParseable(t *testing.T) {
+	content := claudeCommandsContent()["roadmap.md"]
+	if content == "" {
+		t.Fatal("roadmap.md not found in claudeCommandsContent()")
+	}
+
+	// Extract the template from between the ````markdown...```` fence.
+	// The fence markers are ````markdown and ```` (four backticks each).
+	const openFence = "````markdown\n"
+	const closeFence = "\n````"
+	openIdx := strings.Index(content, openFence)
+	if openIdx < 0 {
+		t.Fatal("````markdown fence not found in roadmap.md content")
+	}
+	afterOpen := content[openIdx+len(openFence):]
+	closeIdx := strings.Index(afterOpen, closeFence)
+	if closeIdx < 0 {
+		t.Fatal("closing ```` fence not found in roadmap.md content")
+	}
+	template := afterOpen[:closeIdx]
+
+	lines := strings.Split(template, "\n")
+
+	// Find Wave 0 start and end indices (0-based).
+	wave0Start := -1
+	wave0End := len(lines)
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "## Wave 0") {
+			wave0Start = i
+		} else if wave0Start >= 0 && strings.HasPrefix(strings.TrimSpace(line), "## Wave ") {
+			wave0End = i
+			break
+		}
+	}
+	if wave0Start < 0 {
+		t.Fatal("## Wave 0 section not found in roadmap.md template")
+	}
+
+	gcmds, err := roadmapdoc.ParseGatesLines(lines, wave0Start, wave0End)
+	if err != nil {
+		t.Fatalf("ParseGatesLines returned error for Wave 0 in roadmap.md template: %v", err)
+	}
+	if len(gcmds) == 0 {
+		t.Fatal("ParseGatesLines returned zero gate commands for Wave 0 — expected at least 'exit 1'")
+	}
+	found := false
+	for _, gc := range gcmds {
+		if strings.HasPrefix(gc.Text, "exit 1") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		var texts []string
+		for _, gc := range gcmds {
+			texts = append(texts, gc.Text)
+		}
+		t.Errorf("expected a gate starting with 'exit 1', got: %v", texts)
 	}
 }
 

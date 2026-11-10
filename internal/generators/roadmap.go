@@ -57,13 +57,13 @@ const wave0GateFence = "```bash\n" +
 	"```\n"
 
 // statusLegendBlock teaches the vocabulary the `barrier` parser accepts for "**Status:**"
-// (AC11, ADR decision 5): the canonical form the template now writes (⬜ Pendente) plus the
+// (AC11, ADR decision 5): the canonical form the template now writes (⬜ Pending) plus the
 // other three states. Placed once, right before the first wave, so it is close to the first
 // place a "**Status:**" line appears — not repeated per-ML (would clutter) and not left for
 // the end (nobody reads that far). Byte-identical across the 3 CLIs
 // (gate: scripts/check-artifact-parity.sh).
 const statusLegendBlock = "## Status Legend\n" +
-	"⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado\n" +
+	"⬜ Pending · 🔄 In progress · ✅ Done · ❌ Blocked\n" +
 	"\n"
 
 // wave0Block is the "## Wave 0 — Threat Model" section prepended to every generated roadmap,
@@ -81,7 +81,7 @@ const wave0Block = statusLegendBlock +
 	"> Dependencies: none. Blocks all implementation.\n" +
 	"\n" +
 	"### ML-0A — Threat model for this roadmap\n" +
-	"**Status:** ⬜ Pendente\n" +
+	"**Status:** ⬜ Pending\n" +
 	"**Files affected:**\n" +
 	"**Actions:**\n" +
 	"1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed. Do not limit the search to the files already named by the REQ — before declaring the list closed, search the repository for other places that emit the same artifact or the same pattern (for example, grep for the literal the final artifact contains).\n" +
@@ -92,7 +92,7 @@ const wave0Block = statusLegendBlock +
 	"- [ ] The four sections above answered with evidence, not a one-line assertion\n" +
 	"- [ ] No implementation line written for this ML\n" +
 	"\n" +
-	"**Gates da wave:**\n" +
+	"**Wave gates:**\n" +
 	wave0GateFence +
 	"\n"
 
@@ -434,7 +434,7 @@ REQ: %s
 > Dependencies: none
 
 ### ML-1A — %s
-**Status:** ⬜ Pendente
+**Status:** ⬜ Pending
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
@@ -553,7 +553,7 @@ func NewRoadmapFromREQ(reqPath, agent string, force bool) error {
 	for i, criterion := range criteria {
 		mlLabel := fmt.Sprintf("ML-1%c", rune('A'+i))
 		mlSection.WriteString(fmt.Sprintf("\n### %s — %s\n", mlLabel, criterion))
-		mlSection.WriteString("**Status:** ⬜ Pendente\n")
+		mlSection.WriteString("**Status:** ⬜ Pending\n")
 		mlSection.WriteString("**Files affected:**\n")
 		mlSection.WriteString("**Actions:**\n")
 		mlSection.WriteString("**Acceptance criteria:**\n")

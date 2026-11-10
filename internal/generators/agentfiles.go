@@ -109,8 +109,8 @@ Chain: ` + "`ADR → REQ → ROADMAP`" + ` · States: ` + "`backlog / analyzing 
 3. **After finishing:** the orchestrating session (` + "`trackfw_architect`" + `) writes a new file in ` + "`docs/agents-working-context/<YYYYMMDDTHHMMSSZ>-<your-slug>-<topic>.md`" + ` with what changed. Subagents never write there; they state what started, what changed and what is pending in their final report.
 4. **Before PR:** ` + "`trackfw validate`" + ` must pass
 5. **ML lifecycle — mandatory:**
-   - Starting a ML: edit roadmap ` + "`**Status:** ⬜ Pendente`" + ` → ` + "`**Status:** 🔄 Em andamento`" + ` + commit.
-   - Completing a ML: edit roadmap → ` + "`**Status:** ✅ Concluído`" + ` + include in ML commit.
+   - Starting a ML: edit roadmap ` + "`**Status:** ⬜ Pending`" + ` → ` + "`**Status:** 🔄 In progress`" + ` + commit.
+   - Completing a ML: edit roadmap → ` + "`**Status:** ✅ Done`" + ` + include in ML commit.
    - Analyzing a roadmap: move from ` + "`backlog/`" + ` to ` + "`analyzing/`" + `; to ` + "`wip/`" + ` only when coding starts.
 6. **` + GlobalADRsDirective + `**
 

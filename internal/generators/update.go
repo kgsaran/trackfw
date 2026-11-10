@@ -46,7 +46,7 @@ func loadUpdateConfig() Config {
 // Update re-aplica todos os templates atuais do trackfw ao projeto em cwd.
 func Update(cwd string) error {
 	if _, err := os.Stat(filepath.Join(cwd, "trackfw.yaml")); err != nil {
-		return fmt.Errorf("trackfw.yaml não encontrado — execute trackfw init primeiro")
+		return fmt.Errorf("trackfw.yaml not found — run trackfw init first")
 	}
 
 	if err := ensureGlobalADRDirRegistered(cwd); err != nil {
@@ -55,7 +55,7 @@ func Update(cwd string) error {
 
 	orig, _ := os.Getwd()
 	if err := os.Chdir(cwd); err != nil {
-		return fmt.Errorf("não foi possível mudar para %s: %w", cwd, err)
+		return fmt.Errorf("could not change to %s: %w", cwd, err)
 	}
 	defer os.Chdir(orig) //nolint:errcheck
 
@@ -64,24 +64,24 @@ func Update(cwd string) error {
 	// AC4 (REQ-2026-10-24): refuse early when ci_trigger is invalid so no write happens
 	// and the existing file is left untouched. rc≠0 propagated by cobra.
 	if cfg.CITriggerInvalid {
-		return fmt.Errorf("ci_trigger: %q é inválido — valores aceitos: pull_request, manual", cfg.CITriggerRawValue)
+		return fmt.Errorf("ci_trigger: %q is invalid — accepted values: pull_request, manual", cfg.CITriggerRawValue)
 	}
 
-	fmt.Println("trackfw update — re-aplicando templates atuais...")
+	fmt.Println("trackfw update — re-applying current templates...")
 	fmt.Println()
 
 	// 1. Regras de agente (categoria 1 — marker-delimited)
 	if err := InjectRulesDetected(cwd); err != nil {
 		fmt.Printf("  ⚠ agent rules: %v\n", err)
 	} else {
-		fmt.Println("  ✓ agent rules atualizadas")
+		fmt.Println("  ✓ agent rules updated")
 	}
 
 	// 1b. Agent hooks (attention signal)
 	if err := InjectHooksDetected(cwd); err != nil {
 		fmt.Printf("  ⚠ agent hooks: %v\n", err)
 	} else {
-		fmt.Println("  ✓ agent hooks atualizados")
+		fmt.Println("  ✓ agent hooks updated")
 	}
 	_, agentsErr := os.Stat(filepath.Join(cwd, "AGENTS.md"))
 	_, codexErr := os.Stat(filepath.Join(cwd, ".codex"))
@@ -120,7 +120,7 @@ func Update(cwd string) error {
 	if err := generateCIWorkflow(cfg); err != nil {
 		fmt.Printf("  ⚠ CI workflow: %v\n", err)
 	} else if cfg.CI != "" && cfg.CI != "none" {
-		fmt.Println("  ✓ CI workflow atualizado")
+		fmt.Println("  ✓ CI workflow updated")
 	}
 
 	// 3b. discover-installed CI workflow (.github/workflows/trackfw-validate.yml),
@@ -132,7 +132,7 @@ func Update(cwd string) error {
 	if err := refreshDiscoverGitHubActionsWorkflowIfPresent(cwd); err != nil {
 		fmt.Printf("  ⚠ CI workflow (discover): %v\n", err)
 	} else if discoverWorkflowPresent(cwd) {
-		fmt.Println("  ✓ CI workflow (discover) atualizado")
+		fmt.Println("  ✓ CI workflow (discover) updated")
 	}
 
 	// 4. Git hooks — cirúrgico (categoria 3 — shared user files)
@@ -146,10 +146,10 @@ func Update(cwd string) error {
 	if err := ForceGenerateClaudeCommands(); err != nil {
 		fmt.Printf("  ⚠ Claude commands: %v\n", err)
 	} else {
-		fmt.Println("  ✓ .claude/commands/trackfw/ atualizado")
+		fmt.Println("  ✓ .claude/commands/trackfw/ updated")
 	}
 
-	fmt.Println("\n✓ trackfw update concluído")
+	fmt.Println("\n✓ trackfw update complete")
 	PrintArchitectNextSteps(cwd)
 	return nil
 }
@@ -259,7 +259,7 @@ func updateHooksSurgicalEntry(rootDir string, cfg Config) error {
 		}
 		data, _ := os.ReadFile(path)
 		if strings.Contains(string(data), "trackfw validate") {
-			fmt.Println("  ✓ .husky/pre-commit — trackfw validate já presente")
+			fmt.Println("  ✓ .husky/pre-commit — trackfw validate already present")
 			return nil
 		}
 		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
@@ -272,7 +272,7 @@ func updateHooksSurgicalEntry(rootDir string, cfg Config) error {
 		}
 		defer f.Close()
 		fmt.Fprintln(f, "\ntrackfw validate")
-		fmt.Println("  ✓ .husky/pre-commit — trackfw validate injetado")
+		fmt.Println("  ✓ .husky/pre-commit — trackfw validate injected")
 
 	case "lefthook":
 		path := filepath.Join(guardRoot, "lefthook.yml")
@@ -283,7 +283,7 @@ func updateHooksSurgicalEntry(rootDir string, cfg Config) error {
 		}
 		data, _ := os.ReadFile(path)
 		if strings.Contains(string(data), "trackfw-validate:") || strings.Contains(string(data), "trackfw validate") {
-			fmt.Println("  ✓ lefthook.yml — trackfw já presente")
+			fmt.Println("  ✓ lefthook.yml — trackfw already present")
 			return nil
 		}
 		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
@@ -294,7 +294,7 @@ func updateHooksSurgicalEntry(rootDir string, cfg Config) error {
 		}
 		defer f.Close()
 		fmt.Fprintln(f, "\npre-commit:\n  commands:\n    trackfw-validate:\n      run: trackfw validate")
-		fmt.Println("  ✓ lefthook.yml — trackfw-validate injetado")
+		fmt.Println("  ✓ lefthook.yml — trackfw-validate injected")
 	}
 	return nil
 }
@@ -2902,7 +2902,7 @@ func refreshDiscoverGitHubActionsWorkflowIfPresent(rootDir string) error {
 // to what Update(cwd) has always done).
 func UpdateProject(cwd string, opts UpdateOptions) (UpdateReport, error) {
 	if _, err := os.Stat(filepath.Join(cwd, "trackfw.yaml")); err != nil {
-		return UpdateReport{}, fmt.Errorf("trackfw.yaml não encontrado — execute trackfw init primeiro")
+		return UpdateReport{}, fmt.Errorf("trackfw.yaml not found — run trackfw init first")
 	}
 	var cfg Config
 	if err := withChdir(cwd, func() error { cfg = loadUpdateConfig(); return nil }); err != nil {
@@ -2911,7 +2911,7 @@ func UpdateProject(cwd string, opts UpdateOptions) (UpdateReport, error) {
 
 	// AC4 (REQ-2026-10-24): refuse early when ci_trigger is invalid.
 	if cfg.CITriggerInvalid {
-		return UpdateReport{}, fmt.Errorf("ci_trigger: %q é inválido — valores aceitos: pull_request, manual", cfg.CITriggerRawValue)
+		return UpdateReport{}, fmt.Errorf("ci_trigger: %q is invalid — accepted values: pull_request, manual", cfg.CITriggerRawValue)
 	}
 
 	declared := ProjectTargetIDs(cfg, discoverWorkflowPresent(cwd))

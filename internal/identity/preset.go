@@ -186,7 +186,7 @@ var presetOrder = []string{"greek", "norse", "potter", "thrones", "chaves", "pio
 func Preset(name string) (Config, error) {
 	agents, ok := presets[name]
 	if !ok {
-		return Config{}, fmt.Errorf("identity: preset desconhecido %q (validos: %s)", name, strings.Join(PresetNames(), ", "))
+		return Config{}, fmt.Errorf("identity: unknown preset %q (valid: %s)", name, strings.Join(PresetNames(), ", "))
 	}
 
 	copied := make(map[string]AgentIdentity, len(agents))
@@ -215,16 +215,16 @@ func PresetNames() []string {
 // silent drift between the map and the documented order).
 func init() {
 	if len(presetOrder) != len(presets) {
-		panic("identity: presetOrder e presets fora de sincronia")
+		panic("identity: presetOrder and presets out of sync")
 	}
 	seen := make(map[string]bool, len(presetOrder))
 	for _, name := range presetOrder {
 		if _, ok := presets[name]; !ok {
-			panic(fmt.Sprintf("identity: preset %q listado em presetOrder mas ausente de presets", name))
+			panic(fmt.Sprintf("identity: preset %q listed in presetOrder but absent from presets", name))
 		}
 		seen[name] = true
 	}
 	if len(seen) != len(presetOrder) {
-		panic("identity: presetOrder contem nomes duplicados")
+		panic("identity: presetOrder contains duplicate names")
 	}
 }
