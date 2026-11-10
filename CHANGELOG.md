@@ -7,6 +7,23 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [11.6.0] - 2026-11-10
+
+Leitor bilíngue de roadmap: o parser aceita os marcadores em inglês e em português, e um gate que antes sumia em silêncio passa a parar o barrier com erro (#677). Primeiro passo da REQ de idioma; o gerador em inglês vem na próxima versão.
+
+### Breaking Changes
+
+Nenhum para roadmaps em andamento. Em roadmaps já fechados (`done/`), 21 waves do acervo deste repositório passam a reportar erro de gates em `roadmap show`; o barrier não roda sobre `done/`.
+
+### Added
+
+- **Marcadores de status, critério e gates lidos em inglês e em português** (#677).
+- **`roadmap show --json` expõe `gates {commands, error}` por wave** (#677).
+
+### Changed
+
+- **Gates fail-closed (D8):** cabeçalho de gates mascarado por cerca ou comentário HTML não fechado, duplicado, quase-cabeçalho com cerca ligada, cerca ligada que não é exatamente ```` ```bash ```` e critério caducado com justificativa só de caracteres invisíveis passam a ser erro, em vez de zero gates em silêncio (#677).
+
 ## [11.5.1] - 2026-11-07
 
 Guard de credencial: a mensagem diz de onde veio o achado, e o glob passa a ser resolvido pela pasta da ferramenta (#672).
