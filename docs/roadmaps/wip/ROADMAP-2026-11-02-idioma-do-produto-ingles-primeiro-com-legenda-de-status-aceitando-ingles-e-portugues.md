@@ -729,11 +729,13 @@ bash scripts/check-marker-corpus-parity.sh
 > Dependencies: Wave 3 completa.
 
 ### ML-4A — Red team do gerador e das mensagens
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** hades-tf
 **Files affected:** `docs/seguranca/2026-11-08-redteam-gerador-ingles.md` (novo)
 **Acceptance criteria:**
-- [ ] Parecer com veredito; roadmap novo gerado pela branch passa no `barrier` com gates executados
+- [x] Parecer com veredito; roadmap novo gerado pela branch passa no `barrier` com gates executados
+
+*Auditoria (Zeus, 2026-11-11):* rodada 1 REPROVA (F1, i18n por locale, que virou o ML-3E por decisão do KG; F4, que virou o ML-3F). Rodada 2 APROVA COM RESSALVAS: F1 e F4 fechados, e o F5 virou o ML-3G na mesma REQ, ao contrário da sugestão de REQ separada, porque a causa é a mesma do AC2. Residual: F2 (seção do CLAUDE.md fora do bloco gerenciado continua PT, por desenho) e F3 (aviso no CHANGELOG da tag do gerador, escrito por Zeus no PR de release). S1 do parecer: roadmap gerado pela branch passa no barrier com os gates executados, e o `exit 1` reprova. `make quality` rodado por Zeus: rc=0, 3151 linhas (houve concorrência com um `make pr-check` de outro projeto, sem efeito no resultado).
 
 **Gates da wave:**
 ```bash
