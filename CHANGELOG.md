@@ -7,6 +7,29 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [11.7.0] - 2026-11-11
+
+O produto passa a falar inglês: roadmap gerado, mensagens do CLI, dashboard, comandos slash e regras de agente. A saída fica em inglês em qualquer locale (#679). Segunda e última parte da REQ de idioma; o leitor bilíngue saiu na 11.6.0.
+
+### ⚠️ Atualize todos os binários antes de usar roadmaps novos
+
+Roadmaps gerados a partir desta versão usam `**Wave gates:**`. Um binário **anterior à 11.6.0** não reconhece esse cabeçalho e conta **zero gates** na wave, o que faz o `barrier` passar sem executar nada. Em CI, hooks e máquinas de outros membros do time, use 11.6.0 ou superior antes de criar roadmaps com esta versão. Roadmaps existentes em português continuam válidos e não precisam de edição.
+
+### Breaking Changes
+
+Nenhum contrato muda: comandos, flags e os formatos que o trackfw lê continuam iguais, e o acervo segue válido. Duas mudanças de saída merecem atenção e estão em *Changed*.
+
+### Changed
+
+- **Saída sempre em inglês.** Os catálogos pt-BR e es-ES foram removidos, e `LANG`/`LC_ALL`/`LANGUAGE` não mudam mais o idioma das mensagens (#679).
+- **Forma do roadmap gerado:** `⬜ Pending · 🔄 In progress · ✅ Done · ❌ Blocked`, `**Files affected:**`, `**Actions:**`, `**Acceptance criteria:**` e `**Wave gates:**`. Scripts próprios que procuravam `⬜ Pendente` ou `**Gates da wave:**` em roadmaps **recém-gerados** precisam casar a forma nova; o leitor aceita as duas (#679).
+- **Mensagens do CLI, dashboard do `serve`, comandos slash, regras de agente e `update` em inglês** (#679). Os nomes de preset não mudam; as descrições estão em inglês.
+- **Modelo de `/trackfw:roadmap` sem indentação e com `## Acceptance Criteria`**: um roadmap escrito pelo modelo passa no `validate` em `wip/` (#679).
+
+### Added
+
+- **Guard `internal/i18nguard`:** reprova literal em português no código de produto e no dashboard, com lista fechada de exceções (#679).
+
 ## [11.6.0] - 2026-11-10
 
 Leitor bilíngue de roadmap: o parser aceita os marcadores em inglês e em português, e um gate que antes sumia em silêncio passa a parar o barrier com erro (#677). Primeiro passo da REQ de idioma; o gerador em inglês vem na próxima versão.
