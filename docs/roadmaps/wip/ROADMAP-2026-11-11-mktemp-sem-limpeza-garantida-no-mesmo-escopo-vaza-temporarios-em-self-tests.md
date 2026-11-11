@@ -167,13 +167,50 @@ bash scripts/check-no-trap-local-var.sh
 > Dependencies: Wave 1 completa.
 
 ### ML-2A — Red team do gate e das correções
-**Status:** 🔄 In progress
+**Status:** ✅ Done
 **Squad:** hades-tf
 **Files affected:**
 - `docs/seguranca/2026-11-11-redteam-mktemp-limpeza.md`
 
 **Acceptance criteria:**
-- [ ] Parecer com veredito; falsos negativos e positivos do gate atacados com sítios sintéticos
+- [x] Parecer com veredito; falsos negativos e positivos do gate atacados com sítios sintéticos
+
+**Auditoria (Zeus, 2026-11-11):** veredito APROVA COM RESSALVAS. `make quality` rc=0 (3182 linhas). Corpus sem
+falso positivo. A reconciliação dos 22 braços foi feita braço a braço, e as 11 correções do ML-1A não regrediram.
+O hades propôs REQ nova para os achados. Recusado: é o mesmo gate, a mesma ADR D2 e o mesmo discriminante, então
+eles entram no ML-2B (Regra Dura de Causa Raiz).
+1. MEDIUM: trap com aspas duplas instalado antes do `printf -v` do apelido, no escopo global, passa
+   (`check-mktemp-cleanup.sh:557` só checa a ordem fora do global).
+2. LOW: apelido reatribuído antes do trap; o gate não usa a última escrita.
+3. A exceção de fronteira de `exit` aceita `exit` dentro de `if`. Isso contraria a ADR (Consequences: "se não
+   conseguir decidir, reprova").
+4. Dois braços faltando, provados por mutação: ordem do apelido em função; exclusão de `$TMPDIR` como contêiner.
+
+### ML-2B — Correções do red team no gate (mesma REQ)
+**Status:** 🔄 In progress
+**Squad:** ares-tf
+**Files affected:**
+- `scripts/check-mktemp-cleanup.sh`
+- `scripts/check-marker-corpus-parity.sh`
+
+**Actions:**
+1. Ordem do apelido em trap com aspas duplas, em qualquer escopo: o apelido conta só se a escrita vier antes do trap.
+2. A última escrita do apelido antes do trap vence.
+3. Remover a exceção de fronteira de `exit`, conforme a ADR.
+4. Mover o bloco de self-test de `check-marker-corpus-parity.sh` (o único sítio do corpus que depende da exceção)
+   para uma função com trap próprio.
+5. Braços novos, cada um provado por mutação:
+   - MEDIUM no escopo global;
+   - LOW;
+   - ordem do apelido em função;
+   - exclusão de `$TMPDIR` como contêiner;
+   - `exit` dentro de `if`.
+
+**Acceptance criteria:**
+- [ ] Os sintéticos do red team (`attack_alias_after_trap_global.sh`, `fn5b_alias_reassigned.sh`,
+  `fn5c_exit_inside_if.sh`) dão rc=1
+- [ ] `--self-test` verde, com cada braço novo vermelho sob a mutação que remove a sua lógica
+- [ ] Gate verde no corpus; `check-marker-corpus-parity.sh --self-test` com o mesmo resultado de antes
 
 **Wave gates:**
 ```bash
