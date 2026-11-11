@@ -10,9 +10,13 @@
 
 ## Veredito
 
-**REPROVA**
+**Rodada 1 (2026-11-10): REPROVA**
 
-Encontrado um achado que reprova AC2 verbatim (F1 — MEDIUM). Os demais achados são residuais, por design ou informativos. O merge fica bloqueado até um ML de correção ser adicionado a esta REQ e concluído (Regra Dura de Causa Raiz — mesma causa, mesma REQ).
+Encontrado um achado que reprova AC2 verbatim (F1 — MEDIUM). Os demais achados são residuais, por design ou informativos. O merge ficou bloqueado até um ML de correção ser adicionado a esta REQ e concluído (Regra Dura de Causa Raiz — mesma causa, mesma REQ).
+
+**Rodada 2 (2026-11-11): APROVA COM RESSALVAS**
+
+F1 e F4 fechados por ML-3E e ML-3F. F2 e F3 sem alteração (residuais declarados). Novo achado F5 LOW pré-existente em `origin/main` — não bloqueia merge; requer REQ separada.
 
 ---
 
@@ -326,6 +330,144 @@ Arquivos novos/modificados nesta sessão:
 - `.claude/agent-memory/hades-tf/feedback_ls_alias_glyph_creates_wrong_path.md` — nota de memória (new)
 
 Os dois arquivos de memória são artefatos do agente sob `.claude/agent-memory/hades-tf/`, não código de produto. O handoff declarava apenas o parecer; o arquiteto decide sobre commit dos dois.
+
+---
+
+## Rodada 2 (2026-11-11)
+
+### Veredito da Rodada 2
+
+**APROVA COM RESSALVAS**
+
+F1 e F4 fechados. Um novo achado LOW pré-existente (F5) não bloqueia o merge mas requer REQ separada. F2 e F3 sem alteração.
+
+---
+
+### O que foi verificado
+
+#### V1 — F1: canal i18n emitindo PT com LANG=pt_BR.UTF-8
+
+**Resultado: FECHADO**
+
+Mecanismo corrigido em ML-3E: `DetectLocale()` hardcoded a `"en-US"` em `internal/i18n/i18n.go`; catálogos `pt-BR.json` e `es-ES.json` removidos do embed; apenas `//go:embed locales/en-US.json` permanece no produto.
+
+Busca exaustiva por outros caminhos de emissão PT:
+
+- `grep -rn 'Getenv.*LANG\|Getenv.*LC_\|Getenv.*LANGUAGE\|embed.*\.json\|embed.*locales'` em `internal/` e `cmd/` (excluindo `_test.go`): único resultado é `internal/i18n/i18n.go:10` — o embed correto `en-US.json`. O segundo resultado é um comentário dentro de testdata de corpus, não produto.
+- Nenhum outro `//go:embed` de arquivo `.json` em código de produto.
+
+Medição com binário compilado da branch (`go build ./cmd/trackfw`), projeto descartável em `mktemp -d`:
+
+```
+$ LANG=pt_BR.UTF-8 LC_ALL=pt_BR.UTF-8 LANGUAGE=pt_BR.UTF-8 trackfw validate
+...
+2 warning(s)   ← EN
+
+$ LANG=en_US.UTF-8 trackfw validate
+...
+2 warning(s)   ← EN (idêntico ao anterior)
+```
+
+Comparação anterior (Rodada 1, antes do fix):
+
+```
+$ LANG=pt_BR.UTF-8 trackfw validate
+...
+1 aviso(s)   ← PT  (era o achado F1)
+```
+
+Comandos adicionais testados com PT locale: `validate --help`, `status`, `context`, `barrier --wave 0 --trust-local-gates` (projeto descartável) — todos emitem EN.
+
+Testes unitários e de integração:
+
+```
+TestDetectLocale_AlwaysEN          PASS (8 sub-testes: LANG/LC_ALL/LANGUAGE × pt_BR/es_ES/C/"")
+TestI18nT_AlwaysEN_UnderPTLocale   PASS (validate.ok, validate.warnings, validate.description)
+TestI18nT_AlwaysEN_UnderESLocale   PASS
+TestI18n_BinaryOutput_AlwaysEN     PASS (binário real: validate + validate --help com LANG=pt_BR)
+TestI18nLocalesOnlyEN              PASS (só en-US.json em internal/i18n/locales/)
+```
+
+#### V2 — F4: scaffold /trackfw:roadmap omite `## Acceptance Criteria`
+
+**Resultado: FECHADO**
+
+ML-3F adicionou `## Acceptance Criteria` ao template de `/trackfw:roadmap` em `.claude/commands/trackfw/roadmap.md` (linha 32) e ao modelo de `internal/generators/scaffold.go`.
+
+Verificação por leitura direta:
+
+```
+$ grep -n "Acceptance Criteria" .claude/commands/trackfw/roadmap.md
+32:## Acceptance Criteria
+```
+
+Teste de reconciliação (`TestScaffold_RoadmapMD_TemplatePassesWIPAcceptanceCriteriaValidation`, `internal/generators/scaffold_test.go`):
+- Extrai o template do fence `````markdown` em `roadmap.md`
+- Promove `status: backlog` para `status: wip`
+- Chama `validator.Validate()` num projeto descartável
+- Verifica que nenhuma violação `"has no acceptance criteria block"` é emitida
+- Resultado: **PASS**
+
+#### V3 — Regressão S1–S4
+
+**Resultado: SEM REGRESSÃO**
+
+Suíte completa `go test ./internal/...`: todos os pacotes PASS (nenhum FAIL).
+
+Paridade de corpus: `bash scripts/check-marker-corpus-parity.sh` → 243 roadmaps, `validate identical` (S2 — acervo PT preservado).
+
+---
+
+### Achado novo
+
+#### F5 — LOW: literal PT hardcoded em `manager.go:512`, fora de `i18n.T()` e fora do alcance do guard
+
+**Severidade:** LOW — não bloqueia merge  
+**Pré-existente em `origin/main`** (mesma linha, mesmo conteúdo)
+
+`internal/integrations/manager.go:512`:
+
+```go
+fmt.Fprintf(os.Stderr, "aviso: %q declara o mesmo name %q que %q; prosseguindo por --force\n", ...)
+```
+
+**Por que o guard não detecta:** `ptUnaccentedWords` cobre marcadores de contrato (`Pendente`, `Caducou`, `Gates da wave`, `Arquivos afetados`, etc.) e `ptAccentChars` cobre caracteres acentuados. `"aviso"` e `"prosseguindo"` não são palavras acentuadas nem estão na lista de `ptUnaccentedWords`. O `TestNoPTLiteralsInProductGo` PASSA com este literal presente — gap do guard.
+
+**Trigger:** `trackfw integrations install --force` com colisão de nome — caminho raro.
+
+**Por que não bloqueia:** pré-data esta REQ; a branch não introduziu nem modificou esta linha. A causa é diferente de F1 (literal hardcoded, não roteamento de catálogo i18n) — pelo teste da Regra Dura: corrigir F1 não fecha F5.
+
+**Ação recomendada:** REQ separada para (a) converter a mensagem de manager.go para `i18n.T()` e (b) adicionar `"aviso"` ao `ptUnaccentedWords` para fechar o gap do guard.
+
+---
+
+### Status dos achados pós-Rodada 2
+
+| Achado | Rodada 1 | Rodada 2 | Notas |
+|---|---|---|---|
+| F1 — i18n PT runtime | MEDIUM / BLOQUEANTE | **FECHADO** | DetectLocale fixo; catálogos PT/ES removidos; testes PASS |
+| F2 — CLAUDE.md seção externa retém PT | LOW / por design | **INALTERADO** | Residual aceito por AC3 |
+| F3 — CHANGELOG advisory | INFO / pendente | **INALTERADO** | Exigência do ADR D2; ação do arquiteto na segunda tag |
+| F4 — scaffold sem `## Acceptance Criteria` | LOW / pre-existing | **FECHADO** | Adicionado em ML-3F; teste PASS |
+| F5 — literal PT hardcoded em manager.go:512 | (não identificado) | **NOVO LOW / não-bloqueante** | Pré-existente em main; guard gap; REQ separada |
+
+---
+
+### Desvios de método (Rodada 2)
+
+Nenhum. Todos os projetos descartáveis criados com `mktemp -d` diretamente. Nenhum comando com escrita rodou no repositório real. Binário compilado para o scratchpad da sessão.
+
+---
+
+### Estado do repositório (Rodada 2)
+
+```
+$ git -C /Users/kgsaran/Sistemas/Desenvolvimento/workspace/trackfw status --short
+(saída vazia — apenas este arquivo aparecerá após ser escrito)
+
+$ git -C /Users/kgsaran/Sistemas/Desenvolvimento/workspace/trackfw diff --cached --stat
+(vazio)
+```
 
 ---
 

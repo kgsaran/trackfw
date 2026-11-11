@@ -694,6 +694,25 @@ defeito está no artefato que esta REQ entrega e é acessível por acidente, ent
 
 *Auditoria (Zeus, 2026-11-11):* o modelo de `roadmap.md` traz `## Acceptance Criteria` na mesma forma do `NewRoadmap`, e a cópia versionada está igual byte a byte. Teste novo `TestScaffold_RoadmapMD_TemplatePassesWIPAcceptanceCriteriaValidation` (nome conferido): o modelo gravado em `wip/` não gera a violação `has no acceptance criteria block`; sem o bloco, reprova (contraprova do executor). `go test -count=1 ./internal/...` rodado por Zeus: rc=0.
 
+### ML-3G — Literal PT sem acento que escapa do guard (AC2, achado F5 do red team)
+**Status:** 🔄 Em andamento
+**Squad:** apolo-tf
+
+*Por que entra aqui (2026-11-11):* a rodada 2 do red team achou, em `internal/integrations/manager.go:512`,
+a mensagem `"aviso: %q declara o mesmo name %q que %q; prosseguindo por --force\n"`, emitida em PT. O literal
+já existia antes desta branch. O parecer sugeriu uma REQ separada, mas a causa é a mesma do AC2 (mensagem
+emitida em PT) e o guard do ML-3D não a pegou porque a lista de palavras PT sem acento é curta. Pela Regra
+Dura de Causa Raiz, entra nesta REQ.
+**Files affected:**
+- `internal/integrations/manager.go`
+- `internal/i18nguard/pt_literals_test.go`
+- `internal/integrations/` (testes que afirmem a mensagem, se houver)
+- arquivos de produto em que a varredura ampliada achar mensagem PT sem acento
+
+**Acceptance criteria:**
+- [ ] Mensagem de `manager.go:512` em inglês
+- [ ] Guard com a lista de palavras PT sem acento ampliada e medida sobre o repositório; a contraprova com `"aviso: ..."` reprova
+
 **Gates da wave:**
 ```bash
 go build ./...
