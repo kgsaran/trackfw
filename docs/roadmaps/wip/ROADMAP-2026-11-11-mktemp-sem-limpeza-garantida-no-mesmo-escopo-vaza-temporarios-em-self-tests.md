@@ -24,7 +24,7 @@ fixa o discriminante (D2), a forma de correção (D3) e a correção do registro
 - [x] AC1 — inventário medido pelo discriminante da ADR D2, conferido contra o relato (ML-0A)
 - [ ] AC2 — sítios não cobertos corrigidos, medido por efeito com falha forçada depois de 490–491 (ML-1A)
 - [ ] AC3 — gate novo no `parity-rest`, com self-test por mecanismo, vacuidade e contra-braço (ML-1B)
-- [ ] AC4 — registro do AC1 da REQ-2026-11-07 corrigido (ML-1C)
+- [x] AC4 — registro do AC1 da REQ-2026-11-07 corrigido (ML-1C)
 - [ ] AC5 — `make quality` verde (ML-2A)
 
 ## Status Legend
@@ -71,7 +71,7 @@ test -s docs/seguranca/2026-11-11-wave0-mktemp-limpeza.md
 > Dependencies: Wave 0 auditada. ML-1A e ML-1B em paralelo (arquivos disjuntos); ML-1C é do Zeus.
 
 ### ML-1A — Limpeza garantida nos sítios não cobertos (AC2)
-**Status:** ⬜ Pending
+**Status:** 🔄 In progress
 **Squad:** ares-tf
 **Files affected:**
 - `scripts/check-shim-diff-applies.sh`
@@ -102,7 +102,7 @@ Lista final do ML-0A (11 sítios, formas D3 auditadas):
 - [ ] Caminho de sucesso de cada script tocado com o mesmo resultado
 
 ### ML-1B — Gate `check-mktemp-cleanup.sh` (AC3)
-**Status:** ⬜ Pending
+**Status:** 🔄 In progress
 **Squad:** ares-tf
 **Files affected:**
 - `scripts/check-mktemp-cleanup.sh`
@@ -120,13 +120,13 @@ sem `$(` não é candidata), sem exclusão por caminho (R6).
 - [ ] Nenhum falso positivo nos 6 casos legítimos do #676
 
 ### ML-1C — Registro da REQ-2026-11-07 (AC4)
-**Status:** ⬜ Pending
+**Status:** ✅ Done
 **Squad:** zeus-tf
 **Files affected:**
 - `docs/req/REQ-2026-11-07-trap-exit-de-self-test-cita-variavel-local-e-mascara-a-falha-real.md`
 
 **Acceptance criteria:**
-- [ ] Nota no AC1 apontando para o #676, esta REQ e a ADR D4
+- [x] Nota no AC1 apontando para o #676, esta REQ e a ADR D4
 
 **Wave gates:**
 ```bash
