@@ -674,7 +674,7 @@ fi
 # — byte-identical across Go, Node.js and Python (ADR-2026-08-23).
 # ===========================================================================
 # shellcheck disable=SC2016  # single-quoted strings used intentionally
-GLOBAL_WRONG_PLACE_MSG='trackfw: agents global: agent_models configurado em trackfw.yaml do projeto mas não vale para escopo global. Mova a chave para ~/.trackfw/trackfw.yaml.'
+GLOBAL_WRONG_PLACE_MSG='trackfw: agents global: agent_models configured in project trackfw.yaml but does not apply to global scope. Move the key to ~/.trackfw/trackfw.yaml.'
 
 for rt in go; do  # ML-3A (v8): node py removed
   home7="$WORK/case7-home-$rt"
@@ -717,7 +717,7 @@ done
 # Warning string frozen from internal/config/config.go:GlobalAgentModelsNoneMessage
 # — byte-identical across Go, Node.js and Python (ADR-2026-08-23).
 # ===========================================================================
-GLOBAL_NOT_CONFIGURED_MSG='trackfw: agents global: agent_models não configurado em ~/.trackfw/trackfw.yaml — usando tier canônico. Configure em ~/.trackfw/trackfw.yaml para pinar versões.'
+GLOBAL_NOT_CONFIGURED_MSG='trackfw: agents global: agent_models not configured in ~/.trackfw/trackfw.yaml — using canonical tier. Configure in ~/.trackfw/trackfw.yaml to pin versions.'
 
 for rt in go; do  # ML-3A (v8): node py removed
   home8="$WORK/case8-home-$rt"
@@ -793,7 +793,7 @@ ok "global-scope/project-scope-nonreg/go-behavioral-pin/claude-agents-generated"
 # Warning string frozen from internal/config/config.go:MalformedGlobalConfigMessage
 # — byte-identical across Go, Node.js and Python (ADR-2026-08-23).
 # ===========================================================================
-GLOBAL_MALFORMED_MSG='trackfw: aviso: "~/.trackfw/trackfw.yaml" tem YAML malformado — config global de modelo ignorada; usando tier canônico.'
+GLOBAL_MALFORMED_MSG='trackfw: warning: "~/.trackfw/trackfw.yaml" has malformed YAML — global model config ignored; using canonical tier.'
 
 for rt in go; do  # ML-3A (v8): node py removed
   home10="$WORK/case10-home-$rt"

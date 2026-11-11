@@ -1,13 +1,13 @@
-Execute o seguinte comando bash: `trackfw roadmap move $ARGUMENTS`
+Run the following bash command: `trackfw roadmap move $ARGUMENTS`
 
-O formato esperado é: `<nome-do-roadmap> <estado>`
+Expected format: `<roadmap-name> <state>`
 
-Estados válidos: `backlog`, `analyzing`, `wip`, `blocked`, `done`, `abandoned`
+Valid states: `backlog`, `analyzing`, `wip`, `blocked`, `done`, `abandoned`
 
-Exemplo: `/trackfw:move meu-roadmap analyzing`
+Example: `/trackfw:move my-roadmap analyzing`
 
-Se o comando falhar com `trackfw: command not found` ou similar, informe ao usuário:
-trackfw não está instalado. Instale com:
+If the command fails with `trackfw: command not found` or similar, inform the user:
+trackfw is not installed. Install with:
   curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh
   npm install -g trackfw
   pip install trackfw

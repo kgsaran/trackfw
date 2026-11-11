@@ -330,9 +330,9 @@ func TestBranchNewBase_NoOriginActionable(t *testing.T) {
 	if strings.Contains(out, "not a commit") || strings.Contains(out, "128") {
 		t.Errorf("F-4b: must not propagate raw git error; got:\n%s", out)
 	}
-	// R-5: must contain the exact Portuguese actionable message.
-	if !strings.Contains(out, "nenhum remote 'origin' encontrado") {
-		t.Errorf("F-4b/R-5: expected exact message \"nenhum remote 'origin' encontrado\"; got:\n%s", out)
+	// R-5: must contain the exact actionable message.
+	if !strings.Contains(out, "no 'origin' remote found") {
+		t.Errorf("F-4b/R-5: expected exact message \"no 'origin' remote found\"; got:\n%s", out)
 	}
 	// Must contain actionable hint: --from HEAD or 'origin remote add'.
 	if !strings.Contains(out, "--from HEAD") {
@@ -387,7 +387,7 @@ func TestBranchNew_FromDashFlagRejected(t *testing.T) {
 		t.Errorf("B-1: uncommitted file was discarded — --from -f triggered git checkout -f")
 	}
 	// Error message must mention the rejection reason.
-	if !strings.Contains(out, "não pode começar com '-'") {
+	if !strings.Contains(out, "must not start with '-'") {
 		t.Errorf("B-1: expected rejection message mentioning '-'; got:\n%s", out)
 	}
 }
@@ -403,7 +403,7 @@ func TestBranchNew_FromUploadPackRejected(t *testing.T) {
 	if code == 0 {
 		t.Fatalf("B-1: expected non-zero exit for --from --upload-pack=x, got 0:\n%s", out)
 	}
-	if !strings.Contains(out, "não pode começar com '-'") {
+	if !strings.Contains(out, "must not start with '-'") {
 		t.Errorf("B-1: expected rejection message; got:\n%s", out)
 	}
 }

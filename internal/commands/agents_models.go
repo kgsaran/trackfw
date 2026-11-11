@@ -15,9 +15,9 @@ import (
 // Must be byte-identical across Go, Node.js and Python — ADR-2026-08-23.
 const (
 	modelsSourceLineGlobal          = "source: ~/.trackfw/trackfw.yaml"
-	modelsSourceLineNone            = "source: não configurado"
-	modelsSourceLineProjectOnly     = "source: trackfw.yaml do projeto (não vale para escopo global)"
-	modelsSourceLineGlobalMalformed = "source: arquivo global malformado"
+	modelsSourceLineNone            = "source: not configured"
+	modelsSourceLineProjectOnly     = "source: project trackfw.yaml (not applicable to global scope)"
+	modelsSourceLineGlobalMalformed = "source: global file malformed"
 )
 
 // newAgentModelsCmd returns the "models" subcommand of "trackfw agents". It
@@ -188,7 +188,7 @@ func executeAgentModels(cmd *cobra.Command, _ []string) error { //nolint:cyclop
 	// must not report a different outcome than install would. The table is
 	// already printed above so the user can see the [invalid] rows for context.
 	if len(invalidTiers) > 0 {
-		return fmt.Errorf("agent_models contém %d valor(es) inválido(s); corrija trackfw.yaml e reexecute", len(invalidTiers))
+		return fmt.Errorf("agent_models has %d invalid value(s); fix trackfw.yaml and re-run", len(invalidTiers))
 	}
 	return nil
 }

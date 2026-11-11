@@ -1839,7 +1839,7 @@ func printBarrierText(cmd *cobra.Command, result barrierResult) {
 		// format "line N: Caducou: <text>". Allows reviewer to audit without opening
 		// the roadmap file.
 		for _, d := range c.LapsedDetails {
-			fmt.Fprintf(out, "      line %d: Caducou: %s\n", d.Line, d.Text)
+			fmt.Fprintf(out, "      line %d: Lapsed: %s\n", d.Line, d.Text)
 		}
 	}
 	fmt.Fprintf(out, "\nresult: %s\n", result.Status)

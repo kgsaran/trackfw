@@ -370,7 +370,7 @@ func validateREQDoneOpenCriteria() (violations []string, exemptCount, enforcedCo
 		}
 
 		violations = append(violations, fmt.Sprintf(
-			"REQ %q has Status: Done but contains open acceptance criteria (- [ ] without Caducou:); mark as met or add a Caducou: justification (req_done_open_criteria, D4 ADR-2026-10-04)",
+			"REQ %q has Status: Done but contains open acceptance criteria (- [ ] without a Lapsed: (or Caducou:) justification); mark as met or add a Lapsed: (or Caducou:) justification (req_done_open_criteria, D4 ADR-2026-10-04)",
 			filepath.Base(path),
 		))
 		enforcedCount++

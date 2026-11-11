@@ -487,7 +487,7 @@ para qualquer erro de parse. O ciclo de red team convergiu.
 *Decisão do KG (2026-11-08):* dois PRs, com uma tag no meio. Este PR leva as Waves 0–2 (leitor bilíngue) e,
 depois do merge, recebe a tag; as Waves 3–4 (gerador em inglês) vão num segundo PR. O KG também aceitou o
 residual de ofuscação deliberada (emenda da ADR, rodada 3, item 4).
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** zeus-tf
 **Files affected:**
 - `CHANGELOG.md`
@@ -500,46 +500,223 @@ residual de ofuscação deliberada (emenda da ADR, rodada 3, item 4).
 O roadmap continua em `wip/` depois desse merge (ADR D2).
 
 **Acceptance criteria:**
-- [ ] Tag publicada nos três canais com o leitor bilíngue
+- [x] Tag publicada nos três canais com o leitor bilíngue
 
 **Gates da wave:**
 ```bash
 test -s docs/seguranca/2026-11-08-redteam-leitor-bilingue.md
 ```
 
+*Auditoria (Zeus, 2026-11-10):* o PR 1 (#677) e o PR de release (#678) entraram na `main`. `make check-required-full` deu OK (D\\R, R\\W e D\\W vazios). `trackfw release tag 11.6.0` publicou `v11.6.0` no commit `dc617634`. O run de release 42819567116 terminou em success, incluindo "Verify all release channels". GitHub: `v11.6.0` com pre=false; npm: `latest` = 11.6.0; PyPI: 11.6.0.
+
 ## Wave 3 — Gerador e mensagens em inglês (AC2, AC3, AC5)
 > Dependencies: tag do ML-2B publicada. MLs detalhados a partir do inventário da Wave 0, com arquivos
 > disjuntos e no máximo dois agentes em paralelo.
 
-### ML-3A — Gerador de roadmap e REQ na forma canônica (ADR D4)
-**Status:** ⬜ Pendente
-**Squad:** apolo-tf
-**Files affected:** `internal/generators/roadmap.go` e testes; lista final após a Wave 0.
-**Acceptance criteria:**
-- [ ] Roadmap gerado usa a legenda, o status e os cabeçalhos da ADR D4
-- [ ] `scripts/check-gates-falsify.sh` e testes que fixavam a forma antiga atualizados no mesmo ML
+*Detalhamento (Zeus, 2026-11-10):* os MLs abaixo saem do inventário §1 e §4 do parecer da Wave 0
+(`docs/seguranca/2026-11-08-wave0-idioma-ingles-primeiro.md`). O ML-3B original (cerca de 30 arquivos) foi
+dividido em 3B1 e 3B2 por pacote, e o teste do AC2 virou o ML-3D, porque varre arquivos de todos os MLs e
+só pode rodar depois deles. Ordem e paralelismo:
+- **Par 1:** ML-3A (apolo-tf) em paralelo com ML-3C (prometeu-tf); arquivos disjuntos.
+- **Par 2:** ML-3B1 (apolo-tf) em paralelo com ML-3B2 (apolo-tf); arquivos disjuntos.
+- **Por último:** ML-3D (apolo-tf), sozinho.
 
-### ML-3B — Mensagens do CLI (AC2)
-**Status:** ⬜ Pendente
+`update.go` sai do ML-3B e fica inteiro no ML-3C, que tem o AC do `update`. `discover.go` fica inteiro no
+ML-3B2. Os literais que **ficam em português** por desenho: as grafias PT dos leitores bilíngues (grupo 3,
+ADR D1/D5); as palavras-chave de `probes.go` (`autenticação`, `migração`, `senha`, `banco`, `notificação`,
+§1 nota 3); a sonda de caminho `"docs/requisições"` em `discover.go`; e os nomes dos presets (ADR D6).
+
+### ML-3A — Gerador de roadmap e REQ na forma canônica (ADR D4)
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
-**Files affected:** `internal/commands/help.go` e demais apontados pela Wave 0.
+**Files affected:**
+- `internal/generators/roadmap.go`
+- `internal/generators/roadmap_test.go`
+- `scripts/check-roadmap-barrier-contract.sh`
+- `scripts/check-gates-falsify.sh` e `scripts/check-barrier.sh`, só se algum cenário consumir a **saída** do gerador
+
+**Actions:** o gerador emite a forma D4: legenda `⬜ Pending · 🔄 In progress · ✅ Done · ❌ Blocked`,
+`**Status:** ⬜ Pending`, `**Files affected:**`, `**Actions:**`, `**Acceptance criteria:**`, `**Wave gates:**`.
+O leitor dentro de `roadmap.go` (G3-12) continua aceitando a forma PT. Os testes da tabela §4(i) passam a
+afirmar a forma EN. `check-roadmap-barrier-contract.sh` (linha ~230) preenche o roadmap gerado com
+`sed 's/^\*\*Status:\*\* ⬜ Pendente$/…/'`; passa a casar `⬜ Pending` e a escrever `✅ Done`. Cenários
+que só **alimentam** PT ao parser (§4(ii)) ficam como estão.
 **Acceptance criteria:**
-- [ ] Teste que reprova literal em português nas mensagens emitidas
+- [x] Roadmap gerado usa a legenda, o status e os cabeçalhos da ADR D4
+- [x] `scripts/check-gates-falsify.sh` e testes que fixavam a forma antiga atualizados no mesmo ML
+- [x] Roadmap gerado passa no `barrier` com o gate `exit 1` reprovando (teste em `t.TempDir`)
+
+*Auditoria (Zeus, 2026-11-10):* `roadmap.go` emite a forma D4 em 5 sítios, e o leitor G3-12 não foi tocado. Os 4 testes da §4(i) agora afirmam EN. Teste novo `TestNewRoadmap_ENGatesHeaderRecognizedByParser` (nome conferido): o gerador emite `**Wave gates:**` e `ParseGatesLines` extrai o gate `exit 1`; o executor provou que ele reprova com o gerador antigo. `check-roadmap-barrier-contract.sh`: 5 sítios que consomem a saída do gerador, 49 cenários OK. `go test ./internal/generators/ ./internal/identity/ ./internal/roadmapdoc/` rodado por Zeus: ok. Ficaram em PT mensagens G1 do próprio `roadmap.go` (linhas ~350–468); foram para o ML-3B2.
 
 ### ML-3C — Conteúdo gerado no consumidor e presets (AC3, AC5)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** prometeu-tf
-**Files affected:** `internal/generators/scaffold.go`, `claudemd.go` (linha ~36), `agentfiles.go` (linhas ~112-113),
-`update.go`, `internal/identity/preset.go` e demais da tabela §1 do parecer da Wave 0. `claudemd.go` e
-`agentfiles.go` são meta-geradores: instruem o agente consumidor a escrever `⬜ Pendente`; só mudam depois
-da tag do leitor (Wave 0, achado 4).
+**Files affected:**
+- `internal/generators/scaffold.go`
+- `internal/generators/claudemd.go`
+- `internal/generators/agentfiles.go`
+- `internal/generators/update.go`
+- `internal/identity/preset.go`
+- `internal/generators/claudemd_test.go`
+- `internal/generators/scaffold_test.go`
+- `internal/generators/update_test.go`
+- `.claude/commands/trackfw/*.md` (9 cópias versionadas, regeneradas a partir de `scaffold.go`)
+
+`claudemd.go` e `agentfiles.go` são meta-geradores: instruem o agente consumidor a escrever `⬜ Pendente` e
+passam a instruir a forma D4. Isso só é seguro depois da tag do leitor (Wave 0, achado 4), já publicada (v11.6.0).
 
 *Acrescentado (auditoria do ML-2G):* o modelo de roadmap dentro de `roadmap.md` em `scaffold.go` perde a
 indentação de 3 espaços, para que o cabeçalho de gates copiado fique na coluna 0. Teste: o modelo extraído da
 cerca e passado a `ParseGatesLines` não dá erro na Wave 0 e retorna o gate `exit 1`.
 **Acceptance criteria:**
-- [ ] `trackfw update` entrega a versão nova sem perder edição local (teste)
-- [ ] Nomes de preset mantidos, descrições em inglês (ADR D6)
+- [x] `trackfw update` entrega a versão nova sem perder edição local (teste)
+- [x] Nomes de preset mantidos, descrições em inglês (ADR D6)
+- [x] Modelo de `roadmap.md` em coluna 0 e aceito por `ParseGatesLines` (teste)
+
+*Auditoria (Zeus, 2026-11-10):* `scaffold.go`, `claudemd.go`, `agentfiles.go`, `update.go` e `preset.go` estão em EN, e o modelo de `roadmap.md` está na coluna 0 com `**Wave gates:**` e `⬜ Pending`. Testes novos, com nomes conferidos: `TestScaffold_RoadmapMD_GatesModelParseable` (o modelo passa em `ParseGatesLines` com `exit 1`) e `TestUpdate_AgentRulesBlockContainsENLifecycleMarkers` (o `update` entrega os marcadores EN e preserva o conteúdo fora do bloco gerenciado). Os nomes de preset não mudaram (D6). O texto descritivo dos presets ("Panteão grego…") está em `identity_wizard.go`, então o AC5 se completa no ML-3B1. Efeito colateral medido por Zeus: o cenário `falsify/update-config-loader/go-baseline` de `check-gates-falsify.sh` (~linha 3852) fixa a mensagem PT `trackfw-validate injetado` e reprova; a correção foi para o ML-3B2.
+
+### ML-3B1 — Mensagens do CLI: pacote `commands` (AC2)
+**Status:** ✅ Concluído
+**Squad:** apolo-tf
+**Files affected:**
+- `internal/commands/help.go`
+- `internal/commands/identity_wizard.go`
+- `internal/commands/branch.go`
+- `internal/commands/configure.go`
+- `internal/commands/metrics.go`
+- `internal/commands/agents_models.go`
+- `internal/commands/integrations_flags.go`
+- `internal/commands/commit.go`
+- `internal/commands/req.go`
+- `internal/commands/adr.go`
+- `internal/commands/baseline.go`
+- `internal/commands/barrier.go` (só a mensagem G1 da linha ~1842; o leitor G3-6 continua bilíngue)
+- `internal/commands/doctor.go`, `internal/commands/init.go` (mensagens G1 achadas pelo grep do ML)
+- `internal/commands/barrier_lapsed_test.go`
+- `internal/commands/branch_new_base_e2e_test.go`
+- `internal/commands/commit_test.go`
+- `internal/commands/help_test.go`
+**Acceptance criteria:**
+- [x] Texto descritivo dos presets em `identity_wizard.go` em inglês, nomes mantidos (AC5, ADR D6)
+- [x] Mensagens emitidas por esses arquivos em inglês; testes que afirmavam o texto PT atualizados
+
+*Auditoria (Zeus, 2026-11-10):* o primeiro agente caiu por ENOTFOUND (falha de rede) e um segundo terminou a partir da árvore. O barrier emite `Lapsed:` e o leitor G3-6 não foi tocado. Os presets (`identity_wizard.go`) têm descrição EN, e os nomes e valores de opção foram mantidos; Chaves e Turma da Mônica são nomes próprios. O AC5 está fechado. Testes alterados, com nomes conferidos: `TestBarrierLapsed_JustificationInTextAndJSON`, `TestHelpUnknownTopicSuggestsNearMatch` e `TestCommit_Suggest_*`. `go test -count=1 ./internal/...` rodado por Zeus: rc=0.
+
+### ML-3B2 — Mensagens do CLI: demais pacotes e dashboard (AC2)
+**Status:** ✅ Concluído
+**Squad:** apolo-tf
+**Files affected:**
+- `internal/validator/validator.go`
+- `internal/validator/validator_git_branch_guard.go`
+- `internal/validator/validator_credential_guard.go` (regra do `validate`; as mensagens de `internal/guard/` já estão em inglês pela REQ de primeira experiência, Done)
+- `internal/validator/validator_roadmap_gates.go`
+- `internal/validator/validator_req_done_criteria.go` (só a mensagem G1 da linha ~373)
+- `internal/config/config.go` (só G1; `AcceptanceMarkers` continua bilíngue)
+- `internal/discover/discover.go`
+- `internal/generators/note.go`
+- `internal/generators/nextsteps.go`
+- `internal/generators/probes.go` (só mensagens; palavras-chave PT ficam)
+- `internal/identity/identity.go`
+- `internal/metrics/metrics.go`
+- `internal/integrations/models.go`
+- `internal/serve/static/app.js`
+- `internal/serve/static/index.html`
+- `internal/generators/roadmap.go` (só mensagens G1, ~linhas 350–468; o leitor G3-12 continua bilíngue)
+- `scripts/check-gates-falsify.sh` (cenário `update-config-loader/go-baseline` e qualquer outro que fixe mensagem PT agora traduzida)
+- `scripts/check-agent-models-parity.sh` (3 cópias congeladas de mensagens de `config.go`)
+- `internal/identity/identity_test.go`
+- `internal/validator/validator_git_branch_guard_test.go`
+- `internal/validator/validator_req_contained_test.go`
+**Acceptance criteria:**
+- [x] Mensagens emitidas por esses arquivos em inglês; testes que afirmavam o texto PT atualizados
+- [x] `bash scripts/check-gates-falsify.sh` com rc=0
+- [x] Dashboard do `serve` verificado em navegador headless por Zeus (sem texto PT visível)
+
+*Auditoria (Zeus, 2026-11-10):* o primeiro agente também caiu por ENOTFOUND e um segundo terminou. Os leitores PT estão preservados (`AcceptanceMarkers`, `reqACHeadingRe`, o leitor de `roadmap.go`, as palavras-chave de `probes.go` e a sonda `docs/requisições`). Medido por Zeus: `go test -count=1 ./internal/...` rc=0; `check-gates-falsify.sh` rc=0 (285 cenários); `check-agent-models-parity.sh` rc=0. Dashboard: `trackfw serve` com captura em Chrome headless; a interface (Board, Chain, Metrics, No items, Auto-refresh, Pause) está em EN, e os títulos de roadmap ficam em PT porque são dados de `docs/` (escopo negativo). Em `app.js`/`index.html` sobra PT só em comentários. Resta a mensagem da linha ~373 de `validator_req_done_criteria.go`, que está em EN mas cita só `Caducou:`; foi para o ML-3D.
+
+### ML-3D — Teste que reprova o retorno do português (AC2)
+**Status:** ✅ Concluído
+**Squad:** apolo-tf
+**Files affected:**
+- `internal/i18nguard/pt_literals_test.go` e `internal/i18nguard/doc.go` (novos)
+- Literais PT residuais achados pelo teste: `internal/commands/init.go`, `internal/commands/roadmap.go`, `internal/generators/roadmap.go`, `internal/generators/scaffold.go`, `internal/generators/scaffold_doctor.go`, com os goldens de `internal/generators/testdata/ci-trigger/` e os hashes AC6 de `consumer_install_test.go`
+- `internal/generators/consumer_install_test.go`
+- `internal/validator/validator_req_done_criteria.go` (mensagem da linha ~373 passa a citar `Lapsed:` com `Caducou:` como alternativa) e o teste que a afirmar
+
+**Actions:** teste Go que percorre com `go/ast` os arquivos de produto de `internal/` e `cmd/` (sem
+`_test.go` e `testdata/`) e reprova literal de string executável com palavra portuguesa. Lista de permissão
+fechada e explícita: as grafias PT dos leitores bilíngues, as palavras-chave de `probes.go`, a sonda
+`"docs/requisições"` e os nomes dos presets. Cada entrada traz o motivo.
+**Acceptance criteria:**
+- [x] O teste passa na branch e reprova quando um literal PT é reintroduzido (contraprova registrada)
+
+*Auditoria (Zeus, 2026-11-10):* `TestNoPTLiteralsInProductGo` varre literais via `go/ast`. A lista de permissão é fechada, e `TestAllowlistIsExhaustive` reprova entrada obsoleta. Os arquivos citados na lista existem (conferido por Zeus). As classes são as quatro do ML mais uma quinta: mensagens EN que citam o marcador PT aceito; aceita porque nomeiam o leitor bilíngue. Contraprova do executor: `"Próximo passo"` em `init.go` reprova. Zeus achou um fail-open: o arquivo que não fazia parse era pulado em silêncio. O corretivo virou `t.Errorf`, com contraprova (`zz_contraprova.go` reprova; o arquivo foi apagado e o teste volta a passar). `go test -count=1 ./internal/...` rodado por Zeus: sem falha. Os nomes dos 4 testes foram conferidos.
+
+### ML-3E — Saída só em inglês: fim do i18n por locale (AC2, achado F1 do red team)
+**Status:** ✅ Concluído
+**Squad:** apolo-tf
+
+*Por que o escopo cresceu (2026-11-11):* o red team (ML-4A, F1) mediu que `internal/i18n` (de 2026-06-12)
+escolhe o catálogo pelo `LANG`/`LC_ALL`/`LANGUAGE`. Com `pt_BR` ou `es`, 53 mensagens saem em PT/ES e o resto em
+EN. O inventário da Wave 0 não pegou esse caminho, porque o texto vem de JSON embutido e não de literal Go. É a
+mesma causa do AC2 (mensagem emitida em PT), então entra nesta REQ. Decisão do KG (2026-11-11): fixar inglês.
+**Files affected:**
+- `internal/i18n/i18n.go`
+- `internal/i18n/i18n_test.go`
+- `internal/i18n/locales/pt-BR.json` (deleted)
+- `internal/i18n/locales/es-ES.json` (deleted)
+- `internal/i18nguard/pt_literals_test.go`
+
+**Actions:** a saída passa a ser só EN, independente do locale: remover os catálogos pt-BR e es-ES e a
+detecção de locale. Teste novo que roda o binário (ou os pontos de `i18n.T`) com `LANG`, `LC_ALL` e `LANGUAGE`
+iguais a `pt_BR.UTF-8` e `es_ES.UTF-8` e reprova se sair PT ou ES.
+**Acceptance criteria:**
+- [x] Com `LANG=pt_BR.UTF-8` e com `LANG=es_ES.UTF-8`, `trackfw validate` e `trackfw --help` saem em inglês (teste)
+- [x] Nenhum catálogo não-EN embutido no binário
+
+*Auditoria (Zeus, 2026-11-11):* os catálogos pt-BR e es-ES foram removidos. `DetectLocale`/`Locale` agora devolvem sempre `en-US`, e o `load()` usa só o `en-US.json`. Testes novos, com nomes conferidos: `TestDetectLocale_AlwaysEN`, `TestI18nT_AlwaysEN_UnderPTLocale`, `TestI18nT_AlwaysEN_UnderESLocale`, `TestI18n_BinaryOutput_AlwaysEN` (binário com `LANG=pt_BR` emite `warning(s)` e não `aviso(s)`) e `TestI18nLocalesOnlyEN` (catálogo não-EN reprova). Contraprova do executor: os testes reprovam com o código antigo. Medido por Zeus: `LANG=pt_BR.UTF-8 LC_ALL=pt_BR.UTF-8 trackfw validate` emite `174 warning(s)`, e `go test -count=1 ./internal/...` dá rc=0. Desvio de processo: o executor marcou o status e os ACs deste ML no roadmap, o que é proibido ao executor; o conteúdo foi conferido e mantido.
+
+### ML-3F — Modelo de `/trackfw:roadmap` traz o bloco de critérios do roadmap (achado F4 do red team)
+**Status:** ✅ Concluído
+**Squad:** prometeu-tf
+
+*Por que entra aqui (2026-11-11):* o modelo em `scaffold.go`, que esta REQ reescreveu no ML-3C, não tem o
+bloco `## Acceptance Criteria` no nível do roadmap. Um agente consumidor que siga o modelo produz um roadmap
+que o `validate` reprova ao ir para `wip/` (medido pelo red team, F4). A causa é diferente da do F1, mas o
+defeito está no artefato que esta REQ entrega e é acessível por acidente, então é corrigido agora.
+**Files affected:**
+- `internal/generators/scaffold.go`
+- `internal/generators/scaffold_test.go`
+- `.claude/commands/trackfw/roadmap.md`
+
+**Acceptance criteria:**
+- [x] Roadmap escrito seguindo só o modelo passa no `validate` em `wip/` (teste em `t.TempDir`)
+
+*Auditoria (Zeus, 2026-11-11):* o modelo de `roadmap.md` traz `## Acceptance Criteria` na mesma forma do `NewRoadmap`, e a cópia versionada está igual byte a byte. Teste novo `TestScaffold_RoadmapMD_TemplatePassesWIPAcceptanceCriteriaValidation` (nome conferido): o modelo gravado em `wip/` não gera a violação `has no acceptance criteria block`; sem o bloco, reprova (contraprova do executor). `go test -count=1 ./internal/...` rodado por Zeus: rc=0.
+
+### ML-3G — Literal PT sem acento que escapa do guard (AC2, achado F5 do red team)
+**Status:** ✅ Concluído
+**Squad:** apolo-tf
+
+*Por que entra aqui (2026-11-11):* a rodada 2 do red team achou, em `internal/integrations/manager.go:512`,
+a mensagem `"aviso: %q declara o mesmo name %q que %q; prosseguindo por --force\n"`, emitida em PT. O literal
+já existia antes desta branch. O parecer sugeriu uma REQ separada, mas a causa é a mesma do AC2 (mensagem
+emitida em PT) e o guard do ML-3D não a pegou porque a lista de palavras PT sem acento é curta. Pela Regra
+Dura de Causa Raiz, entra nesta REQ.
+**Files affected:**
+- `internal/integrations/manager.go`
+- `internal/i18nguard/pt_literals_test.go`
+- `internal/integrations/` (testes que afirmem a mensagem, se houver)
+- `internal/validator/validator.go`
+- `internal/identity/slug.go`
+- `internal/commands/init.go`
+- `internal/commands/agents_models.go`
+
+**Acceptance criteria:**
+- [x] Mensagem de `manager.go:512` em inglês
+- [x] Guard com a lista de palavras PT sem acento ampliada e medida sobre o repositório; a contraprova com `"aviso: ..."` reprova
+
+*Auditoria (Zeus, 2026-11-11):* `manager.go:512` está em EN. `ptUnaccentedWords` ganhou 21 palavras, medidas sobre o repositório, e a lista revelou mais 4 mensagens PT (`validator.go`, `slug.go`, `init.go`, `agents_models.go`), todas traduzidas. Subtestes novos em `TestDetectorUnit`: `f5_literal_triggers`, `f5_new_literal_passes` e `erroneous_not_triggered`. Contraprova do executor: `"aviso: %q prosseguindo"` reprova. Zeus mediu as palavras descartadas com uma varredura heurística de palavras funcionais PT nos literais de produto: zero mensagens PT, só EN ("no … no"). O corretivo fez `TestNoPTLiteralsInStaticWeb` usar o mesmo `containsPT` em vez de uma lista paralela (contraprova: `<span>arquivo invalido</span>` reprova; `index.html` voltou idêntico).
 
 **Gates da wave:**
 ```bash
@@ -552,11 +729,13 @@ bash scripts/check-marker-corpus-parity.sh
 > Dependencies: Wave 3 completa.
 
 ### ML-4A — Red team do gerador e das mensagens
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** hades-tf
 **Files affected:** `docs/seguranca/2026-11-08-redteam-gerador-ingles.md` (novo)
 **Acceptance criteria:**
-- [ ] Parecer com veredito; roadmap novo gerado pela branch passa no `barrier` com gates executados
+- [x] Parecer com veredito; roadmap novo gerado pela branch passa no `barrier` com gates executados
+
+*Auditoria (Zeus, 2026-11-11):* rodada 1 REPROVA (F1, i18n por locale, que virou o ML-3E por decisão do KG; F4, que virou o ML-3F). Rodada 2 APROVA COM RESSALVAS: F1 e F4 fechados, e o F5 virou o ML-3G na mesma REQ, ao contrário da sugestão de REQ separada, porque a causa é a mesma do AC2. Residual: F2 (seção do CLAUDE.md fora do bloco gerenciado continua PT, por desenho) e F3 (aviso no CHANGELOG da tag do gerador, escrito por Zeus no PR de release). S1 do parecer: roadmap gerado pela branch passa no barrier com os gates executados, e o `exit 1` reprova. `make quality` rodado por Zeus: rc=0, 3151 linhas (houve concorrência com um `make pr-check` de outro projeto, sem efeito no resultado).
 
 **Gates da wave:**
 ```bash

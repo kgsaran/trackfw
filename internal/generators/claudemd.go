@@ -8,8 +8,8 @@ import (
 	projectconfig "github.com/kgsaran/trackfw/internal/config"
 )
 
-// GlobalADRsDirective é a diretiva obrigatória para instruir os agentes sobre ADRs globais.
-const GlobalADRsDirective = "Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs (inclusive caminhos ~/...) antes de propor alterações de arquitetura."
+// GlobalADRsDirective is the mandatory directive instructing agents to inspect global ADRs.
+const GlobalADRsDirective = "Mandatory: Inspect and respect all global ADRs in the directories listed in adr_dirs (including ~/... paths) before proposing architectural changes."
 
 func generateClaudeMD(cfg Config) error {
 	var sb strings.Builder
@@ -33,10 +33,10 @@ func generateClaudeMD(cfg Config) error {
 	sb.WriteString("1. **Never start coding without a REQ and a ROADMAP.** If none exists, create them first.\n")
 	sb.WriteString("2. **Use `/trackfw:implement <req-slug>` to start any implementation.** This skill orchestrates the full flow automatically: finds or generates the roadmap, moves it to `wip/`, executes each ML, updates the roadmap, and moves to `done/`.\n")
 	sb.WriteString("3. **Only one roadmap in `wip/` at a time.** Before starting a new one, complete or move to `blocked/` the current one.\n")
-	sb.WriteString("4. **ML lifecycle — mandatory:** When starting a ML, change `**Status:** ⬜ Pendente` → `**Status:** 🔄 Em andamento` and commit the roadmap. When completing, change to `**Status:** ✅ Concluído` and include in the ML commit. When analyzing a roadmap before starting, move it from `backlog/` to `analyzing/`; only move to `wip/` when actually coding.\n")
+	sb.WriteString("4. **ML lifecycle — mandatory:** When starting a ML, change `**Status:** ⬜ Pending` → `**Status:** 🔄 In progress` and commit the roadmap. When completing, change to `**Status:** ✅ Done` and include in the ML commit. When analyzing a roadmap before starting, move it from `backlog/` to `analyzing/`; only move to `wip/` when actually coding.\n")
 	sb.WriteString("5. **Run `trackfw validate` before every commit.** Zero violations required.\n")
 	sb.WriteString("6. **ADRs before decisions.** Any architectural or technical decision must have an ADR (`/trackfw:adr`).\n")
-	sb.WriteString("6a. **Usar `/trackfw:architect` para definir stack e arquitetura antes da primeira REQ.**\n")
+	sb.WriteString("6a. **Use `/trackfw:architect` to define stack and architecture before the first REQ.**\n")
 	sb.WriteString("7. **" + GlobalADRsDirective + "**\n\n")
 
 	sb.WriteString("## Slash commands (Claude Code)\n\n")

@@ -3035,3 +3035,74 @@ func TestUpdateHarness_AgentModelsAdvisory_ModelPinsReachGeneratedAgents(t *test
 		t.Errorf("no installed agent file contains %q — agentModels not threaded to harnessCatalogTarget", wantModel)
 	}
 }
+
+// TestUpdate_AgentRulesBlockContainsENLifecycleMarkers — ML-3C (REQ-2026-11-02, AC3)
+//
+// Regra Dura de Reconciliação:
+//
+//	This test asserts that after Update(), the managed rules block in CLAUDE.md
+//	contains English D4 lifecycle markers (⬜ Pending, 🔄 In progress, ✅ Done)
+//	and that user content written outside the managed block is preserved unchanged.
+func TestUpdate_AgentRulesBlockContainsENLifecycleMarkers(t *testing.T) {
+	config.Reset()
+	t.Cleanup(config.Reset)
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	if err := os.WriteFile(filepath.Join(root, "trackfw.yaml"), []byte("hooks: none\nci: none\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Build a CLAUDE.md that simulates a consumer onboarded with the old PT
+	// lifecycle text. The managed block uses PT markers; user content exists
+	// both before and after the block.
+	oldBlock := rulesStart + "\n" +
+		"## trackfw — Governance Rules\n" +
+		"5. **ML lifecycle — mandatory:**\n" +
+		"   - Starting a ML: edit roadmap `**Status:** ⬜ Pendente` → `**Status:** 🔄 Em andamento` + commit.\n" +
+		"   - Completing a ML: edit roadmap → `**Status:** ✅ Concluído` + include in ML commit.\n" +
+		rulesEnd + "\n"
+	userBefore := "# My Project — Claude Code Instructions\n\nUser content above the block.\n\n"
+	userAfter := "\n## Extra notes\n\nUser content below the block.\n"
+	initial := userBefore + oldBlock + userAfter
+
+	claudePath := filepath.Join(root, "CLAUDE.md")
+	if err := os.WriteFile(claudePath, []byte(initial), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Update(root); err != nil {
+		t.Fatalf("Update() failed: %v", err)
+	}
+
+	data, err := os.ReadFile(claudePath)
+	if err != nil {
+		t.Fatalf("reading CLAUDE.md after Update: %v", err)
+	}
+	got := string(data)
+
+	// AC3: managed block now contains EN D4 markers.
+	for _, want := range []string{
+		"⬜ Pending",
+		"🔄 In progress",
+		"✅ Done",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("CLAUDE.md after Update does not contain EN marker %q", want)
+		}
+	}
+	// PT markers must be gone from the managed block.
+	for _, gone := range []string{"⬜ Pendente", "🔄 Em andamento", "✅ Concluído"} {
+		if strings.Contains(got, gone) {
+			t.Errorf("CLAUDE.md after Update still contains PT marker %q", gone)
+		}
+	}
+	// User content outside the block must be preserved.
+	if !strings.Contains(got, "User content above the block.") {
+		t.Error("user content above the managed block was lost after Update")
+	}
+	if !strings.Contains(got, "User content below the block.") {
+		t.Error("user content below the managed block was lost after Update")
+	}
+}

@@ -110,10 +110,10 @@ func resolveADRDir(scope string) (string, error) {
 	case "global":
 		home, err := homedir.Dir()
 		if err != nil {
-			return "", fmt.Errorf("localizando home dir: %w", err)
+			return "", fmt.Errorf("locating home dir: %w", err)
 		}
 		return generators.GlobalADRDir(home), nil
 	default:
-		return "", fmt.Errorf("--scope inválido: %q (use \"project\" ou \"global\")", scope)
+		return "", fmt.Errorf("--scope invalid: %q (use \"project\" or \"global\")", scope)
 	}
 }

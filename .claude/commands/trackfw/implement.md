@@ -1,110 +1,110 @@
-Você é o orquestrador de implementação do trackfw. Siga o fluxo abaixo **sem pular etapas**.
+You are the trackfw implementation orchestrator. Follow the flow below **without skipping steps**.
 
-## Argumento
+## Argument
 
-`$ARGUMENTS` é opcional. Se fornecido, é usado como filtro (substring case-insensitive) sobre os nomes de arquivo das REQs.
-
----
-
-## Passo 1 — Selecionar a REQ
-
-Use Glob para listar `docs/req/*.md`.
-
-- Se **nenhum arquivo encontrado**: informe que não há REQs disponíveis e sugira criar com `/trackfw:req`.
-- Se **`$ARGUMENTS` foi fornecido** e filtra para exatamente uma REQ: use-a diretamente.
-- Em **todos os outros casos** (sem argumento, ou argumento ambíguo): apresente a lista de REQs disponíveis e pergunte ao usuário qual deseja implementar.
-
-Leia o conteúdo completo da REQ selecionada.
+`$ARGUMENTS` is optional. If provided, it is used as a filter (case-insensitive substring) over the REQ file names.
 
 ---
 
-## Passo 2 — Encontrar ou gerar o Roadmap
+## Step 1 — Select the REQ
 
-Verifique se existe um roadmap vinculado à REQ buscando em `docs/roadmaps/` (backlog, wip, blocked, done, abandoned) por arquivo cujo nome contenha o slug da REQ.
+Use Glob to list `docs/req/*.md`.
 
-**Se o roadmap ainda não existe:**
-- Informe o usuário: "Nenhum roadmap encontrado para esta REQ. Gerando agora..."
-- Execute o fluxo completo de geração do `/trackfw:roadmap` (leia o arquivo `.claude/commands/trackfw/roadmap.md` para seguir as instruções exatas), passando a REQ já selecionada — não pergunte novamente.
-- Salve o roadmap gerado em `docs/roadmaps/backlog/ROADMAP-<YYYY-MM-DD>-<slug>.md`.
+- If **no file found**: inform that there are no REQs available and suggest creating one with `/trackfw:req`.
+- If **`$ARGUMENTS` was provided** and filters to exactly one REQ: use it directly.
+- In **all other cases** (no argument, or ambiguous argument): present the list of available REQs and ask the user which to implement.
 
-**Se o roadmap existe e já está em `done/` ou `abandoned/`:**
-- Informe o usuário e pergunte se deseja criar um novo roadmap ou encerrar.
-
-**Se o roadmap existe em `backlog/` ou `blocked/`:**
-- Prossiga para o Passo 3.
-
-**Se já está em `wip/`:**
-- Prossiga diretamente para o Passo 4 (já está em execução).
+Read the full contents of the selected REQ.
 
 ---
 
-## Passo 3 — Mover roadmap para WIP
+## Step 2 — Find or generate the Roadmap
 
-Execute:
+Check whether a roadmap linked to the REQ exists by searching in `docs/roadmaps/` (backlog, wip, blocked, done, abandoned) for a file whose name contains the REQ slug.
+
+**If the roadmap does not exist yet:**
+- Inform the user: "No roadmap found for this REQ. Generating now..."
+- Execute the full generation flow from `/trackfw:roadmap` (read the file `.claude/commands/trackfw/roadmap.md` to follow the exact instructions), passing the already-selected REQ — do not ask again.
+- Save the generated roadmap at `docs/roadmaps/backlog/ROADMAP-<YYYY-MM-DD>-<slug>.md`.
+
+**If the roadmap exists and is already in `done/` or `abandoned/`:**
+- Inform the user and ask whether to create a new roadmap or stop.
+
+**If the roadmap exists in `backlog/` or `blocked/`:**
+- Proceed to Step 3.
+
+**If it is already in `wip/`:**
+- Proceed directly to Step 4 (already in progress).
+
+---
+
+## Step 3 — Move roadmap to WIP
+
+Run:
 ```bash
-trackfw roadmap move <nome-do-roadmap> wip
+trackfw roadmap move <roadmap-name> wip
 ```
 
-Confirme que o arquivo foi movido para `docs/roadmaps/wip/`.
+Confirm that the file was moved to `docs/roadmaps/wip/`.
 
 ---
 
-## Passo 4 — Ler e apresentar o plano
+## Step 4 — Read and present the plan
 
-Leia o roadmap (agora em `wip/`). Apresente ao usuário:
-- Título do roadmap
-- Total de Waves e MLs
-- Lista resumida dos MLs por Wave
+Read the roadmap (now in `wip/`). Present to the user:
+- Roadmap title
+- Total Waves and MLs
+- Summarized list of MLs per Wave
 
-Confirme: "Iniciando implementação. Vou executar cada ML em ordem e atualizar o roadmap a cada conclusão."
+Confirm: "Starting implementation. I will execute each ML in order and update the roadmap at each completion."
 
 ---
 
-## Passo 5 — Executar cada ML em ordem
+## Step 5 — Execute each ML in order
 
-Para cada Wave (em sequência), execute os MLs da Wave:
+For each Wave (in sequence), execute the Wave's MLs:
 
-### Para cada ML:
+### For each ML:
 
-**5a. Anunciar:** informe qual ML está sendo executado (ex: "Executando ML-1A — Criar client.go").
+**5a. Announce:** inform which ML is being executed (e.g. "Executing ML-1A — Create client.go").
 
-**5b. Implementar:** execute as ações descritas no ML usando suas ferramentas (Read, Write, Edit, Bash). Siga exatamente os arquivos afetados, ações e critérios de aceite listados no roadmap.
+**5b. Implement:** execute the actions described in the ML using your tools (Read, Write, Edit, Bash). Follow exactly the files affected, actions and acceptance criteria listed in the roadmap.
 
-**5c. Validar:** execute os comandos de validação do ML. Se falhar, corrija antes de avançar.
+**5c. Validate:** run the ML's validation commands. If it fails, fix before advancing.
 
-**5d. Atualizar o roadmap:** edite o arquivo de roadmap em `docs/roadmaps/wip/` substituindo o status do ML:
-- `**Status:** ⬜ Pendente` → `**Status:** ✅ Concluído`
+**5d. Update the roadmap:** edit the roadmap file in `docs/roadmaps/wip/` replacing the ML status:
+- `**Status:** ⬜ Pending` → `**Status:** ✅ Done`
 
-**5e. Commitar:**
+**5e. Commit:**
 ```bash
-git add <arquivos-do-ml>
-trackfw commit -m "feat(<escopo>): <descrição do ML>"
+git add <ml-files>
+trackfw commit -m "feat(<scope>): <ML description>"
 ```
 
-Só avance para a próxima Wave após todos os MLs da Wave atual estarem ✅.
+Only advance to the next Wave after all MLs of the current Wave are ✅.
 
 ---
 
-## Passo 6 — Finalizar
+## Step 6 — Finalize
 
-Quando todos os MLs estiverem ✅:
+When all MLs are ✅:
 
-**6a.** Execute `trackfw validate` — deve passar com zero violations.
+**6a.** Run `trackfw validate` — must pass with zero violations.
 
-**6b.** Mova o roadmap para done:
+**6b.** Move the roadmap to done:
 ```bash
-trackfw roadmap move <nome-do-roadmap> done
+trackfw roadmap move <roadmap-name> done
 ```
 
-**6c.** Faça o commit final:
+**6c.** Make the final commit:
 ```bash
 git add docs/roadmaps/
-git commit -m "docs(trackfw): roadmap <nome> → done"
+git commit -m "docs(trackfw): roadmap <name> → done"
 ```
 
-**6d.** Informe o usuário:
+**6d.** Inform the user:
 ```
-✅ Implementação concluída.
-Roadmap: docs/roadmaps/done/<nome>.md
-Próximo passo: abrir PR com gh pr create
+✅ Implementation complete.
+Roadmap: docs/roadmaps/done/<name>.md
+Next step: open PR with gh pr create
 ```

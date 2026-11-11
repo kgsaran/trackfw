@@ -3644,7 +3644,7 @@ mkdir -p "$S37_PROJECT/docs/adr" "$S37_PROJECT/docs/req" \
   "$S37_PROJECT/docs/roadmaps"/{backlog,analyzing,wip,blocked,done,abandoned}
 printf 'agents: [a, b\ngovernance_mode: strict\n' > "$S37_PROJECT/trackfw.yaml"
 
-S37_EXPECTED_STDERR='trackfw: erro ao carregar "trackfw.yaml": YAML malformado. Corrija a sintaxe do arquivo antes de continuar.'
+S37_EXPECTED_STDERR='trackfw: error loading "trackfw.yaml": malformed YAML. Fix the file syntax before continuing.'
 
 set +e
 s37_go_out=$(cd "$S37_PROJECT" && "$T27_GO_BIN" status 2>&1)
@@ -3849,8 +3849,8 @@ fi
 # ---------------------------------------------------------------------------
 
 
-S39_EXPECTED_MSG='✓ lefthook.yml — trackfw-validate injetado'
-S39_REGRESSED_MSG='✓ .husky/pre-commit — trackfw validate injetado'
+S39_EXPECTED_MSG='✓ lefthook.yml — trackfw-validate injected'
+S39_REGRESSED_MSG='✓ .husky/pre-commit — trackfw validate injected'
 
 # --- Cenário 39 — Go --------------------------------------------------------
 

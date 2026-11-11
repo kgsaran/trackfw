@@ -1619,10 +1619,10 @@ func TestGuardGlobalHookD2InlineWarnings_Wiring_PlainETagged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ValidateUnfiltered() erro: %v", err)
 	}
-	if hasViolation(violations, "linha antiga") {
+	if hasViolation(violations, "legacy line") {
 		t.Errorf("D2 global deve ser warning, não violation: %v", violations)
 	}
-	if !hasWarning(warnings, "linha antiga") || !hasWarning(warnings, "~/.claude/settings.json") {
+	if !hasWarning(warnings, "legacy line") || !hasWarning(warnings, "~/.claude/settings.json") {
 		t.Errorf("esperado aviso de D2 global em warnings (plain), obteve: %v", warnings)
 	}
 
@@ -1632,13 +1632,13 @@ func TestGuardGlobalHookD2InlineWarnings_Wiring_PlainETagged(t *testing.T) {
 		t.Fatalf("ValidateTagged() erro: %v", errT)
 	}
 	for _, v := range violationsT {
-		if contains(v.Msg, "linha antiga") {
+		if contains(v.Msg, "legacy line") {
 			t.Errorf("D2 global deve ser warning, não violation (Tagged): %v", v)
 		}
 	}
 	found := false
 	for _, w := range warningsT {
-		if contains(w.Msg, "linha antiga") && contains(w.Msg, "~/.claude/settings.json") {
+		if contains(w.Msg, "legacy line") && contains(w.Msg, "~/.claude/settings.json") {
 			found = true
 			break
 		}

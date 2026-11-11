@@ -1,5 +1,7 @@
 # Memory Index — Hades (Security, trackfw)
 
+- [ls alias glyph creates wrong path — use mktemp directly](feedback_ls_alias_glyph_creates_wrong_path.md) — $(ls -d) captures eza glyph, mkdir creates stray dirs in repo; always use mktemp return value directly
+
 - [update harness advisory: once per catalog target, no WARN token](project_update_harness_advisory_catalog_target.md) — fix in `harnessCatalogTarget` (update.go:2669); `UpdateOptions` has no stderr writer → os.Pipe needed for counter-arm; "move to UpdateHarness top" fires advisory on guard-only runs
 - [parseLsRemoteSymref second field vector gap](project_parselsremotesymref_second_field_vector_gap.md) — missing test vector `\trefs/heads/HEAD` lets HasSuffix mutation survive; LOW severity; found ML-2A 2026-10-30
 - [EncodedCommand requires UTF-16LE; credential guard cwd-only is ADR D9 residual](project_encodedcommand_utf16le_and_cred_cwd_only_adrd9.md) — UTF-8 base64 for -EncodedCommand is wrong (want=0); R-cred-2 is pre-declared in ADR D9, not CORRIGIR; found 2026-11-05 red team ML-2A

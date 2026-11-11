@@ -34,12 +34,12 @@ func PrintArchitectNextSteps(cwd string) {
 	}
 
 	fmt.Println()
-	fmt.Println("Próximo passo — inicie com o guia de arquitetura:")
+	fmt.Println("Next step — start with the architecture guide:")
 	fmt.Println()
 	for _, t := range detected {
 		fmt.Printf("  %s\n", t.cmd)
 	}
 	fmt.Println()
-	fmt.Println("  Execute /trackfw:architect no chat do seu assistente de IA.")
+	fmt.Println("  Run /trackfw:architect in your AI assistant chat.")
 	fmt.Println()
 }

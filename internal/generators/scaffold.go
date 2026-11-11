@@ -360,7 +360,7 @@ func installGlobalSkillInner(force bool) error {
 	}
 
 	if _, err := os.Stat(skillPath); err == nil && !force {
-		fmt.Printf("  ✓ %s (já existe — não sobrescrito)\n", skillPath)
+		fmt.Printf("  ✓ %s (already exists — not overwritten)\n", skillPath)
 		return nil
 	}
 
@@ -407,38 +407,38 @@ description: "trackfw — Governed Software Delivery: ADR → REQ → ROADMAP �
 signature: "📦 trackfw - Governed Delivery"
 ---
 
-# trackfw — Modo de Operação
+# trackfw — Operating Mode
 
-Você está operando com o **trackfw**, um framework de governança de entrega de software.
-A cadeia obrigatória é: **ADR → REQ → ROADMAP → backlog/wip/blocked/done/abandoned**
+You are operating with **trackfw**, a software delivery governance framework.
+The mandatory chain is: **ADR → REQ → ROADMAP → backlog/wip/blocked/done/abandoned**
 
 ---
 
-## Regras invioláveis
+## Non-negotiable rules
 
-1. **Nunca inicie uma implementação sem uma REQ e um ROADMAP.** Se não existirem, crie-os primeiro com ` + "`/trackfw:req`" + ` e ` + "`/trackfw:roadmap`" + `.
-2. **Use ` + "`/trackfw:implement`" + ` como ponto de entrada para qualquer implementação.** Este skill orquestra o fluxo completo automaticamente.
-3. **Apenas um roadmap em ` + "`wip/`" + ` por vez.** Antes de iniciar um novo, conclua ou mova para ` + "`blocked/`" + ` o atual.
-4. **Ciclo de vida do ML — obrigatório:**
-   - Ao **iniciar** um ML: edite o roadmap alterando ` + "`**Status:** ⬜ Pendente`" + ` → ` + "`**Status:** 🔄 Em andamento`" + ` e faça commit do roadmap.
-   - Ao **concluir** um ML: edite o roadmap alterando ` + "`**Status:** 🔄 Em andamento`" + ` → ` + "`**Status:** ✅ Concluído`" + ` e inclua essa mudança no commit do ML.
-   - Ao **analisar** um roadmap antes de iniciar: mova o arquivo de ` + "`backlog/`" + ` para ` + "`analyzing/`" + `; só mova para ` + "`wip/`" + ` ao começar a codificar de fato.
-5. **Execute ` + "`trackfw validate`" + ` antes de cada commit.** Zero violations obrigatório.
-6. **ADRs antes de decisões arquiteturais.** Qualquer decisão técnica relevante deve ter um ADR (` + "`/trackfw:adr`" + `).
+1. **Never start an implementation without a REQ and a ROADMAP.** If none exist, create them first with ` + "`/trackfw:req`" + ` and ` + "`/trackfw:roadmap`" + `.
+2. **Use ` + "`/trackfw:implement`" + ` as the entry point for any implementation.** This skill orchestrates the full flow automatically.
+3. **Only one roadmap in ` + "`wip/`" + ` at a time.** Before starting a new one, complete or move the current one to ` + "`blocked/`" + `.
+4. **ML lifecycle — mandatory:**
+   - When **starting** a ML: edit the roadmap changing ` + "`**Status:** ⬜ Pending`" + ` → ` + "`**Status:** 🔄 In progress`" + ` and commit the roadmap.
+   - When **completing** a ML: edit the roadmap changing ` + "`**Status:** 🔄 In progress`" + ` → ` + "`**Status:** ✅ Done`" + ` and include that change in the ML commit.
+   - When **analyzing** a roadmap before starting: move the file from ` + "`backlog/`" + ` to ` + "`analyzing/`" + `; only move to ` + "`wip/`" + ` when actually coding.
+5. **Run ` + "`trackfw validate`" + ` before every commit.** Zero violations required.
+6. **ADRs before architectural decisions.** Any relevant technical decision must have an ADR (` + "`/trackfw:adr`" + `).
 7. **` + GlobalADRsDirective + `**
 
 ---
 
-## Protocolo de conclusão de cada ML
+## ML completion protocol
 
 ` + "```" + `
-1. Implementar    → executar ações descritas no ML
-2. Build          → comando de build do projeto
-3. Testes         → comando de testes do projeto
+1. Implement      → execute actions described in the ML
+2. Build          → project build command
+3. Tests          → project test command
 4. Validate       → trackfw validate
-5. Commit         → git commit -m "feat(<escopo>): <descrição>"
+5. Commit         → git commit -m "feat(<scope>): <description>"
 6. Push           → git push origin <branch>
-7. Roadmap        → marcar ML como ✅ Concluído
+7. Roadmap        → mark ML as ✅ Done
 ` + "```" + `
 `
 	return []byte(content)
@@ -464,405 +464,410 @@ const ClaudeCommandsDirPath = ".claude/commands/trackfw"
 // re-writing anything (ADR-2026-08-27, AC3: no manifest writes).
 func claudeCommandsContent() map[string]string {
 	return map[string]string{
-		"adr.md": `Execute o seguinte comando bash: ` + "`trackfw adr new \"$ARGUMENTS\"`" + `
+		"adr.md": `Run the following bash command: ` + "`trackfw adr new \"$ARGUMENTS\"`" + `
 
-Se o comando falhar com ` + "`trackfw: command not found`" + ` ou similar, informe ao usuário:
+If the command fails with ` + "`trackfw: command not found`" + ` or similar, inform the user:
 
 ` + "```" + `
-trackfw não está instalado. Instale com uma das opções:
+trackfw is not installed. Install with one of these options:
 
   curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh
   npm install -g trackfw
   pip install trackfw
 ` + "```",
 
-		"req.md": `Execute o seguinte comando bash: ` + "`trackfw req new \"$ARGUMENTS\"`" + `
+		"req.md": `Run the following bash command: ` + "`trackfw req new \"$ARGUMENTS\"`" + `
 
-⚠️ Em projetos com ` + "`roadmap_namespacing: by_agent`" + ` e 2+ agentes, use: ` + "`trackfw req new --agent <seu-agente> \"$ARGUMENTS\"`" + `
+⚠️ In projects with ` + "`roadmap_namespacing: by_agent`" + ` and 2+ agents, use: ` + "`trackfw req new --agent <your-agent> \"$ARGUMENTS\"`" + `
 
-Se o comando falhar com ` + "`trackfw: command not found`" + ` ou similar, informe ao usuário:
+If the command fails with ` + "`trackfw: command not found`" + ` or similar, inform the user:
 
 ` + "```" + `
-trackfw não está instalado. Instale com uma das opções:
+trackfw is not installed. Install with one of these options:
 
   curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh
   npm install -g trackfw
   pip install trackfw
 ` + "```",
 
-		"validate.md": `Execute o seguinte comando bash: ` + "`trackfw validate`" + `
+		"validate.md": `Run the following bash command: ` + "`trackfw validate`" + `
 
-Se o comando falhar com ` + "`trackfw: command not found`" + ` ou similar, informe ao usuário:
+If the command fails with ` + "`trackfw: command not found`" + ` or similar, inform the user:
 
 ` + "```" + `
-trackfw não está instalado. Instale com uma das opções:
+trackfw is not installed. Install with one of these options:
 
   curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh
   npm install -g trackfw
   pip install trackfw
 ` + "```",
 
-		"status.md": `Execute o seguinte comando bash: ` + "`trackfw status`" + `
+		"status.md": `Run the following bash command: ` + "`trackfw status`" + `
 
-Se o comando falhar com ` + "`trackfw: command not found`" + ` ou similar, informe ao usuário:
+If the command fails with ` + "`trackfw: command not found`" + ` or similar, inform the user:
 
 ` + "```" + `
-trackfw não está instalado. Instale com uma das opções:
+trackfw is not installed. Install with one of these options:
 
   curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh
   npm install -g trackfw
   pip install trackfw
 ` + "```",
 
-		"move.md": `Execute o seguinte comando bash: ` + "`trackfw roadmap move $ARGUMENTS`" + `
+		"move.md": `Run the following bash command: ` + "`trackfw roadmap move $ARGUMENTS`" + `
 
-O formato esperado é: ` + "`<nome-do-roadmap> <estado>`" + `
+Expected format: ` + "`<roadmap-name> <state>`" + `
 
-Estados válidos: ` + "`backlog`, `analyzing`, `wip`, `blocked`, `done`, `abandoned`" + `
+Valid states: ` + "`backlog`, `analyzing`, `wip`, `blocked`, `done`, `abandoned`" + `
 
-Exemplo: ` + "`/trackfw:move meu-roadmap analyzing`" + `
+Example: ` + "`/trackfw:move my-roadmap analyzing`" + `
 
-Se o comando falhar com ` + "`trackfw: command not found`" + ` ou similar, informe ao usuário:
-trackfw não está instalado. Instale com:
+If the command fails with ` + "`trackfw: command not found`" + ` or similar, inform the user:
+trackfw is not installed. Install with:
   curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh
   npm install -g trackfw
   pip install trackfw`,
 
-		"roadmap.md": `Gere um roadmap de implementação em microlotes para uma REQ do projeto.
+		"roadmap.md": `Generate an implementation roadmap in microbatches for a project REQ.
 
-## Passos
+## Steps
 
-1. **Listar REQs disponíveis**
-   Use Glob para listar ` + "`docs/req/*.md`" + `. Se nenhum arquivo encontrado, informe:
-   > Nenhuma REQ encontrada em ` + "`docs/req/`" + `. Crie uma primeiro com ` + "`/trackfw:req`" + `.
+1. **List available REQs**
+   Use Glob to list ` + "`docs/req/*.md`" + `. If no file found, inform:
+   > No REQ found in ` + "`docs/req/`" + `. Create one first with ` + "`/trackfw:req`" + `.
 
-2. **Selecionar a REQ**
-   - Se ` + "`$ARGUMENTS`" + ` foi fornecido: use como filtro (substring case-insensitive) para encontrar o arquivo
-   - Se não foi fornecido ou o filtro não encontrar exatamente um: liste os arquivos disponíveis e pergunte ao usuário qual usar
-   - Leia o conteúdo completo do arquivo REQ selecionado
+2. **Select the REQ**
+   - If ` + "`$ARGUMENTS`" + ` was provided: use it as a filter (case-insensitive substring) to find the file
+   - If not provided or the filter does not find exactly one: list the available files and ask the user which to use
+   - Read the full contents of the selected REQ file
 
-3. **Gerar o roadmap**
-   Com base no conteúdo da REQ, gere um roadmap seguindo **estritamente** este formato:
+3. **Generate the roadmap**
+   Based on the REQ content, generate a roadmap following **strictly** this format:
 
-   ` + "````markdown" + `
-   ---
-   status: backlog
-   date: <YYYY-MM-DD>
-   req: "docs/req/<arquivo-selecionado>.md"
-   squad: ""
-   ---
+` + "````markdown" + `
+---
+status: backlog
+date: <YYYY-MM-DD>
+req: "docs/req/<selected-file>.md"
+squad: ""
+---
 
-   # Roadmap: <título derivado da REQ>
+# Roadmap: <title derived from REQ>
 
-   > Created: <YYYY-MM-DD> | Status: backlog
+> Created: <YYYY-MM-DD> | Status: backlog
 
-   ## Diagnóstico / Contexto
-   <resumo do problema, motivação e escopo extraídos da REQ>
+## Context / Diagnosis
+<summary of the problem, motivation and scope extracted from the REQ>
 
-   ## Wave 0 — Threat Model
-   > Dependencies: none. Blocks all implementation.
+## Acceptance Criteria
+<!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
+- [ ]
+- [ ]
 
-   ### ML-0A — Threat model for this roadmap
-   **Status:** ⬜ Pendente
-   **Files affected:**
-   **Actions:**
-   1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed. Do not limit the search to the files already named by the REQ — before declaring the list closed, search the repository for other places that emit the same artifact or the same pattern (for example, grep for the literal the final artifact contains).
-   2. Threat model — who empties this Wave 0 without breaking any written rule, and how?
-   3. Falsification targets in both directions — for each surface, what breaks when the behavior regresses, and what breaks when it regresses the opposite way?
-   4. Declared residual — what this design accepts not covering.
-   **Acceptance criteria:**
-   - [ ] The four sections above answered with evidence, not a one-line assertion
-   - [ ] No implementation line written for this ML
+## Wave 0 — Threat Model
+> Dependencies: none. Blocks all implementation.
 
-   **Gates da wave:**
-   ` + "```bash" + `
-   # Wave 0 gate — replace this placeholder with a project-specific check before
-   # marking ML-0A done. Do not remove the gate; replace its command (AC13).
-   # each line runs as a separate sh -c — see docs/cli-parity.md rule 5
-   exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli-parity.md
-   ` + "```" + `
+### ML-0A — Threat model for this roadmap
+**Status:** ⬜ Pending
+**Files affected:**
+**Actions:**
+1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed. Do not limit the search to the files already named by the REQ — before declaring the list closed, search the repository for other places that emit the same artifact or the same pattern (for example, grep for the literal the final artifact contains).
+2. Threat model — who empties this Wave 0 without breaking any written rule, and how?
+3. Falsification targets in both directions — for each surface, what breaks when the behavior regresses, and what breaks when it regresses the opposite way?
+4. Declared residual — what this design accepts not covering.
+**Acceptance criteria:**
+- [ ] The four sections above answered with evidence, not a one-line assertion
+- [ ] No implementation line written for this ML
 
-   ## Wave 1 — <nome descritivo> (<N> MLs em paralelo)
-   > Dependências: Independente
+**Wave gates:**
+` + "```bash" + `
+# Wave 0 gate — replace this placeholder with a project-specific check before
+# marking ML-0A done. Do not remove the gate; replace its command (AC13).
+# each line runs as a separate sh -c — see docs/cli-parity.md rule 5
+exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli-parity.md
+` + "```" + `
 
-   ### ML-1A — <título>
-   **Status:** ⬜ Pendente
-   **Arquivos afetados:**
-   - ` + "`caminho/exato/do/arquivo`" + `
-   **Ações:**
-   - Descrição detalhada da ação com valores, chaves e comandos exatos
-   **Critérios de aceite:**
-   - [ ] build sem erros
-   - [ ] testes verdes
-   **Comandos de validação:** ` + "`<comando de build e teste do projeto>`" + `
+## Wave 1 — <descriptive name> (<N> MLs in parallel)
+> Dependencies: Independent
 
-   ### ML-1B — <título> (se independente de ML-1A)
-   ...
+### ML-1A — <title>
+**Status:** ⬜ Pending
+**Files affected:**
+- ` + "`exact/path/to/file`" + `
+**Actions:**
+- Detailed description of the action with exact values, keys and commands
+**Acceptance criteria:**
+- [ ] build without errors
+- [ ] tests green
+**Validation commands:** ` + "`<project build and test command>`" + `
 
-   ## Wave 2 — <nome> (depende de Wave 1)
-   > Dependências: Wave 1 completa
-   ...
-   ` + "````" + `
+### ML-1B — <title> (if independent of ML-1A)
+...
 
-   **Princípios obrigatórios:**
-   - MLs dentro da mesma Wave são **independentes** (arquivos distintos, sem conflito)
-   - Cada ML deve ser detalhado o suficiente para execução por um agente sem contexto extra
-   - Maximizar paralelismo: agrupe em paralelo tudo que não compartilhar arquivos
-   - Waves sequenciais apenas quando há dependência real de resultado
-   - Critérios de aceite mensuráveis em cada ML
+## Wave 2 — <name> (depends on Wave 1)
+> Dependencies: Wave 1 complete
+...
+` + "````" + `
 
-4. **Salvar o arquivo**
-   - Calcule o slug: título em lowercase, espaços → hifens, remova caracteres especiais
-   - Crie o arquivo em ` + "`docs/roadmaps/backlog/ROADMAP-<YYYY-MM-DD>-<slug>.md`" + `
-   - Preencha ` + "`req:`" + ` com o caminho relativo completo da REQ selecionada
-   - Use a data de hoje
+   **Mandatory principles:**
+   - MLs within the same Wave are **independent** (distinct files, no conflict)
+   - Each ML must be detailed enough for execution by an agent without extra context
+   - Maximize parallelism: group in parallel everything that does not share files
+   - Sequential Waves only when there is a real dependency on a result
+   - Measurable acceptance criteria in each ML
 
-5. **Confirmar**
-   Informe o caminho do arquivo criado e um resumo das Waves e total de MLs gerados.
+4. **Save the file**
+   - Compute the slug: title in lowercase, spaces → hyphens, remove special characters
+   - Create the file at ` + "`docs/roadmaps/backlog/ROADMAP-<YYYY-MM-DD>-<slug>.md`" + `
+   - Fill ` + "`req:`" + ` with the full relative path of the selected REQ
+   - Use today's date
+
+5. **Confirm**
+   Report the path of the created file and a summary of Waves and total MLs generated.
 `,
 
-		"barrier.md": "Você é o `trackfw_architect`, a única autoridade Git deste projeto. Este comando executa o checklist operacional de liberação de uma wave — nenhum outro agente commita, faz push ou libera a próxima wave.\n" +
+		"barrier.md": "You are the `trackfw_architect`, the sole Git authority of this project. This command runs the operational wave-release checklist — no other agent commits, pushes, or releases the next wave.\n" +
 			"\n" +
-			"## Argumento\n" +
+			"## Argument\n" +
 			"\n" +
-			"`$ARGUMENTS` no formato `<roadmap> <wave>`. Se ausente ou incompleto, pergunte ao usuário qual roadmap (em `docs/roadmaps/wip/`) e qual número de wave validar.\n" +
+			"`$ARGUMENTS` in the format `<roadmap> <wave>`. If absent or incomplete, ask the user which roadmap (in `docs/roadmaps/wip/`) and which wave number to validate.\n" +
 			"\n" +
 			"---\n" +
 			"\n" +
-			"## Núcleo determinístico\n" +
+			"## Deterministic core\n" +
 			"\n" +
-			"Execute primeiro:\n" +
+			"Run first:\n" +
 			"```bash\n" +
 			"trackfw barrier <roadmap> --wave <n> --trust-local-gates --json\n" +
 			"```\n" +
 			"\n" +
-			"`--trust-local-gates` é obrigatório aqui: roadmaps WIP (modificados localmente, ainda não commitados em\n" +
-			"`origin/main`) são marcados como não confiáveis pela CLI direta por padrão, como proteção contra a\n" +
-			"execução de gates de roadmaps chegados por PR de terceiro. O slash command aplica esse flag porque\n" +
-			"ele representa o fluxo legítimo do arquiteto operando no próprio repositório — não porque os gates\n" +
-			"são inspecionados previamente (o diff ainda é responsabilidade do checklist abaixo).\n" +
+			"`--trust-local-gates` is required here: WIP roadmaps (modified locally, not yet committed to\n" +
+			"`origin/main`) are marked as untrusted by the CLI by default, as protection against running\n" +
+			"gates from roadmaps arriving via third-party PRs. The slash command applies this flag because\n" +
+			"it represents the legitimate flow of the architect operating in their own repository — not\n" +
+			"because the gates are pre-inspected (the diff is still the checklist's responsibility below).\n" +
 			"\n" +
-			"⚠️ **Não use `--trust-local-gates` ao revisar um roadmap chegado por PR de terceiro** — use a CLI\n" +
-			"direta sem o flag (`trackfw barrier <roadmap> --wave <n> --json`) para que os gates sejam marcados\n" +
-			"como `not_evaluated` e não executados.\n" +
+			"⚠️ **Do not use `--trust-local-gates` when reviewing a roadmap arriving via a third-party PR** — use the CLI\n" +
+			"directly without the flag (`trackfw barrier <roadmap> --wave <n> --json`) so that gates are marked\n" +
+			"as `not_evaluated` and not executed.\n" +
 			"\n" +
-			"Este comando é **necessário mas não suficiente**. Ele verifica MLs concluídos, evidências e `trackfw validate`, mas não substitui as inspeções especializadas nem a auditoria de diff abaixo — nenhuma delas é avaliada pelo binário. Consulte a seção `trackfw barrier` em `docs/cli-parity.md` para o contrato completo (estados, exit codes, saída JSON).\n" +
+			"This command is **necessary but not sufficient**. It checks completed MLs, evidence and `trackfw validate`, but does not replace the specialized inspections or the diff audit below — none of those are evaluated by the binary. See the `trackfw barrier` section in `docs/cli-parity.md` for the complete contract (states, exit codes, JSON output).\n" +
 			"\n" +
-			"Se o comando retornar exit code não-zero (`blocked` ou erro de resolução): pare, reporte a falha ao usuário e não prossiga no checklist até que a wave passe.\n" +
-			"\n" +
-			"---\n" +
-			"\n" +
-			"## Definição de pronto da barrier — checklist completo\n" +
-			"\n" +
-			"Antes de liberar a próxima wave, confirme cada item com evidência concreta — não presuma:\n" +
-			"\n" +
-			"1. **Todos os MLs da wave concluídos e marcados** — cada ML da wave está com `**Status:** ✅ Concluído` no roadmap.\n" +
-			"2. **Testes unitários e E2E aplicáveis executados** — rode os comandos de validação declarados em cada ML.\n" +
-			"3. **Build aplicável sem erros** — rode o comando de build do(s) workspace(s) afetado(s).\n" +
-			"4. **Cada critério de aceite inspecionado com evidência** — leia os arquivos modificados e confirme contra os critérios listados, não apenas contra os testes.\n" +
-			"5. **Agente code-quality reportou conformidade, performance, robustez e clareza** — invoque o agente `code-quality` quando a mudança introduzir lógica nova, duplicação relevante ou risco de manutenibilidade.\n" +
-			"6. **Agente security reportou SAST, privilégios, controle de acesso e camadas aplicáveis** — invoque o agente `security` quando a mudança tocar autenticação, segredos, entrada externa ou permissões.\n" +
-			"7. **Gates pré-commit declarados pelo projeto executados** — rode os hooks/gates configurados (lint, format, testes de contrato).\n" +
-			"8. **`trackfw validate --json` aprovado** — execute e confirme zero violações.\n" +
-			"9. **Diff auditado contra o escopo** — revise o diff completo; confirme que não há alterações de agentes concorrentes nem arquivos fora do escopo do ML (ex: `docs/adr/`, `docs/req/`, `docs/roadmaps/` quando não autorizado ao especialista).\n" +
-			"10. **Resultado registrado antes de liberar a próxima wave** — anote no roadmap ou na resposta ao usuário que a wave passou, com a evidência de cada item acima.\n" +
-			"\n" +
-			"Se qualquer item falhar: bloqueie a próxima wave, identifique o item e o agente responsável, e despache um microlote corretivo. Só repita o checklist depois que o corretivo for concluído.\n" +
+			"If the command returns a non-zero exit code (`blocked` or resolution error): stop, report the failure to the user and do not proceed in the checklist until the wave passes.\n" +
 			"\n" +
 			"---\n" +
 			"\n" +
-			"## Autoridade Git\n" +
+			"## Barrier definition of done — complete checklist\n" +
 			"\n" +
-			"Somente o `trackfw_architect` cria branch, audita diff, commita e faz push. Especialistas entregam trabalho sem commit — cabe a este papel revisar, commitar e sugerir a abertura de PR/MR (sem abrir automaticamente sem autorização do usuário).\n",
+			"Before releasing the next wave, confirm each item with concrete evidence — do not assume:\n" +
+			"\n" +
+			"1. **All wave MLs completed and marked** — each ML in the wave has `**Status:** ✅ Done` in the roadmap.\n" +
+			"2. **Applicable unit and E2E tests executed** — run the validation commands declared in each ML.\n" +
+			"3. **Applicable build without errors** — run the build command for the affected workspace(s).\n" +
+			"4. **Each acceptance criterion inspected with evidence** — read the modified files and confirm against the listed criteria, not just against the tests.\n" +
+			"5. **code-quality agent reported conformance, performance, robustness and clarity** — invoke the `code-quality` agent when the change introduces new logic, relevant duplication or maintainability risk.\n" +
+			"6. **security agent reported SAST, privileges, access control and applicable layers** — invoke the `security` agent when the change touches authentication, secrets, external input or permissions.\n" +
+			"7. **Project-declared pre-commit gates executed** — run the configured hooks/gates (lint, format, contract tests).\n" +
+			"8. **`trackfw validate --json` passed** — run and confirm zero violations.\n" +
+			"9. **Diff audited against scope** — review the full diff; confirm there are no changes from concurrent agents or files outside the ML scope (e.g. `docs/adr/`, `docs/req/`, `docs/roadmaps/` when not authorized to the specialist).\n" +
+			"10. **Result recorded before releasing the next wave** — note in the roadmap or in the response to the user that the wave passed, with evidence for each item above.\n" +
+			"\n" +
+			"If any item fails: block the next wave, identify the item and the responsible agent, and dispatch a corrective microbatch. Only repeat the checklist after the corrective is completed.\n" +
+			"\n" +
+			"---\n" +
+			"\n" +
+			"## Git authority\n" +
+			"\n" +
+			"Only `trackfw_architect` creates branches, audits diffs, commits and pushes. Specialists deliver work without committing — it is this role's responsibility to review, commit and suggest opening a PR/MR (never opening automatically without user authorization).\n",
 
-		"architect.md": `Você é o guia de arquitetura do trackfw. Ajude o usuário a escolher a stack correta e arquitetar a aplicação em linguagem simples, acessível para times não técnicos.
+		"architect.md": `You are the trackfw architecture guide. Help the user choose the right stack and architect the application in plain language, accessible to non-technical teams.
 
-## Passo 1 — Descoberta de Negócio
+## Step 1 — Business Discovery
 
-Faça ao usuário as seguintes perguntas em linguagem simples, uma por vez:
+Ask the user the following questions in plain language, one at a time:
 
-1. "O que sua aplicação vai fazer? Descreva em 2-3 frases como se fosse explicar para alguém de fora da TI."
-2. "Quantas pessoas vão usar esse sistema simultaneamente? (< 10 pessoas / 10-100 pessoas / > 100 pessoas)"
-3. "Esse sistema vai para produção de verdade ou é um protótipo para validar uma ideia?"
-4. "Você precisa de login/autenticação de usuários? (Sim / Não / Não sei)"
-5. "Tem alguma restrição de tecnologia ou preferência da empresa? (ex: só Java, só Microsoft, etc.)"
+1. "What will your application do? Describe it in 2-3 sentences as if explaining to someone outside of IT."
+2. "How many people will use this system simultaneously? (< 10 people / 10-100 people / > 100 people)"
+3. "Is this system going to real production or is it a prototype to validate an idea?"
+4. "Do you need user login/authentication? (Yes / No / Not sure)"
+5. "Are there any technology restrictions or company preferences? (e.g. Java only, Microsoft only, etc.)"
 
 ---
 
-## Passo 2 — Recomendação de Stack
+## Step 2 — Stack Recommendation
 
-Com base nas respostas, escolha **UM** dos combos pré-validados:
+Based on the answers, choose **ONE** of the pre-validated combos:
 
-### Combo A — Protótipo Rápido
-**Quando usar:** prototipagem, validação de ideia, até ~10 usuários, sem pressão de produção.
+### Combo A — Rapid Prototype
+**When to use:** prototyping, idea validation, up to ~10 users, no production pressure.
 - **Frontend:** React + Vite
-- **Backend:** FastAPI (Python) ou Express (Node.js)
-- **Banco:** SQLite + SQLAlchemy / Prisma
-- **Auth:** JWT simples quando necessário
-- **Docker:** Dockerfile básico para o backend
+- **Backend:** FastAPI (Python) or Express (Node.js)
+- **Database:** SQLite + SQLAlchemy / Prisma
+- **Auth:** Simple JWT when needed
+- **Docker:** Basic Dockerfile for the backend
 
-### Combo B — Sistema Pequeno/Médio em Produção
-**Quando usar:** sistema real, 10-100 usuários, robustez e manutenibilidade.
-- **Frontend:** Next.js (SSR + rotas prontas)
-- **Backend:** FastAPI (Python) ou NestJS (Node.js)
-- **Banco:** PostgreSQL + ORM (SQLAlchemy / Prisma / TypeORM)
-- **Auth:** OAuth2 com JWT (Supabase Auth ou Auth0)
-- **Docker:** docker-compose com frontend + backend + banco
+### Combo B — Small/Medium Production System
+**When to use:** real system, 10-100 users, robustness and maintainability.
+- **Frontend:** Next.js (SSR + ready-made routes)
+- **Backend:** FastAPI (Python) or NestJS (Node.js)
+- **Database:** PostgreSQL + ORM (SQLAlchemy / Prisma / TypeORM)
+- **Auth:** OAuth2 with JWT (Supabase Auth or Auth0)
+- **Docker:** docker-compose with frontend + backend + database
 
 ### Combo C — Enterprise / Java
-**Quando usar:** integração com sistemas corporativos, > 100 usuários, exigência de Java.
+**When to use:** integration with corporate systems, > 100 users, Java requirement.
 - **Frontend:** Angular
 - **Backend:** Spring Boot
-- **Banco:** PostgreSQL + Hibernate
-- **Auth:** Spring Security + OAuth2 (Keycloak ou Azure AD)
-- **Docker:** docker-compose com todos os serviços
+- **Database:** PostgreSQL + Hibernate
+- **Auth:** Spring Security + OAuth2 (Keycloak or Azure AD)
+- **Docker:** docker-compose with all services
 
-Apresente o combo recomendado com explicação simples do motivo.
-
----
-
-## Passo 3 — Arquitetura em Camadas (explicação simples)
-
-Explique a arquitetura com uma metáfora de negócio:
-
-"Pense na aplicação como um restaurante:
-- **Frontend** = o salão: o que o cliente vê e interage
-- **Backend** = a cozinha: onde as regras de negócio acontecem, nunca exposta diretamente
-- **Banco de dados** = a despensa: onde os dados ficam guardados, acessada só pela cozinha"
-
-Reforce as **Architecture Directives** já injetadas no CLAUDE.md deste projeto: separação em 3 camadas sem dados em memória (sempre DB + ORM), auth + Docker + .env desde o dia 1, validação em 2 camadas, contrato OpenAPI antes de codar, wave de segurança em todo roadmap e cobertura mínima de testes (60% protótipo / 80% produção).
+Present the recommended combo with a simple explanation of the reason.
 
 ---
 
-## Passo 4 — Gerar o ADR de Stack
+## Step 3 — Layered Architecture (simple explanation)
 
-Execute ` + "`/trackfw:adr`" + ` com o título: ` + "`\"Stack e arquitetura em camadas — [nome do projeto]\"`" + `
+Explain the architecture with a business metaphor:
 
-O ADR deve registrar a stack escolhida (combo e componentes), motivação baseada nas respostas, alternativas descartadas e princípios de arquitetura adotados.
+"Think of the application as a restaurant:
+- **Frontend** = the dining room: what the customer sees and interacts with
+- **Backend** = the kitchen: where business rules happen, never exposed directly
+- **Database** = the pantry: where data is stored, accessed only by the kitchen"
+
+Reinforce the **Architecture Directives** already injected in this project's CLAUDE.md: 3-layer separation with no in-memory data (always DB + ORM), auth + Docker + .env from day 1, 2-layer validation, OpenAPI contract before coding, security wave in every roadmap, and minimum test coverage (60% prototype / 80% production).
 
 ---
 
-## Passo 5 — Próximos Passos
+## Step 4 — Generate the Stack ADR
 
-Oriente o usuário:
+Run ` + "`/trackfw:adr`" + ` with the title: ` + "`\"Stack and layered architecture — [project name]\"`" + `
+
+The ADR should record the chosen stack (combo and components), motivation based on the answers, discarded alternatives and adopted architectural principles.
+
+---
+
+## Step 5 — Next Steps
+
+Guide the user:
 
 ` + "```" + `
-✅ Stack definida. Próximos passos:
+✅ Stack defined. Next steps:
 
-1. Crie a REQ da primeira feature com /trackfw:req
-2. Gere o roadmap em microlotes com /trackfw:roadmap
-3. Inicie a implementação com /trackfw:implement
+1. Create the first feature REQ with /trackfw:req
+2. Generate the roadmap in microbatches with /trackfw:roadmap
+3. Start the implementation with /trackfw:implement
 ` + "```",
 
-		"implement.md": `Você é o orquestrador de implementação do trackfw. Siga o fluxo abaixo **sem pular etapas**.
+		"implement.md": `You are the trackfw implementation orchestrator. Follow the flow below **without skipping steps**.
 
-## Argumento
+## Argument
 
-` + "`$ARGUMENTS`" + ` é opcional. Se fornecido, é usado como filtro (substring case-insensitive) sobre os nomes de arquivo das REQs.
-
----
-
-## Passo 1 — Selecionar a REQ
-
-Use Glob para listar ` + "`docs/req/*.md`" + `.
-
-- Se **nenhum arquivo encontrado**: informe que não há REQs disponíveis e sugira criar com ` + "`/trackfw:req`" + `.
-- Se **` + "`$ARGUMENTS`" + ` foi fornecido** e filtra para exatamente uma REQ: use-a diretamente.
-- Em **todos os outros casos** (sem argumento, ou argumento ambíguo): apresente a lista de REQs disponíveis e pergunte ao usuário qual deseja implementar.
-
-Leia o conteúdo completo da REQ selecionada.
+` + "`$ARGUMENTS`" + ` is optional. If provided, it is used as a filter (case-insensitive substring) over the REQ file names.
 
 ---
 
-## Passo 2 — Encontrar ou gerar o Roadmap
+## Step 1 — Select the REQ
 
-Verifique se existe um roadmap vinculado à REQ buscando em ` + "`docs/roadmaps/`" + ` (backlog, wip, blocked, done, abandoned) por arquivo cujo nome contenha o slug da REQ.
+Use Glob to list ` + "`docs/req/*.md`" + `.
 
-**Se o roadmap ainda não existe:**
-- Informe o usuário: "Nenhum roadmap encontrado para esta REQ. Gerando agora..."
-- Execute o fluxo completo de geração do ` + "`/trackfw:roadmap`" + ` (leia o arquivo ` + "`.claude/commands/trackfw/roadmap.md`" + ` para seguir as instruções exatas), passando a REQ já selecionada — não pergunte novamente.
-- Salve o roadmap gerado em ` + "`docs/roadmaps/backlog/ROADMAP-<YYYY-MM-DD>-<slug>.md`" + `.
+- If **no file found**: inform that there are no REQs available and suggest creating one with ` + "`/trackfw:req`" + `.
+- If **` + "`$ARGUMENTS`" + ` was provided** and filters to exactly one REQ: use it directly.
+- In **all other cases** (no argument, or ambiguous argument): present the list of available REQs and ask the user which to implement.
 
-**Se o roadmap existe e já está em ` + "`done/`" + ` ou ` + "`abandoned/`" + `:**
-- Informe o usuário e pergunte se deseja criar um novo roadmap ou encerrar.
-
-**Se o roadmap existe em ` + "`backlog/`" + ` ou ` + "`blocked/`" + `:**
-- Prossiga para o Passo 3.
-
-**Se já está em ` + "`wip/`" + `:**
-- Prossiga diretamente para o Passo 4 (já está em execução).
+Read the full contents of the selected REQ.
 
 ---
 
-## Passo 3 — Mover roadmap para WIP
+## Step 2 — Find or generate the Roadmap
 
-Execute:
+Check whether a roadmap linked to the REQ exists by searching in ` + "`docs/roadmaps/`" + ` (backlog, wip, blocked, done, abandoned) for a file whose name contains the REQ slug.
+
+**If the roadmap does not exist yet:**
+- Inform the user: "No roadmap found for this REQ. Generating now..."
+- Execute the full generation flow from ` + "`/trackfw:roadmap`" + ` (read the file ` + "`.claude/commands/trackfw/roadmap.md`" + ` to follow the exact instructions), passing the already-selected REQ — do not ask again.
+- Save the generated roadmap at ` + "`docs/roadmaps/backlog/ROADMAP-<YYYY-MM-DD>-<slug>.md`" + `.
+
+**If the roadmap exists and is already in ` + "`done/`" + ` or ` + "`abandoned/`" + `:**
+- Inform the user and ask whether to create a new roadmap or stop.
+
+**If the roadmap exists in ` + "`backlog/`" + ` or ` + "`blocked/`" + `:**
+- Proceed to Step 3.
+
+**If it is already in ` + "`wip/`" + `:**
+- Proceed directly to Step 4 (already in progress).
+
+---
+
+## Step 3 — Move roadmap to WIP
+
+Run:
 ` + "```bash" + `
-trackfw roadmap move <nome-do-roadmap> wip
+trackfw roadmap move <roadmap-name> wip
 ` + "```" + `
 
-Confirme que o arquivo foi movido para ` + "`docs/roadmaps/wip/`" + `.
+Confirm that the file was moved to ` + "`docs/roadmaps/wip/`" + `.
 
 ---
 
-## Passo 4 — Ler e apresentar o plano
+## Step 4 — Read and present the plan
 
-Leia o roadmap (agora em ` + "`wip/`" + `). Apresente ao usuário:
-- Título do roadmap
-- Total de Waves e MLs
-- Lista resumida dos MLs por Wave
+Read the roadmap (now in ` + "`wip/`" + `). Present to the user:
+- Roadmap title
+- Total Waves and MLs
+- Summarized list of MLs per Wave
 
-Confirme: "Iniciando implementação. Vou executar cada ML em ordem e atualizar o roadmap a cada conclusão."
+Confirm: "Starting implementation. I will execute each ML in order and update the roadmap at each completion."
 
 ---
 
-## Passo 5 — Executar cada ML em ordem
+## Step 5 — Execute each ML in order
 
-Para cada Wave (em sequência), execute os MLs da Wave:
+For each Wave (in sequence), execute the Wave's MLs:
 
-### Para cada ML:
+### For each ML:
 
-**5a. Anunciar:** informe qual ML está sendo executado (ex: "Executando ML-1A — Criar client.go").
+**5a. Announce:** inform which ML is being executed (e.g. "Executing ML-1A — Create client.go").
 
-**5b. Implementar:** execute as ações descritas no ML usando suas ferramentas (Read, Write, Edit, Bash). Siga exatamente os arquivos afetados, ações e critérios de aceite listados no roadmap.
+**5b. Implement:** execute the actions described in the ML using your tools (Read, Write, Edit, Bash). Follow exactly the files affected, actions and acceptance criteria listed in the roadmap.
 
-**5c. Validar:** execute os comandos de validação do ML. Se falhar, corrija antes de avançar.
+**5c. Validate:** run the ML's validation commands. If it fails, fix before advancing.
 
-**5d. Atualizar o roadmap:** edite o arquivo de roadmap em ` + "`docs/roadmaps/wip/`" + ` substituindo o status do ML:
-- ` + "`**Status:** ⬜ Pendente`" + ` → ` + "`**Status:** ✅ Concluído`" + `
+**5d. Update the roadmap:** edit the roadmap file in ` + "`docs/roadmaps/wip/`" + ` replacing the ML status:
+- ` + "`**Status:** ⬜ Pending`" + ` → ` + "`**Status:** ✅ Done`" + `
 
-**5e. Commitar:**
+**5e. Commit:**
 ` + "```bash" + `
-git add <arquivos-do-ml>
-trackfw commit -m "feat(<escopo>): <descrição do ML>"
+git add <ml-files>
+trackfw commit -m "feat(<scope>): <ML description>"
 ` + "```" + `
 
-Só avance para a próxima Wave após todos os MLs da Wave atual estarem ✅.
+Only advance to the next Wave after all MLs of the current Wave are ✅.
 
 ---
 
-## Passo 6 — Finalizar
+## Step 6 — Finalize
 
-Quando todos os MLs estiverem ✅:
+When all MLs are ✅:
 
-**6a.** Execute ` + "`trackfw validate`" + ` — deve passar com zero violations.
+**6a.** Run ` + "`trackfw validate`" + ` — must pass with zero violations.
 
-**6b.** Mova o roadmap para done:
+**6b.** Move the roadmap to done:
 ` + "```bash" + `
-trackfw roadmap move <nome-do-roadmap> done
+trackfw roadmap move <roadmap-name> done
 ` + "```" + `
 
-**6c.** Faça o commit final:
+**6c.** Make the final commit:
 ` + "```bash" + `
 git add docs/roadmaps/
-git commit -m "docs(trackfw): roadmap <nome> → done"
+git commit -m "docs(trackfw): roadmap <name> → done"
 ` + "```" + `
 
-**6d.** Informe o usuário:
+**6d.** Inform the user:
 ` + "```" + `
-✅ Implementação concluída.
-Roadmap: docs/roadmaps/done/<nome>.md
-Próximo passo: abrir PR com gh pr create
+✅ Implementation complete.
+Roadmap: docs/roadmaps/done/<name>.md
+Next step: open PR with gh pr create
 ` + "```",
 	}
 }
@@ -903,7 +908,7 @@ func generateClaudeCommandsInner(force bool) error {
 		created++
 	}
 	if skipped > 0 {
-		fmt.Printf("  ✓ %s (%d slash commands criados, %d já existiam — não sobrescritos)\n", dir, created, skipped)
+		fmt.Printf("  ✓ %s (%d slash commands created, %d already existed — not overwritten)\n", dir, created, skipped)
 	} else {
 		fmt.Printf("  ✓ %s (%d slash commands)\n", dir, created)
 	}
@@ -1529,7 +1534,7 @@ trackfw validate
 func generateCIWorkflow(cfg Config) error {
 	// AC4: refuse to generate when ci_trigger has an invalid value; rc≠0.
 	if cfg.CITriggerInvalid {
-		return fmt.Errorf("ci_trigger: %q é inválido — valores aceitos: pull_request, manual", cfg.CITriggerRawValue)
+		return fmt.Errorf("ci_trigger: %q is invalid — accepted values: pull_request, manual", cfg.CITriggerRawValue)
 	}
 	switch cfg.CI {
 	case "github-actions":
@@ -1601,10 +1606,10 @@ jobs:
         # Precedent: quality.yml:545-570 (same refspec, same three-branch discrimination).
         #
         # Three-branch discrimination (two-states-one-observable prevention):
-        #   Braço 1 — ref absent (fetch failed): ::error:: annotation; trackfw validate will emit
-        #             severity-anchor violation (fail closed via Go code).
-        #   Braço 2 — ref present, file absent: ::warning:: annotation; disk-only severities.
-        #   Braço 3 — ref and file present: anchor active.
+        #   Arm 1 — ref absent (fetch failed): ::error:: annotation; trackfw validate will emit
+        #           severity-anchor violation (fail closed via Go code).
+        #   Arm 2 — ref present, file absent: ::warning:: annotation; disk-only severities.
+        #   Arm 3 — ref and file present: anchor active.
         #
         # This step always exits 0 so that trackfw validate always runs (and emits the fail-closed
         # violation if needed). The CI failure surface is trackfw validate, not this fetch step.
@@ -1732,7 +1737,7 @@ func generateGitHubActionsWorkflow(cfg Config) error {
 	// Uses discoverWorkflowPresent (os.Lstat) so a symlink at that path is NOT
 	// treated as present and gate.yml is still written — safe direction.
 	if discoverWorkflowPresent(ghRoot) {
-		fmt.Printf("  ℹ %s já existe — %s não será escrito (ADR-2026-09-29 D2)\n",
+		fmt.Printf("  ℹ %s already exists — %s will not be written (ADR-2026-09-29 D2)\n",
 			DiscoverGitHubActionsWorkflowPath, GitHubActionsWorkflowPath)
 		return nil
 	}
@@ -1908,16 +1913,16 @@ func generateVaultIndex() error {
 		// já existe — idempotente
 		return nil
 	}
-	content := `# Vault de Conhecimento
+	content := `# Knowledge Vault
 
-> Ponto de entrada de conhecimento do projeto para agentes e pessoas.
-> Cada nota documenta uma causa-raiz, decisão técnica ou restrição não óbvia.
-> Crie notas com: trackfw note new "<título>"
+> Project knowledge entry point for agents and people.
+> Each note documents a root cause, technical decision or non-obvious constraint.
+> Create notes with: trackfw note new "<title>"
 
-## Índice
+## Index
 
-<!-- As notas serão listadas abaixo. Exemplo:
-- [nome-da-nota-YYYY-MM-DD](nome-da-nota-YYYY-MM-DD.md)
+<!-- Notes will be listed below. Example:
+- [note-name-YYYY-MM-DD](note-name-YYYY-MM-DD.md)
 -->
 `
 	// Guard the leaf file — directory guard above does not detect a symlinked index file.

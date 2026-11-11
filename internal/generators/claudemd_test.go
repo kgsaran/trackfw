@@ -26,17 +26,17 @@ func TestGenerateClaudeMD_GlobalADRsDirective(t *testing.T) {
 		t.Fatalf("os.ReadFile(CLAUDE.md) erro: %v", err)
 	}
 
-	expectedDirective := "Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs (inclusive caminhos ~/...) antes de propor alterações de arquitetura."
+	expectedDirective := "Mandatory: Inspect and respect all global ADRs in the directories listed in adr_dirs (including ~/... paths) before proposing architectural changes."
 	if !strings.Contains(string(content), expectedDirective) {
-		t.Errorf("CLAUDE.md não contém a diretiva obrigatória de ADRs globais.\nEsperado conter: %q\nConteúdo obtido:\n%s", expectedDirective, string(content))
+		t.Errorf("CLAUDE.md does not contain the mandatory global ADRs directive.\nExpected to contain: %q\nContent obtained:\n%s", expectedDirective, string(content))
 	}
 }
 
 func TestTrackfwRulesBlock_GlobalADRsDirective(t *testing.T) {
 	block := trackfwRulesBlock("", "flat", nil)
-	expectedDirective := "Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs (inclusive caminhos ~/...) antes de propor alterações de arquitetura."
+	expectedDirective := "Mandatory: Inspect and respect all global ADRs in the directories listed in adr_dirs (including ~/... paths) before proposing architectural changes."
 	if !strings.Contains(block, expectedDirective) {
-		t.Errorf("trackfwRulesBlock() não contém a diretiva obrigatória de ADRs globais.\nEsperado conter: %q\nConteúdo obtido:\n%s", expectedDirective, block)
+		t.Errorf("trackfwRulesBlock() does not contain the mandatory global ADRs directive.\nExpected to contain: %q\nContent obtained:\n%s", expectedDirective, block)
 	}
 }
 
@@ -61,7 +61,7 @@ func TestGenerateClaudeMD_ArchitectCommandAndDirectives(t *testing.T) {
 	content := string(contentBytes)
 
 	checks := []string{
-		"6a. **Usar `/trackfw:architect` para definir stack e arquitetura antes da primeira REQ.**",
+		"6a. **Use `/trackfw:architect` to define stack and architecture before the first REQ.**",
 		"## Architecture Directives (mandatory)",
 		"| `/trackfw:architect` | Guide stack and architecture decisions |",
 		"| `/trackfw:barrier` | Run the wave-release checklist before liberating the next wave |",
@@ -223,12 +223,12 @@ func TestGenerateClaudeCommands_Architect(t *testing.T) {
 	content := string(contentBytes)
 
 	checks := []string{
-		"Você é o guia de arquitetura do trackfw.",
-		"Passo 1 — Descoberta de Negócio",
-		"Combo A — Protótipo Rápido",
-		"Combo B — Sistema Pequeno/Médio em Produção",
+		"You are the trackfw architecture guide.",
+		"Step 1 — Business Discovery",
+		"Combo A — Rapid Prototype",
+		"Combo B — Small/Medium Production System",
 		"Combo C — Enterprise / Java",
-		"Passo 4 — Gerar o ADR de Stack",
+		"Step 4 — Generate the Stack ADR",
 	}
 
 	for _, expected := range checks {

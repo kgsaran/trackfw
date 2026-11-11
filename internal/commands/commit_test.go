@@ -262,10 +262,10 @@ func TestCommit_Suggest_OnlyTestFiles_SuggestsTest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(msg, "# Tipo sugerido: test") {
+	if !strings.Contains(msg, "# Suggested type: test") {
 		t.Fatalf("expected suggested type test, got: %q", msg)
 	}
-	if !strings.Contains(msg, "test(<escopo>): <descrição>") {
+	if !strings.Contains(msg, "test(<scope>): <description>") {
 		t.Fatalf("expected test skeleton line, got: %q", msg)
 	}
 	if !strings.Contains(msg, "M  internal/commands/commit_test.go") {
@@ -280,7 +280,7 @@ func TestCommit_Suggest_OnlyDocsFiles_SuggestsDocs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(msg, "# Tipo sugerido: docs") {
+	if !strings.Contains(msg, "# Suggested type: docs") {
 		t.Fatalf("expected suggested type docs, got: %q", msg)
 	}
 }
@@ -292,7 +292,7 @@ func TestCommit_Suggest_NewCommandFile_SuggestsFeat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(msg, "# Tipo sugerido: feat") {
+	if !strings.Contains(msg, "# Suggested type: feat") {
 		t.Fatalf("expected suggested type feat, got: %q", msg)
 	}
 }
@@ -304,7 +304,7 @@ func TestCommit_Suggest_GenericChange_SuggestsFix(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(msg, "# Tipo sugerido: fix") {
+	if !strings.Contains(msg, "# Suggested type: fix") {
 		t.Fatalf("expected suggested type fix, got: %q", msg)
 	}
 }

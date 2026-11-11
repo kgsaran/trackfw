@@ -201,7 +201,7 @@ func ExportCSV(m Metrics, transitions []Transition, path string) error {
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks above; Beneath-false paths are user-directed named exception (ADR-2026-09-18)
 	f, err := os.Create(path)
 	if err != nil {
-		return fmt.Errorf("metrics: criar CSV: %w", err)
+		return fmt.Errorf("metrics: create CSV: %w", err)
 	}
 	defer f.Close()
 
@@ -209,7 +209,7 @@ func ExportCSV(m Metrics, transitions []Transition, path string) error {
 
 	// Seção de transições.
 	if err := w.Write([]string{"basename", "from", "to", "timestamp"}); err != nil {
-		return fmt.Errorf("metrics: escrever header CSV: %w", err)
+		return fmt.Errorf("metrics: write CSV header: %w", err)
 	}
 	for _, t := range transitions {
 		if err := w.Write([]string{
@@ -218,28 +218,28 @@ func ExportCSV(m Metrics, transitions []Transition, path string) error {
 			t.To,
 			t.Timestamp.Format("2006-01-02 15:04"),
 		}); err != nil {
-			return fmt.Errorf("metrics: escrever linha CSV: %w", err)
+			return fmt.Errorf("metrics: write CSV row: %w", err)
 		}
 	}
 
 	// Linha em branco.
 	if err := w.Write([]string{""}); err != nil {
-		return fmt.Errorf("metrics: escrever separador CSV: %w", err)
+		return fmt.Errorf("metrics: write CSV separator: %w", err)
 	}
 
 	// Seção de métricas.
 	if err := w.Write([]string{"metric", "value"}); err != nil {
-		return fmt.Errorf("metrics: escrever header métricas CSV: %w", err)
+		return fmt.Errorf("metrics: write metrics CSV header: %w", err)
 	}
 	cycleHours := m.CycleTimeMean.Hours()
 	if err := w.Write([]string{"cycle_time_mean_hours", strconv.FormatFloat(cycleHours, 'f', 2, 64)}); err != nil {
-		return fmt.Errorf("metrics: escrever cycle_time: %w", err)
+		return fmt.Errorf("metrics: write cycle_time: %w", err)
 	}
 	if err := w.Write([]string{"throughput_per_week", strconv.FormatFloat(m.Throughput, 'f', 2, 64)}); err != nil {
-		return fmt.Errorf("metrics: escrever throughput: %w", err)
+		return fmt.Errorf("metrics: write throughput: %w", err)
 	}
 	if err := w.Write([]string{"wip_count", strconv.Itoa(len(m.WIPEntries))}); err != nil {
-		return fmt.Errorf("metrics: escrever wip_count: %w", err)
+		return fmt.Errorf("metrics: write wip_count: %w", err)
 	}
 
 	w.Flush()

@@ -1,11 +1,11 @@
-Execute o seguinte comando bash: `trackfw req new "$ARGUMENTS"`
+Run the following bash command: `trackfw req new "$ARGUMENTS"`
 
-⚠️ Em projetos com `roadmap_namespacing: by_agent` e 2+ agentes, use: `trackfw req new --agent <seu-agente> "$ARGUMENTS"`
+⚠️ In projects with `roadmap_namespacing: by_agent` and 2+ agents, use: `trackfw req new --agent <your-agent> "$ARGUMENTS"`
 
-Se o comando falhar com `trackfw: command not found` ou similar, informe ao usuário:
+If the command fails with `trackfw: command not found` or similar, inform the user:
 
 ```
-trackfw não está instalado. Instale com uma das opções:
+trackfw is not installed. Install with one of these options:
 
   curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh
   npm install -g trackfw

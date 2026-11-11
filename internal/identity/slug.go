@@ -38,7 +38,7 @@ var diacriticsFolder = transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.M
 func Slugify(input string) (string, error) {
 	folded, _, err := transform.String(diacriticsFolder, input)
 	if err != nil {
-		return "", fmt.Errorf("identity: falha ao normalizar %q: %w", input, err)
+		return "", fmt.Errorf("identity: failed to normalize %q: %w", input, err)
 	}
 
 	lowered := strings.ToLower(folded)

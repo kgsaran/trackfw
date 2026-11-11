@@ -42,7 +42,7 @@ func TestCheckREQDirContained_GetWdFails_FailClosed(t *testing.T) {
 	if gotErr == nil {
 		t.Fatal("ML-1A-quinquies (Getwd falha): esperava erro, obteve nil")
 	}
-	if !strings.Contains(gotErr.Error(), "diretório de trabalho") {
+	if !strings.Contains(gotErr.Error(), "working directory") {
 		t.Errorf("ML-1A-quinquies (Getwd falha): esperava diagnóstico de CWD indisponível, obteve: %v", gotErr)
 	}
 }
@@ -81,7 +81,7 @@ func TestCheckREQDirContained_EvalSymlinksCWDFails_FailClosed(t *testing.T) {
 	if gotErr == nil {
 		t.Fatal("ML-1A-quinquies (EvalSymlinks falha): esperava erro, obteve nil")
 	}
-	if !strings.Contains(gotErr.Error(), "EvalSymlinks falhou") {
+	if !strings.Contains(gotErr.Error(), "EvalSymlinks failed") {
 		t.Errorf("ML-1A-quinquies (EvalSymlinks falha): esperava diagnóstico de EvalSymlinks, obteve: %v", gotErr)
 	}
 }

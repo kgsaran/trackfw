@@ -213,7 +213,7 @@ func executeIntegrationMutation(cmd *cobra.Command, kind integrations.ItemKind, 
 		} else if identityExists && !opts.json {
 			existing, err := identity.Load(manager.HomeDir)
 			if err != nil {
-				return fmt.Errorf("%s: identidade invalida: %w", operation, err)
+				return fmt.Errorf("%s: invalid identity: %w", operation, err)
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s\n", i18n.T("identity.inUse", "count", strconv.Itoa(len(existing.Agents))))
 		}
@@ -223,7 +223,7 @@ func executeIntegrationMutation(cmd *cobra.Command, kind integrations.ItemKind, 
 	// silently reverts custom agent names to the neutral defaults.
 	ident, err := identity.Load(manager.HomeDir)
 	if err != nil {
-		return fmt.Errorf("%s: identidade invalida: %w", operation, err)
+		return fmt.Errorf("%s: invalid identity: %w", operation, err)
 	}
 	agentModels, warnMsg := config.ResolveAgentModels(opts.scope, manager.HomeDir, manager.ProjectRoot)
 	if warnMsg != "" {
@@ -240,7 +240,7 @@ func executeIntegrationMutation(cmd *cobra.Command, kind integrations.ItemKind, 
 	// D5 — transparency: no extra confirmation, but the resolved destination
 	// paths are always printed before anything is written to disk.
 	if !opts.json {
-		fmt.Fprintf(cmd.OutOrStdout(), "Destino (%s):\n", opts.scope)
+		fmt.Fprintf(cmd.OutOrStdout(), "Destination (%s):\n", opts.scope)
 		for _, plan := range plans {
 			fmt.Fprintf(cmd.OutOrStdout(), "  %s\n", plan.Destination)
 		}
@@ -341,10 +341,10 @@ func applyIdentityPresetFlag(presetValue, operation string) error {
 		return err
 	}
 	if err := identity.Validate(cfg, identity.KnownAgentIDs()); err != nil {
-		return fmt.Errorf("%s: identidade invalida: %w", operation, err)
+		return fmt.Errorf("%s: invalid identity: %w", operation, err)
 	}
 	if err := identity.Save(home, cfg); err != nil {
-		return fmt.Errorf("%s: falha ao gravar identidade: %w", operation, err)
+		return fmt.Errorf("%s: failed to save identity: %w", operation, err)
 	}
 	return nil
 }
@@ -373,7 +373,7 @@ func executeIntegrationList(cmd *cobra.Command, kind integrations.ItemKind, opts
 	}
 	ident, err := identity.Load(manager.HomeDir)
 	if err != nil {
-		return fmt.Errorf("list: identidade invalida: %w", err)
+		return fmt.Errorf("list: invalid identity: %w", err)
 	}
 	listAgentModels, listWarnMsg := config.ResolveAgentModels(opts.scope, manager.HomeDir, manager.ProjectRoot)
 	if listWarnMsg != "" {
@@ -485,10 +485,10 @@ var promptInstallScopeRunner = promptInstallScope
 // when Value is called (see huh's Accessor/selectValue).
 func installScopeSelect(scope *string) *huh.Select[string] {
 	return huh.NewSelect[string]().
-		Title("Onde instalar os artefatos?").
+		Title("Where do you want to install the artifacts?").
 		Options(
-			huh.NewOption("Pasta do usuário (~/.claude) — vale para todos os projetos", "global"),
-			huh.NewOption("Este projeto (.claude) — apenas neste repositório", "project"),
+			huh.NewOption("User folder (~/.claude) — applies to all projects", "global"),
+			huh.NewOption("This project (.claude) — this repository only", "project"),
 		).
 		Value(scope)
 }

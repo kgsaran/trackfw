@@ -123,10 +123,10 @@ func resolveIdentitySelection(home, identitySelect string, knownAgentIDs []strin
 
 	cfg, err := buildIdentityConfig(identitySelect, knownAgentIDs, customDisplayNames, userNickname)
 	if err != nil {
-		return identity.Config{}, identitySkipped, fmt.Errorf("identidade invalida: %w", err)
+		return identity.Config{}, identitySkipped, fmt.Errorf("invalid identity: %w", err)
 	}
 	if err := identity.Validate(cfg, knownAgentIDs); err != nil {
-		return identity.Config{}, identitySkipped, fmt.Errorf("identidade invalida: %w", err)
+		return identity.Config{}, identitySkipped, fmt.Errorf("invalid identity: %w", err)
 	}
 
 	confirmed, err := confirm(cfg)
@@ -138,7 +138,7 @@ func resolveIdentitySelection(home, identitySelect string, knownAgentIDs []strin
 	}
 
 	if err := identity.Save(home, cfg); err != nil {
-		return identity.Config{}, identitySkipped, fmt.Errorf("falha ao gravar identidade: %w", err)
+		return identity.Config{}, identitySkipped, fmt.Errorf("failed to save identity: %w", err)
 	}
 	return cfg, identitySaved, nil
 }
@@ -153,7 +153,7 @@ func buildIdentityConfig(identitySelect string, knownAgentIDs []string, customDi
 		for index, id := range knownAgentIDs {
 			slug, err := identity.Slugify(customDisplayNames[index])
 			if err != nil {
-				return identity.Config{}, fmt.Errorf("identidade customizada invalida para %q: %w", id, err)
+				return identity.Config{}, fmt.Errorf("invalid custom identity for %q: %w", id, err)
 			}
 			cfg.Agents[id] = identity.AgentIdentity{DisplayName: customDisplayNames[index], Slug: slug}
 		}
@@ -173,18 +173,18 @@ func buildIdentityConfig(identitySelect string, knownAgentIDs []string, customDi
 // consumer can drift from the other.
 func identityPresetOptions() []huh.Option[string] {
 	return []huh.Option[string]{
-		huh.NewOption("Panteão grego (Zeus, Apolo, Afrodite...)", "greek"),
-		huh.NewOption("Mitologia nórdica (Odin, Thor, Freya...)", "norse"),
-		huh.NewOption("Pioneiros da computação (Turing, Codd, Knuth...)", "pioneers"),
+		huh.NewOption("Greek pantheon (Zeus, Apolo, Afrodite...)", "greek"),
+		huh.NewOption("Norse mythology (Odin, Thor, Freya...)", "norse"),
+		huh.NewOption("Computing pioneers (Turing, Codd, Knuth...)", "pioneers"),
 		huh.NewOption("Harry Potter (Dumbledore, Snape, Luna...)", "potter"),
 		huh.NewOption("Game of Thrones (Tyrion, Jon, Arya...)", "thrones"),
-		huh.NewOption("Senhor dos Anéis (Gandalf, Aragorn, Arwen...)", "tolkien"),
+		huh.NewOption("Lord of the Rings (Gandalf, Aragorn, Arwen...)", "tolkien"),
 		huh.NewOption("Star Wars (Yoda, Leia, Vader...)", "starwars"),
 		huh.NewOption("Chaves (Girafales, Madruga, Chiquinha...)", "chaves"),
 		huh.NewOption("Turma da Mônica (Franjinha, Cebolinha, Mônica...)", "turma"),
-		huh.NewOption("Panteão egípcio (Thoth, Ísis, Anúbis...)", "egyptian"),
-		huh.NewOption("Personalizar um a um", "custom"),
-		huh.NewOption("Nomes neutros (padrão)", "neutral"),
+		huh.NewOption("Egyptian pantheon (Thoth, Ísis, Anúbis...)", "egyptian"),
+		huh.NewOption("Customize one by one", "custom"),
+		huh.NewOption("Neutral names (default)", "neutral"),
 	}
 }
 
@@ -235,7 +235,7 @@ func buildCustomIdentityGroup(catalog *integrations.Catalog, helperText string, 
 						continue
 					}
 					if otherSlug == slug {
-						return fmt.Errorf("slug %q duplicado com o agente %q", slug, ids[j])
+						return fmt.Errorf("slug %q duplicates agent %q", slug, ids[j])
 					}
 				}
 				return nil

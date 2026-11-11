@@ -11,6 +11,7 @@ import (
 
 	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/roadmapdoc"
+	"github.com/kgsaran/trackfw/internal/validator"
 )
 
 // TestInstallSkills_CriaSlashCommandsESkillGlobal — verifica que InstallSkills cria
@@ -104,18 +105,18 @@ func TestSlashRoadmapCommandRequiresCanonicalFrontmatter(t *testing.T) {
 	}
 	body := string(content)
 	required := []string{
-		"```markdown\n   ---",
+		"````markdown\n---",
 		"status: backlog",
 		"date: <YYYY-MM-DD>",
-		`req: "docs/req/<arquivo-selecionado>.md"`,
+		`req: "docs/req/<selected-file>.md"`,
 		`squad: ""`,
-		"---\n\n   # Roadmap:",
+		"---\n\n# Roadmap:",
 		"> Created: <YYYY-MM-DD> | Status: backlog",
 		"docs/roadmaps/backlog/ROADMAP-<YYYY-MM-DD>-<slug>.md",
-		"Preencha `req:` com o caminho relativo completo da REQ selecionada",
-		"### ML-1B — <título> (se independente de ML-1A)",
-		"## Wave 2 — <nome> (depende de Wave 1)",
-		"> Dependências: Wave 1 completa",
+		"Fill `req:` with the full relative path of the selected REQ",
+		"### ML-1B — <title> (if independent of ML-1A)",
+		"## Wave 2 — <name> (depends on Wave 1)",
+		"> Dependencies: Wave 1 complete",
 	}
 	for _, want := range required {
 		if !strings.Contains(body, want) {
@@ -513,6 +514,148 @@ func TestScaffoldStatusVocabularyMatchesGenerator(t *testing.T) {
 		if !generatorPendingTokens[fields[0]] {
 			t.Errorf("scaffold teaches **Status:** %q (first token %q) which the roadmap "+
 				"generator does not emit; allowed pending tokens: %v", marker, fields[0], generatorPendingTokens)
+		}
+	}
+}
+
+// TestScaffold_RoadmapMD_GatesModelParseable — ML-3C (REQ-2026-11-02)
+//
+// Regra Dura de Reconciliação:
+//
+//	This test asserts that the roadmap.md slash command template, after the
+//	3-space indentation is removed, produces a Wave 0 section whose "**Wave gates:**"
+//	header sits at column 0, so roadmapdoc.ParseGatesLines accepts it without error
+//	and returns at least one gate command starting with "exit 1".
+func TestScaffold_RoadmapMD_GatesModelParseable(t *testing.T) {
+	content := claudeCommandsContent()["roadmap.md"]
+	if content == "" {
+		t.Fatal("roadmap.md not found in claudeCommandsContent()")
+	}
+
+	// Extract the template from between the ````markdown...```` fence.
+	// The fence markers are ````markdown and ```` (four backticks each).
+	const openFence = "````markdown\n"
+	const closeFence = "\n````"
+	openIdx := strings.Index(content, openFence)
+	if openIdx < 0 {
+		t.Fatal("````markdown fence not found in roadmap.md content")
+	}
+	afterOpen := content[openIdx+len(openFence):]
+	closeIdx := strings.Index(afterOpen, closeFence)
+	if closeIdx < 0 {
+		t.Fatal("closing ```` fence not found in roadmap.md content")
+	}
+	template := afterOpen[:closeIdx]
+
+	lines := strings.Split(template, "\n")
+
+	// Find Wave 0 start and end indices (0-based).
+	wave0Start := -1
+	wave0End := len(lines)
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "## Wave 0") {
+			wave0Start = i
+		} else if wave0Start >= 0 && strings.HasPrefix(strings.TrimSpace(line), "## Wave ") {
+			wave0End = i
+			break
+		}
+	}
+	if wave0Start < 0 {
+		t.Fatal("## Wave 0 section not found in roadmap.md template")
+	}
+
+	gcmds, err := roadmapdoc.ParseGatesLines(lines, wave0Start, wave0End)
+	if err != nil {
+		t.Fatalf("ParseGatesLines returned error for Wave 0 in roadmap.md template: %v", err)
+	}
+	if len(gcmds) == 0 {
+		t.Fatal("ParseGatesLines returned zero gate commands for Wave 0 — expected at least 'exit 1'")
+	}
+	found := false
+	for _, gc := range gcmds {
+		if strings.HasPrefix(gc.Text, "exit 1") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		var texts []string
+		for _, gc := range gcmds {
+			texts = append(texts, gc.Text)
+		}
+		t.Errorf("expected a gate starting with 'exit 1', got: %v", texts)
+	}
+}
+
+// TestScaffold_RoadmapMD_TemplatePassesWIPAcceptanceCriteriaValidation — ML-3F (REQ-2026-11-02)
+//
+// Regra Dura de Reconciliação:
+//
+//	This test asserts that a roadmap written by following the roadmap.md slash command
+//	template, once placed in wip/, does NOT trigger the validator violation
+//	"roadmap ... is in wip but has no acceptance criteria block".
+//	The template now carries ## Acceptance Criteria, so the validator's wip_acceptance
+//	rule must pass.
+func TestScaffold_RoadmapMD_TemplatePassesWIPAcceptanceCriteriaValidation(t *testing.T) {
+	content := claudeCommandsContent()["roadmap.md"]
+	if content == "" {
+		t.Fatal("roadmap.md not found in claudeCommandsContent()")
+	}
+
+	// Extract the template from between the ````markdown...```` fence.
+	const openFence = "````markdown\n"
+	const closeFence = "\n````"
+	openIdx := strings.Index(content, openFence)
+	if openIdx < 0 {
+		t.Fatal("````markdown fence not found in roadmap.md content")
+	}
+	afterOpen := content[openIdx+len(openFence):]
+	closeIdx := strings.Index(afterOpen, closeFence)
+	if closeIdx < 0 {
+		t.Fatal("closing ```` fence not found in roadmap.md content")
+	}
+	template := afterOpen[:closeIdx]
+
+	// Promote frontmatter to wip so the wip_acceptance rule fires.
+	template = strings.Replace(template, "status: backlog", "status: wip", 1)
+	// Replace date placeholder with a concrete value.
+	template = strings.ReplaceAll(template, "<YYYY-MM-DD>", "2026-01-01")
+	// Replace the req placeholder with a stable path so no parse error occurs.
+	template = strings.Replace(template, `"docs/req/<selected-file>.md"`, `"docs/req/REQ-test.md"`, 1)
+
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	_ = os.Chdir(dir)
+	t.Cleanup(func() {
+		_ = os.Chdir(orig)
+		config.Reset()
+	})
+
+	// Minimal project layout: trackfw.yaml and wip/ directory.
+	if err := os.MkdirAll(filepath.Join(dir, "docs", "roadmaps", "wip"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	yamlContent := "roadmap_dir: docs/roadmaps\nreq_dir: docs/req\n"
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte(yamlContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	roadmapPath := filepath.Join(dir, "docs", "roadmaps", "wip", "ROADMAP-2026-01-01-test.md")
+	if err := os.WriteFile(roadmapPath, []byte(template), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	config.Reset()
+
+	// Run the validator; filter only the wip_acceptance message so other
+	// unrelated violations (missing REQ file, branch rules, etc.) do not
+	// obscure the assertion.
+	violations, _, err := validator.Validate()
+	if err != nil {
+		t.Fatalf("validator.Validate() returned unexpected error: %v", err)
+	}
+	for _, v := range violations {
+		if strings.Contains(v, "has no acceptance criteria block") {
+			t.Errorf("roadmap template written to wip/ triggered acceptance-criteria violation: %s", v)
 		}
 	}
 }

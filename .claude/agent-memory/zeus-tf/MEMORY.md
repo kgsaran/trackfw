@@ -47,3 +47,4 @@
 - [Direção: A+C, B congelado](project_direcao_consolidar_e_adocao.md) — 2026-10-28: consolidar + adoção; radar é do Lourival; open source sempre
 - [Parser de roadmap mede o corpus](feedback_parser_de_roadmap_mede_o_corpus.md) — máscara HTML passou em 4 rodadas e quebrou o próprio roadmap; medir main×branch em docs/roadmaps
 - [Inglês primeiro](project_ingles_primeiro.md) — 2026-11-02: produto em inglês; status bilíngue; docs/ segue em PT; REQ de idioma em backlog
+- [ml_scope lê o roadmap commitado](project_ml_scope_le_roadmap_commitado.md) — commite o roadmap antes de rerodar o barrier; liste cada _test.go pelo caminho

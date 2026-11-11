@@ -57,13 +57,13 @@ const wave0GateFence = "```bash\n" +
 	"```\n"
 
 // statusLegendBlock teaches the vocabulary the `barrier` parser accepts for "**Status:**"
-// (AC11, ADR decision 5): the canonical form the template now writes (⬜ Pendente) plus the
+// (AC11, ADR decision 5): the canonical form the template now writes (⬜ Pending) plus the
 // other three states. Placed once, right before the first wave, so it is close to the first
 // place a "**Status:**" line appears — not repeated per-ML (would clutter) and not left for
 // the end (nobody reads that far). Byte-identical across the 3 CLIs
 // (gate: scripts/check-artifact-parity.sh).
 const statusLegendBlock = "## Status Legend\n" +
-	"⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado\n" +
+	"⬜ Pending · 🔄 In progress · ✅ Done · ❌ Blocked\n" +
 	"\n"
 
 // wave0Block is the "## Wave 0 — Threat Model" section prepended to every generated roadmap,
@@ -81,7 +81,7 @@ const wave0Block = statusLegendBlock +
 	"> Dependencies: none. Blocks all implementation.\n" +
 	"\n" +
 	"### ML-0A — Threat model for this roadmap\n" +
-	"**Status:** ⬜ Pendente\n" +
+	"**Status:** ⬜ Pending\n" +
 	"**Files affected:**\n" +
 	"**Actions:**\n" +
 	"1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed. Do not limit the search to the files already named by the REQ — before declaring the list closed, search the repository for other places that emit the same artifact or the same pattern (for example, grep for the literal the final artifact contains).\n" +
@@ -92,7 +92,7 @@ const wave0Block = statusLegendBlock +
 	"- [ ] The four sections above answered with evidence, not a one-line assertion\n" +
 	"- [ ] No implementation line written for this ML\n" +
 	"\n" +
-	"**Gates da wave:**\n" +
+	"**Wave gates:**\n" +
 	wave0GateFence +
 	"\n"
 
@@ -347,7 +347,7 @@ func NewRoadmapFromContent(content RoadmapContent) error {
 			// Arquivo existe no destino planejado (backlog/).
 			if !content.Force {
 				// Opção B (idempotente): pular criação, verificar/reparar vínculos, reportar.
-				fmt.Fprintf(os.Stderr, "roadmap %s já existe em %s (criada por `trackfw req new`?) — nada sobrescrito; use --force para recriar\n",
+				fmt.Fprintf(os.Stderr, "roadmap %s already exists at %s (created by `trackfw req new`?) — nothing overwritten; use --force to recreate\n",
 					basename, existingPath)
 				reconcileExistingRoadmapLink(content.REQPath, normalizeRefSeparator(filename), cfg)
 				return nil
@@ -356,10 +356,10 @@ func NewRoadmapFromContent(content RoadmapContent) error {
 		} else {
 			// Arquivo existe em outro estado (ex.: wip/) — nunca criar duplicata.
 			if content.Force {
-				return fmt.Errorf("roadmap %s já existe em %s — --force não cria duplicata em estado diferente; mova ou apague o existente primeiro",
+				return fmt.Errorf("roadmap %s already exists at %s — --force does not create a duplicate in a different state; move or delete the existing one first",
 					basename, existingPath)
 			}
-			fmt.Fprintf(os.Stderr, "roadmap %s já existe em %s — nada sobrescrito; use --force para recriar (apenas no mesmo estado)\n",
+			fmt.Fprintf(os.Stderr, "roadmap %s already exists at %s — nothing overwritten; use --force to recreate (same state only)\n",
 				basename, existingPath)
 			reconcileExistingRoadmapLink(content.REQPath, normalizeRefSeparator(existingPath), cfg)
 			return nil
@@ -377,10 +377,10 @@ func NewRoadmapFromContent(content RoadmapContent) error {
 					ownerLabel = "(flat)"
 				}
 				if content.Force {
-					return fmt.Errorf("roadmap %s já existe em %s (agente %s) — --force não cria duplicata em namespace diferente; mova ou apague o existente primeiro",
+					return fmt.Errorf("roadmap %s already exists at %s (agent %s) — --force does not create a duplicate in a different namespace; move or delete the existing one first",
 						basename, m.path, ownerLabel)
 				}
-				fmt.Fprintf(os.Stderr, "roadmap %s já existe em %s (agente %s) — nada criado em namespace %s; mova o existente ou use o agente correto\n",
+				fmt.Fprintf(os.Stderr, "roadmap %s already exists at %s (agent %s) — nothing created in namespace %s; move the existing one or use the correct agent\n",
 					basename, m.path, ownerLabel, agent)
 				reconcileExistingRoadmapLink(content.REQPath, m.path, cfg)
 				return nil
@@ -391,9 +391,9 @@ func NewRoadmapFromContent(content RoadmapContent) error {
 					if ownerLabel == "" {
 						ownerLabel = "(flat)"
 					}
-					descs = append(descs, fmt.Sprintf("%s (agente %s)", m.path, ownerLabel))
+					descs = append(descs, fmt.Sprintf("%s (agent %s)", m.path, ownerLabel))
 				}
-				fmt.Fprintf(os.Stderr, "roadmap %s encontrada em múltiplos namespaces — nada criado: %s\n",
+				fmt.Fprintf(os.Stderr, "roadmap %s found in multiple namespaces — nothing created: %s\n",
 					basename, strings.Join(descs, "; "))
 				return nil
 			}
@@ -434,7 +434,7 @@ REQ: %s
 > Dependencies: none
 
 ### ML-1A — %s
-**Status:** ⬜ Pendente
+**Status:** ⬜ Pending
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
@@ -465,7 +465,7 @@ REQ: %s
 		if createErr != nil {
 			if errors.Is(createErr, fs.ErrExist) {
 				// TOCTOU: arquivo criado entre a checagem e o open — tratar como já existente.
-				fmt.Fprintf(os.Stderr, "roadmap %s já existe — nada sobrescrito; use --force para recriar\n", filename)
+				fmt.Fprintf(os.Stderr, "roadmap %s already exists — nothing overwritten; use --force to recreate\n", filename)
 				reconcileExistingRoadmapLink(content.REQPath, normalizeRefSeparator(filename), cfg)
 				return nil
 			}
@@ -553,7 +553,7 @@ func NewRoadmapFromREQ(reqPath, agent string, force bool) error {
 	for i, criterion := range criteria {
 		mlLabel := fmt.Sprintf("ML-1%c", rune('A'+i))
 		mlSection.WriteString(fmt.Sprintf("\n### %s — %s\n", mlLabel, criterion))
-		mlSection.WriteString("**Status:** ⬜ Pendente\n")
+		mlSection.WriteString("**Status:** ⬜ Pending\n")
 		mlSection.WriteString("**Files affected:**\n")
 		mlSection.WriteString("**Actions:**\n")
 		mlSection.WriteString("**Acceptance criteria:**\n")
@@ -1367,7 +1367,7 @@ func ListRoadmaps() error {
 	}
 
 	if !found {
-		fmt.Printf("Nenhum roadmap encontrado. Crie um com '%s'.\n", validator.RoadmapNewLine(cfg))
+		fmt.Printf("No roadmap found. Create one with '%s'.\n", validator.RoadmapNewLine(cfg))
 	}
 	return nil
 }

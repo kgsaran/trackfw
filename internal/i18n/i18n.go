@@ -3,7 +3,6 @@ package i18n
 import (
 	_ "embed"
 	"encoding/json"
-	"os"
 	"strings"
 	"sync"
 )
@@ -11,53 +10,20 @@ import (
 //go:embed locales/en-US.json
 var enUS []byte
 
-//go:embed locales/pt-BR.json
-var ptBR []byte
-
-//go:embed locales/es-ES.json
-var esES []byte
-
 var (
 	once     sync.Once
 	messages map[string]interface{}
-	locale   string
 )
 
-// DetectLocale infers the locale from LANG / LC_ALL / LANGUAGE environment variables.
-// Returns "pt-BR", "es-ES" or falls back to "en-US".
+// DetectLocale always returns "en-US". The product emits only English
+// regardless of the user's locale environment variables (ML-3E, AC2).
 func DetectLocale() string {
-	for _, env := range []string{"LANG", "LC_ALL", "LANGUAGE"} {
-		val := os.Getenv(env)
-		if val == "" {
-			continue
-		}
-		// pt_BR.UTF-8 → pt-BR
-		val = strings.Split(val, ".")[0]
-		val = strings.ReplaceAll(val, "_", "-")
-		lang := strings.Split(val, "-")[0]
-		switch lang {
-		case "pt":
-			return "pt-BR"
-		case "es":
-			return "es-ES"
-		}
-	}
 	return "en-US"
 }
 
 func load() {
 	once.Do(func() {
-		locale = DetectLocale()
-		var data []byte
-		switch locale {
-		case "pt-BR":
-			data = ptBR
-		case "es-ES":
-			data = esES
-		default:
-			data = enUS
-		}
-		if err := json.Unmarshal(data, &messages); err != nil {
+		if err := json.Unmarshal(enUS, &messages); err != nil {
 			messages = map[string]interface{}{}
 		}
 	})
@@ -87,8 +53,7 @@ func T(key string, vars ...string) string {
 	return s
 }
 
-// Locale returns the active locale code (e.g. "pt-BR").
+// Locale returns the active locale code. Always returns "en-US".
 func Locale() string {
-	load()
-	return locale
+	return "en-US"
 }

@@ -24,264 +24,264 @@ var configDocs = []configKeyDoc{
 		Key:         "adr_dirs",
 		Type:        "list of strings",
 		Default:     `["docs/adr"]`,
-		Description: "Diretórios onde os ADRs são armazenados.",
+		Description: "Directories where ADRs are stored.",
 		Example:     `adr_dirs:
   - docs/adr
   - docs/adr/zeus`,
-		Impact: "Alterar adiciona ou remove diretórios rastreados nas validações de ADR.",
+		Impact: "Changing adds or removes directories tracked in ADR validations.",
 	},
 	{
 		Key:         "req_dir",
 		Type:        "string",
 		Default:     `"docs/req"`,
-		Description: "Diretório onde as REQs são armazenadas.",
+		Description: "Directory where REQs are stored.",
 		Example:     `req_dir: docs/requirements`,
-		Impact:      "Alterar muda onde o gate procura REQs para validação.",
+		Impact:      "Changing affects where the gate looks for REQs for validation.",
 	},
 	{
 		Key:         "roadmap_dir",
 		Type:        "string",
 		Default:     `"docs/roadmaps"`,
-		Description: "Diretório raiz dos roadmaps.",
+		Description: "Root directory for roadmaps.",
 		Example:     `roadmap_dir: docs/roadmaps`,
-		Impact:      "Alterar muda onde o gate procura roadmaps em backlog/wip/blocked/done.",
+		Impact:      "Changing affects where the gate looks for roadmaps in backlog/wip/blocked/done.",
 	},
 	{
 		Key:         "roadmap_namespacing",
 		Type:        "flat|by_agent",
 		Default:     `"flat"`,
-		Description: "Estratégia de namespacing dos roadmaps.",
+		Description: "Namespacing strategy for roadmaps.",
 		Example:     `roadmap_namespacing: by_agent`,
-		Impact:      "by_agent cria subdiretórios por agente; flat usa diretório único por estado.",
+		Impact:      "by_agent creates subdirectories per agent; flat uses a single directory per state.",
 	},
 	{
 		Key:         "agents",
 		Type:        "list of strings",
 		Default:     `[]`,
-		Description: "Lista de agentes ativos no projeto.",
+		Description: "List of active agents in the project.",
 		Example: `agents:
   - apolo
   - afrodite`,
-		Impact: "Agentes registrados recebem subdiretórios próprios no modo by_agent.",
+		Impact: "Registered agents get their own subdirectories in by_agent mode.",
 	},
 	{
 		Key:         "governance_mode",
 		Type:        "string",
 		Default:     `""`,
-		Description: "Modo de governança (strict, lenient).",
+		Description: "Governance mode (strict, lenient).",
 		Example:     `governance_mode: lenient`,
-		Impact:      "lenient converte violations em warnings; strict (padrão) bloqueia com exit 1.",
+		Impact:      "lenient converts violations to warnings; strict (default) blocks with exit 1.",
 	},
 	{
 		Key:         "lenient_until",
 		Type:        "date (YYYY-MM-DD)",
 		Default:     `""`,
-		Description: "Prazo obrigatório do modo lenient. Ausência ou data além de 730 dias no futuro reverte para strict (teto de horizonte: nenhuma janela lenient pode ultrapassar ~2 anos sem renovação explícita).",
+		Description: "Mandatory deadline for lenient mode. Absence or a date more than 730 days in the future reverts to strict (horizon ceiling: no lenient window may exceed ~2 years without explicit renewal).",
 		Example:     `lenient_until: 2027-03-31`,
-		Impact:      "Sem prazo = strict. Após a data = strict. Regras de carve-out (req_roadmap_lifecycle, ref_targets_exist) nunca são silenciadas pelo modo lenient.",
+		Impact:      "No deadline = strict. Past the date = strict. Carve-out rules (req_roadmap_lifecycle, ref_targets_exist) are never silenced by lenient mode.",
 	},
 	{
 		Key:         "wip_limit",
 		Type:        "integer",
 		Default:     `1`,
-		Description: "Limite de itens WIP simultâneos.",
+		Description: "Limit on simultaneous WIP items.",
 		Example:     `wip_limit: 3`,
-		Impact:      "Aumentar reduz a frequência de bloqueio; diminuir exige mais disciplina.",
+		Impact:      "Increasing reduces blocking frequency; decreasing requires more discipline.",
 	},
 	{
 		Key:         "wip_by_squad",
 		Type:        "boolean",
 		Default:     `false`,
-		Description: "Aplicar limite WIP por squad individualmente.",
+		Description: "Apply WIP limit per squad individually.",
 		Example:     `wip_by_squad: true`,
-		Impact:      "true aplica o limite por squad; false aplica ao total do projeto.",
+		Impact:      "true applies the limit per squad; false applies to the total project.",
 	},
 	{
 		Key:         "require_req_in_commit",
 		Type:        "boolean",
 		Default:     `false`,
-		Description: "Exigir referência de REQ em mensagens de commit.",
+		Description: "Require REQ reference in commit messages.",
 		Example:     `require_req_in_commit: true`,
-		Impact:      "true instala hook commit-msg que bloqueia commits sem referência REQ.",
+		Impact:      "true installs a commit-msg hook that blocks commits without a REQ reference.",
 	},
 	{
 		Key:         "link_fields.req",
 		Type:        "list of strings",
 		Default:     `["REQ:"]`,
-		Description: "Marcadores que identificam link a REQ.",
+		Description: "Markers identifying links to a REQ.",
 		Example: `link_fields:
   req:
     - "REQ:"
     - "req_id:"`,
-		Impact: "Alterar muda quais tokens o gate reconhece como link de REQ.",
+		Impact: "Changing affects which tokens the gate recognizes as REQ links.",
 	},
 	{
 		Key:         "link_fields.adr",
 		Type:        "list of strings",
 		Default:     `["ADR:"]`,
-		Description: "Marcadores que identificam link a ADR.",
+		Description: "Markers identifying links to an ADR.",
 		Example: `link_fields:
   adr:
     - "ADR:"
     - "adr_id:"`,
-		Impact: "Alterar muda quais tokens o gate reconhece como link de ADR.",
+		Impact: "Changing affects which tokens the gate recognizes as ADR links.",
 	},
 	{
 		Key:         "link_fields.roadmap",
 		Type:        "list of strings",
 		Default:     `["Roadmap:"]`,
-		Description: "Marcadores que identificam link a Roadmap.",
+		Description: "Markers identifying links to a Roadmap.",
 		Example: `link_fields:
   roadmap:
     - "Roadmap:"
     - "roadmap_id:"`,
-		Impact: "Alterar muda quais tokens o gate reconhece como link de Roadmap.",
+		Impact: "Changing affects which tokens the gate recognizes as Roadmap links.",
 	},
 	{
 		Key:         "acceptance_markers",
 		Type:        "list of strings",
 		Default:     `["## Acceptance Criteria", "## Critérios de Aceite"]`,
-		Description: "Marcadores de critério de aceite em documentos WIP.",
+		Description: "Acceptance criteria markers in WIP documents.",
 		Example: `acceptance_markers:
   - "## Acceptance Criteria"
   - "## Critérios de Aceite"
   - "## AC"`,
-		Impact: "Alterar permite personalizar o cabeçalho de seção que o gate valida.",
+		Impact: "Changing allows customizing the section heading the gate validates.",
 	},
 	{
 		Key:         "rules.wip_has_req",
 		Type:        "off|warning|error",
 		Default:     `"error"`,
-		Description: "Severidade: WIP sem REQ linkada.",
+		Description: "Severity: WIP without a linked REQ.",
 		Example:     `rules:\n  wip_has_req: warning`,
-		Impact:      "error bloqueia o gate; warning exibe mas não bloqueia; off ignora.",
+		Impact:      "error blocks the gate; warning displays but does not block; off ignores.",
 	},
 	{
 		Key:         "rules.wip_acceptance",
 		Type:        "off|warning|error",
 		Default:     `"error"`,
-		Description: "Severidade: WIP sem critérios de aceite.",
+		Description: "Severity: WIP without acceptance criteria.",
 		Example:     `rules:\n  wip_acceptance: warning`,
-		Impact:      "error bloqueia o gate; warning exibe mas não bloqueia; off ignora.",
+		Impact:      "error blocks the gate; warning displays but does not block; off ignores.",
 	},
 	{
 		Key:         "rules.wip_limit",
 		Type:        "off|warning|error",
 		Default:     `"warning"`,
-		Description: "Severidade: excesso de itens WIP. Padrão warning: projetos existentes com mais de um roadmap em wip/ não são bloqueados por padrão. Use error para bloquear o gate.",
+		Description: "Severity: excess WIP items. Default warning: existing projects with more than one roadmap in wip/ are not blocked by default. Use error to block the gate.",
 		Example:     `rules:\n  wip_limit: error`,
-		Impact:      "error bloqueia o gate; warning exibe mas não bloqueia; off ignora.",
+		Impact:      "error blocks the gate; warning displays but does not block; off ignores.",
 	},
 	{
 		Key:         "rules.adr_req_has_content",
 		Type:        "off|warning|error",
 		Default:     `"warning"`,
-		Description: "Severidade: ADR ou REQ cujas seções obrigatórias contêm apenas conteúdo do modelo (comentários HTML, checkboxes em branco, espaços). Verifica ## Context/Decision/Consequences/Alternatives Considered (ADR) e ## Motivation/Acceptance Criteria (REQ). Seções opcionais nunca disparam.",
+		Description: "Severity: ADR or REQ whose required sections contain only template content (HTML comments, blank checkboxes, spaces). Checks ## Context/Decision/Consequences/Alternatives Considered (ADR) and ## Motivation/Acceptance Criteria (REQ). Optional sections never trigger.",
 		Example:     `rules:\n  adr_req_has_content: off`,
-		Impact:      "error bloqueia o gate; warning exibe mas não bloqueia; off ignora.",
+		Impact:      "error blocks the gate; warning displays but does not block; off ignores.",
 	},
 	{
 		Key:         "rules.stale_wip",
 		Type:        "off|warning|error",
 		Default:     `"warning"`,
-		Description: "Severidade: WIP sem atualização recente.",
+		Description: "Severity: WIP without recent updates.",
 		Example:     `rules:\n  stale_wip: error`,
-		Impact:      "Aumentar severidade força revisão de roadmaps parados.",
+		Impact:      "Increasing severity forces review of stalled roadmaps.",
 	},
 	{
 		Key:         "rules.adr_orphan",
 		Type:        "off|warning|error",
 		Default:     `"warning"`,
-		Description: "Severidade: ADR sem REQ vinculada.",
+		Description: "Severity: ADR without a linked REQ.",
 		Example:     `rules:\n  adr_orphan: error`,
-		Impact:      "error força que todo ADR seja referenciado por ao menos uma REQ.",
+		Impact:      "error requires every ADR to be referenced by at least one REQ.",
 	},
 	{
 		Key:         "rules.ref_targets_exist",
 		Type:        "off|warning|error",
 		Default:     `"warning"`,
-		Description: "Severidade: referências com destino inexistente.",
+		Description: "Severity: references with non-existent targets.",
 		Example:     `rules:\n  ref_targets_exist: error`,
-		Impact:      "error bloqueia quando REQ ou ADR referenciados não existem no repositório.",
+		Impact:      "error blocks when referenced REQs or ADRs do not exist in the repository.",
 	},
 	{
 		Key:         "rules.folder_status",
 		Type:        "off|warning|error",
 		Default:     `"warning"`,
-		Description: "Severidade: coerência entre pasta e status do arquivo.",
+		Description: "Severity: consistency between folder and file status.",
 		Example:     `rules:\n  folder_status: error`,
-		Impact:      "error bloqueia quando o status no frontmatter não bate com a pasta (ex: done/ com status Open).",
+		Impact:      "error blocks when the frontmatter status does not match the folder (e.g. done/ with status Open).",
 	},
 	{
 		Key:         "rules.filename_uniqueness",
 		Type:        "off|warning|error",
 		Default:     `"error"`,
-		Description: "Severidade: nomes de arquivo duplicados.",
+		Description: "Severity: duplicate file names.",
 		Example:     `rules:\n  filename_uniqueness: warning`,
-		Impact:      "error bloqueia quando dois artefatos têm o mesmo basename independentemente de pasta.",
+		Impact:      "error blocks when two artifacts share the same basename regardless of folder.",
 	},
 	{
 		Key:         "rules.blocked_by_draft_adr",
 		Type:        "off|warning|error",
 		Default:     `"error"`,
-		Description: "Severidade: REQ bloqueada por ADR em rascunho.",
+		Description: "Severity: REQ blocked by a draft ADR.",
 		Example:     `rules:\n  blocked_by_draft_adr: warning`,
-		Impact:      "error bloqueia quando REQ Open referencia ADR com Status: Draft.",
+		Impact:      "error blocks when an Open REQ references an ADR with Status: Draft.",
 	},
 	{
 		Key:         "trace_id_field",
 		Type:        "string",
 		Default:     `""`,
-		Description: "Campo de frontmatter usado como ID de rastreabilidade estável entre REQ e Roadmap. Vazio = desativado.",
+		Description: "Frontmatter field used as a stable traceability ID between REQ and Roadmap. Empty = disabled.",
 		Example:     `trace_id_field: req_id`,
-		Impact:      "Ativa verificação bidirecional REQ↔Roadmap (traceid_orphan_*, traceid_state_mismatch, traceid_duplicate_*).",
+		Impact:      "Enables bidirectional REQ↔Roadmap verification (traceid_orphan_*, traceid_state_mismatch, traceid_duplicate_*).",
 	},
 	{
 		Key:         "rules.traceid_orphan_roadmap",
 		Type:        "off|warning|error",
 		Default:     `"error"`,
-		Description: "Roadmap com req_id sem REQ correspondente.",
+		Description: "Roadmap with req_id without a matching REQ.",
 		Example:     "rules:\n  traceid_orphan_roadmap: warning",
-		Impact:      "Detecta Roadmaps sem REQ pareada.",
+		Impact:      "Detects Roadmaps without a paired REQ.",
 	},
 	{
 		Key:         "rules.traceid_orphan_req",
 		Type:        "off|warning|error",
 		Default:     `"error"`,
-		Description: "REQ com req_id sem Roadmap correspondente.",
+		Description: "REQ with req_id without a matching Roadmap.",
 		Example:     "rules:\n  traceid_orphan_req: warning",
-		Impact:      "Detecta REQs sem Roadmap pareado.",
+		Impact:      "Detects REQs without a paired Roadmap.",
 	},
 	{
 		Key:         "rules.traceid_state_mismatch",
 		Type:        "off|warning|error",
 		Default:     `"error"`,
-		Description: "REQ e Roadmap com mesmo req_id em estados divergentes (ex: done/wip).",
+		Description: "REQ and Roadmap with the same req_id in divergent states (e.g. done/wip).",
 		Example:     "rules:\n  traceid_state_mismatch: warning",
-		Impact:      "Garante consistência de estado entre REQ e Roadmap.",
+		Impact:      "Ensures state consistency between REQ and Roadmap.",
 	},
 	{
 		Key:         "rules.traceid_duplicate_req",
 		Type:        "off|warning|error",
 		Default:     `"error"`,
-		Description: "Mesmo req_id em mais de uma REQ.",
+		Description: "Same req_id in more than one REQ.",
 		Example:     "rules:\n  traceid_duplicate_req: warning",
-		Impact:      "Garante unicidade lógica de REQs.",
+		Impact:      "Ensures logical uniqueness of REQs.",
 	},
 	{
 		Key:         "rules.traceid_duplicate_roadmap",
 		Type:        "off|warning|error",
 		Default:     `"error"`,
-		Description: "Mesmo req_id em mais de um Roadmap.",
+		Description: "Same req_id in more than one Roadmap.",
 		Example:     "rules:\n  traceid_duplicate_roadmap: warning",
-		Impact:      "Garante unicidade lógica de Roadmaps.",
+		Impact:      "Ensures logical uniqueness of Roadmaps.",
 	},
 }
 
 // printCommandList escreve a lista de comandos disponíveis de root em out.
 func printCommandList(out io.Writer, root *cobra.Command) {
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "Comandos disponíveis:")
+	fmt.Fprintln(w, "Available commands:")
 	for _, sub := range root.Commands() {
 		if !sub.IsAvailableCommand() {
 			continue
@@ -294,8 +294,8 @@ func printCommandList(out io.Writer, root *cobra.Command) {
 // printConfigKeyList escreve a tabela KEY/DEFAULT/DESCRIÇÃO em out.
 func printConfigKeyList(out io.Writer) {
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "Chaves de configuração (trackfw.yaml):")
-	fmt.Fprintln(w, "KEY\tDEFAULT\tDESCRIÇÃO")
+	fmt.Fprintln(w, "Configuration keys (trackfw.yaml):")
+	fmt.Fprintln(w, "KEY\tDEFAULT\tDESCRIPTION")
 	fmt.Fprintln(w, strings.Repeat("─", 80))
 	for _, d := range configDocs {
 		fmt.Fprintf(w, "%s\t%s\t%s\n", d.Key, d.Default, d.Description)
@@ -379,11 +379,11 @@ func suggestTopic(topic string, root *cobra.Command) string {
 
 func newHelpCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "help [comando|chave]",
-		Short: "Exibe ajuda de comandos e documentação das chaves de configuração do trackfw.yaml",
-		Long: `Sem argumento: lista os comandos disponíveis e as chaves configuráveis do trackfw.yaml.
-Com argumento: mostra a ajuda do comando informado, ou a documentação completa da
-chave de configuração especificada.`,
+		Use:   "help [command|key]",
+		Short: "Display help for commands and documentation for trackfw.yaml configuration keys",
+		Long: `Without argument: lists available commands and configurable keys in trackfw.yaml.
+With argument: shows help for the given command, or full documentation for the
+specified configuration key.`,
 		Args:               cobra.MaximumNArgs(1),
 		DisableFlagParsing: false,
 		// Silenciados: a mensagem de erro é composta e impressa por nós mesmos
@@ -422,9 +422,9 @@ chave de configuração especificada.`,
 			}
 
 			// 3) assunto desconhecido → erro com sugestão útil.
-			msg := "assunto desconhecido: " + topic
+			msg := "unknown topic: " + topic
 			if s := suggestTopic(topic, root); s != "" {
-				msg += "\nVocê quis dizer: " + s + "?"
+				msg += "\nDid you mean: " + s + "?"
 			}
 			return errors.New(msg)
 		},

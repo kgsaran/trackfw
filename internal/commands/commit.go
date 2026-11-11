@@ -318,12 +318,12 @@ func buildSuggestedMessage(deps commitDeps) (string, error) {
 	commitType := suggestedCommitType(files)
 
 	var b strings.Builder
-	fmt.Fprintln(&b, "# Sugestão heurística — NÃO é uma mensagem pronta, revise antes de usar.")
-	fmt.Fprintf(&b, "# Tipo sugerido: %s\n", commitType)
+	fmt.Fprintln(&b, "# Heuristic suggestion — NOT a ready-to-use message, review before using.")
+	fmt.Fprintf(&b, "# Suggested type: %s\n", commitType)
 	fmt.Fprintln(&b)
-	fmt.Fprintf(&b, "%s(<escopo>): <descrição>\n", commitType)
+	fmt.Fprintf(&b, "%s(<scope>): <description>\n", commitType)
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "## Arquivos staged")
+	fmt.Fprintln(&b, "## Staged files")
 	for _, f := range files {
 		fmt.Fprintf(&b, "%s  %s\n", f.status, f.path)
 	}

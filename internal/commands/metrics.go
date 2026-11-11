@@ -60,15 +60,15 @@ func newMetricsCmd() *cobra.Command {
 // parseSinceDuration converte strings como "7d", "30d", "90d" em time.Duration.
 func parseSinceDuration(s string) (time.Duration, error) {
 	if len(s) < 2 {
-		return 0, fmt.Errorf("formato inválido: %q", s)
+		return 0, fmt.Errorf("invalid format: %q", s)
 	}
 	unit := s[len(s)-1]
 	if unit != 'd' {
-		return 0, fmt.Errorf("unidade não suportada %q (use 'd' para dias)", string(unit))
+		return 0, fmt.Errorf("unsupported unit %q (use 'd' for days)", string(unit))
 	}
 	days, err := parsePositiveInt(s[:len(s)-1])
 	if err != nil {
-		return 0, fmt.Errorf("número inválido em %q: %w", s, err)
+		return 0, fmt.Errorf("invalid number in %q: %w", s, err)
 	}
 	return time.Duration(days) * 24 * time.Hour, nil
 }
@@ -78,12 +78,12 @@ func parsePositiveInt(s string) (int, error) {
 	var n int
 	for _, c := range s {
 		if c < '0' || c > '9' {
-			return 0, fmt.Errorf("caractere não numérico: %q", c)
+			return 0, fmt.Errorf("non-numeric character: %q", c)
 		}
 		n = n*10 + int(c-'0')
 	}
 	if n <= 0 {
-		return 0, fmt.Errorf("valor deve ser positivo")
+		return 0, fmt.Errorf("value must be positive")
 	}
 	return n, nil
 }

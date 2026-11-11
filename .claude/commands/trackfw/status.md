@@ -1,9 +1,9 @@
-Execute o seguinte comando bash: `trackfw status`
+Run the following bash command: `trackfw status`
 
-Se o comando falhar com `trackfw: command not found` ou similar, informe ao usuário:
+If the command fails with `trackfw: command not found` or similar, inform the user:
 
 ```
-trackfw não está instalado. Instale com uma das opções:
+trackfw is not installed. Install with one of these options:
 
   curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh
   npm install -g trackfw

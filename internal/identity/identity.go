@@ -48,15 +48,15 @@ func Load(homeDir string) (Config, error) {
 		return Config{}, nil
 	}
 	if err != nil {
-		return Config{}, fmt.Errorf("identity: falha ao ler %s: %w", filename, err)
+		return Config{}, fmt.Errorf("identity: failed to read %s: %w", filename, err)
 	}
 
 	var cfg Config
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return Config{}, fmt.Errorf("identity: falha ao decodificar %s: %w", filename, err)
+		return Config{}, fmt.Errorf("identity: failed to decode %s: %w", filename, err)
 	}
 	if cfg.SchemaVersion != schemaVersion {
-		return Config{}, fmt.Errorf("identity: versao de schema nao suportada em %s: %d (esperado %d)", filename, cfg.SchemaVersion, schemaVersion)
+		return Config{}, fmt.Errorf("identity: unsupported schema version in %s: %d (expected %d)", filename, cfg.SchemaVersion, schemaVersion)
 	}
 	if cfg.Agents == nil {
 		cfg.Agents = make(map[string]AgentIdentity)
@@ -66,11 +66,11 @@ func Load(homeDir string) (Config, error) {
 	// literally (the write path now uses yamlSafeScalar, but rejection here is
 	// an independent defence-in-depth layer and surfaces the problem early).
 	if containsControlCharIdent(cfg.UserNickname) {
-		return Config{}, fmt.Errorf("identity: user_nickname em %s contém caractere de controle — remova o valor ou corrija o arquivo manualmente", filename)
+		return Config{}, fmt.Errorf("identity: user_nickname in %s contains a control character — remove the value or fix the file manually", filename)
 	}
 	for id, agent := range cfg.Agents {
 		if containsControlCharIdent(agent.DisplayName) {
-			return Config{}, fmt.Errorf("identity: display_name do agente %q em %s contém caractere de controle — remova o valor ou corrija o arquivo manualmente", id, filename)
+			return Config{}, fmt.Errorf("identity: display_name of agent %q in %s contains a control character — remove the value or fix the file manually", id, filename)
 		}
 		// T-3: a slug edited by hand into identity.json bypasses Validate
 		// (which is only called by the wizard and CLI flags). Reject any
@@ -79,7 +79,7 @@ func Load(homeDir string) (Config, error) {
 		// An empty slug is still allowed at Load time (Validate enforces
 		// non-empty slugs; Load does not duplicate that check).
 		if agent.Slug != "" && !slugPattern.MatchString(agent.Slug) {
-			return Config{}, fmt.Errorf("identity: slug do agente %q em %s inválido (%q; esperado padrão %s) — corrija o arquivo manualmente", id, filename, agent.Slug, slugPattern.String())
+			return Config{}, fmt.Errorf("identity: slug of agent %q in %s is invalid (%q; expected pattern %s) — fix the file manually", id, filename, agent.Slug, slugPattern.String())
 		}
 	}
 	return cfg, nil
@@ -94,7 +94,7 @@ func Save(homeDir string, cfg Config) error {
 
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
-		return fmt.Errorf("identity: falha ao codificar configuracao: %w", err)
+		return fmt.Errorf("identity: failed to encode configuration: %w", err)
 	}
 	data = append(data, '\n')
 
@@ -112,7 +112,7 @@ func Save(homeDir string, cfg Config) error {
 	// private atomicWrite that previously lived in this file (declared there
 	// as a mirror of internal/integrations/manager.go's atomicWrite).
 	if err := pathguard.GuardedWrite(guardRoot, filename, data, 0o600); err != nil {
-		return fmt.Errorf("identity: falha ao gravar %s: %w", filename, err)
+		return fmt.Errorf("identity: failed to write %s: %w", filename, err)
 	}
 	return nil
 }
@@ -140,19 +140,19 @@ func Validate(cfg Config, knownIDs []string) error {
 
 	for id, agent := range cfg.Agents {
 		if !known[id] {
-			return fmt.Errorf("identity: agente desconhecido %q nao esta na lista de agentes conhecidos", id)
+			return fmt.Errorf("identity: unknown agent %q is not in the known agents list", id)
 		}
 		if agent.DisplayName == "" {
-			return fmt.Errorf("identity: display_name vazio para o agente %q", id)
+			return fmt.Errorf("identity: display_name is empty for agent %q", id)
 		}
 		if !slugPattern.MatchString(agent.Slug) {
-			return fmt.Errorf("identity: slug invalido %q para o agente %q (esperado padrao %s)", agent.Slug, id, slugPattern.String())
+			return fmt.Errorf("identity: invalid slug %q for agent %q (expected pattern %s)", agent.Slug, id, slugPattern.String())
 		}
 		if otherID, exists := seenSlugs[agent.Slug]; exists {
-			return fmt.Errorf("identity: slug duplicado %q entre os agentes %q e %q", agent.Slug, otherID, id)
+			return fmt.Errorf("identity: duplicate slug %q between agents %q and %q", agent.Slug, otherID, id)
 		}
 		if strings.HasSuffix(agent.Slug, "-tf") {
-			return fmt.Errorf("identity: slug %q do agente %q nao deve incluir o sufixo \"-tf\"; ele e acrescentado automaticamente (use %q em vez de %q)", agent.Slug, id, strings.TrimSuffix(agent.Slug, "-tf"), agent.Slug)
+			return fmt.Errorf("identity: slug %q of agent %q must not include the \"-tf\" suffix; it is appended automatically (use %q instead of %q)", agent.Slug, id, strings.TrimSuffix(agent.Slug, "-tf"), agent.Slug)
 		}
 		seenSlugs[agent.Slug] = id
 	}

@@ -224,11 +224,11 @@ run_closed_cycle() {
   local name
   name=$(basename "$file" .md)
 
-  # Preencher SEGUINDO APENAS o que o template ensina: a legenda diz que ✅ Concluído é o
+  # Preencher SEGUINDO APENAS o que o template ensina: a legenda diz que ✅ Done é o
   # estado terminal (ML-2A), e o marcador de item concluído é "- [x]". Âncora por linha
-  # inteira (^\*\*Status:\*\* ⬜ Pendente$) para não tocar a linha da legenda em si (que cita
+  # inteira (^\*\*Status:\*\* ⬜ Pending$) para não tocar a linha da legenda em si (que cita
   # os quatro estados na mesma linha, sem o prefixo "**Status:**").
-  sed -i.bak 's/^\*\*Status:\*\* ⬜ Pendente$/**Status:** ✅ Concluído/' "$file"
+  sed -i.bak 's/^\*\*Status:\*\* ⬜ Pending$/**Status:** ✅ Done/' "$file"
   sed -i.bak 's/^- \[ \] /- [x] /' "$file"
   rm -f "$file.bak"
 
@@ -270,7 +270,7 @@ run_closed_cycle go
 # (AC11/ML-2A). Emite a razão em stdout e retorna != 0 quando ausente.
 check_legend_present() {
   local file=$1
-  if ! grep -qF '⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado' "$file"; then
+  if ! grep -qF '⬜ Pending · 🔄 In progress · ✅ Done · ❌ Blocked' "$file"; then
     echo "legenda dos 4 estados ausente do roadmap gerado"
     return 1
   fi
@@ -296,9 +296,9 @@ else
   # ciclo, capturada abaixo em RAW_TEMPLATE) tem que passar nas duas checagens hoje.
   RAW_TEMPLATE="$WORK/raw-template.md"
   cp "$CYCLE_GO_ROADMAP" "$RAW_TEMPLATE"
-  # Desfaz a edição do ciclo A (✅ Concluído / [x]) para inspecionar o template TAL COMO O
+  # Desfaz a edição do ciclo A (✅ Done / [x]) para inspecionar o template TAL COMO O
   # GERADOR ESCREVE, não como o ciclo o deixou depois de preenchido.
-  sed -i.bak 's/^\*\*Status:\*\* ✅ Concluído$/**Status:** ⬜ Pendente/' "$RAW_TEMPLATE"
+  sed -i.bak 's/^\*\*Status:\*\* ✅ Done$/**Status:** ⬜ Pending/' "$RAW_TEMPLATE"
   sed -i.bak 's/^- \[x\] /- [ ] /' "$RAW_TEMPLATE"
   rm -f "$RAW_TEMPLATE.bak"
 
@@ -317,7 +317,7 @@ else
   # chamar a MESMA função, exigir que ela reprove com a razão nomeada.
   NO_LEGEND="$WORK/no-legend.md"
   cp "$RAW_TEMPLATE" "$NO_LEGEND"
-  sed -i.bak '/⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado/d' "$NO_LEGEND"
+  sed -i.bak '/⬜ Pending · 🔄 In progress · ✅ Done · ❌ Blocked/d' "$NO_LEGEND"
   rm -f "$NO_LEGEND.bak"
   if out=$(check_legend_present "$NO_LEGEND" 2>&1); then
     fail "falsify/template/legend-missing" "esperava reprovação (legenda ausente), mas passou silenciosamente"
@@ -331,7 +331,7 @@ else
   # antiga, chamar a MESMA função, exigir reprovação com a razão nomeada.
   BACK_TO_PENDING="$WORK/back-to-pending.md"
   cp "$RAW_TEMPLATE" "$BACK_TO_PENDING"
-  sed -i.bak 's/^\*\*Status:\*\* ⬜ Pendente$/**Status:** pending/' "$BACK_TO_PENDING"
+  sed -i.bak 's/^\*\*Status:\*\* ⬜ Pending$/**Status:** pending/' "$BACK_TO_PENDING"
   rm -f "$BACK_TO_PENDING.bak"
   if out=$(check_status_not_pending "$BACK_TO_PENDING" 2>&1); then
     fail "falsify/template/status-pending-regression" "esperava reprovação ('pending' reintroduzido), mas passou silenciosamente"
