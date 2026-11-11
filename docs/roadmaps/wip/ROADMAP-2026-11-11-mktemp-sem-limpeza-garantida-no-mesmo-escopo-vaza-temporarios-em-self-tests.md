@@ -231,7 +231,7 @@ Pendências, todas da mesma causa (estado do apelido não modelado) e que entram
 Desvio: o executor deixou um `make parity-rest` rodando em background ao encerrar.
 
 ### ML-2C — Apelido com escrita única (fecha R5/R6 do ML-2B)
-**Status:** 🔄 In progress
+**Status:** ✅ Done
 **Squad:** ares-tf
 **Files affected:**
 - `scripts/check-mktemp-cleanup.sh`
@@ -247,9 +247,22 @@ Desvio: o executor deixou um `make parity-rest` rodando em background ao encerra
 4. Braços novos: R5 (`q=""` depois do trap); R6 (aspas simples, apelido reatribuído depois do trap); `-p "$TMPDIR"`.
 
 **Acceptance criteria:**
-- [ ] Braços R5, R6 e `-p "$TMPDIR"` vermelhos no gate do HEAD e verdes no `--self-test` novo, com mutação provando cada um
-- [ ] Os 27 braços anteriores continuam verdes; gate verde no corpus, em bash e em `/bin/bash`
-- [ ] `make quality` rc=0
+- [x] Braços R5, R6 e `-p "$TMPDIR"` vermelhos no gate do HEAD e verdes no `--self-test` novo, com mutação provando cada um
+- [x] Os 27 braços anteriores continuam verdes; gate verde no corpus, em bash e em `/bin/bash`
+- [x] `make quality` rc=0
+
+**Auditoria (Zeus, 2026-11-11):** medido pelo arquiteto:
+- `--self-test` 32/32 e corpus rc=0, tanto em `bash` quanto em `/bin/bash` 3.2;
+- os 22 sintéticos do red team têm o mesmo rc no gate do HEAD e no novo;
+- dois sintéticos próprios: uma reescrita indentada do apelido dentro de `if` (rc=1) e a forma canônica
+  `local q; printf -v q` (rc=0).
+
+O bloco de dominação do ML-2B saiu, porque a regra da escrita única o cobre. Defeito lateral corrigido: a extração
+do nome em `-p "$X"` esvaziava sempre o nome. O braço `fail-tmpdir-p-not-container` já dava rc=1 no HEAD por
+causa desse defeito; é um braço de fixação, e a mutação que remove a exclusão de `TMPDIR` o deixa verde.
+
+Desvio: o executor deixou um processo `make` em background ao encerrar, de novo. O `make quality` final da Wave 2 é
+rodado pelo arquiteto.
 
 **Wave gates:**
 ```bash

@@ -13,7 +13,9 @@
 #
 # COVERAGE MECHANISMS (ADR D2):
 #   DIRECT   — trap body cites $V, ${V}, ${V:-} or ${V:-x}
-#   ALIAS    — printf -v A '%q' "$V" or A=$V or A="$V" before trap; trap cites $A
+#   ALIAS    — A is an alias of V iff there is exactly ONE write to A in the scope
+#              (the alias assignment itself: printf -v A '%q' "$V", A=$V, or A="$V"),
+#              that write precedes the trap, and the trap body cites $A.
 #   FUNCTION — trap calls function whose body cites $V or an outer-scope alias of V
 #   CONTAINED— V created as mktemp … "$W/…" and W is covered
 #
@@ -27,6 +29,7 @@
 #   `exit` statements between them.  When in doubt, the gate fails (ADR Consequences).
 #   Note: fn_covers_var does not enforce alias ordering because function-call traps
 #   execute at EXIT time and can read aliases regardless of when they were defined.
+#   The single-write rule (above) applies in fn_covers_var as well.
 #
 # RESIDUALS (not detected by this gate):
 #   R1  trap inside a subshell function called as d=$(fn) — cleanup fires before the
@@ -34,12 +37,6 @@
 #   R2  loop reassignment — only the last creation is covered (FN-10)
 #   R3  exec CMD after a trapped var replaces the shell without firing EXIT (FN-7)
 #   R4  two-level function indirection: trap → wrapper() → cleanup() → $V (FN-4b)
-#   R5  alias overwrite not tracked for non-printf-v / non-assignment forms — `q=""` or
-#       `printf -v q '%s' x` clears/replaces q; gate still treats q as pointing to V →
-#       false negative. Same cause as R6; architect to add ML (Regra Dura).
-#   R6  SQ traps: post-trap alias reassignment not tracked — `A=$V; trap 'rm "$A"' EXIT;
-#       A=$W` gate says V covered, W flagged; at runtime only W is cleaned (V leaks).
-#       SQ traps expand at EXIT time; re-inspection at EXIT not modelled statically.
 #
 # USAGE
 #   bash scripts/check-mktemp-cleanup.sh           # scan git ls-files '*.sh'
@@ -344,6 +341,9 @@ function process_scope_line(line, scope, lsq) {
     try_store_alias_printf(line, scope, lsq)
     try_store_alias_assign(line, scope, lsq)
 
+    # 3b. Count ALL writes to variable names (for single-write alias rule)
+    track_writes(line, scope, lsq)
+
     # 4. Check for trap EXIT
     try_store_trap(line, scope, lsq)
 }
@@ -387,7 +387,7 @@ function try_store_mktemp(line, scope, lsq,    pos, matched, varname, rest, ctr)
     }
     if (container == "" && match(args, /-p[[:space:]]+"?\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?/)) {
         pname = substr(args, RSTART, RLENGTH)
-        sub(/^-p[[:space:]]+"?\$\{?/, "", pname); sub(/\}?"?.*/, "", pname)
+        sub(/^-p[[:space:]]+"?\$\{?/, "", pname); sub(/[}"]+.*$/, "", pname)
         if (pname != "TMPDIR") container = pname
     }
 
@@ -460,6 +460,81 @@ function try_store_alias_assign(line, scope, lsq,    pos, name, after_eq, src_v)
     }
 }
 
+# Count ALL writes to a variable name A in the current scope, for the single-write rule.
+# "Write" = A=…, A+=…, printf -v A, read [opts] A, local/declare/export/readonly A=…,
+# for A in.  Declaration without value (local A, local A B) is NOT a write.
+# Increments var_write_count[scope, A] for each write detected.
+function track_writes(line, scope, lsq,    pos, name, rest, matched) {
+    # 1. printf -v NAME (any form — alias or non-alias)
+    if (match(line, /printf[[:space:]]+-v[[:space:]]+/)) {
+        pos = RSTART
+        if (!in_sq_at(line, pos, lsq)) {
+            rest = substr(line, pos + RLENGTH)
+            if (match(rest, /^[A-Za-z_][A-Za-z0-9_]*/)) {
+                var_write_count[scope, substr(rest, 1, RLENGTH)]++
+            }
+        }
+    }
+    # 2. read [opts] NAME (first variable after options)
+    if (match(line, /read[[:space:]]+/)) {
+        pos = RSTART
+        if (pos == 1 || substr(line, pos-1, 1) !~ /[A-Za-z0-9_]/) {
+            if (!in_sq_at(line, pos, lsq)) {
+                rest = substr(line, pos + RLENGTH)
+                while (match(rest, /^-[A-Za-z]+[[:space:]]*/)) {
+                    rest = substr(rest, RLENGTH + 1)
+                    sub(/^[[:space:]]*/, "", rest)
+                }
+                if (match(rest, /^[A-Za-z_][A-Za-z0-9_]*/)) {
+                    var_write_count[scope, substr(rest, 1, RLENGTH)]++
+                }
+            }
+        }
+    }
+    # 3. for NAME in …
+    if (match(line, /for[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]+in/)) {
+        pos = RSTART
+        if (pos == 1 || substr(line, pos-1, 1) !~ /[A-Za-z0-9_]/) {
+            if (!in_sq_at(line, pos, lsq)) {
+                matched = substr(line, RSTART, RLENGTH)
+                sub(/^[[:space:]]*for[[:space:]]+/, "", matched)
+                sub(/[[:space:]]+in$/, "", matched)
+                if (matched ~ /^[A-Za-z_]/) var_write_count[scope, matched]++
+            }
+        }
+    }
+    # 4. local/declare/export/readonly NAME=value (keyword form with =)
+    #    Declaration without = (e.g., local A) is NOT a write.
+    if (match(line, /(local|declare|export|readonly|typeset)[[:space:]]+/)) {
+        pos = RSTART
+        if (pos == 1 || substr(line, pos-1, 1) !~ /[A-Za-z0-9_]/) {
+            if (!in_sq_at(line, pos, lsq)) {
+                rest = substr(line, pos + RLENGTH)
+                while (match(rest, /^-[A-Za-z]+[[:space:]]*/)) {
+                    rest = substr(rest, RLENGTH + 1)
+                    sub(/^[[:space:]]*/, "", rest)
+                }
+                if (match(rest, /^[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=[^=]/)) {
+                    matched = substr(rest, 1, RLENGTH)
+                    sub(/[[:space:]]*=.*/, "", matched)
+                    if (matched != "") var_write_count[scope, matched]++
+                }
+            }
+        }
+    }
+    # 5. Plain NAME=value at start of line (not keyword-prefixed, anchored to ^)
+    #    Matches NAME= not inside a keyword form; uses ^ to avoid matching mid-line.
+    if (match(line, /^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=[^=]/)) {
+        pos = RSTART
+        if (!in_sq_at(line, pos, lsq)) {
+            matched = substr(line, RSTART, RLENGTH)
+            sub(/^[[:space:]]*/, "", matched)
+            sub(/[[:space:]]*=.*/, "", matched)
+            if (matched != "") var_write_count[scope, matched]++
+        }
+    }
+}
+
 # Detect and store trap EXIT in current scope
 function try_store_trap(line, scope, lsq,    pos, rest, body, is_dq, fn_nm, is_reset, after, sigs, n_sigs, i, sig, has_exit) {
     if (!match(line, /trap[[:space:]]+/)) return
@@ -513,7 +588,6 @@ function try_store_trap(line, scope, lsq,    pos, rest, body, is_dq, fn_nm, is_r
     if (!has_exit) return
     n_traps++
     trap_body[n_traps] = body
-    trap_is_dq[n_traps] = is_dq
     trap_fn_name[n_traps] = fn_nm
     trap_is_reset[n_traps] = is_reset
     trap_scope[n_traps] = scope
@@ -523,57 +597,51 @@ function try_store_trap(line, scope, lsq,    pos, rest, body, is_dq, fn_nm, is_r
 # ---- Coverage check ----
 
 # Check if function fn_name's body cites var v or any alias of v in scope
+# Single-write rule applies: alias A is valid only if var_write_count[scope,A] == 1.
+# fn_covers_var does not enforce alias ordering (declared asymmetry; ADR D2): function
+# bodies execute at EXIT time and can read the latest value — but a rewritten A may
+# point to something other than V, so the single-write rule guards against that.
 function fn_covers_var(fn_nm, v, scope,    body_text, i) {
     body_text = func_body[fn_nm]
     if (body_refs_var(body_text, v)) return 1
-    # Check aliases of v in given scope
+    # Check aliases of v in given scope; single-write rule enforced
     for (i = 1; i <= n_aliases; i++) {
-        if (alias_src[i] == v && alias_scope[i] == scope) {
-            if (body_refs_var(body_text, alias_name[i])) return 1
-        }
+        if (alias_src[i] != v) continue
+        if (alias_scope[i] != scope) continue
+        if (var_write_count[scope, alias_name[i]] != 1) continue
+        if (body_refs_var(body_text, alias_name[i])) return 1
     }
     return 0
 }
 
 # Check if trap at index ti covers variable v using the given alias scope
-function trap_covers(ti, v, alias_scope_name,    body, fn_nm, i, j, aname, aline, dominated) {
+function trap_covers(ti, v, alias_scope_name,    body, fn_nm, i) {
     if (trap_is_reset[ti]) return 0
     body = trap_body[ti]
     fn_nm = trap_fn_name[ti]
     # 1. DIRECT
     if (body_refs_var(body, v)) return 1
-    # 2. ALIAS: trap body mentions alias A of v
-    #    ADR D2 "antes do trap": alias must be defined before the trap — no quoting
-    #    distinction. Gate is deliberately stricter than SQ runtime (SQ expands at EXIT
-    #    time, so an alias defined after the trap would still resolve), but ADR D2 states
-    #    no quoting exception and 0 corpus false positives confirm the strictness is safe.
-    #    SQ ordering is currently unpinned (no self-test arm; DQ-only mutation gives 27/27).
-    #    For DQ traps only: the LAST assignment to alias-name A before the trap wins —
-    #    bash expands $A at install time, so a later A←W overwrites A←V and covers only W.
-    #    fn_covers_var does NOT enforce ordering (declared asymmetry): ADR D2 states no
-    #    ordering requirement for FUNCTION coverage; function bodies are executed at EXIT
-    #    time and can read aliases from any point in the outer scope.
+    # 2. ALIAS: trap body cites alias A of v.
+    #    Single-write rule (ADR D2, ML-2C): A qualifies as an alias of V only if
+    #    var_write_count[scope, A] == 1 — exactly one write in the scope, which must be
+    #    the alias assignment itself.  Any additional write to A (before or after the
+    #    trap, any form: A=…, printf -v A, read A, local A=…, for A in) disqualifies it.
+    #    This covers both DQ and SQ traps: for SQ, A is read at EXIT time, so a post-trap
+    #    A←W means only W is cleaned (V leaks); for DQ, A is expanded at install time,
+    #    but a pre-trap A←X followed by A←V means A held X at install (V not covered).
+    #    Ordering: alias must still be defined before the trap (ADR D2 "antes do trap").
+    #    Domination block (ML-2B, "last write wins for DQ") is superseded by the
+    #    single-write rule and has been removed: if count ≥ 2, A is disqualified entirely.
+    #    fn_covers_var does NOT enforce ordering (declared asymmetry): function bodies
+    #    execute at EXIT time and read the latest value; single-write rule guards that too.
     for (i = 1; i <= n_aliases; i++) {
         if (alias_src[i] != v) continue
         if (alias_scope[i] != alias_scope_name) continue
         # Ordering: alias must be defined before the trap (ADR D2 "antes do trap")
         if (alias_line_no[i] > trap_line_no[ti]) continue
+        # Single-write rule: A is valid alias only if written exactly once in scope
+        if (var_write_count[alias_scope_name, alias_name[i]] != 1) continue
         if (!body_refs_var(body, alias_name[i])) continue
-        # For DQ traps: the last assignment to this alias name before the trap wins.
-        # If a later same-name alias (pointing to any source) exists before the trap,
-        # this earlier alias assignment is overridden and no longer covers v.
-        if (trap_is_dq[ti]) {
-            aname = alias_name[i]; aline = alias_line_no[i]; dominated = 0
-            for (j = 1; j <= n_aliases; j++) {
-                if (j == i) continue
-                if (alias_name[j] != aname) continue
-                if (alias_scope[j] != alias_scope_name) continue
-                if (alias_line_no[j] > aline && alias_line_no[j] <= trap_line_no[ti]) {
-                    dominated = 1; break
-                }
-            }
-            if (dominated) continue
-        }
         return 1
     }
     # 3. FUNCTION: trap body is a bare function call
@@ -668,11 +736,11 @@ function reset_file(    k) {
     for (k in alias_scope) delete alias_scope[k]
     for (k in alias_line_no) delete alias_line_no[k]
     for (k in trap_body)   delete trap_body[k]
-    for (k in trap_is_dq)  delete trap_is_dq[k]
     for (k in trap_fn_name) delete trap_fn_name[k]
     for (k in trap_is_reset) delete trap_is_reset[k]
     for (k in trap_scope)  delete trap_scope[k]
     for (k in trap_line_no) delete trap_line_no[k]
+    for (k in var_write_count) delete var_write_count[k]
     # Parse state
     in_func = 0; cur_scope = "global"; brace_depth = 0
     in_sq = 0; in_heredoc = 0; heredoc_delim = ""; heredoc_strip = 0
@@ -997,9 +1065,9 @@ printf -v q '%q' "$V"
 FIX
 
   # fail-alias-dq-last-wins: alias name reused for W after first pointing to V; DQ trap sees W
-  # Affirms: ADR D2 ALIAS — for DQ traps only the last assignment to alias-name A before the
-  #          trap counts; an earlier A←V overridden by A←W does not cover V (LOW fix)
-  # Mutation: removing the domination check causes the earlier A←V to cover V → rc=0 → arm red
+  # Affirms: single-write rule — A written twice in scope (once A←V, once A←W) disqualifies
+  #          A entirely; neither write covers V (LOW fix; domination block replaced by rule)
+  # Mutation: skipping the write-count check (allowing count > 1) lets A←V cover V → rc=0
   run_case "fail-alias-dq-last-wins" 1 "V" << 'FIX'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -1032,7 +1100,6 @@ FIX
   #          gate treats "trap body refs TMPDIR" as coverage of V under TMPDIR → false negative
   # Mutation D (removes TMPDIR name exclusion): container=TMPDIR, body_refs_var(TMPDIR)=1 →
   #   global_covered(TMPDIR)=1 → V "covered" → rc=0 → arm red ✓
-  # Note: -p "$TMPDIR" exclusion stays unpinned (no arm confirms it; RESIDUAL pending).
   run_case "fail-tmpdir-not-container" 1 "V" << 'FIX'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -1056,6 +1123,83 @@ if false; then
 fi
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
+FIX
+
+  # ---- NEW ARMS: single-write alias rule (ML-2C, closes R5/R6) ----
+
+  # fail-alias-overwritten-other-form: alias q written via non-alias form after the trap (R5)
+  # Affirms: single-write rule — q="" after a DQ trap is a second write; gate cannot decide
+  #          what q holds at exit (ADR Consequences: "if unsure, fail") → V not covered
+  # Mutation: not counting NAME= writes outside alias-assignment forms causes count=1 for q
+  #           → alias valid → V appears covered → rc=0 → arm red
+  run_case "fail-alias-overwritten-other-form" 1 "V" << 'FIX'
+#!/usr/bin/env bash
+set -euo pipefail
+V=$(mktemp -d)
+printf -v q '%q' "$V"
+trap "rm -rf -- $q" EXIT
+q=""
+FIX
+
+  # fail-alias-overwritten-before-trap: non-alias printf-v to q before the alias printf-v (R5)
+  # Affirms: single-write rule — printf -v q '%s' x (not alias form) is still a write to q;
+  #          total count=2 → q disqualified even though the alias assignment comes last
+  # Mutation: counting only printf-v writes that produced an alias record keeps count=1 for q
+  #           → alias valid → V appears covered → rc=0 → arm red
+  run_case "fail-alias-overwritten-before-trap" 1 "V" << 'FIX'
+#!/usr/bin/env bash
+set -euo pipefail
+V=$(mktemp -d)
+printf -v q '%s' x
+printf -v q '%q' "$V"
+trap "rm -rf -- $q" EXIT
+FIX
+
+  # fail-alias-sq-reassigned-after-trap: SQ trap, alias A reassigned after the trap (R6)
+  # Affirms: single-write rule closes R6 — SQ traps expand at EXIT time, so the runtime
+  #          value of A is W (post-trap write), not V; V leaks.  Gate disqualifies A because
+  #          count=2.  W is a plain path (not a mktemp site) so only V is flagged.
+  # Mutation: counting only writes that occur before the trap keeps count=1 for A →
+  #           alias A←V valid → V appears covered → rc=0 → arm red
+  run_case "fail-alias-sq-reassigned-after-trap" 1 "V" << 'FIX'
+#!/usr/bin/env bash
+set -euo pipefail
+V=$(mktemp -d)
+A=$V
+W=/tmp/static-path
+trap 'rm -rf -- "$A"' EXIT
+A=$W
+FIX
+
+  # fail-tmpdir-p-not-container: mktemp -p "$TMPDIR"; trap cites only $TMPDIR (pins -p exclusion)
+  # Affirms: TMPDIR excluded from -p containment (ADR D2); V$(mktemp -p "$TMPDIR") gets
+  #          container="" → not covered by trap that only cites $TMPDIR
+  # Mutation: removing "if (pname != \"TMPDIR\") container = pname" sets container=TMPDIR;
+  #           global_covered(TMPDIR)=1 (trap cites $TMPDIR) → V appears covered → rc=0
+  run_case "fail-tmpdir-p-not-container" 1 "V" << 'FIX'
+#!/usr/bin/env bash
+set -euo pipefail
+V=$(mktemp -d -p "$TMPDIR")
+trap 'rm -f "$TMPDIR"/app.*' EXIT
+FIX
+
+  # pass-alias-local-decl-then-printf: local declaration without = followed by printf-v (R5 boundary)
+  # Affirms: single-write rule — "local q" (no =) is NOT a write; printf-v q is the only
+  #          write (count=1); alias remains valid; trap covers V
+  # Mutation: counting bare declarations (local q) as writes gives count=2 for q →
+  #           alias disqualified → V appears uncovered → rc=1 → arm red
+  run_case "pass-alias-local-decl-then-printf" 0 << 'FIX'
+#!/usr/bin/env bash
+set -euo pipefail
+run_it() {
+  local tmp
+  tmp=$(mktemp -d)
+  local q
+  printf -v q '%q' "$tmp"
+  trap "rm -rf -- $q" EXIT
+  echo "work"
+}
+run_it
 FIX
 
   # ---- VACUITY GUARD ----
