@@ -22,8 +22,8 @@ fixa o discriminante (D2), a forma de correção (D3) e a correção do registro
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
 - [x] AC1 — inventário medido pelo discriminante da ADR D2, conferido contra o relato (ML-0A)
-- [ ] AC2 — sítios não cobertos corrigidos, medido por efeito com falha forçada depois de 490–491 (ML-1A)
-- [ ] AC3 — gate novo no `parity-rest`, com self-test por mecanismo, vacuidade e contra-braço (ML-1B)
+- [x] AC2 — sítios não cobertos corrigidos, medido por efeito com falha forçada depois de 490–491 (ML-1A)
+- [x] AC3 — gate novo no `parity-rest`, com self-test por mecanismo, vacuidade e contra-braço (ML-1B)
 - [x] AC4 — registro do AC1 da REQ-2026-11-07 corrigido (ML-1C)
 - [ ] AC5 — `make quality` verde (ML-2A)
 
@@ -113,7 +113,7 @@ Desvio do executor: rodou `make test` (`go test ./...`, rc=0), que o handoff pro
 lateral, conferido pelo arquiteto: `mktemp` sem template ignora `TMPDIR` no macOS (nota no vault).
 
 ### ML-1B — Gate `check-mktemp-cleanup.sh` (AC3)
-**Status:** 🔄 In progress
+**Status:** ✅ Done
 **Squad:** ares-tf
 **Files affected:**
 - `scripts/check-mktemp-cleanup.sh`
@@ -126,9 +126,25 @@ de vacuidade com piso medido. Mensagem de falha com arquivo, linha e variável. 
 FN-1..12 e FP-1..4 da §3 do relatório do ML-0A, em especial FN-11, FN-12 e o critério sintático do FP-4 (linha
 sem `$(` não é candidata), sem exclusão por caminho (R6).
 **Acceptance criteria:**
-- [ ] `--self-test` verde, com cada braço nomeado
-- [ ] Contra o repositório, verde depois do ML-1A e vermelho com qualquer sítio do ML-0A revertido
-- [ ] Nenhum falso positivo nos 6 casos legítimos do #676
+- [x] `--self-test` verde, com cada braço nomeado
+- [x] Contra o repositório, verde depois do ML-1A e vermelho com qualquer sítio do ML-0A revertido
+- [x] Nenhum falso positivo nos 6 casos legítimos do #676
+
+**Auditoria (Zeus, 2026-11-11):** medido pelo arquiteto:
+- `--self-test` rc=0, 22/22, também em `/bin/bash` 3.2;
+- o gate contra a árvore dá rc=0, também em bash 3.2;
+- rodado nas 6 versões anteriores ao ML-1A (`git show 81f6be5e^`), reporta exatamente os 11 sítios do ML-0A, por
+  arquivo, linha e variável;
+- o `Makefile` ganhou só as 2 linhas no `parity-rest`;
+- o piso de vacuidade é 65, contra 68 candidatos medidos.
+
+Os 3 defeitos que o executor achou no próprio analisador viraram braço (`fail-heredoc-apostrophe` e
+`fail-trap-reset-fn`).
+
+Desvio: o relatório não trouxe a frase de reconciliação por braço (Regra Dura). Os nomes dos braços mapeiam um a
+um os mecanismos da ADR D2 e os vetores FN/FP do ML-0A. O cruzamento fica com o red team (ML-2A), junto com a
+exceção de fronteira de `exit` no escopo global (residual R5 do gate), que é heurística e pode produzir falso
+negativo.
 
 ### ML-1C — Registro da REQ-2026-11-07 (AC4)
 **Status:** ✅ Done
@@ -151,7 +167,7 @@ bash scripts/check-no-trap-local-var.sh
 > Dependencies: Wave 1 completa.
 
 ### ML-2A — Red team do gate e das correções
-**Status:** ⬜ Pending
+**Status:** 🔄 In progress
 **Squad:** hades-tf
 **Files affected:**
 - `docs/seguranca/2026-11-11-redteam-mktemp-limpeza.md`
