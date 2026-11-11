@@ -230,6 +230,9 @@ parity-rest: build
 	# disparar; valor deve ser capturado no momento da instalação com printf %q.
 	bash scripts/check-no-trap-local-var.sh --self-test
 	bash scripts/check-no-trap-local-var.sh
+	# ML-1B (REQ-2026-11-11 #676): every V=$(mktemp …) must have guaranteed EXIT cleanup per ADR D2.
+	bash scripts/check-mktemp-cleanup.sh --self-test
+	bash scripts/check-mktemp-cleanup.sh
 
 parity-falsify: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/run-gates-falsify-parallel.sh

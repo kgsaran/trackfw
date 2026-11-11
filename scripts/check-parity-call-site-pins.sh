@@ -118,7 +118,7 @@ recipe_lines() {
 }
 
 RECIPE_LINES_FILE=$(mktemp "${TMPDIR:-/tmp}/trackfw-parity-pins-recipe.XXXXXX")
-trap 'rm -f "$RECIPE_LINES_FILE"' EXIT
+trap 'rm -f "$RECIPE_LINES_FILE" "${local_dryrun:-}"' EXIT
 recipe_lines >"$RECIPE_LINES_FILE" || true
 
 if [[ ! -s "$RECIPE_LINES_FILE" ]]; then

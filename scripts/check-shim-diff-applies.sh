@@ -156,6 +156,7 @@ run_classify() {
   # Diff (falha → D2)
   local tmpfile
   tmpfile=$(mktemp)
+  local q_tf; printf -v q_tf '%q' "$tmpfile"; trap "rm -f -- $q_tf" EXIT
   if ! fetch_diff_to_file "$mb" "$head_sha" "$tmpfile" "$repo_root"; then
     rm -f "$tmpfile"
     emit_result "false" "git diff falhou → aplicável (D2)"
@@ -487,8 +488,8 @@ run_self_test() {
   # para diretório separado e roda com cwd = repositório temporário.
   # -------------------------------------------------------------------------
   local plumb_repo script_copy_dir
-  plumb_repo=$(mktemp -d)
-  script_copy_dir=$(mktemp -d)
+  plumb_repo=$(mktemp -d "$tmp/plumb-repo.XXXXXX")
+  script_copy_dir=$(mktemp -d "$tmp/script-copy-dir.XXXXXX")
 
   # Inicializa repositório
   git -C "$plumb_repo" init -q

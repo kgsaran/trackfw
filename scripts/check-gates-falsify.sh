@@ -1473,7 +1473,7 @@ s5x_commit_fixture_with_origin() {
   local dest=$1 yaml_content=$2 commit_msg=$3
   s50_commit_fixture "$dest" "$yaml_content" "$commit_msg"
   local bare_origin
-  bare_origin="$(mktemp -d)"
+  bare_origin="$(mktemp -d "$WORK/bare-origin.XXXXXX")"
   (
     cd "$bare_origin"
     git init -q --bare

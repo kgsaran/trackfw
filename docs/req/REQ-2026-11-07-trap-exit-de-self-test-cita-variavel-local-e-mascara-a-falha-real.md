@@ -44,6 +44,12 @@ Varredura de issues abertas e REQs abertas: nenhuma com o mesmo mecanismo. O vau
 
 ## Acceptance Criteria
 - [x] **AC1.** Nos três sítios, o trap não depende de variável `local` que deixa de existir na saída: o valor é capturado na instalação do trap, com quoting seguro (`printf %q`), ou a variável deixa de ser `local`. Medido no bash 5 com falha forçada (por `set -e` e por `set -u`) numa cópia de cada script: rc diferente de zero, nenhum `unbound variable` vindo do trap e nenhum diretório temporário sobrando.
+  > **Nota de correção (2026-11-11, #676):** a cláusula "nenhum diretório temporário sobrando" foi verdadeira só
+  na posição da falha forçada, antes das linhas 490–491 de `check-shim-diff-applies.sh`. Com a falha depois delas,
+  `plumb_repo` e `script_copy_dir` vazam, porque não há trap que os limpe. A causa é outra (trap ausente, não trap
+  que cita `local`) e é tratada na REQ-2026-11-11-mktemp-sem-limpeza-garantida-no-mesmo-escopo-vaza-temporarios-em-self-tests,
+  ADR-2026-11-11-mktemp-em-script-tem-limpeza-garantida-por-variavel-no-mesmo-escopo (D4). O `[x]` fica, porque a
+  parte do trap com `local` continua verdadeira.
 - [x] **AC2.** O caminho de sucesso dos três self-tests continua com o mesmo resultado (`check-shim-diff-applies.sh --self-test`: 27 passam; `check-req-roadmap-rule-is-status-aware.sh --self-test`: 4 braços passam; `check-orphan-gates.sh --self-test`: mesmo resultado de antes).
 - [x] **AC2b.** `check-validate-rule-pins.sh` remove os dois diretórios temporários ao sair: um trap só, que limpa `$TMP_DIR` e `$FENCE_TMP`. Medido por existência depois de uma execução.
 - [x] **AC3.** Um gate novo, ligado em `parity-rest`, reprova quando um `trap` com corpo entre aspas simples cita uma variável declarada `local` na função que instala o trap. Ele varre todos os `.sh` versionados (`git ls-files '*.sh'`), tem `--self-test` com braço positivo e negativo, e uma guarda de vacuidade (reprova se não encontrar nenhum `trap`). Contra-braço: com qualquer um dos três sítios revertido, o gate reprova.
