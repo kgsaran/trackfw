@@ -25,7 +25,7 @@ fixa o discriminante (D2), a forma de correção (D3) e a correção do registro
 - [x] AC2 — sítios não cobertos corrigidos, medido por efeito com falha forçada depois de 490–491 (ML-1A)
 - [x] AC3 — gate novo no `parity-rest`, com self-test por mecanismo, vacuidade e contra-braço (ML-1B)
 - [x] AC4 — registro do AC1 da REQ-2026-11-07 corrigido (ML-1C)
-- [ ] AC5 — `make quality` verde (ML-2A)
+- [x] AC5 — `make quality` verde (ML-2A; rerodado pelo arquiteto após o ML-2C: rc=0, 3192 linhas)
 
 ## Status Legend
 ⬜ Pending · 🔄 In progress · ✅ Done · ❌ Blocked
