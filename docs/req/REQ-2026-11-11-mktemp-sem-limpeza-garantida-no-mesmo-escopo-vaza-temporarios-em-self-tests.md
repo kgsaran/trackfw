@@ -39,21 +39,21 @@ O AC1 da REQ-2026-11-07 está marcado `[x]` com a cláusula "nenhum diretório t
 falsifica: a falha foi forçada antes das linhas 490–491.
 
 ## Acceptance Criteria
-- [ ] **AC1 — Inventário medido.** Uma tabela de todo `mktemp` em `git ls-files '*.sh'`, classificado pelo
+- [x] **AC1 — Inventário medido.** Uma tabela de todo `mktemp` em `git ls-files '*.sh'`, classificado pelo
   discriminante da ADR D2 (coberto por citação direta, apelido, função do trap ou contenção; ou não coberto),
   conferida contra os 11 sítios e os 6 falsos positivos do relato #676. Toda divergência é explicada.
-- [ ] **AC2 — Os sítios não cobertos passam a ter limpeza garantida** na forma da ADR D3. Medido por efeito em
+- [x] **AC2 — Os sítios não cobertos passam a ter limpeza garantida** na forma da ADR D3. Medido por efeito em
   `check-shim-diff-applies.sh --self-test`, com falha forçada **depois** das linhas 490–491 (na posição do
   relato): rc diferente de zero e nenhum diretório temporário novo. O caminho de sucesso de cada script tocado
   dá o mesmo resultado de antes.
-- [ ] **AC3 — Gate novo**, ligado no `parity-rest`, reprova `mktemp` atribuído a variável sem cobertura (ADR D2).
+- [x] **AC3 — Gate novo**, ligado no `parity-rest`, reprova `mktemp` atribuído a variável sem cobertura (ADR D2).
   Ele tem `--self-test` com braços para cada mecanismo legítimo (citação direta, `${V:-}`, apelido `printf -v`,
   função do trap e contenção), que devem passar, e para cada forma da classe (sem trap; trap no escopo que não
   cita V; `rm` só no caminho normal; trap substituído depois), que devem reprovar. Tem também guarda de
   vacuidade. Contra-braço: reverter qualquer um dos 11 sítios faz o gate reprovar.
-- [ ] **AC4 — Registro da REQ-2026-11-07 corrigido** com uma nota no AC1 que aponta para o #676 e para esta REQ
+- [x] **AC4 — Registro da REQ-2026-11-07 corrigido** com uma nota no AC1 que aponta para o #676 e para esta REQ
   (ADR D4).
-- [ ] **AC5 — `make quality` verde.**
+- [x] **AC5 — `make quality` verde.**
 
 ## Negative scope
 
