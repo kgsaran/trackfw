@@ -40,7 +40,7 @@ func LoadBaseline() (*BaselineFile, error) {
 	}
 	var bf BaselineFile
 	if err := json.Unmarshal(data, &bf); err != nil {
-		return nil, fmt.Errorf("erro ao ler baseline: %w", err)
+		return nil, fmt.Errorf("error reading baseline: %w", err)
 	}
 	return &bf, nil
 }

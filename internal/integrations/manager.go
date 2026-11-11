@@ -509,7 +509,7 @@ func detectNameCollision(item resolvedPlan, force bool) error {
 			continue
 		}
 		if force {
-			fmt.Fprintf(os.Stderr, "aviso: %q declara o mesmo name %q que %q; prosseguindo por --force\n", candidate, desiredName, item.destination)
+			fmt.Fprintf(os.Stderr, "warning: %q declares the same name %q as %q; proceeding due to --force\n", candidate, desiredName, item.destination)
 			continue
 		}
 		return fmt.Errorf("artifact %q declares name %q which collides with existing file %q", item.destination, desiredName, candidate)

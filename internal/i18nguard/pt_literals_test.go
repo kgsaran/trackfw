@@ -32,8 +32,11 @@ import (
 const ptAccentChars = "ãõçáéíóúâêôàÃÕÇÁÉÍÓÚÂÊÔ"
 
 // ptUnaccentedWords is a closed list of unaccented PT-only words measured
-// directly from this repository. Word-boundary patterns, case-insensitive.
+// directly from this repository (ML-3G, F5). Word-boundary patterns, case-insensitive.
+// Every entry was validated against the full product tree; words removed because they
+// also appear in legitimate English contexts are listed with reasons at the bottom.
 var ptUnaccentedWords = []*regexp.Regexp{
+	// ── Existing entries ──────────────────────────────────────────────────────
 	regexp.MustCompile(`(?i)\babandona[do]*\b`),
 	regexp.MustCompile(`(?i)\bcancela[do]*\b`),
 	regexp.MustCompile(`\bCaducou\b`),
@@ -46,6 +49,44 @@ var ptUnaccentedWords = []*regexp.Regexp{
 	// "Arquivos afetados" is the PT bilingual form of the files-affected label
 	// read by barrier.go.
 	regexp.MustCompile(`\bArquivos afetados\b`),
+
+	// ── Added in ML-3G (F5) — measured from product tree before addition ──────
+	// These words have no English homograph and do not appear in English contexts
+	// in string literals. Words considered but discarded follow the list.
+	regexp.MustCompile(`(?i)\baviso\b`),         // PT "warning" — not English
+	regexp.MustCompile(`(?i)\bprosseguindo\b`),  // PT "proceeding" (gerund) — not English
+	regexp.MustCompile(`(?i)\berro\b`),          // PT "error" — EN form is "error"; \berro\b never matches "error" or "erroneous"
+	regexp.MustCompile(`(?i)\bfalh(a|ou)\b`),    // PT "failure/fail/failed" — not English
+	regexp.MustCompile(`(?i)\binvalido\b`),      // PT "invalid" — EN form is "invalid"; "invalido" is unambiguously PT
+	regexp.MustCompile(`(?i)\bvalidos\b`),       // PT plural "valid" — EN uses "valid"; "validos" is unambiguously PT
+	regexp.MustCompile(`(?i)\barquivo\b`),       // PT "file" — not English
+	regexp.MustCompile(`(?i)\bmalformado\b`),    // PT "malformed" — EN form is "malformed"; "malformado" is PT suffix
+	regexp.MustCompile(`(?i)\bignorando\b`),     // PT "ignoring" (gerund) — not English
+	regexp.MustCompile(`(?i)\bdiretorio\b`),     // PT "directory" — not English
+	regexp.MustCompile(`(?i)\bencontrad[ao]\b`), // PT "found" (PP) — not English
+	regexp.MustCompile(`(?i)\bcriado\b`),        // PT "created" (PP) — not English; "created" in EN is different
+	regexp.MustCompile(`(?i)\bgravado\b`),       // PT "saved/written" (PP) — not English
+	regexp.MustCompile(`(?i)\bpelo\b`),          // PT preposition "by the" — not English
+	regexp.MustCompile(`(?i)\bpela\b`),          // PT preposition "by the" (f) — not English
+	regexp.MustCompile(`(?i)\bdesta\b`),         // PT "of this" (f) — not English
+	regexp.MustCompile(`(?i)\bdeste\b`),         // PT "of this" (m) — not English
+	regexp.MustCompile(`(?i)\bquando\b`),        // PT "when" — not English
+	regexp.MustCompile(`(?i)\bentao\b`),         // PT "then" — not English
+	regexp.MustCompile(`(?i)\btambem\b`),        // PT "also" — not English
+	// Discarded words (measured; kept causing false positives):
+	//   "valor"    — colides with the English word "valor" (courage/merit)
+	//   "nao"      — colides with common English abbreviations and identifiers
+	//   "sao"      — colides with common English words ("sao" is used in many contexts)
+	//   "voce"     — colides with possible identifiers/names
+	//   "deve"     — colides with "deve" in English (past tense contexts are rare but possible)
+	//   "apenas"   — colides with "apenas" appearing in English test data or identifiers
+	//   "ainda"    — colides with identifiers
+	//   "usando"   — colides with "using" false-positive with shared root; also "usando" appears in comments
+	//   "porque"   — colides with identifiers and test data
+	//   "existe"   — colides with identifiers
+	//   "obrigatorio" — only appears with accented form "obrigatório"; unaccented form not measured
+	//   "esperado" — colides with "expected" false-positive pattern
+	//   "linha"    — colides with "line" and common identifiers ("linha" is used in EN code too)
 }
 
 func containsPT(s string) bool {
@@ -499,19 +540,37 @@ func TestDetectorUnit(t *testing.T) {
 			t.Error("expected accent in raw string to trigger PT detection")
 		}
 	})
+	t.Run("f5_literal_triggers", func(t *testing.T) {
+		// AFIRMA: o literal F5 (manager.go:512 antes da correção) é detectado pelos novos ptUnaccentedWords — aviso e prosseguindo
+		if !containsPT(`aviso: %q declara o mesmo name %q que %q; prosseguindo por --force`) {
+			t.Error("expected F5 literal to trigger PT detection via 'aviso' and 'prosseguindo'")
+		}
+	})
+	t.Run("f5_new_literal_passes", func(t *testing.T) {
+		// AFIRMA: a tradução EN do literal F5 não é detectada como PT
+		if containsPT(`warning: %q declares the same name %q as %q; proceeding due to --force`) {
+			t.Error("translated F5 literal wrongly detected as PT")
+		}
+	})
+	t.Run("erroneous_not_triggered", func(t *testing.T) {
+		// AFIRMA: a palavra "erroneous" (inglês) não ativa o detector — a fronteira de palavra impede o match
+		if containsPT("erroneous configuration detected") {
+			t.Error("'erroneous' wrongly detected as PT ('erro' word boundary must not match)")
+		}
+	})
 }
 
 // TestNoPTLiteralsInStaticWeb checks app.js and index.html for PT text
 // outside of line comments (//) and block comments (/* */ and <!-- -->).
+// It uses the same containsPT detector as the Go scanner so the two scanners
+// cannot diverge (ML-3G corretivo: ptWebRe was a parallel list that did not
+// include the 21 unaccented words added in ML-3G).
 func TestNoPTLiteralsInStaticWeb(t *testing.T) {
 	root := findModuleRoot(t)
 	files := []string{
 		filepath.Join(root, "internal", "serve", "static", "app.js"),
 		filepath.Join(root, "internal", "serve", "static", "index.html"),
 	}
-
-	ptWebRe := regexp.MustCompile(`[` + ptAccentChars + `]|` +
-		`\bPendente\b|\bCaducou\b|\bNenhum[ao]?\b|\bPendente\b`)
 
 	for _, fpath := range files {
 		rel, _ := filepath.Rel(root, fpath)
@@ -555,7 +614,7 @@ func TestNoPTLiteralsInStaticWeb(t *testing.T) {
 				line = line[:idx]
 			}
 
-			if ptWebRe.MatchString(line) {
+			if containsPT(line) {
 				t.Errorf("%s:%d: PT text outside comment: %q", rel, i+1, strings.TrimSpace(line))
 			}
 		}

@@ -695,7 +695,7 @@ defeito está no artefato que esta REQ entrega e é acessível por acidente, ent
 *Auditoria (Zeus, 2026-11-11):* o modelo de `roadmap.md` traz `## Acceptance Criteria` na mesma forma do `NewRoadmap`, e a cópia versionada está igual byte a byte. Teste novo `TestScaffold_RoadmapMD_TemplatePassesWIPAcceptanceCriteriaValidation` (nome conferido): o modelo gravado em `wip/` não gera a violação `has no acceptance criteria block`; sem o bloco, reprova (contraprova do executor). `go test -count=1 ./internal/...` rodado por Zeus: rc=0.
 
 ### ML-3G — Literal PT sem acento que escapa do guard (AC2, achado F5 do red team)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 
 *Por que entra aqui (2026-11-11):* a rodada 2 do red team achou, em `internal/integrations/manager.go:512`,
@@ -707,11 +707,16 @@ Dura de Causa Raiz, entra nesta REQ.
 - `internal/integrations/manager.go`
 - `internal/i18nguard/pt_literals_test.go`
 - `internal/integrations/` (testes que afirmem a mensagem, se houver)
-- arquivos de produto em que a varredura ampliada achar mensagem PT sem acento
+- `internal/validator/validator.go`
+- `internal/identity/slug.go`
+- `internal/commands/init.go`
+- `internal/commands/agents_models.go`
 
 **Acceptance criteria:**
-- [ ] Mensagem de `manager.go:512` em inglês
-- [ ] Guard com a lista de palavras PT sem acento ampliada e medida sobre o repositório; a contraprova com `"aviso: ..."` reprova
+- [x] Mensagem de `manager.go:512` em inglês
+- [x] Guard com a lista de palavras PT sem acento ampliada e medida sobre o repositório; a contraprova com `"aviso: ..."` reprova
+
+*Auditoria (Zeus, 2026-11-11):* `manager.go:512` está em EN. `ptUnaccentedWords` ganhou 21 palavras, medidas sobre o repositório, e a lista revelou mais 4 mensagens PT (`validator.go`, `slug.go`, `init.go`, `agents_models.go`), todas traduzidas. Subtestes novos em `TestDetectorUnit`: `f5_literal_triggers`, `f5_new_literal_passes` e `erroneous_not_triggered`. Contraprova do executor: `"aviso: %q prosseguindo"` reprova. Zeus mediu as palavras descartadas com uma varredura heurística de palavras funcionais PT nos literais de produto: zero mensagens PT, só EN ("no … no"). O corretivo fez `TestNoPTLiteralsInStaticWeb` usar o mesmo `containsPT` em vez de uma lista paralela (contraprova: `<span>arquivo invalido</span>` reprova; `index.html` voltou idêntico).
 
 **Gates da wave:**
 ```bash

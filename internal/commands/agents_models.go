@@ -17,7 +17,7 @@ const (
 	modelsSourceLineGlobal          = "source: ~/.trackfw/trackfw.yaml"
 	modelsSourceLineNone            = "source: not configured"
 	modelsSourceLineProjectOnly     = "source: project trackfw.yaml (not applicable to global scope)"
-	modelsSourceLineGlobalMalformed = "source: arquivo global malformado"
+	modelsSourceLineGlobalMalformed = "source: global file malformed"
 )
 
 // newAgentModelsCmd returns the "models" subcommand of "trackfw agents". It

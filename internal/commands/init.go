@@ -193,7 +193,7 @@ func resolveIdentityPreset(value string) (cfg identity.Config, shouldSave bool, 
 	cfg, err = identity.Preset(value)
 	if err != nil {
 		valid := append([]string{"none", "neutral"}, identity.PresetNames()...)
-		return identity.Config{}, false, fmt.Errorf("identity-preset invalido %q (validos: %s)", value, strings.Join(valid, ", "))
+		return identity.Config{}, false, fmt.Errorf("identity-preset %q is invalid (valid: %s)", value, strings.Join(valid, ", "))
 	}
 	return cfg, true, nil
 }
