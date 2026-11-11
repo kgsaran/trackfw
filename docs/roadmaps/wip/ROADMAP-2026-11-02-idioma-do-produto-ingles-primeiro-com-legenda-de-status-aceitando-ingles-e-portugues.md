@@ -663,7 +663,7 @@ bash scripts/check-marker-corpus-parity.sh
 > Dependencies: Wave 3 completa.
 
 ### ML-4A — Red team do gerador e das mensagens
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Squad:** hades-tf
 **Files affected:** `docs/seguranca/2026-11-08-redteam-gerador-ingles.md` (novo)
 **Acceptance criteria:**
