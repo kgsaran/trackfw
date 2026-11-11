@@ -11,6 +11,7 @@ import (
 
 	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/roadmapdoc"
+	"github.com/kgsaran/trackfw/internal/validator"
 )
 
 // TestInstallSkills_CriaSlashCommandsESkillGlobal — verifica que InstallSkills cria
@@ -583,6 +584,79 @@ func TestScaffold_RoadmapMD_GatesModelParseable(t *testing.T) {
 			texts = append(texts, gc.Text)
 		}
 		t.Errorf("expected a gate starting with 'exit 1', got: %v", texts)
+	}
+}
+
+// TestScaffold_RoadmapMD_TemplatePassesWIPAcceptanceCriteriaValidation — ML-3F (REQ-2026-11-02)
+//
+// Regra Dura de Reconciliação:
+//
+//	This test asserts that a roadmap written by following the roadmap.md slash command
+//	template, once placed in wip/, does NOT trigger the validator violation
+//	"roadmap ... is in wip but has no acceptance criteria block".
+//	The template now carries ## Acceptance Criteria, so the validator's wip_acceptance
+//	rule must pass.
+func TestScaffold_RoadmapMD_TemplatePassesWIPAcceptanceCriteriaValidation(t *testing.T) {
+	content := claudeCommandsContent()["roadmap.md"]
+	if content == "" {
+		t.Fatal("roadmap.md not found in claudeCommandsContent()")
+	}
+
+	// Extract the template from between the ````markdown...```` fence.
+	const openFence = "````markdown\n"
+	const closeFence = "\n````"
+	openIdx := strings.Index(content, openFence)
+	if openIdx < 0 {
+		t.Fatal("````markdown fence not found in roadmap.md content")
+	}
+	afterOpen := content[openIdx+len(openFence):]
+	closeIdx := strings.Index(afterOpen, closeFence)
+	if closeIdx < 0 {
+		t.Fatal("closing ```` fence not found in roadmap.md content")
+	}
+	template := afterOpen[:closeIdx]
+
+	// Promote frontmatter to wip so the wip_acceptance rule fires.
+	template = strings.Replace(template, "status: backlog", "status: wip", 1)
+	// Replace date placeholder with a concrete value.
+	template = strings.ReplaceAll(template, "<YYYY-MM-DD>", "2026-01-01")
+	// Replace the req placeholder with a stable path so no parse error occurs.
+	template = strings.Replace(template, `"docs/req/<selected-file>.md"`, `"docs/req/REQ-test.md"`, 1)
+
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	_ = os.Chdir(dir)
+	t.Cleanup(func() {
+		_ = os.Chdir(orig)
+		config.Reset()
+	})
+
+	// Minimal project layout: trackfw.yaml and wip/ directory.
+	if err := os.MkdirAll(filepath.Join(dir, "docs", "roadmaps", "wip"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	yamlContent := "roadmap_dir: docs/roadmaps\nreq_dir: docs/req\n"
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte(yamlContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	roadmapPath := filepath.Join(dir, "docs", "roadmaps", "wip", "ROADMAP-2026-01-01-test.md")
+	if err := os.WriteFile(roadmapPath, []byte(template), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	config.Reset()
+
+	// Run the validator; filter only the wip_acceptance message so other
+	// unrelated violations (missing REQ file, branch rules, etc.) do not
+	// obscure the assertion.
+	violations, _, err := validator.Validate()
+	if err != nil {
+		t.Fatalf("validator.Validate() returned unexpected error: %v", err)
+	}
+	for _, v := range violations {
+		if strings.Contains(v, "has no acceptance criteria block") {
+			t.Errorf("roadmap template written to wip/ triggered acceptance-criteria violation: %s", v)
+		}
 	}
 }
 

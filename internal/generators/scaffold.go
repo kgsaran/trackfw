@@ -559,6 +559,11 @@ squad: ""
 ## Context / Diagnosis
 <summary of the problem, motivation and scope extracted from the REQ>
 
+## Acceptance Criteria
+<!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
+- [ ]
+- [ ]
+
 ## Wave 0 — Threat Model
 > Dependencies: none. Blocks all implementation.
 

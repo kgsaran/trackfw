@@ -653,7 +653,7 @@ fechada e explícita: as grafias PT dos leitores bilíngues, as palavras-chave d
 *Auditoria (Zeus, 2026-11-10):* `TestNoPTLiteralsInProductGo` varre literais via `go/ast`. A lista de permissão é fechada, e `TestAllowlistIsExhaustive` reprova entrada obsoleta. Os arquivos citados na lista existem (conferido por Zeus). As classes são as quatro do ML mais uma quinta: mensagens EN que citam o marcador PT aceito; aceita porque nomeiam o leitor bilíngue. Contraprova do executor: `"Próximo passo"` em `init.go` reprova. Zeus achou um fail-open: o arquivo que não fazia parse era pulado em silêncio. O corretivo virou `t.Errorf`, com contraprova (`zz_contraprova.go` reprova; o arquivo foi apagado e o teste volta a passar). `go test -count=1 ./internal/...` rodado por Zeus: sem falha. Os nomes dos 4 testes foram conferidos.
 
 ### ML-3E — Saída só em inglês: fim do i18n por locale (AC2, achado F1 do red team)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 
 *Por que o escopo cresceu (2026-11-11):* o red team (ML-4A, F1) mediu que `internal/i18n` (de 2026-06-12)
@@ -663,20 +663,21 @@ mesma causa do AC2 (mensagem emitida em PT), então entra nesta REQ. Decisão do
 **Files affected:**
 - `internal/i18n/i18n.go`
 - `internal/i18n/i18n_test.go`
-- `internal/i18n/locales/pt-BR.json`
-- `internal/i18n/locales/es-ES.json`
-- `internal/commands/` (só os arquivos que usam `i18n.T`, se a API mudar)
+- `internal/i18n/locales/pt-BR.json` (deleted)
+- `internal/i18n/locales/es-ES.json` (deleted)
 - `internal/i18nguard/pt_literals_test.go`
 
 **Actions:** a saída passa a ser só EN, independente do locale: remover os catálogos pt-BR e es-ES e a
 detecção de locale. Teste novo que roda o binário (ou os pontos de `i18n.T`) com `LANG`, `LC_ALL` e `LANGUAGE`
 iguais a `pt_BR.UTF-8` e `es_ES.UTF-8` e reprova se sair PT ou ES.
 **Acceptance criteria:**
-- [ ] Com `LANG=pt_BR.UTF-8` e com `LANG=es_ES.UTF-8`, `trackfw validate` e `trackfw --help` saem em inglês (teste)
-- [ ] Nenhum catálogo não-EN embutido no binário
+- [x] Com `LANG=pt_BR.UTF-8` e com `LANG=es_ES.UTF-8`, `trackfw validate` e `trackfw --help` saem em inglês (teste)
+- [x] Nenhum catálogo não-EN embutido no binário
+
+*Auditoria (Zeus, 2026-11-11):* os catálogos pt-BR e es-ES foram removidos. `DetectLocale`/`Locale` agora devolvem sempre `en-US`, e o `load()` usa só o `en-US.json`. Testes novos, com nomes conferidos: `TestDetectLocale_AlwaysEN`, `TestI18nT_AlwaysEN_UnderPTLocale`, `TestI18nT_AlwaysEN_UnderESLocale`, `TestI18n_BinaryOutput_AlwaysEN` (binário com `LANG=pt_BR` emite `warning(s)` e não `aviso(s)`) e `TestI18nLocalesOnlyEN` (catálogo não-EN reprova). Contraprova do executor: os testes reprovam com o código antigo. Medido por Zeus: `LANG=pt_BR.UTF-8 LC_ALL=pt_BR.UTF-8 trackfw validate` emite `174 warning(s)`, e `go test -count=1 ./internal/...` dá rc=0. Desvio de processo: o executor marcou o status e os ACs deste ML no roadmap, o que é proibido ao executor; o conteúdo foi conferido e mantido.
 
 ### ML-3F — Modelo de `/trackfw:roadmap` traz o bloco de critérios do roadmap (achado F4 do red team)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** prometeu-tf
 
 *Por que entra aqui (2026-11-11):* o modelo em `scaffold.go`, que esta REQ reescreveu no ML-3C, não tem o
@@ -689,7 +690,9 @@ defeito está no artefato que esta REQ entrega e é acessível por acidente, ent
 - `.claude/commands/trackfw/roadmap.md`
 
 **Acceptance criteria:**
-- [ ] Roadmap escrito seguindo só o modelo passa no `validate` em `wip/` (teste em `t.TempDir`)
+- [x] Roadmap escrito seguindo só o modelo passa no `validate` em `wip/` (teste em `t.TempDir`)
+
+*Auditoria (Zeus, 2026-11-11):* o modelo de `roadmap.md` traz `## Acceptance Criteria` na mesma forma do `NewRoadmap`, e a cópia versionada está igual byte a byte. Teste novo `TestScaffold_RoadmapMD_TemplatePassesWIPAcceptanceCriteriaValidation` (nome conferido): o modelo gravado em `wip/` não gera a violação `has no acceptance criteria block`; sem o bloco, reprova (contraprova do executor). `go test -count=1 ./internal/...` rodado por Zeus: rc=0.
 
 **Gates da wave:**
 ```bash

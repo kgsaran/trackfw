@@ -596,5 +596,25 @@ func truncate(s string, n int) string {
 	return string(runes[:n-3]) + "..."
 }
 
+// TestI18nLocalesOnlyEN — AFIRMA que internal/i18n/locales/ contém apenas
+// en-US.json; qualquer outro arquivo JSON reprova, impedindo a reintrodução
+// de catálogos PT/ES (ML-3E).
+func TestI18nLocalesOnlyEN(t *testing.T) {
+	root := findModuleRoot(t)
+	localesDir := filepath.Join(root, "internal", "i18n", "locales")
+	entries, err := os.ReadDir(localesDir)
+	if err != nil {
+		t.Fatalf("reading locales dir %s: %v", localesDir, err)
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if e.Name() != "en-US.json" {
+			t.Errorf("unexpected file in internal/i18n/locales/: %s — only en-US.json is allowed (ML-3E, AC2)", e.Name())
+		}
+	}
+}
+
 // silence unused unicode import in some Go versions
 var _ = unicode.Letter
