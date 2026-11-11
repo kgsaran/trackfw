@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-11-11
 req: "docs/req/REQ-2026-11-11-mktemp-sem-limpeza-garantida-no-mesmo-escopo-vaza-temporarios-em-self-tests.md"
 squad: "hades-tf, ares-tf, zeus-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, ares-tf, zeus-tf"
 
 # Roadmap: mktemp sem limpeza garantida no mesmo escopo vaza temporarios em self-tests
 
-> Created: 2026-11-11 | Status: wip
+> Created: 2026-11-11 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-11-11-mktemp-sem-limpeza-garantida-no-mesmo-escopo-vaza-temporarios-em-self-tests.md -->

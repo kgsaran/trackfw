@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-11-11
 author: "Zeus (trackfw_architect)"
 adr: "docs/adr/ADR-2026-11-11-mktemp-em-script-tem-limpeza-garantida-por-variavel-no-mesmo-escopo.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-11-11-mktemp-sem-limpeza-garantida-no-mesmo-escopo-vaza-temporarios-em-self-tests.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-11-11-mktemp-sem-limpeza-garantida-no-mesmo-escopo-vaza-temporarios-em-self-tests.md"
 ---
 
 # REQ: mktemp sem limpeza garantida no mesmo escopo vaza temporarios em self-tests
 
-> Date: 2026-11-11 | Status: Open
+> Date: 2026-11-11 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -71,4 +71,4 @@ ADR: docs/adr/ADR-2026-11-11-mktemp-em-script-tem-limpeza-garantida-por-variavel
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-11-11-mktemp-sem-limpeza-garantida-no-mesmo-escopo-vaza-temporarios-em-self-tests.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-11-11-mktemp-sem-limpeza-garantida-no-mesmo-escopo-vaza-temporarios-em-self-tests.md
