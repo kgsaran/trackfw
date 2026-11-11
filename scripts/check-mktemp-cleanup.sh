@@ -22,10 +22,11 @@
 #   trap superseded by a non-covering one is treated as UNCOVERED (fail-trap-replaced-fn).
 #   When the function has ANY EXIT trap it supersedes all inherited global traps — bash
 #   `trap … EXIT` in a function replaces the inherited handler.
-#   At global scope: the last global EXIT trap wins, with one exception: if a global-scope
-#   `exit` statement falls between an earlier covering trap and a later superseding trap,
-#   the earlier trap is treated as effective (exit-boundary exception for multi-path
-#   scripts with mutually exclusive self-test vs main paths).
+#   At global scope: the last global EXIT trap wins. No exception: an earlier covering
+#   trap superseded by a later non-covering trap leaves V UNCOVERED regardless of any
+#   `exit` statements between them.  When in doubt, the gate fails (ADR Consequences).
+#   Note: fn_covers_var does not enforce alias ordering because function-call traps
+#   execute at EXIT time and can read aliases regardless of when they were defined.
 #
 # RESIDUALS (not detected by this gate):
 #   R1  trap inside a subshell function called as d=$(fn) — cleanup fires before the
@@ -33,8 +34,12 @@
 #   R2  loop reassignment — only the last creation is covered (FN-10)
 #   R3  exec CMD after a trapped var replaces the shell without firing EXIT (FN-7)
 #   R4  two-level function indirection: trap → wrapper() → cleanup() → $V (FN-4b)
-#   R5  case-branch `exit` between global covering and superseding traps: only a bare
-#       `exit` at the start of a line in global scope is detected as a path boundary
+#   R5  alias overwrite not tracked for non-printf-v / non-assignment forms — `q=""` or
+#       `printf -v q '%s' x` clears/replaces q; gate still treats q as pointing to V →
+#       false negative. Same cause as R6; architect to add ML (Regra Dura).
+#   R6  SQ traps: post-trap alias reassignment not tracked — `A=$V; trap 'rm "$A"' EXIT;
+#       A=$W` gate says V covered, W flagged; at runtime only W is cleaned (V leaks).
+#       SQ traps expand at EXIT time; re-inspection at EXIT not modelled statically.
 #
 # USAGE
 #   bash scripts/check-mktemp-cleanup.sh           # scan git ls-files '*.sh'
@@ -341,18 +346,6 @@ function process_scope_line(line, scope, lsq) {
 
     # 4. Check for trap EXIT
     try_store_trap(line, scope, lsq)
-
-    # 5. Track global-scope `exit` statements (needed for exit-boundary analysis in
-    #    global_covered()).  Only at global scope; not inside functions.
-    if (scope == "global") {
-        if (match(line, /^[[:space:]]*exit/)) {
-            ec = substr(line, RSTART + RLENGTH, 1)
-            if (ec == "" || ec !~ /[A-Za-z0-9_]/) {
-                n_global_exits++
-                global_exit_line[n_global_exits] = FNR
-            }
-        }
-    }
 }
 
 # Detect and store mktemp assignment in current scope
@@ -543,19 +536,45 @@ function fn_covers_var(fn_nm, v, scope,    body_text, i) {
 }
 
 # Check if trap at index ti covers variable v using the given alias scope
-function trap_covers(ti, v, alias_scope_name,    body, fn_nm, i) {
+function trap_covers(ti, v, alias_scope_name,    body, fn_nm, i, j, aname, aline, dominated) {
     if (trap_is_reset[ti]) return 0
     body = trap_body[ti]
     fn_nm = trap_fn_name[ti]
     # 1. DIRECT
     if (body_refs_var(body, v)) return 1
-    # 2. ALIAS: trap body mentions alias A of v (alias defined before trap in scope)
+    # 2. ALIAS: trap body mentions alias A of v
+    #    ADR D2 "antes do trap": alias must be defined before the trap — no quoting
+    #    distinction. Gate is deliberately stricter than SQ runtime (SQ expands at EXIT
+    #    time, so an alias defined after the trap would still resolve), but ADR D2 states
+    #    no quoting exception and 0 corpus false positives confirm the strictness is safe.
+    #    SQ ordering is currently unpinned (no self-test arm; DQ-only mutation gives 27/27).
+    #    For DQ traps only: the LAST assignment to alias-name A before the trap wins —
+    #    bash expands $A at install time, so a later A←W overwrites A←V and covers only W.
+    #    fn_covers_var does NOT enforce ordering (declared asymmetry): ADR D2 states no
+    #    ordering requirement for FUNCTION coverage; function bodies are executed at EXIT
+    #    time and can read aliases from any point in the outer scope.
     for (i = 1; i <= n_aliases; i++) {
         if (alias_src[i] != v) continue
         if (alias_scope[i] != alias_scope_name) continue
-        # For function scope: alias must be defined before this trap
-        if (alias_scope_name != "global" && alias_line_no[i] > trap_line_no[ti]) continue
-        if (body_refs_var(body, alias_name[i])) return 1
+        # Ordering: alias must be defined before the trap (ADR D2 "antes do trap")
+        if (alias_line_no[i] > trap_line_no[ti]) continue
+        if (!body_refs_var(body, alias_name[i])) continue
+        # For DQ traps: the last assignment to this alias name before the trap wins.
+        # If a later same-name alias (pointing to any source) exists before the trap,
+        # this earlier alias assignment is overridden and no longer covers v.
+        if (trap_is_dq[ti]) {
+            aname = alias_name[i]; aline = alias_line_no[i]; dominated = 0
+            for (j = 1; j <= n_aliases; j++) {
+                if (j == i) continue
+                if (alias_name[j] != aname) continue
+                if (alias_scope[j] != alias_scope_name) continue
+                if (alias_line_no[j] > aline && alias_line_no[j] <= trap_line_no[ti]) {
+                    dominated = 1; break
+                }
+            }
+            if (dominated) continue
+        }
+        return 1
     }
     # 3. FUNCTION: trap body is a bare function call
     if (fn_nm != "" && fn_nm != "-") {
@@ -566,13 +585,10 @@ function trap_covers(ti, v, alias_scope_name,    body, fn_nm, i) {
 
 # Main coverage check: returns 1 if covered, 0 if not
 # scope: the scope where V was created (function name or "global")
-# Global scope coverage: the LAST global EXIT trap supersedes all earlier ones, because
-# bash `trap … EXIT` replaces the previous EXIT handler.  Exception: if a global-scope
-# `exit` statement falls between an EARLIER covering trap and the LAST (non-covering)
-# trap, the earlier trap is still the effective handler on the path that takes the exit.
-# This correctly models scripts with mutually exclusive code paths (e.g. self-test vs
-# main) where each path installs its own trap and exits before the other path's trap.
-function global_covered(v,    i, j, last_gt, last_gl) {
+# Global scope coverage: the LAST global EXIT trap supersedes all earlier ones because
+# bash `trap … EXIT` replaces the previous EXIT handler.  No exception for `exit`
+# statements between traps — when the gate cannot decide, it fails (ADR Consequences).
+function global_covered(v,    i, last_gt, last_gl) {
     last_gt = -1; last_gl = -1
     for (i = 1; i <= n_traps; i++) {
         if (trap_scope[i] != "global") continue
@@ -580,18 +596,6 @@ function global_covered(v,    i, j, last_gt, last_gl) {
     }
     if (last_gt < 0) return 0
     if (!trap_is_reset[last_gt] && trap_covers(last_gt, v, "global")) return 1
-    # Last trap doesn't cover v. Check if any earlier covering trap is protected by
-    # a global-scope exit between it and the last trap.
-    for (i = 1; i <= n_traps; i++) {
-        if (trap_scope[i] != "global") continue
-        if (trap_line_no[i] >= last_gl) continue
-        if (!trap_covers(i, v, "global")) continue
-        for (j = 1; j <= n_global_exits; j++) {
-            if (global_exit_line[j] > trap_line_no[i] && global_exit_line[j] < last_gl) {
-                return 1
-            }
-        }
-    }
     return 0
 }
 
@@ -674,8 +678,6 @@ function reset_file(    k) {
     in_sq = 0; in_heredoc = 0; heredoc_delim = ""; heredoc_strip = 0
     pending_func = 0; pending_func_name = ""
     line_start_sq = 0
-    n_global_exits = 0
-    for (k in global_exit_line) delete global_exit_line[k]
 }
 AWKEOF
 
@@ -954,7 +956,7 @@ FIX
 
   # fail-trap-replaced-global: global covering trap superseded by later non-covering trap
   # Affirms: global last-trap rule — bash trap EXIT replaces the previous EXIT handler;
-  # a later trap for W leaves V uncovered (no exit-boundary between the two traps)
+  # a later trap for W leaves V uncovered (adjusted under task item 3: exit-boundary removed)
   run_case "fail-trap-replaced-global" 1 "V" << 'FIX'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -976,6 +978,84 @@ cat << 'HDOC'
 Don't worry about this.
 HDOC
 V=$(mktemp -d)
+FIX
+
+  # ---- NEW ARMS: red-team findings (ML-2B) ----
+
+  # fail-alias-dq-ordering-global: DQ trap installed before alias assignment in global scope
+  # Affirms: ADR D2 ALIAS — alias written after a DQ trap does not cover V in any scope;
+  #          bash expands $A at trap-install time, so only pre-trap assignments count (MEDIUM fix)
+  # Mutation: restoring HEAD's "alias_scope_name != global &&" condition leaves global-scope
+  #           DQ ordering unenforced → gate gives rc=0 → arm red
+  run_case "fail-alias-dq-ordering-global" 1 "V" << 'FIX'
+#!/usr/bin/env bash
+set -euo pipefail
+q=""
+V=$(mktemp -d)
+trap "rm -rf -- $q" EXIT
+printf -v q '%q' "$V"
+FIX
+
+  # fail-alias-dq-last-wins: alias name reused for W after first pointing to V; DQ trap sees W
+  # Affirms: ADR D2 ALIAS — for DQ traps only the last assignment to alias-name A before the
+  #          trap counts; an earlier A←V overridden by A←W does not cover V (LOW fix)
+  # Mutation: removing the domination check causes the earlier A←V to cover V → rc=0 → arm red
+  run_case "fail-alias-dq-last-wins" 1 "V" << 'FIX'
+#!/usr/bin/env bash
+set -euo pipefail
+V=$(mktemp -d)
+printf -v q '%q' "$V"
+W=$(mktemp -d)
+printf -v q '%q' "$W"
+trap "rm -rf -- $q" EXIT
+FIX
+
+  # fail-alias-dq-ordering-fn: DQ trap in function scope, alias defined after trap
+  # Affirms: ADR D2 ALIAS — ordering check applies in function scope (confirms existing
+  #          function-scope logic; gap from red team: no prior fail-arm for this branch)
+  # Mutation: removing the ordering check entirely causes V to appear covered → rc=0 → arm red
+  run_case "fail-alias-dq-ordering-fn" 1 "V" << 'FIX'
+#!/usr/bin/env bash
+set -euo pipefail
+do_work() {
+  local V
+  V=$(mktemp -d)
+  trap "rm -rf -- $q" EXIT
+  local q
+  printf -v q '%q' "$V"
+}
+do_work
+FIX
+
+  # fail-tmpdir-not-container: system TMPDIR; trap cites TMPDIR via glob — not direct coverage
+  # Affirms: ADR D2 CONTAINED — TMPDIR is excluded from container tracking; without exclusion
+  #          gate treats "trap body refs TMPDIR" as coverage of V under TMPDIR → false negative
+  # Mutation D (removes TMPDIR name exclusion): container=TMPDIR, body_refs_var(TMPDIR)=1 →
+  #   global_covered(TMPDIR)=1 → V "covered" → rc=0 → arm red ✓
+  # Note: -p "$TMPDIR" exclusion stays unpinned (no arm confirms it; RESIDUAL pending).
+  run_case "fail-tmpdir-not-container" 1 "V" << 'FIX'
+#!/usr/bin/env bash
+set -euo pipefail
+V=$(mktemp "$TMPDIR/app.XXXXXX")
+trap 'rm -f "$TMPDIR"/app.*' EXIT
+FIX
+
+  # fail-exit-inside-if: exit inside if-block does not create an exit-path boundary
+  # Affirms: ADR Consequences — gate fails when it cannot decide; `exit` guarded by
+  #          `if false; then … fi` is never reached at runtime; last global trap wins
+  #          and V is uncovered (removed exit-boundary exception)
+  # Mutation: restoring the exit-boundary loop in global_covered causes V to pass as
+  #           covered → rc=0 → arm red
+  run_case "fail-exit-inside-if" 1 "V" << 'FIX'
+#!/usr/bin/env bash
+set -euo pipefail
+V=$(mktemp -d)
+trap 'rm -rf "$V"' EXIT
+if false; then
+  exit 0
+fi
+W=$(mktemp -d)
+trap 'rm -rf "$W"' EXIT
 FIX
 
   # ---- VACUITY GUARD ----

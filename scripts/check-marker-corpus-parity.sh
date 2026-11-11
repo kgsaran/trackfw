@@ -28,9 +28,10 @@ SELF=$(basename "${BASH_SOURCE[0]}")
 SELF_ABS=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")
 
 # ---------------------------------------------------------------------------
-# --self-test
+# --self-test: wrapped in a function so its EXIT trap is not superseded by the
+# main-path traps installed at lines ~325 and ~348 (ADR D2 / ML-2B fix).
 # ---------------------------------------------------------------------------
-if [[ "${1:-}" == "--self-test" ]]; then
+run_self_test() {
   _st_tmp=$(mktemp -d)
   printf -v _q_st '%q' "$_st_tmp"
   # shellcheck disable=SC2064  # intentional: value captured at installation via printf -v %q
@@ -304,6 +305,11 @@ BINEOF
   echo "---"
   printf "Results: %d passed, %d failed\n" "$ST_PASS" "$ST_FAIL"
   [[ "$ST_FAIL" -eq 0 ]]
+  exit $?
+}
+
+if [[ "${1:-}" == "--self-test" ]]; then
+  run_self_test
   exit $?
 fi
 

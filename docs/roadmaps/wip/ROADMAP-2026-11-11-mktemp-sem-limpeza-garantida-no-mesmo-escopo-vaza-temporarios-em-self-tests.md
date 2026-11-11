@@ -187,7 +187,7 @@ eles entram no ML-2B (Regra Dura de Causa Raiz).
 4. Dois braços faltando, provados por mutação: ordem do apelido em função; exclusão de `$TMPDIR` como contêiner.
 
 ### ML-2B — Correções do red team no gate (mesma REQ)
-**Status:** 🔄 In progress
+**Status:** ✅ Done
 **Squad:** ares-tf
 **Files affected:**
 - `scripts/check-mktemp-cleanup.sh`
@@ -207,10 +207,49 @@ eles entram no ML-2B (Regra Dura de Causa Raiz).
    - `exit` dentro de `if`.
 
 **Acceptance criteria:**
-- [ ] Os sintéticos do red team (`attack_alias_after_trap_global.sh`, `fn5b_alias_reassigned.sh`,
+- [x] Os sintéticos do red team (`attack_alias_after_trap_global.sh`, `fn5b_alias_reassigned.sh`,
   `fn5c_exit_inside_if.sh`) dão rc=1
-- [ ] `--self-test` verde, com cada braço novo vermelho sob a mutação que remove a sua lógica
-- [ ] Gate verde no corpus; `check-marker-corpus-parity.sh --self-test` com o mesmo resultado de antes
+- [x] `--self-test` verde, com cada braço novo vermelho sob a mutação que remove a sua lógica
+- [x] Gate verde no corpus; `check-marker-corpus-parity.sh --self-test` com o mesmo resultado de antes
+
+**Auditoria (Zeus, 2026-11-11):** medido pelo arquiteto:
+- `--self-test` 27/27 e corpus rc=0, tanto em `bash` quanto em `/bin/bash` 3.2;
+- `check-marker-corpus-parity.sh --self-test` rc=0; o diff só envolve o bloco numa função `run_self_test`;
+- os 3 sintéticos dão rc=1; `attack_q_tf_empty` e `attack_tmpdir_container` continuam rc=1;
+  `fn2b_ansi_c_quote` continua rc=0.
+
+Medido pelo executor:
+- mutações A, A2, B, D e E, cada uma deixando o seu braço vermelho;
+- falha forçada no marker-parity igual antes e depois;
+- `make quality` rc=0 (3187 linhas).
+
+Pendências, todas da mesma causa (estado do apelido não modelado) e que entram no ML-2C:
+- R5: escrita do apelido por outra forma (`q=""`, `printf -v q '%s' x`);
+- R6: trap com aspas simples cujo apelido é reatribuído depois do trap;
+- `-p "$TMPDIR"` sem braço.
+
+Desvio: o executor deixou um `make parity-rest` rodando em background ao encerrar.
+
+### ML-2C — Apelido com escrita única (fecha R5/R6 do ML-2B)
+**Status:** 🔄 In progress
+**Squad:** ares-tf
+**Files affected:**
+- `scripts/check-mktemp-cleanup.sh`
+
+**Actions:**
+1. Em vez de modelar o estado do apelido, aplicar a ADR ("se não conseguir decidir, reprova"). Um nome só vale como
+   apelido de V se houver exatamente UMA escrita a ele no escopo: o próprio `printf -v A '%q' "$V"`, `A=$V` ou
+   `A="$V"`.
+2. Qualquer outra escrita ao mesmo nome desqualifica o apelido, antes ou depois do trap e com qualquer aspa:
+   `A=…`, `printf -v A …`, `read A`, `local A=…`, `declare A=…`, `export A=…`, `for A in`. Uma declaração sem valor
+   (`local A`) não é escrita.
+3. Remover o bloco de dominação (última escrita vence) se ele ficar redundante.
+4. Braços novos: R5 (`q=""` depois do trap); R6 (aspas simples, apelido reatribuído depois do trap); `-p "$TMPDIR"`.
+
+**Acceptance criteria:**
+- [ ] Braços R5, R6 e `-p "$TMPDIR"` vermelhos no gate do HEAD e verdes no `--self-test` novo, com mutação provando cada um
+- [ ] Os 27 braços anteriores continuam verdes; gate verde no corpus, em bash e em `/bin/bash`
+- [ ] `make quality` rc=0
 
 **Wave gates:**
 ```bash
