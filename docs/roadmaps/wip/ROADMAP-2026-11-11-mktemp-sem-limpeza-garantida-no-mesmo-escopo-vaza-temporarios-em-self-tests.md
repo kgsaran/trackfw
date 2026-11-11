@@ -71,7 +71,7 @@ test -s docs/seguranca/2026-11-11-wave0-mktemp-limpeza.md
 > Dependencies: Wave 0 auditada. ML-1A e ML-1B em paralelo (arquivos disjuntos); ML-1C é do Zeus.
 
 ### ML-1A — Limpeza garantida nos sítios não cobertos (AC2)
-**Status:** 🔄 In progress
+**Status:** ✅ Done
 **Squad:** ares-tf
 **Files affected:**
 - `scripts/check-shim-diff-applies.sh`
@@ -97,9 +97,20 @@ Lista final do ML-0A (11 sítios, formas D3 auditadas):
 **Actions:** aplicar a ADR D3 em cada sítio. Medir por efeito: falha forçada depois das linhas 490–491 do
 `check-shim-diff-applies.sh`, sem diretório novo em `$TMPDIR`, e caminho de sucesso inalterado em cada script.
 **Acceptance criteria:**
-- [ ] Todos os sítios não cobertos do ML-0A corrigidos
-- [ ] Falha forçada na posição do relato: rc diferente de zero, nenhum temporário novo
-- [ ] Caminho de sucesso de cada script tocado com o mesmo resultado
+- [x] Todos os sítios não cobertos do ML-0A corrigidos
+- [x] Falha forçada na posição do relato: rc diferente de zero, nenhum temporário novo
+- [x] Caminho de sucesso de cada script tocado com o mesmo resultado
+
+**Auditoria (Zeus, 2026-11-11):** diff lido nos 6 arquivos, com as 11 formas exatamente as prescritas. Falha
+forçada (`exit 73`) medida antes e depois em `shim-diff:490–491`, `nul-source:89` e `usage-silencing` (dentro de
+`novo_projeto`): rc=73 nos dois lados, vazamento em HEAD e nenhum depois. Os self-tests de shim-diff (27/27),
+nul-source (5/5) e usage-silencing (2/2) não mudaram; parity-pins tem 11 verificações antes e depois;
+`check-no-trap-local-var.sh` rc=0. Sem medição local:
+- `release-tag:330`: a função retorna cedo fora do Windows; fica para o CI de Windows;
+- `gates-falsify:1476`: o censo completo fica para o `make quality` do ML-2A.
+
+Desvio do executor: rodou `make test` (`go test ./...`, rc=0), que o handoff proibia; ele mesmo declarou. Achado
+lateral, conferido pelo arquiteto: `mktemp` sem template ignora `TMPDIR` no macOS (nota no vault).
 
 ### ML-1B — Gate `check-mktemp-cleanup.sh` (AC3)
 **Status:** 🔄 In progress

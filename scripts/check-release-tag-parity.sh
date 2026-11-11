@@ -327,7 +327,7 @@ _build_gh_stub_shim_once() {
   _win_bash="$(cygpath -w "$_real_bash" 2>/dev/null || echo "$_real_bash")"
 
   local _src_dir
-  _src_dir=$(mktemp -d)
+  _src_dir=$(mktemp -d "$WORK/src-dir.XXXXXX")
   local _out="$WORK/gh-stub-shim.exe"
 
   # Write the captured bash path as a Go double-quoted string literal (backslashes escaped).

@@ -23,11 +23,14 @@ FAIL=0
 EXEC_RUNTIME=0
 EXEC_USO=0
 
+WORK=$(mktemp -d)
+trap 'rm -rf "$WORK"' EXIT
+
 tem_usage() { case "$1" in *"Usage:"*) return 0 ;; *) return 1 ;; esac; }
 
 # projeto descartavel: os comandos precisam de um trackfw.yaml para chegar ao RunE
 novo_projeto() {
-  local d; d=$(mktemp -d)
+  local d; d=$(mktemp -d "$WORK/proj.XXXXXX")
   ( cd "$d" \
     && git init -q -b main . >/dev/null 2>&1 \
     && git config user.email "gate@localhost" \
@@ -92,7 +95,7 @@ rodar_cenarios() {
 # self-test: dois binarios sinteticos, cada um quebrando UMA direcao
 # --------------------------------------------------------------------------
 if [ "${1:-}" = "--self-test" ]; then
-  tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+  tmp=$(mktemp -d "$WORK/selftest.XXXXXX")
   falhas_esperadas=0
 
   cat > "$tmp/sempre-usage" <<'STUB'

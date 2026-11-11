@@ -70,7 +70,7 @@ if [[ "${1:-}" == "--self-test" ]]; then
   echo "=== check-no-literal-nul-in-source --self-test ==="
   FAIL=0
   WORK=$(mktemp -d "${TMPDIR:-/tmp}/checknul-st.XXXXXX")
-  trap 'rm -rf "$WORK"' EXIT
+  trap 'rm -rf "$WORK" "${EMPTY_EXC:-}" "${EXC_MISSING:-}" "${EXC_ZERO:-}" "${EXC_WRONG:-}"' EXIT
 
   # Inicializar repositório git mínimo (identidade local)
   git -C "$WORK" init -q
