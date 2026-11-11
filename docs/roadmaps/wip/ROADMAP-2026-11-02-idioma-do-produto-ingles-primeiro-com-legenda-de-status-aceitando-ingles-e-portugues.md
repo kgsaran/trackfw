@@ -652,6 +652,45 @@ fechada e explícita: as grafias PT dos leitores bilíngues, as palavras-chave d
 
 *Auditoria (Zeus, 2026-11-10):* `TestNoPTLiteralsInProductGo` varre literais via `go/ast`. A lista de permissão é fechada, e `TestAllowlistIsExhaustive` reprova entrada obsoleta. Os arquivos citados na lista existem (conferido por Zeus). As classes são as quatro do ML mais uma quinta: mensagens EN que citam o marcador PT aceito; aceita porque nomeiam o leitor bilíngue. Contraprova do executor: `"Próximo passo"` em `init.go` reprova. Zeus achou um fail-open: o arquivo que não fazia parse era pulado em silêncio. O corretivo virou `t.Errorf`, com contraprova (`zz_contraprova.go` reprova; o arquivo foi apagado e o teste volta a passar). `go test -count=1 ./internal/...` rodado por Zeus: sem falha. Os nomes dos 4 testes foram conferidos.
 
+### ML-3E — Saída só em inglês: fim do i18n por locale (AC2, achado F1 do red team)
+**Status:** 🔄 Em andamento
+**Squad:** apolo-tf
+
+*Por que o escopo cresceu (2026-11-11):* o red team (ML-4A, F1) mediu que `internal/i18n` (de 2026-06-12)
+escolhe o catálogo pelo `LANG`/`LC_ALL`/`LANGUAGE`. Com `pt_BR` ou `es`, 53 mensagens saem em PT/ES e o resto em
+EN. O inventário da Wave 0 não pegou esse caminho, porque o texto vem de JSON embutido e não de literal Go. É a
+mesma causa do AC2 (mensagem emitida em PT), então entra nesta REQ. Decisão do KG (2026-11-11): fixar inglês.
+**Files affected:**
+- `internal/i18n/i18n.go`
+- `internal/i18n/i18n_test.go`
+- `internal/i18n/locales/pt-BR.json`
+- `internal/i18n/locales/es-ES.json`
+- `internal/commands/` (só os arquivos que usam `i18n.T`, se a API mudar)
+- `internal/i18nguard/pt_literals_test.go`
+
+**Actions:** a saída passa a ser só EN, independente do locale: remover os catálogos pt-BR e es-ES e a
+detecção de locale. Teste novo que roda o binário (ou os pontos de `i18n.T`) com `LANG`, `LC_ALL` e `LANGUAGE`
+iguais a `pt_BR.UTF-8` e `es_ES.UTF-8` e reprova se sair PT ou ES.
+**Acceptance criteria:**
+- [ ] Com `LANG=pt_BR.UTF-8` e com `LANG=es_ES.UTF-8`, `trackfw validate` e `trackfw --help` saem em inglês (teste)
+- [ ] Nenhum catálogo não-EN embutido no binário
+
+### ML-3F — Modelo de `/trackfw:roadmap` traz o bloco de critérios do roadmap (achado F4 do red team)
+**Status:** 🔄 Em andamento
+**Squad:** prometeu-tf
+
+*Por que entra aqui (2026-11-11):* o modelo em `scaffold.go`, que esta REQ reescreveu no ML-3C, não tem o
+bloco `## Acceptance Criteria` no nível do roadmap. Um agente consumidor que siga o modelo produz um roadmap
+que o `validate` reprova ao ir para `wip/` (medido pelo red team, F4). A causa é diferente da do F1, mas o
+defeito está no artefato que esta REQ entrega e é acessível por acidente, então é corrigido agora.
+**Files affected:**
+- `internal/generators/scaffold.go`
+- `internal/generators/scaffold_test.go`
+- `.claude/commands/trackfw/roadmap.md`
+
+**Acceptance criteria:**
+- [ ] Roadmap escrito seguindo só o modelo passa no `validate` em `wip/` (teste em `t.TempDir`)
+
 **Gates da wave:**
 ```bash
 go build ./...
