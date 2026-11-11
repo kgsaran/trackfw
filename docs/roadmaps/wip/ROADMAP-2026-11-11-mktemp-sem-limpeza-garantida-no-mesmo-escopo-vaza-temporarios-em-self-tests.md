@@ -21,7 +21,7 @@ fixa o discriminante (D2), a forma de correção (D3) e a correção do registro
 
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
-- [ ] AC1 — inventário medido pelo discriminante da ADR D2, conferido contra o relato (ML-0A)
+- [x] AC1 — inventário medido pelo discriminante da ADR D2, conferido contra o relato (ML-0A)
 - [ ] AC2 — sítios não cobertos corrigidos, medido por efeito com falha forçada depois de 490–491 (ML-1A)
 - [ ] AC3 — gate novo no `parity-rest`, com self-test por mecanismo, vacuidade e contra-braço (ML-1B)
 - [ ] AC4 — registro do AC1 da REQ-2026-11-07 corrigido (ML-1C)
@@ -34,7 +34,7 @@ fixa o discriminante (D2), a forma de correção (D3) e a correção do registro
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Inventário por variável e threat model
-**Status:** 🔄 In progress
+**Status:** ✅ Done
 **Squad:** hades-tf
 **Files affected:**
 - `docs/seguranca/2026-11-11-wave0-mktemp-limpeza.md`
@@ -49,8 +49,18 @@ fixa o discriminante (D2), a forma de correção (D3) e a correção do registro
    positivo). Inclua trap substituído depois, `trap - EXIT`, subshell e `exec`.
 4. Residual declarado.
 **Acceptance criteria:**
-- [ ] Inventário com contagem conferida por um segundo caminho e lista final de sítios não cobertos
-- [ ] Nenhuma linha de implementação escrita neste ML
+- [x] Inventário com contagem conferida por um segundo caminho e lista final de sítios não cobertos
+- [x] Nenhuma linha de implementação escrita neste ML
+
+**Auditoria (Zeus, 2026-11-11):** aprovado com uma correção. Conferido: 68 `mktemp` atribuídos e 11 não cobertos,
+mesma lista do relator; os 6 falsos positivos do relato reclassificados (RFP-1..6); alcançabilidade medida em
+`nul-source:89` e `shim-diff:490,491`; `git status` só com o relatório. **Correção:** a forma D3 proposta para
+`check-shim-diff-applies.sh:158` (somar `$q_tf` ao trap da linha 179) está errada. `run_classify` e
+`run_self_test` são ramos exclusivos do `case` final (linhas 686–696), e o self-test chama `--classify` em
+processo novo (`bash "${BASH_SOURCE[0]}" --classify`). O trap da 179 nunca está ativo no processo que cria
+`tmpfile`, e se estivesse, `$q_tf` seria expandido vazio na instalação. Vale a forma canônica isolada, logo
+depois da 158. O próprio relatório diz que `run_classify` roda como subprocesso (§1 e T8), o que contradiz a sua
+premissa de T2 para esse sítio.
 
 **Wave gates:**
 ```bash
@@ -71,7 +81,19 @@ test -s docs/seguranca/2026-11-11-wave0-mktemp-limpeza.md
 - `scripts/check-gates-falsify.sh`
 - `scripts/check-no-literal-nul-in-source.sh`
 
-A lista final vem do ML-0A. Sítio novo achado lá entra aqui.
+Lista final do ML-0A (11 sítios, formas D3 auditadas):
+- `check-shim-diff-applies.sh:158` `tmpfile`: forma canônica isolada logo após a 158
+  (`local q_tf; printf -v q_tf '%q' "$tmpfile"; trap "rm -f -- $q_tf" EXIT`). Não tocar a linha 179.
+- `check-shim-diff-applies.sh:490,491`: contenção sob `$tmp` (`mktemp -d "$tmp/plumb-repo.XXXXXX"` etc.).
+- `check-no-literal-nul-in-source.sh:89,133,148,165`: trap da linha 73 combinado,
+  `'rm -rf "$WORK" "${EMPTY_EXC:-}" "${EXC_MISSING:-}" "${EXC_ZERO:-}" "${EXC_WRONG:-}"'`; os arquivos ficam fora
+  de `$WORK` (o `git -C "$WORK" add .` os pegaria).
+- `check-parity-call-site-pins.sh:222` `local_dryrun`: trap da linha 121 combinado,
+  `'rm -f "$RECIPE_LINES_FILE" "${local_dryrun:-}"'`.
+- `check-release-tag-parity.sh:330` `_src_dir`: contenção sob `$WORK`.
+- `check-gates-falsify.sh:1476` `bare_origin`: contenção sob `$WORK`.
+- `check-usage-silencing.sh:30` `d` em `novo_projeto` (chamada como `d=$(novo_projeto)`): `WORK` global com trap
+  no topo e `mktemp -d "$WORK/proj.XXXXXX"`; unificar o trap da linha 95 com o global (residual R1 do ML-0A).
 **Actions:** aplicar a ADR D3 em cada sítio. Medir por efeito: falha forçada depois das linhas 490–491 do
 `check-shim-diff-applies.sh`, sem diretório novo em `$TMPDIR`, e caminho de sucesso inalterado em cada script.
 **Acceptance criteria:**
@@ -89,7 +111,9 @@ A lista final vem do ML-0A. Sítio novo achado lá entra aqui.
 **Actions:** gate da ADR D2 sobre `git ls-files '*.sh'`, ligado no `parity-rest`. `--self-test` com braços que
 passam (citação direta, `${V:-}`, apelido `printf -v`/atribuição, função do trap, contenção) e braços que
 reprovam (sem trap; trap do escopo que não cita V; só `rm` no caminho normal; trap substituído depois). Guarda
-de vacuidade com piso medido. Mensagem de falha com arquivo, linha e variável.
+de vacuidade com piso medido. Mensagem de falha com arquivo, linha e variável. Cobrir também os vetores
+FN-1..12 e FP-1..4 da §3 do relatório do ML-0A, em especial FN-11, FN-12 e o critério sintático do FP-4 (linha
+sem `$(` não é candidata), sem exclusão por caminho (R6).
 **Acceptance criteria:**
 - [ ] `--self-test` verde, com cada braço nomeado
 - [ ] Contra o repositório, verde depois do ML-1A e vermelho com qualquer sítio do ML-0A revertido
