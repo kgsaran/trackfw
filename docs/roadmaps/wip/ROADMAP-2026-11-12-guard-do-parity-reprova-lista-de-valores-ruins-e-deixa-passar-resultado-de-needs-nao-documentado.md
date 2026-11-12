@@ -136,10 +136,10 @@ python3 scripts/check-workflow-yaml.py
 ```
 
 ## Wave 2 — Red team e qualidade (AC7)
-> Dependencies: Wave 1 auditada. ML-2A e ML-2B em sequência (o ML-2B mede o que o ML-2A deixar).
+> Dependencies: Wave 1 auditada. ML-2A → ML-2C → ML-2B em sequência (o ML-2B mede o estado final).
 
 ### ML-2A — Red team do script e da troca
-**Status:** ⬜ Pending
+**Status:** ✅ Done
 **Squad:** hades-tf
 **Files affected:**
 - `docs/seguranca/2026-11-12-wave2-redteam-agregador-needs-success.md`
@@ -147,8 +147,35 @@ python3 scripts/check-workflow-yaml.py
 **Actions:** reimplementar a leitura do contrato a partir da ADR, sem olhar o self-test primeiro; procurar
 entrada que aprove sem verificar. Medir só em `t.TempDir`/scratch, sem tocar o índice do git.
 **Acceptance criteria:**
-- [ ] Relatório com cada vetor tentado e o resultado
-- [ ] `git diff --cached` vazio ao final
+- [x] Relatório com cada vetor tentado e o resultado
+- [x] `git diff --cached` vazio ao final
+
+**Auditoria (Zeus, 2026-11-12):** aprovado. O agente caiu por suspensão da máquina depois de concluir as
+medições; o relatório está completo (§1–§7), e o `git status` mostra só ele, com o índice vazio. Reproduzido pelo
+arquiteto: com um `json.py` hostil no cwd, o guard aprova `abandoned` (rc=0), e é o NF-1. Hoje não há `json.py`
+no repositório, mas o defeito é conhecido, então se corrige agora (ML-2C). Os sobreviventes M3ii, M3iii e M5
+(NF-2, NF-3) e o NF-4 também entram no ML-2C. Os resíduos V-E3 (PATH) e V-E5b (`BASH_ENV`) exigem controle de
+um passo anterior ou do próprio `quality.yml`, então são aceitos com o mesmo argumento da correção 2 do ML-0A.
+
+### ML-2C — Corretivo do red team (NF-1 a NF-4)
+**Status:** ⬜ Pending
+**Squad:** ares-tf
+**Files affected:**
+- `scripts/check-needs-success.sh`
+
+**Actions:**
+1. NF-1: `python3 - "$@"` passa a `python3 -I -X utf8 - "$@"`. O `export PYTHONIOENCODING=utf-8` continua, porque o
+   gate `check-output-encoding-declared` exige.
+2. NF-2/NF-3: os braços 28 `jobname-injection-cr`, 29 `jobname-pct-injection` e 30 `no-args-empty-object` (§5
+   do relatório ML-2A). Também os braços `nan-result` (`{"a":{"result":NaN}}`, rc≠0) e `cwd-json-shadow`: o
+   script roda com cwd num `mktemp -d` que tem um `json.py` hostil, e `abandoned` tem de dar rc≠0. O piso sobe
+   para o novo total.
+3. NF-4: `--self-test` com argumento extra reprova (rc≠0), com o braço `self-test-extra-args`.
+**Acceptance criteria:**
+- [ ] `--self-test` verde em bash e em `/bin/bash` 3.2, com o novo total
+- [ ] Cada mutação M3ii, M3iii e M5 do relatório ML-2A, aplicada numa cópia, faz o self-test da cópia reprovar
+- [ ] `make parity-rest` rc=0
+- [ ] Frase de reconciliação por braço novo
 
 ### ML-2B — `make quality`
 **Status:** ⬜ Pending
