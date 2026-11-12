@@ -855,8 +855,10 @@ jobs:
   # falhou (senão o GitHub pula `parity` inteiro e o check obrigatório nunca
   # reporta -- o mesmo problema do parágrafo acima, por outro caminho). Mas
   # `if: always()` sozinho faz o job PASSAR por padrão quando pulado ou
-  # quando um needs falhou -- por isso o primeiro step abaixo falha
-  # explicitamente nesse caso, antes de qualquer outra coisa rodar.
+  # quando um needs falhou -- por isso o primeiro step (após checkout e
+  # setup-python) chama scripts/check-needs-success.sh, que aprova somente
+  # quando todos os needs reportam result=="success" (lista de permitidos,
+  # REQ-2026-11-12).
   # ML-4B corretivo (ROADMAP-2026-09-06-ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega):
   # Verifica que a declaração local (.github/required-status-checks.txt) concorda com os checks
   # que os workflows podem realmente emitir — escopo D\W apenas (sem chamada à API).
@@ -945,13 +947,13 @@ jobs:
   # consertaria (vault: matriz-em-job-required-por-nome-fica-pendente-para-sempre-2026-09-08.md).
   # Este job tem nome estável e é ele que entra no conjunto R.
   #
-  # Por que a guarda NÃO copia a do `parity`: a do parity testa apenas
-  # 'failure' e 'cancelled'. 'skipped' passa. Medido no PR #365: o
-  # parity-falsify-shard foi PULADO (package-smoke reprovou e está no needs
-  # dele), a guarda deixou passar, e quem reprovou foi a guarda de conjunto
-  # por artefato no passo seguinte. O parity está protegido por uma segunda
-  # linha de defesa que ESTE job não tem — então aqui a guarda precisa ser
-  # completa, e exigir evidência POSITIVA, não só ausência de falha.
+  # Ambas as guardas (`parity` e esta) exigem evidência positiva: aceitam
+  # somente result=="success" (lista de permitidos). O `parity` usa
+  # scripts/check-needs-success.sh (REQ-2026-11-12); este job usa a
+  # verificação inline acima. A distinção histórica (PR #365: 'skipped'
+  # passava na guarda de lista de proibidos do `parity`) não se aplica mais
+  # — ambas usam lista de permitidos. ESTE job não tem segunda linha de
+  # defesa por artefatos, então a verificação inline continua obrigatória.
   #
   # Regra de dispensa (ADR-2026-11-06 D1/D2): os braços são pulados SOMENTE
   # quando o job classify passou com diff_is_inert=true, o que exige:
@@ -1006,15 +1008,14 @@ jobs:
     needs: [parity-falsify-shard, parity-other-gates, check-required-checks]
     if: always()
     steps:
-      - name: Nenhum job de needs pode ter falhado, sido cancelado ou pulado
-        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
-        run: |
-          echo "::error::pelo menos um job de needs (parity-falsify-shard, parity-other-gates ou check-required-checks) falhou, foi cancelado ou PULADO -- ML-4E: `skipped` passou a reprovar porque um needs pulado nao prova nada e o parity so nao ficou verde em 16/09 por causa da guarda de conjunto por artefato -- ver os jobs acima. if:always() aqui existe para RODAR e REPROVAR, nunca para mascarar."
-          exit 1
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+      - name: Todos os jobs de needs devem ter resultado success (allowlist)
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: scripts/check-needs-success.sh parity-falsify-shard parity-other-gates check-required-checks
       - name: Baixa os rótulos emitidos por cada shard de falsify
         uses: actions/download-artifact@v4
         with:
