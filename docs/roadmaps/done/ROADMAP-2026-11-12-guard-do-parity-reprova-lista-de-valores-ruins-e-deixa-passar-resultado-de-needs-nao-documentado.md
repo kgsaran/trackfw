@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-11-12
 req: "docs/req/REQ-2026-11-12-guard-do-parity-reprova-lista-de-valores-ruins-e-deixa-passar-resultado-de-needs-nao-documentado.md"
 squad: "hades-tf, ares-tf, zeus-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, ares-tf, zeus-tf"
 
 # Roadmap: Guard do parity reprova lista de valores ruins e deixa passar resultado de needs nao documentado
 
-> Created: 2026-11-12 | Status: wip
+> Created: 2026-11-12 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-11-12-guard-do-parity-reprova-lista-de-valores-ruins-e-deixa-passar-resultado-de-needs-nao-documentado.md -->
@@ -208,14 +208,14 @@ test -s docs/seguranca/2026-11-12-wave2-redteam-agregador-needs-success.md
 > Dependencies: Wave 2 auditada e PR aberto.
 
 ### ML-3A — Medição no CI e resposta na Discussion
-**Status:** 🔄 In progress
+**Status:** ✅ Done
 **Squad:** zeus-tf
 **Files affected:** este roadmap
 **Actions:** registrar o log do primeiro passo do `parity` no CI do PR (jobs avaliados e resultado); responder
 na Discussion #664 com o link do PR.
 **Acceptance criteria:**
 - [x] Log do `parity` citado aqui, com o run id
-- [ ] Comentário publicado na Discussion #664
+- [ ] Comentário publicado na Discussion #664: **transferido ao KG**, porque o modo automático bloqueia a escrita em sistema externo
 
 **Medição no CI (Zeus, 2026-11-12):** PR #683, run 43258143554, job `parity` 131325392311, com os 22 checks
 verdes. O passo `scripts/check-needs-success.sh parity-falsify-shard parity-other-gates check-required-checks`
@@ -227,3 +227,7 @@ OK  parity-other-gates  result=success
 ```
 AC8 pendente: o modo automático negou duas vezes o comentário na Discussion, que é escrita em sistema externo. O
 texto está pronto para o KG publicar.
+
+**Fechamento (Zeus, 2026-11-12):** o PR #683 foi mergeado (`9987b89b`). AC8 fica desmarcado de propósito: na
+hora do fechamento, a resposta na Discussion #664 ainda não estava publicada, e o texto está com o KG. Todos os
+outros critérios foram medidos.

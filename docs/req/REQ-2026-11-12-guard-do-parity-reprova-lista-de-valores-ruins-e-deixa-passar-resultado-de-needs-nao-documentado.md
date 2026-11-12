@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-11-12
 author: "Zeus (trackfw_architect)"
 adr: "docs/adr/ADR-2026-11-12-agregador-de-ci-exige-success-dos-needs-em-vez-de-reprovar-lista-de-valores-ruins.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-11-12-guard-do-parity-reprova-lista-de-valores-ruins-e-deixa-passar-resultado-de-needs-nao-documentado.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-11-12-guard-do-parity-reprova-lista-de-valores-ruins-e-deixa-passar-resultado-de-needs-nao-documentado.md"
 ---
 
 # REQ: Guard do parity reprova lista de valores ruins e deixa passar resultado de needs nao documentado
 
-> Date: 2026-11-12 | Status: Open
+> Date: 2026-11-12 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -45,7 +45,7 @@ preenchida. A Wave 0 refaz esse inventário com instrumento próprio (ADR D3).
 - [x] **AC6 — Medição no CI.** O PR desta REQ mostra no log do `parity` a lista de jobs avaliados, todos
   `success`, e o check verde.
 - [x] **AC7 — `make quality` verde.**
-- [ ] **AC8 — Resposta na Discussion #664**, com o link do PR.
+- [ ] **AC8 — Resposta na Discussion #664**, com o link do PR. Transferido ao KG (escrita externa bloqueada pelo modo automático); texto entregue em 2026-11-12.
 
 ## Negative scope
 
@@ -66,4 +66,4 @@ ADR: docs/adr/ADR-2026-11-12-agregador-de-ci-exige-success-dos-needs-em-vez-de-r
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-11-12-guard-do-parity-reprova-lista-de-valores-ruins-e-deixa-passar-resultado-de-needs-nao-documentado.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-11-12-guard-do-parity-reprova-lista-de-valores-ruins-e-deixa-passar-resultado-de-needs-nao-documentado.md
