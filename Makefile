@@ -233,6 +233,8 @@ parity-rest: build
 	# ML-1B (REQ-2026-11-11 #676): every V=$(mktemp …) must have guaranteed EXIT cleanup per ADR D2.
 	bash scripts/check-mktemp-cleanup.sh --self-test
 	bash scripts/check-mktemp-cleanup.sh
+	# REQ-2026-11-12: self-test verifies the allowlist covers all 27 arms
+	scripts/check-needs-success.sh --self-test
 
 parity-falsify: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/run-gates-falsify-parallel.sh

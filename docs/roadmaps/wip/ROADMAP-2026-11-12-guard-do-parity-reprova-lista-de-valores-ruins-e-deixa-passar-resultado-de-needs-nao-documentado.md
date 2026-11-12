@@ -23,10 +23,10 @@ testável fora do CI.
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
 - [x] AC1 — inventário medido (ML-0A)
-- [ ] AC2 — `scripts/check-needs-success.sh` com `--self-test` (ML-1A)
-- [ ] AC3 — `parity` e demais sítios do AC1 usando o script (ML-1A)
-- [ ] AC4 — comentários de `quality.yml` coerentes (ML-1A)
-- [ ] AC5 — self-test no `parity-rest`, com contra-braço (ML-1A)
+- [x] AC2 — `scripts/check-needs-success.sh` com `--self-test` (ML-1A)
+- [x] AC3 — `parity` e demais sítios do AC1 usando o script (ML-1A)
+- [x] AC4 — comentários de `quality.yml` coerentes (ML-1A)
+- [x] AC5 — self-test no `parity-rest`, com contra-braço (ML-1A)
 - [ ] AC6 — log do `parity` no CI do PR (ML-3A)
 - [ ] AC7 — `make quality` verde (ML-2B)
 - [ ] AC8 — resposta na Discussion #664 (ML-3A)
@@ -86,7 +86,7 @@ test -s docs/seguranca/2026-11-12-wave0-agregador-needs-success.md
 > Dependencies: Wave 0 auditada. Um ML só: o script, o workflow e o `Makefile` são uma mudança.
 
 ### ML-1A — `check-needs-success.sh` e troca da guarda do `parity`
-**Status:** ⬜ Pending
+**Status:** ✅ Done
 **Squad:** ares-tf
 **Files affected:**
 - `scripts/check-needs-success.sh` (novo)
@@ -108,10 +108,26 @@ test -s docs/seguranca/2026-11-12-wave0-agregador-needs-success.md
 3. Reescrever o comentário de `quality.yml` (~948–955) e o do `parity` (~854–859) para o estado novo.
 4. `Makefile`, alvo `parity-rest`: uma linha `scripts/check-needs-success.sh --self-test`.
 **Acceptance criteria:**
-- [ ] `--self-test` verde, em bash e em `/bin/bash` 3.2, com cada braço nomeado
-- [ ] Contra-braço: com a lista de proibidos no lugar da de permitidos, o braço `abandoned` reprova
-- [ ] `python3 scripts/check-workflow-yaml.py` rc=0
-- [ ] Frase de reconciliação por braço novo do self-test (Regra Dura)
+- [x] `--self-test` verde, em bash e em `/bin/bash` 3.2, com cada braço nomeado
+- [x] Contra-braço: com a lista de proibidos no lugar da de permitidos, o braço `abandoned` reprova
+- [x] `python3 scripts/check-workflow-yaml.py` rc=0
+- [x] Frase de reconciliação por braço novo do self-test (Regra Dura)
+
+**Auditoria (Zeus, 2026-11-12):** aprovado depois de um corretivo. O diff tem só os 3 arquivos: o script
+novo (executável), o `parity` (o passo `contains(...)` saiu e o passo novo entrou depois de `checkout` e
+`setup-python`, antes do download) e uma linha no `parity-rest`. Medido pelo arquiteto:
+- `--self-test`: 27/27 em bash 5 e em `/bin/bash` 3.2;
+- chamada direta: `abandoned` dá rc=1, `success` dá rc=0, job sobrando dá rc=1;
+- `check-workflow-yaml.py` dá rc=0.
+
+**Corretivo:** o primeiro `make parity-rest` deu rc=2. `check-output-encoding-declared` reprovou o script por
+chamar `python3` sem `export PYTHONIOENCODING=utf-8`, e o executor não tinha rodado o `parity-rest`, que estava
+no handoff. Depois do corretivo, o `make parity-rest` rerodado pelo arquiteto deu rc=0 (2242 linhas).
+
+As 27 frases de reconciliação conferem com os vetores V1–V16 e com a correção R2 do ML-0A. O contra-braço
+verifica com `cmp` que a sabotagem mudou o arquivo e que a cópia sabotada ainda reprova `failure`. Desvio
+aceito: `set -e` foi acrescentado porque o heredoc de `python3` não é o último comando do arquivo, e sem `-e`
+o rc dele se perderia.
 
 **Wave gates:**
 ```bash

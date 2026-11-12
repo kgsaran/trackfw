@@ -31,15 +31,15 @@ preenchida. A Wave 0 refaz esse inventário com instrumento próprio (ADR D3).
   variável `*_RESULT` em `.github/workflows/` e `scripts/`, classificado como permitidos, proibidos ou
   diagnóstico, com contagem conferida por um segundo caminho. Todo sítio de proibidos que decide gate entra no
   ML-1A.
-- [ ] **AC2 — `scripts/check-needs-success.sh`** (ADR D2): lê `NEEDS_JSON`, aprova só quando há pelo menos um job
+- [x] **AC2 — `scripts/check-needs-success.sh`** (ADR D2): lê `NEEDS_JSON`, aprova só quando há pelo menos um job
   e todos têm `result == success`, e imprime o nome e o resultado de cada job reprovado. O `--self-test` passa,
   com braços nomeados: todos `success` (passa), `failure`, `cancelled`, `skipped`, `abandoned`, valor inventado,
   `{}`, string vazia e JSON inválido (reprovam). Também roda em `/bin/bash` 3.2.
-- [ ] **AC3 — O `parity` usa o script.** O passo com `contains(...)` é substituído por uma chamada ao script com
+- [x] **AC3 — O `parity` usa o script.** O passo com `contains(...)` é substituído por uma chamada ao script com
   `NEEDS_JSON: ${{ toJSON(needs) }}`, como primeiro passo. Os outros sítios do AC1 recebem a mesma forma.
-- [ ] **AC4 — Comentários coerentes.** O bloco de `quality.yml` (~948–955) que diz que a guarda do `parity` "testa
+- [x] **AC4 — Comentários coerentes.** O bloco de `quality.yml` (~948–955) que diz que a guarda do `parity` "testa
   apenas 'failure' e 'cancelled'" é reescrito para o estado novo.
-- [ ] **AC5 — Self-test no `parity-rest`.** Uma linha no `Makefile` roda `scripts/check-needs-success.sh
+- [x] **AC5 — Self-test no `parity-rest`.** Uma linha no `Makefile` roda `scripts/check-needs-success.sh
   --self-test`. Contra-braço: reverter a lista de permitidos para a de proibidos faz o braço `abandoned`
   reprovar o self-test.
 - [ ] **AC6 — Medição no CI.** O PR desta REQ mostra no log do `parity` a lista de jobs avaliados, todos
