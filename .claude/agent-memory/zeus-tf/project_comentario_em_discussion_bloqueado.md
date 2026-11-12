@@ -1,6 +1,6 @@
 ---
 name: comentario-em-discussion-bloqueado
-description: O modo automático bloqueia comentar em Discussion do GitHub (addDiscussionComment), mas permite fechar Discussion e criar/marcar PR
+description: O modo automático bloqueia comentar em Discussion (addDiscussionComment) sem aprovação explícita do KG; com o texto lido e "pode publicar", passa
 metadata:
   type: project
 ---
@@ -12,6 +12,8 @@ na #664 ("External System Writes"). Na mesma sessão passaram `closeDiscussion` 
 **Why:** um comentário público em nome do KG é tratado como escrita externa. Fechar Discussion e mexer em PR
 passaram.
 
-**How to apply:** quando um AC exigir resposta em Discussion, escreva o texto num arquivo do scratchpad desde o
-início e entregue ao KG, em vez de tentar e ser negado. Deixe o AC desmarcado, com a nota "transferido ao KG",
-e não o marque no fechamento. Relacionado: [[contribuicao-externa-discussion-e-gates]].
+Depois que o KG leu o texto e disse "pode publicar", a mesma chamada passou
+(#664, discussioncomment-19570806).
+
+**How to apply:** quando um AC exigir resposta em Discussion, escreva o texto num arquivo do scratchpad, mostre
+ao KG e publique só depois do "pode publicar" dele, em vez de tentar antes e ser negado. Até a publicação, o AC fica desmarcado. Relacionado: [[contribuicao-externa-discussion-e-gates]].
