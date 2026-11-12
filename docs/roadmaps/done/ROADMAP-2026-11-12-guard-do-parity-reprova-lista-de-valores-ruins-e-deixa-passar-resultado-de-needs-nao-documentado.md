@@ -29,7 +29,7 @@ testável fora do CI.
 - [x] AC5 — self-test no `parity-rest`, com contra-braço (ML-1A)
 - [x] AC6 — log do `parity` no CI do PR (ML-3A; PR #683, run 43258143554)
 - [x] AC7 — `make quality` verde (ML-2B; rc=0, 3231 linhas, rodado pelo arquiteto)
-- [ ] AC8 — resposta na Discussion #664 (ML-3A)
+- [x] AC8 — resposta na Discussion #664 (ML-3A; publicada depois do merge, com aprovação do KG)
 
 ## Status Legend
 ⬜ Pending · 🔄 In progress · ✅ Done · ❌ Blocked
@@ -215,7 +215,7 @@ test -s docs/seguranca/2026-11-12-wave2-redteam-agregador-needs-success.md
 na Discussion #664 com o link do PR.
 **Acceptance criteria:**
 - [x] Log do `parity` citado aqui, com o run id
-- [ ] Comentário publicado na Discussion #664: **transferido ao KG**, porque o modo automático bloqueia a escrita em sistema externo
+- [x] Comentário publicado na Discussion #664 (https://github.com/kgsaran/trackfw/discussions/664#discussioncomment-19570806)
 
 **Medição no CI (Zeus, 2026-11-12):** PR #683, run 43258143554, job `parity` 131325392311, com os 22 checks
 verdes. O passo `scripts/check-needs-success.sh parity-falsify-shard parity-other-gates check-required-checks`

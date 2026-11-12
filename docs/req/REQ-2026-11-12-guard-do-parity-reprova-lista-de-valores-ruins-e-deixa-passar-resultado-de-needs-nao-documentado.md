@@ -45,7 +45,7 @@ preenchida. A Wave 0 refaz esse inventário com instrumento próprio (ADR D3).
 - [x] **AC6 — Medição no CI.** O PR desta REQ mostra no log do `parity` a lista de jobs avaliados, todos
   `success`, e o check verde.
 - [x] **AC7 — `make quality` verde.**
-- [ ] **AC8 — Resposta na Discussion #664**, com o link do PR. Transferido ao KG (escrita externa bloqueada pelo modo automático); texto entregue em 2026-11-12.
+- [x] **AC8 — Resposta na Discussion #664**, com o link do PR. Publicada em 2026-11-12, com aprovação do KG: https://github.com/kgsaran/trackfw/discussions/664#discussioncomment-19570806
 
 ## Negative scope
 
