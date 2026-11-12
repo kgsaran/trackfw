@@ -1,5 +1,5 @@
 ---
-status: done
+status: Done
 date: 2026-08-23
 author: "Zeus (Arquiteto)"
 adr: "docs/adr/ADR-2026-08-23-barrier-nao-executa-gate-de-roadmap-nao-confiavel-e-roadmap-new-sanitiza-o-titulo.md"
@@ -8,7 +8,7 @@ roadmap: "docs/roadmaps/done/ROADMAP-2026-08-23-barrier-nao-executa-gate-de-road
 
 # REQ: título de `roadmap new` forja seção com gate que o `barrier` executa
 
-> Date: 2026-08-23 | Status: done
+> Date: 2026-08-23 | Status: Done
 | Linear Issue:
 | Jira Issue:
 

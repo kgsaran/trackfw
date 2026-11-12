@@ -1,5 +1,5 @@
 ---
-status: done
+status: Done
 date: 2026-08-22
 author: "Zeus (Arquiteto)"
 adr: "docs/adr/ADR-2026-08-22-modelo-de-ameaca-no-desenho-wave-0-de-red-team-antes-da-implementacao-no-harness.md"
@@ -8,7 +8,7 @@ roadmap: "docs/roadmaps/done/ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-ha
 
 # REQ: Wave 0 de modelo de ameaça no harness, e o asset do arquiteto ensina `trackfw push`
 
-> Date: 2026-08-22 | Status: done
+> Date: 2026-08-22 | Status: Done
 | Linear Issue:
 | Jira Issue:
 

@@ -1,5 +1,5 @@
 ---
-status: done
+status: Done
 date: 2026-08-17
 author: "Zeus (Arquiteto)"
 adr: ""
@@ -8,7 +8,7 @@ roadmap: "docs/roadmaps/done/ROADMAP-2026-08-21-validate-detecta-hook-de-guard-n
 
 # REQ: `validate` não detecta hook de guard na forma relativa antiga, que falha fora da raiz
 
-> Date: 2026-08-17 | Status: done
+> Date: 2026-08-17 | Status: Done
 | Linear Issue:
 | Jira Issue:
 

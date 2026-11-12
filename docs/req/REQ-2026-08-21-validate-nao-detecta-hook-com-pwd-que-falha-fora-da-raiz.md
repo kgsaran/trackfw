@@ -1,5 +1,5 @@
 ---
-status: done
+status: Done
 date: 2026-08-21
 author: "Zeus (Arquiteto)"
 adr: "docs/adr/ADR-2026-08-22-postura-do-validate-diante-de-formas-de-hook-nao-reconhecidas-classificar-por-ancoragem-nao-por-casamento-com-o-gerado.md"
@@ -8,7 +8,7 @@ roadmap: "docs/roadmaps/done/ROADMAP-2026-08-22-validate-detecta-hook-com-pwd-qu
 
 # REQ: `validate` não detecta hook com `$PWD` que falha fora da raiz
 
-> Date: 2026-08-21 | Status: done
+> Date: 2026-08-21 | Status: Done
 
 ## Motivação
 

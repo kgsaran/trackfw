@@ -1,5 +1,5 @@
 ---
-status: done
+status: Done
 date: 2026-08-23
 author: "Zeus (Arquiteto)"
 adr: "docs/adr/ADR-2026-08-23-config-global-do-trackfw-como-fonte-do-pin-de-modelo-para-instalacao-de-escopo-global.md"
@@ -8,7 +8,7 @@ roadmap: "docs/roadmaps/done/ROADMAP-2026-08-23-agents-update-de-escopo-global-r
 
 # REQ: `agents update` de escopo global perde o pin de modelo porque lê `agent_models` do cwd
 
-> Date: 2026-08-23 | Status: done
+> Date: 2026-08-23 | Status: Done
 | Linear Issue:
 | Jira Issue:
 

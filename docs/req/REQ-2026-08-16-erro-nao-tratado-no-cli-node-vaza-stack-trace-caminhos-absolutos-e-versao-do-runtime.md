@@ -1,5 +1,5 @@
 ---
-status: done
+status: Done
 date: 2026-08-16
 author: ""
 adr: ""
@@ -8,7 +8,7 @@ roadmap: "docs/roadmaps/done/ROADMAP-2026-08-16-handler-global-de-erro-nos-entry
 
 # REQ: erro nao tratado no CLI Node vaza stack trace caminhos absolutos e versao do runtime
 
-> Date: 2026-08-16 | Status: done
+> Date: 2026-08-16 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 

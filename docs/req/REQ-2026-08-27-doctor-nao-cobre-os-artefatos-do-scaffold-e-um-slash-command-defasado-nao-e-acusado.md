@@ -1,5 +1,5 @@
 ---
-status: done
+status: Done
 date: 2026-08-27
 author: "Zeus (Arquiteto)"
 adr: "docs/adr/ADR-2026-08-27-doctor-cobre-artefatos-de-scaffold-por-comparacao-com-o-template-com-propriedade-dada-pelo-caminho.md"
@@ -8,7 +8,7 @@ roadmap: "docs/roadmaps/done/ROADMAP-2026-08-27-doctor-cobre-artefatos-de-scaffo
 
 # REQ: `doctor` não cobre os artefatos do scaffold, e um slash command defasado não é acusado
 
-> Date: 2026-08-27 | Status: done
+> Date: 2026-08-27 | Status: Done
 | Linear Issue:
 | Jira Issue:
 

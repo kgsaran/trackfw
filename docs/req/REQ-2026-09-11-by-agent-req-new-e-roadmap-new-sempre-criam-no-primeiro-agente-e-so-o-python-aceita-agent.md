@@ -8,7 +8,7 @@ roadmap: "docs/roadmaps/abandoned/ROADMAP-2026-09-11-by-agent-req-new-e-roadmap-
 
 # REQ: by_agent: req new e roadmap new sempre criam no primeiro agente, e so o Python aceita --agent
 
-> Date: 2026-09-11 | Status: Open
+> Date: 2026-09-11 | Status: Superseded
 | Linear Issue: 
 | Jira Issue: 
 
