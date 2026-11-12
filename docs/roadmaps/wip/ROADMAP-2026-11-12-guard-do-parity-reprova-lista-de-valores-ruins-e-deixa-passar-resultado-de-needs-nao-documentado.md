@@ -22,7 +22,7 @@ testável fora do CI.
 
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
-- [ ] AC1 — inventário medido (ML-0A)
+- [x] AC1 — inventário medido (ML-0A)
 - [ ] AC2 — `scripts/check-needs-success.sh` com `--self-test` (ML-1A)
 - [ ] AC3 — `parity` e demais sítios do AC1 usando o script (ML-1A)
 - [ ] AC4 — comentários de `quality.yml` coerentes (ML-1A)
@@ -38,7 +38,7 @@ testável fora do CI.
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Inventário dos consumidores de resultado de job e threat model
-**Status:** ⬜ Pending
+**Status:** ✅ Done
 **Squad:** hades-tf
 **Files affected:**
 - `docs/seguranca/2026-11-12-wave0-agregador-needs-success.md`
@@ -56,8 +56,26 @@ testável fora do CI.
    reprova o que é legítimo.
 4. Residual declarado.
 **Acceptance criteria:**
-- [ ] Inventário com contagem conferida por um segundo caminho e lista final de sítios do ML-1A
-- [ ] Nenhuma linha de implementação escrita neste ML
+- [x] Inventário com contagem conferida por um segundo caminho e lista final de sítios do ML-1A
+- [x] Nenhuma linha de implementação escrita neste ML
+
+**Auditoria (Zeus, 2026-11-12):** aprovado, com três correções para o ML-1A. Conferido no relatório e no
+`quality.yml`: o único sítio de lista de proibidos é `quality.yml:1010`. Os scripts de release já exigem
+`success`, e `windows-census.yml` é só `workflow_dispatch`. A §2 também confere: depois da guarda, o `parity`
+só tem `checkout`, `setup-python`, o download dos artefatos de shard e `check-falsify-shard-coverage.sh`.
+`parity-other-gates` (795) e `check-required-checks` não sobem artefato, então `abandoned` neles hoje dá
+`parity` verde sem verificação. `git status` mostra só o relatório, e o índice está vazio. Correções:
+1. **R2 não fica como residual (defeito conhecido se corrige agora).** O script recebe os nomes esperados como
+   argumentos e exige igualdade de conjunto com as chaves de `NEEDS_JSON`: falta ou sobra de job reprova. Uma
+   mudança em `needs:` sem atualizar a chamada falha fechada. Isso entra como braços `missing-expected-job` e
+   `unexpected-job`.
+2. **R5 não é residual novo.** Num PR, quem pode trocar o script também pode trocar o `quality.yml`. A classificação
+   pela BASE do ADR-2026-09-17 existe porque o `classify` *dispensa* trabalho; esta guarda não dispensa nada.
+3. **O contra-braço da §3.5 não vale como está escrito.** `sed -i` sem sufixo quebra no BSD/macOS, e
+   `/tmp/sabotado.sh` fixo viola `check-mktemp-cleanup.sh`. O contra-braço vai dentro do `--self-test`, com
+   `mktemp` e trap na forma canônica da ADR-2026-11-11, uma sabotagem portátil (`sed '…' > arquivo`) e uma
+   verificação de que a sabotagem mudou o arquivo (se o `sed` não casar, o braço reprova em vez de ficar
+   inerte).
 
 **Wave gates:**
 ```bash
@@ -74,13 +92,19 @@ test -s docs/seguranca/2026-11-12-wave0-agregador-needs-success.md
 - `scripts/check-needs-success.sh` (novo)
 - `.github/workflows/quality.yml`
 - `Makefile`
-- demais sítios que o ML-0A listar
 
 **Actions:**
-1. Script do ADR D2, com o contrato do AC2 da REQ e os vetores do ML-0A §3 como braços do `--self-test`.
-2. No `parity`, substituir o passo com `contains(needs.*.result, …)` por
-   `env: NEEDS_JSON: ${{ toJSON(needs) }}` + `run: scripts/check-needs-success.sh`, como primeiro passo e antes do
-   `checkout`. Se o script exigir checkout, o checkout vem antes e a ordem é justificada no comentário.
+1. Script do ADR D2 em bash que delega o parse a `python3` (ML-0A §3.1). Contrato:
+   `NEEDS_JSON=... scripts/check-needs-success.sh <job> [<job>...]`. Reprova (rc≠0) se a variável faltar ou
+   não for um objeto JSON, se o conjunto de chaves diferir dos argumentos, ou se algum `result` não for
+   exatamente a string `success`. Sem argumentos, reprova. Ao reprovar, imprime `::error::` com cada job e
+   resultado, escapados por `%`→`%25`, `\r`→`%0D`, `\n`→`%0A`. Nunca ecoa `outputs`.
+   `--self-test` tem os 23 braços da tabela §3.4 do relatório ML-0A, mais `missing-expected-job`,
+   `unexpected-job`, `no-args` e o contra-braço (correção 3 da auditoria do ML-0A).
+2. No `parity`, remover o passo com `contains(needs.*.result, …)` e pôr, logo depois de `checkout` e
+   `setup-python`, antes do download de artefatos:
+   `env: NEEDS_JSON: ${{ toJSON(needs) }}` +
+   `run: scripts/check-needs-success.sh parity-falsify-shard parity-other-gates check-required-checks`.
 3. Reescrever o comentário de `quality.yml` (~948–955) e o do `parity` (~854–859) para o estado novo.
 4. `Makefile`, alvo `parity-rest`: uma linha `scripts/check-needs-success.sh --self-test`.
 **Acceptance criteria:**

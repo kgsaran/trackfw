@@ -27,7 +27,7 @@ de release (`verify-npm-channels.sh`, `verify-pypi-channel.py`) já exigem `succ
 preenchida. A Wave 0 refaz esse inventário com instrumento próprio (ADR D3).
 
 ## Acceptance Criteria
-- [ ] **AC1 — Inventário medido.** A Wave 0 lista todo consumidor de `needs.*.result`, `contains(needs…)` e
+- [x] **AC1 — Inventário medido.** A Wave 0 lista todo consumidor de `needs.*.result`, `contains(needs…)` e
   variável `*_RESULT` em `.github/workflows/` e `scripts/`, classificado como permitidos, proibidos ou
   diagnóstico, com contagem conferida por um segundo caminho. Todo sítio de proibidos que decide gate entra no
   ML-1A.
