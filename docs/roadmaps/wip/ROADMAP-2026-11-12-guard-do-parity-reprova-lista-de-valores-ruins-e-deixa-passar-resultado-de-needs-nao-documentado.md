@@ -28,7 +28,7 @@ testável fora do CI.
 - [x] AC4 — comentários de `quality.yml` coerentes (ML-1A)
 - [x] AC5 — self-test no `parity-rest`, com contra-braço (ML-1A)
 - [ ] AC6 — log do `parity` no CI do PR (ML-3A)
-- [ ] AC7 — `make quality` verde (ML-2B)
+- [x] AC7 — `make quality` verde (ML-2B; rc=0, 3231 linhas, rodado pelo arquiteto)
 - [ ] AC8 — resposta na Discussion #664 (ML-3A)
 
 ## Status Legend
@@ -188,12 +188,16 @@ O executor relatou `make parity-rest` rc=0 (2249 linhas); o `make quality` do ML
 de reconciliação conferem com NF-1..NF-4 e R-NaN.
 
 ### ML-2B — `make quality`
-**Status:** ⬜ Pending
+**Status:** ✅ Done
 **Squad:** ares-tf
 **Files affected:** nenhum
 **Actions:** `make quality` com a máquina ociosa, saída completa em arquivo, rc lido sem pipe.
 **Acceptance criteria:**
-- [ ] `make quality` rc=0
+- [x] `make quality` rc=0
+
+**Medição (Zeus, 2026-11-12):** `make quality` foi rodado pelo arquiteto depois do commit do ML-2C, com a
+máquina ociosa, e deu rc=0 (3231 linhas). O falsify fechou com 8 chunks, 365 OK e 0 FAIL, e a guarda de conjunto
+passou.
 
 **Wave gates:**
 ```bash

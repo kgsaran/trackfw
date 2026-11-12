@@ -44,7 +44,7 @@ preenchida. A Wave 0 refaz esse inventário com instrumento próprio (ADR D3).
   reprovar o self-test.
 - [ ] **AC6 — Medição no CI.** O PR desta REQ mostra no log do `parity` a lista de jobs avaliados, todos
   `success`, e o check verde.
-- [ ] **AC7 — `make quality` verde.**
+- [x] **AC7 — `make quality` verde.**
 - [ ] **AC8 — Resposta na Discussion #664**, com o link do PR.
 
 ## Negative scope
