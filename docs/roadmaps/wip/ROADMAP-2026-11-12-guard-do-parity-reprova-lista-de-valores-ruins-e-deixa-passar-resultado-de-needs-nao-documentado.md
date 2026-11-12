@@ -158,7 +158,7 @@ no repositório, mas o defeito é conhecido, então se corrige agora (ML-2C). Os
 um passo anterior ou do próprio `quality.yml`, então são aceitos com o mesmo argumento da correção 2 do ML-0A.
 
 ### ML-2C — Corretivo do red team (NF-1 a NF-4)
-**Status:** ⬜ Pending
+**Status:** ✅ Done
 **Squad:** ares-tf
 **Files affected:**
 - `scripts/check-needs-success.sh`
@@ -172,10 +172,20 @@ um passo anterior ou do próprio `quality.yml`, então são aceitos com o mesmo 
    para o novo total.
 3. NF-4: `--self-test` com argumento extra reprova (rc≠0), com o braço `self-test-extra-args`.
 **Acceptance criteria:**
-- [ ] `--self-test` verde em bash e em `/bin/bash` 3.2, com o novo total
-- [ ] Cada mutação M3ii, M3iii e M5 do relatório ML-2A, aplicada numa cópia, faz o self-test da cópia reprovar
-- [ ] `make parity-rest` rc=0
-- [ ] Frase de reconciliação por braço novo
+- [x] `--self-test` verde em bash e em `/bin/bash` 3.2, com o novo total
+- [x] Cada mutação M3ii, M3iii e M5 do relatório ML-2A, aplicada numa cópia, faz o self-test da cópia reprovar
+- [x] `make parity-rest` rc=0
+- [x] Frase de reconciliação por braço novo
+
+**Auditoria (Zeus, 2026-11-12):** aprovado. O diff toca só `scripts/check-needs-success.sh`: `-I -X utf8`, a
+recusa de argumento extra no self-test, 6 braços novos e piso 33. Medido pelo arquiteto:
+- `--self-test`: 33/33 em bash 5 e em `/bin/bash` 3.2;
+- NF-1 contra o arquivo real: com o `json.py` hostil no cwd, `abandoned` dá rc=1, e o caso legítimo no mesmo cwd
+  dá rc=0;
+- mutação M-I (sem `-I`) feita pelo arquiteto: o self-test da cópia reprova em `cwd-json-shadow`, 32/33.
+
+O executor relatou `make parity-rest` rc=0 (2249 linhas); o `make quality` do ML-2B cobre de novo. As 6 frases
+de reconciliação conferem com NF-1..NF-4 e R-NaN.
 
 ### ML-2B — `make quality`
 **Status:** ⬜ Pending

@@ -57,7 +57,7 @@ if [ "$MODE" = "run" ]; then
     exit 1
   fi
 
-  python3 - "$@" <<'PY'
+  python3 -I -X utf8 - "$@" <<'PY'
 import sys, os, json
 
 def esc(s):
@@ -133,6 +133,12 @@ fi  # end MODE=run
 # ---------------------------------------------------------------------------
 if [ "$MODE" = "self-test" ]; then
 
+  # NF-4: extra arguments after --self-test are rejected before any work is done
+  if [ $# -gt 0 ]; then
+    printf '%s: ::error::--self-test takes no arguments (got: %s)\n' "$SELF" "$*" >&2
+    exit 1
+  fi
+
   SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
   SCRIPT="$SCRIPT_DIR/${BASH_SOURCE[0]##*/}"
 
@@ -142,7 +148,7 @@ if [ "$MODE" = "self-test" ]; then
   PASS=0
   FAIL=0
   ARMS=0
-  EXPECTED_ARMS=27
+  EXPECTED_ARMS=33
 
   # check_arm NAME EXPECT_OK RC OUT [ABSENT [PRESENT]]
   # EXPECT_OK: 1=expect rc=0, 0=expect rc!=0
@@ -433,6 +439,76 @@ if [ "$MODE" = "self-test" ]; then
   else
     FAIL=$((FAIL + 1))
   fi
+
+  # --- Arm 28: jobname-injection-cr
+  # Affirms: a \r in a job key is escaped (%0D) -- forged CR cannot overwrite the beginning of a CI
+  #          annotation line in a terminal; removing .replace('\r', '%0D') (M3ii) makes this arm fail
+  ARMS=$((ARMS + 1))
+  job_with_cr=$'x\r::error::forged'
+  rc28=0
+  out28=$(NEEDS_JSON='{"x\r::error::forged":{"result":"abandoned"}}' \
+    "$BASH" "$SCRIPT" "$job_with_cr" 2>&1) || rc28=$?
+  arm28_ok=1
+  if [ "$rc28" -eq 0 ]; then
+    printf 'FAIL jobname-injection-cr: expected rc!=0, got rc=0\n'
+    printf '  output: %s\n' "$out28"
+    arm28_ok=0
+  fi
+  if printf '%s\n' "$out28" | grep -F $'\r' >/dev/null 2>&1; then
+    printf 'FAIL jobname-injection-cr: raw CR found in output (not escaped)\n'
+    arm28_ok=0
+  fi
+  if ! printf '%s\n' "$out28" | grep -F '%0D::error::forged' >/dev/null 2>&1; then
+    printf 'FAIL jobname-injection-cr: escaped form %%0D::error::forged not found\n'
+    arm28_ok=0
+  fi
+  if [ "$arm28_ok" = "1" ]; then
+    printf 'PASS jobname-injection-cr\n'
+    PASS=$((PASS + 1))
+  else
+    FAIL=$((FAIL + 1))
+  fi
+
+  # --- Arm 29: jobname-pct-injection
+  # Affirms: % in a job key is escaped (%25) -- %0A injection requires % to be double-encoded
+  #          first; removing .replace('%', '%25') (M3iii) makes this arm fail
+  rc29=0
+  out29=$(NEEDS_JSON='{"a%0Aforged":{"result":"abandoned"}}' \
+    "$BASH" "$SCRIPT" "a%0Aforged" 2>&1) || rc29=$?
+  check_arm "jobname-pct-injection" 0 "$rc29" "$out29" "" "a%250Aforged"
+
+  # --- Arm 30: no-args-empty-object
+  # Affirms: calling with no args AND empty-object NEEDS_JSON is rejected with rc!=0 --
+  #          replacing exit 1 with true in the $# -eq 0 block (M5) makes this arm fail
+  rc30=0
+  out30=$(NEEDS_JSON='{}' "$BASH" "$SCRIPT" 2>&1) || rc30=$?
+  check_arm "no-args-empty-object" 0 "$rc30" "$out30" "" "no job names"
+
+  # --- Arm 31: nan-result
+  # Affirms: NaN (a Python float, not a string) is rejected by the allowlist --
+  #          type(r) is not str catches Python's json.loads NaN extension (R-NaN gap closed)
+  rc31=0
+  out31=$(NEEDS_JSON='{"a":{"result":NaN}}' \
+    "$BASH" "$SCRIPT" a 2>&1) || rc31=$?
+  check_arm "nan-result" 0 "$rc31" "$out31" "" "result=nan"
+
+  # --- Arm 32: cwd-json-shadow
+  # Affirms: python3 -I strips cwd from sys.path -- a hostile json.py in cwd cannot approve
+  #          abandoned; removing -I (M-I) causes this arm to fail (NF-1 bypass closed)
+  shadow_dir=$(mktemp -d "$tmpdir/shadow.XXXXXX")
+  printf '%s\n' 'def loads(s, **kw):' '    return {"a": {"result": "success"}}' \
+    > "$shadow_dir/json.py"
+  rc32=0
+  out32=$(cd "$shadow_dir" && NEEDS_JSON='{"a":{"result":"abandoned"}}' \
+    "$BASH" "$SCRIPT" a 2>&1) || rc32=$?
+  check_arm "cwd-json-shadow" 0 "$rc32" "$out32" "" "result=abandoned"
+
+  # --- Arm 33: self-test-extra-args
+  # Affirms: extra arguments after --self-test are rejected with rc!=0 --
+  #          prevents --self-test from silently ignoring real job names when called by mistake (NF-4)
+  rc33=0
+  out33=$("$BASH" "$SCRIPT" --self-test x 2>&1) || rc33=$?
+  check_arm "self-test-extra-args" 0 "$rc33" "$out33" "" "--self-test takes no arguments"
 
   printf '\n--- self-test results: %d passed, %d failed (of %d arms, floor=%d) ---\n' \
     "$PASS" "$FAIL" "$ARMS" "$EXPECTED_ARMS"
