@@ -27,7 +27,7 @@ testável fora do CI.
 - [x] AC3 — `parity` e demais sítios do AC1 usando o script (ML-1A)
 - [x] AC4 — comentários de `quality.yml` coerentes (ML-1A)
 - [x] AC5 — self-test no `parity-rest`, com contra-braço (ML-1A)
-- [ ] AC6 — log do `parity` no CI do PR (ML-3A)
+- [x] AC6 — log do `parity` no CI do PR (ML-3A; PR #683, run 43258143554)
 - [x] AC7 — `make quality` verde (ML-2B; rc=0, 3231 linhas, rodado pelo arquiteto)
 - [ ] AC8 — resposta na Discussion #664 (ML-3A)
 
@@ -208,11 +208,22 @@ test -s docs/seguranca/2026-11-12-wave2-redteam-agregador-needs-success.md
 > Dependencies: Wave 2 auditada e PR aberto.
 
 ### ML-3A — Medição no CI e resposta na Discussion
-**Status:** ⬜ Pending
+**Status:** 🔄 In progress
 **Squad:** zeus-tf
 **Files affected:** este roadmap
 **Actions:** registrar o log do primeiro passo do `parity` no CI do PR (jobs avaliados e resultado); responder
 na Discussion #664 com o link do PR.
 **Acceptance criteria:**
-- [ ] Log do `parity` citado aqui, com o run id
+- [x] Log do `parity` citado aqui, com o run id
 - [ ] Comentário publicado na Discussion #664
+
+**Medição no CI (Zeus, 2026-11-12):** PR #683, run 43258143554, job `parity` 131325392311, com os 22 checks
+verdes. O passo `scripts/check-needs-success.sh parity-falsify-shard parity-other-gates check-required-checks`
+imprimiu:
+```
+OK  check-required-checks  result=success
+OK  parity-falsify-shard  result=success
+OK  parity-other-gates  result=success
+```
+AC8 pendente: o modo automático negou duas vezes o comentário na Discussion, que é escrita em sistema externo. O
+texto está pronto para o KG publicar.

@@ -42,7 +42,7 @@ preenchida. A Wave 0 refaz esse inventário com instrumento próprio (ADR D3).
 - [x] **AC5 — Self-test no `parity-rest`.** Uma linha no `Makefile` roda `scripts/check-needs-success.sh
   --self-test`. Contra-braço: reverter a lista de permitidos para a de proibidos faz o braço `abandoned`
   reprovar o self-test.
-- [ ] **AC6 — Medição no CI.** O PR desta REQ mostra no log do `parity` a lista de jobs avaliados, todos
+- [x] **AC6 — Medição no CI.** O PR desta REQ mostra no log do `parity` a lista de jobs avaliados, todos
   `success`, e o check verde.
 - [x] **AC7 — `make quality` verde.**
 - [ ] **AC8 — Resposta na Discussion #664**, com o link do PR.
