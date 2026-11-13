@@ -1,5 +1,5 @@
 ---
-status: done
+status: Done
 date: 2026-08-15
 author: ""
 adr: "docs/adr/ADR-2026-08-15-gate-de-duas-fases-para-artefatos-de-terceiro-quarentena-parecer-vinculado-por-checksum-e-deteccao-por-proveniencia-versionada.md"
@@ -8,7 +8,7 @@ roadmap: "docs/roadmaps/done/ROADMAP-2026-08-15-instalacao-de-skills-de-terceiro
 
 # REQ: instalacao de skills de terceiro via URL para agentes especialistas
 
-> Date: 2026-08-15 | Status: done
+> Date: 2026-08-15 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 

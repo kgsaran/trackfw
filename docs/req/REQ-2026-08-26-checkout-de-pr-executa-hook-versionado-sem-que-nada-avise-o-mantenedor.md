@@ -1,5 +1,5 @@
 ---
-status: done
+status: Done
 date: 2026-08-26
 author: "Zeus (Arquiteto)"
 adr: "docs/adr/ADR-2026-08-26-superficie-executavel-de-um-checkout-de-pr-e-auditada-por-comando-dedicado-nao-por-regra-de-validate.md"
@@ -8,7 +8,7 @@ roadmap: "docs/roadmaps/done/ROADMAP-2026-08-26-comando-que-audita-a-superficie-
 
 # REQ: checkout de PR executa hook versionado sem que nada avise o mantenedor
 
-> Date: 2026-08-26 | Status: done
+> Date: 2026-08-26 | Status: Done
 | Linear Issue:
 | Jira Issue:
 

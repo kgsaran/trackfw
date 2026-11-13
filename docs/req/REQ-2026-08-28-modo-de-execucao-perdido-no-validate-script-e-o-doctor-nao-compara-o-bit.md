@@ -1,5 +1,5 @@
 ---
-status: done
+status: Done
 date: 2026-08-28
 author: "Zeus (Arquiteto)"
 adr: ""
@@ -8,7 +8,7 @@ roadmap: "docs/roadmaps/done/ROADMAP-2026-08-28-doctor-compara-o-bit-de-execucao
 
 # REQ: modo de execução perdido no validate script, e o `doctor` não compara o bit
 
-> Date: 2026-08-28 | Status: done
+> Date: 2026-08-28 | Status: Done
 | Linear Issue:
 | Jira Issue:
 

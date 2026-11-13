@@ -1,5 +1,5 @@
 ---
-status: done
+status: Done
 date: 2026-08-16
 author: ""
 adr: ""
@@ -8,7 +8,7 @@ roadmap: "docs/roadmaps/done/ROADMAP-2026-08-16-trackfw-branch-new-aceita-tipos-
 
 # REQ: trackfw branch new aceita tipos chore e docs sem gate de roadmap
 
-> Date: 2026-08-16 | Status: done
+> Date: 2026-08-16 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
