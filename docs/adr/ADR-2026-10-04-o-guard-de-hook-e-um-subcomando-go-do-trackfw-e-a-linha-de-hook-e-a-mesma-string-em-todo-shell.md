@@ -453,3 +453,25 @@ de eventos esperados por CLI é um ponto único, compartilhado com a regra de vi
 - **(d) manter:** deixa o buraco invisível.
 
 REQ: `docs/req/REQ-2026-10-25-validate-avisa-quando-o-arquivo-de-hook-de-projeto-nao-tem-o-credential-guard-nos-clis-sem-regra-de-presenca.md`.
+
+## Adendo — 2026-11-13: opção de shell herdada não pode encerrar a linha antes do guard (REQ-2026-11-13)
+
+O resíduo R4 da REQ-2026-10-20 foi declarado e não foi corrigido. Medido em 2026-11-13 no macOS, com a forma
+canônica da família PS/POSIX e um `trackfw` falso que sai 2 (deny):
+
+| shell | rc | efeito |
+|---|---|---|
+| `bash`, `bash -o pipefail`, `zsh -e`, `zsh -u`, `sh` com `BASH_ENV` | 2 | bloqueia |
+| `bash -e`, `bash -u`, `sh -e`, `sh -u`, `dash -e`, `bash` com `BASH_ENV` contendo `set -e` | **127** | **libera** |
+
+Em sh/bash/dash, `emulate` e `$LASTEXITCODE=2` são comandos inexistentes por desenho, e o `$LASTEXITCODE`
+vazio é expansão de variável não definida. Com `errexit` ou `nounset` herdados, o shell sai no primeiro desses
+pontos, antes de chamar o guard. O `emulate -R sh` resolve só o zsh, porque só nele o primeiro segmento roda.
+
+### D18 — Nenhum segmento anterior ao guard pode encerrar o shell, com qualquer opção herdada
+
+A linha de hook chega ao `trackfw guard` sob `errexit` e `nounset` herdados, por flag, por `BASH_ENV`, por
+`SHELLOPTS` ou por `.zshenv`, em todo shell da matriz da D2 revista. A forma exata é escolhida pela medição da
+Wave 0 e do ML de implementação, na matriz inteira, incluindo PowerShell 5.1 e 7 no Windows. Vale a regra de
+2026-10-07: entre as formas que corrigem, a de menor ruído no stderr. A forma substituída vira geração legada no
+registro da D12, com aviso e migração pelo `trackfw update harness`, como nas mudanças anteriores.
