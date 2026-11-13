@@ -19,7 +19,10 @@ shell sai 127 no primeiro desses pontos, antes de chamar `trackfw guard`. O CLI 
 não bloqueante, e o comando passa: o guard de credencial e o de branch ficam desligados sem aviso.
 
 Medido em 2026-11-13 (macOS, guard falso que nega com 2): `bash -e`, `bash -u`, `sh -e`, `sh -u`, `dash -e` e
-`bash` com `BASH_ENV` contendo `set -e` dão 127. `bash`, `zsh -e`, `zsh -u` e `SHELLOPTS=errexit` dão 2.
+`bash` com `BASH_ENV` contendo `set -e` dão 127. `bash`, `zsh -e` e `zsh -u` dão 2. A Wave 0 corrigiu uma
+medição: `env SHELLOPTS=errexit bash` também dá 127 (o prefixo `SHELLOPTS=` dentro do bash é rejeitado por
+`readonly` e mascarava o defeito). No PowerShell 7, `$ErrorActionPreference='Stop'` faz a linha sair 1 sem
+chamar o guard. A forma legada D11 revista tem o mesmo defeito.
 
 Origem: resíduo R4 declarado e não corrigido na REQ-2026-10-20 (roadmap `done/`, linha 246). A varredura de
 issues de 2026-11-13 não achou issue aberta com o mesmo mecanismo.
@@ -39,9 +42,9 @@ em 0 s (`vault/notes/git-terminal-prompt-sem-terminal-falha-na-hora-2026-10-31.m
 - [ ] AC1 — inventário de toda forma de linha de hook gerada ou aceita como corrente, com o rc medido sob cada opção herdada (Wave 0)
 - [ ] AC2 — com guard que nega (2), a linha nova sai 2 sob `bash -e`, `bash -u`, `sh -e`, `sh -u`, `dash -e`, `zsh -e`, `zsh -u`, `BASH_ENV` com `set -e` e `set -u`, e sem opção nenhuma
 - [ ] AC3 — com guard que permite (0), a linha nova sai 0 nas mesmas condições
-- [ ] AC4 — PowerShell 5.1 e 7 no Windows: deny 2 e allow 0, com o ruído de stderr medido e não maior que o da forma atual
+- [ ] AC4 — PowerShell 5.1 e 7 no Windows: deny 2 e allow 0, com o ruído de stderr medido e não maior que o da forma atual; e `$ErrorActionPreference='Stop'` medido com e sem perfil: se chega ao hook de algum CLI suportado, a forma nova o cobre; se não chega, a medição fica escrita
 - [ ] AC5 — `TestGuardLineShellMatrix` cobre as opções herdadas do AC2, e a forma atual reprova nele (contra-braço)
-- [ ] AC6 — a forma atual vira geração legada no registro da D12: `validate` avisa e `trackfw update harness` migra sem duplicar entrada
+- [ ] AC6 — a forma atual e a D11 revista viram geração legada no registro da D12 (igualdade exata, nunca `Contains`/`HasSuffix`): `validate` avisa e `trackfw update harness` migra as duas para a forma nova sem duplicar entrada
 - [ ] AC7 — configs de hook deste repositório migradas para a forma nova
 - [ ] AC8 — `make quality` verde
 

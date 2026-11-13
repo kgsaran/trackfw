@@ -18,7 +18,9 @@ Origem: resíduo R4 da REQ-2026-10-20, não corrigido. Varredura de issues em 20
 A linha de hook PS/POSIX tem segmentos que, em sh/bash/dash, falham por desenho (`emulate`, `$LASTEXITCODE=2`)
 ou expandem variável não definida (`$LASTEXITCODE`). Com `errexit` ou `nounset` herdados, o shell sai 127 antes
 do guard e o comando passa. Medição do arquiteto na REQ (macOS): 127 em `bash -e`, `bash -u`, `sh -e`, `sh -u`,
-`dash -e` e `BASH_ENV` com `set -e`; 2 em `bash`, `zsh -e`, `zsh -u` e `SHELLOPTS=errexit`.
+`dash -e` e `BASH_ENV` com `set -e`; 2 em `bash`, `zsh -e` e `zsh -u`. A Wave 0 corrigiu `SHELLOPTS=errexit`:
+com `env`, dá 127 (o prefixo dentro do bash é rejeitado por `readonly`). No PowerShell 7,
+`$ErrorActionPreference='Stop'` dá 1 sem chamar o guard.
 
 Sítio canônico da forma esperada: `guardExpectedLine` em `internal/validator/validator_guard_binary_probe.go`.
 O literal `emulate -R sh` aparece também em `internal/generators/agentfiles.go`,
@@ -27,7 +29,7 @@ O literal `emulate -R sh` aparece também em `internal/generators/agentfiles.go`
 
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
-- [ ] AC1 — inventário e matriz medida da forma atual (ML-0A)
+- [x] AC1 — inventário e matriz medida da forma atual (ML-0A)
 - [ ] AC2 — deny sai 2 sob as opções herdadas (ML-1A)
 - [ ] AC3 — allow sai 0 sob as opções herdadas (ML-1A)
 - [ ] AC4 — PowerShell 5.1 e 7 no Windows (ML-1B)
@@ -43,7 +45,7 @@ O literal `emulate -R sh` aparece também em `internal/generators/agentfiles.go`
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Inventário das formas de linha de hook, matriz de opções herdadas e candidatos
-**Status:** ⬜ Pending
+**Status:** ✅ Done
 **Squad:** hades-tf
 **Files affected:**
 - `docs/seguranca/2026-11-13-wave0-guard-errexit-herdado.md` (único arquivo escrito)
@@ -67,9 +69,25 @@ O literal `emulate -R sh` aparece também em `internal/generators/agentfiles.go`
 5. Residual declarado.
 
 **Acceptance criteria:**
-- [ ] Inventário com contagem conferida por segundo caminho e lista final dos sítios do ML-1A
-- [ ] Matriz da forma atual e dos candidatos com rc medido, não presumido
-- [ ] Nenhuma linha de implementação escrita; `git diff --cached` vazio ao fim
+- [x] Inventário com contagem conferida por segundo caminho e lista final dos sítios do ML-1A
+- [x] Matriz da forma atual e dos candidatos com rc medido, não presumido
+- [x] Nenhuma linha de implementação escrita; `git diff --cached` vazio ao fim
+
+**Auditoria (Zeus, 2026-11-13):** aprovado com três correções.
+- Reproduzi de forma independente: a forma atual dá 127 com deny e com allow sob `bash -e`, `sh -u`,
+  `env SHELLOPTS=errexit` e `BASH_ENV` com `set -e`. O CAND_B (`set +eu 2>${null-/dev/null};` antes da forma
+  atual) roda o guard e devolve 2 e 0 nas mesmas quatro condições. O relatório é o único arquivo novo, e o
+  índice está vazio.
+- **Correção 1 — inventário incompleto.** O relatório não cita `WriteScopeCurrentPSPOSIX` (guard `write-scope`)
+  nem trata `CredentialGlobalCurrentPSPOSIX` como sítio. As quatro constantes `*CurrentPSPOSIX` de
+  `internal/guardforms/guard_generations.go` entram no ML-1A.
+- **Correção 2 — gate inexistente.** `scripts/check-harness-hooks-parity.sh` não existe. O gate de esquema de
+  hook do repositório é `scripts/check-git-branch-guard-hook-schema.sh`.
+- **Correção 3 — `$ErrorActionPreference='Stop'` não é residual.** O mecanismo é o mesmo da REQ (opção herdada
+  encerra a linha antes do guard, D18). O ML-1B mede se ela chega ao hook de algum CLI suportado, com e sem
+  perfil. Se chega, a forma que a cobre entra nesta REQ como ML corretivo.
+- R1 (`trap 'exit 0' ERR` via `BASH_ENV`), R2 (`BASH_FUNC_set`) e R3 (`emulate()` redefinida) ficam como residual
+  aceito: exigem código do usuário executado antes do hook, e quem tem isso também troca o binário `trackfw`.
 
 **Wave gates:**
 ```bash
@@ -83,14 +101,38 @@ test -s docs/seguranca/2026-11-13-wave0-guard-errexit-herdado.md
 ### ML-1A — Forma nova da linha, geração legada, migração e matriz POSIX
 **Status:** ⬜ Pending
 **Squad:** apolo-tf
-**Files affected:** definidos pela auditoria do ML-0A (base: os cinco arquivos Go do Context, os testes deles e
-as configs de hook versionadas deste repositório).
+**Files affected:**
+- produto: `internal/guardforms/guard_generations.go`, `internal/generators/agentfiles.go`,
+  `internal/validator/validator_guard_binary_probe.go`, `internal/validator/validator_credential_guard.go`,
+  `internal/validator/validator_git_branch_guard.go`
+- testes: `internal/generators/guard_line_shell_test.go`, `internal/generators/update_test.go`,
+  `internal/generators/fail_closed_d11_behavior_test.go`, `internal/commands/update_harness_test.go`,
+  `internal/validator/validator_guard_binary_probe_test.go`, `internal/validator/validator_git_branch_guard_test.go`,
+  `internal/validator/validator_credential_guard_test.go`, `internal/validator/cursor_guard_migrate_dedup_external_test.go`,
+  `internal/validator/validator_guard_binary_probe_windsurf_amazonq_test.go`
+- configs: `.claude/settings.json`, `.codex/hooks.json`, `.gemini/settings.json`
+- docs e scripts: `README.md`, `docs/cli-parity.md`, `scripts/check-validate-rule-pins.sh`
 
-**Actions:** definidas pela auditoria do ML-0A, com a forma escolhida pela D18.
+**Actions:**
+1. Forma nova: prefixo `set +eu 2>${null-/dev/null}; ` antes da forma atual, nas quatro constantes
+   `*CurrentPSPOSIX` (credential, credential global, git-branch, write-scope).
+2. As quatro formas atuais viram geração legada no registro da D12, por igualdade exata. A migração leva a
+   forma atual e a D11 revista à forma nova, sem duplicar entrada.
+3. Validador: forma nova é a corrente; a atual e a D11 revista dão aviso de migração, como as legadas já dão.
+4. Matriz de teste com subprocess real, afirmando rc **e** o marcador de que o guard rodou: deny 2 e allow 0
+   sob `bash -e`, `bash -u`, `sh -e`, `sh -u`, `dash -e` (se existir), `zsh -e`, `zsh -u`, `BASH_ENV` com
+   `set -e` e `set -u`, e `SHELLOPTS=errexit` via `cmd.Env` (nunca prefixo de atribuição). Contra-braço: a forma
+   atual reprova nas condições POSIX com `-e`/`-u`.
+5. Configs deste repositório: troca exata da linha nas três configs. Não rode `trackfw update harness` nem
+   `trackfw init` na árvore.
+6. Docs e pins: README, `docs/cli-parity.md` e o fixture de `scripts/check-validate-rule-pins.sh` com a forma
+   nova.
 
 **Acceptance criteria:**
 - [ ] AC2, AC3, AC5, AC6 e AC7 da REQ
 - [ ] `go build ./...` e os testes dos pacotes tocados verdes
+- [ ] `scripts/check-git-branch-guard-hook-schema.sh` e `make parity-rest` verdes
+- [ ] Relatório com uma frase por teste novo dizendo qual conclusão ele afirma
 
 **Wave gates:**
 ```bash
@@ -103,7 +145,11 @@ go test ./internal/generators/ ./internal/validator/ ./internal/guardforms/
 **Squad:** artemis-tf
 **Files affected:** `docs/portabilidade/2026-11-13-guard-errexit-windows.md`
 
-**Actions:** definidas pela auditoria do ML-1A.
+**Actions:**
+1. Na VM Windows (ARM64), PS 5.1 e 7: a forma nova dá deny 2 e allow 0, e o stderr não tem mais linhas que o da
+   forma atual.
+2. `$ErrorActionPreference='Stop'`: mede a forma atual e a nova com `-NoProfile` e com um perfil que define
+   `Stop`, e diz, pela documentação de cada CLI suportado no Windows, se ele carrega o perfil ao rodar o hook.
 
 **Acceptance criteria:**
 - [ ] AC4 da REQ, medido na VM e confirmado no CI de Windows do PR

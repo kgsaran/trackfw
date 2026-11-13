@@ -462,16 +462,21 @@ canônica da família PS/POSIX e um `trackfw` falso que sai 2 (deny):
 | shell | rc | efeito |
 |---|---|---|
 | `bash`, `bash -o pipefail`, `zsh -e`, `zsh -u`, `sh` com `BASH_ENV` | 2 | bloqueia |
-| `bash -e`, `bash -u`, `sh -e`, `sh -u`, `dash -e`, `bash` com `BASH_ENV` contendo `set -e` | **127** | **libera** |
+| `bash -e`, `bash -u`, `sh -e`, `sh -u`, `dash -e`, `bash` com `BASH_ENV` contendo `set -e`, `env SHELLOPTS=errexit bash` | **127** | **libera** |
+| `pwsh -Command` com `$ErrorActionPreference='Stop'` (PS 7, macOS) | **1** | **libera** nos CLIs que só bloqueiam com 2 |
 
 Em sh/bash/dash, `emulate` e `$LASTEXITCODE=2` são comandos inexistentes por desenho, e o `$LASTEXITCODE`
 vazio é expansão de variável não definida. Com `errexit` ou `nounset` herdados, o shell sai no primeiro desses
 pontos, antes de chamar o guard. O `emulate -R sh` resolve só o zsh, porque só nele o primeiro segmento roda.
+No PowerShell, `$ErrorActionPreference='Stop'` torna terminante o erro do primeiro segmento, e a linha sai 1.
+(A primeira medição do arquiteto deu 2 para `SHELLOPTS=errexit`: o prefixo de atribuição dentro do bash é
+rejeitado por ser `readonly`. Com `env SHELLOPTS=errexit`, a Wave 0 mediu 127.)
 
 ### D18 — Nenhum segmento anterior ao guard pode encerrar o shell, com qualquer opção herdada
 
 A linha de hook chega ao `trackfw guard` sob `errexit` e `nounset` herdados, por flag, por `BASH_ENV`, por
-`SHELLOPTS` ou por `.zshenv`, em todo shell da matriz da D2 revista. A forma exata é escolhida pela medição da
+`SHELLOPTS` ou por `.zshenv`, e sob `$ErrorActionPreference='Stop'` no PowerShell quando ela chega ao hook
+(por perfil, se o CLI não usar `-NoProfile`), em todo shell da matriz da D2 revista. A forma exata é escolhida pela medição da
 Wave 0 e do ML de implementação, na matriz inteira, incluindo PowerShell 5.1 e 7 no Windows. Vale a regra de
 2026-10-07: entre as formas que corrigem, a de menor ruído no stderr. A forma substituída vira geração legada no
 registro da D12, com aviso e migração pelo `trackfw update harness`, como nas mudanças anteriores.
