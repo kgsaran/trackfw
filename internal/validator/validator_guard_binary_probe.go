@@ -84,11 +84,20 @@ const (
 	guardShellFamilyCmdExe
 )
 
-// guardExpectedLine retorna a linha exata de hook D11 revised REQ-2026-10-20 fail-closed (com prefixo
-// emulate -R sh) para a família de shell e nome de subcomando dados
-// (REQ-2026-10-20 / REQ-2026-10-20 / ADR-2026-10-04 D11 revised). O subcmdName pode incluir
-// flags (ex.: "credential --global").
+// guardExpectedLine retorna a linha exata de hook D18 (REQ-2026-11-13) fail-closed (com prefixo
+// set+eu e emulate -R sh) para a família de shell e nome de subcomando dados
+// (ADR-2026-10-04 D18). O subcmdName pode incluir flags (ex.: "credential --global").
 func guardExpectedLine(subcmdName string, fam guardShellFamily) string {
+	if fam == guardShellFamilyCmdExe {
+		return "trackfw guard " + subcmdName + " || exit 2"
+	}
+	return `set +eu 2>${null-/dev/null}; emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard ` + subcmdName + `; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+}
+
+// guardEmulateLegacyLine retorna a linha D18 legada (emulate sem set+eu, pré-REQ-2026-11-13).
+// Esta forma sai 127 sob errexit/nounset herdados em POSIX shells; é tratada como warning
+// de migração, não violation. Só relevante para a família PS/POSIX.
+func guardEmulateLegacyLine(subcmdName string, fam guardShellFamily) string {
 	if fam == guardShellFamilyCmdExe {
 		return "trackfw guard " + subcmdName + " || exit 2"
 	}

@@ -559,10 +559,10 @@ with open(sys.argv[1], 'w') as f:
     json.dump(d, f)
 PY
 
-# cg-claude-guard-subcmd: REQ-2026-10-20 fail-closed "trackfw guard credential" subcommand form (prefixo emulate -R sh) → no violation.
+# cg-claude-guard-subcmd: REQ-2026-11-13 fail-closed "trackfw guard credential" subcommand form (D18: prefixo set +eu + emulate -R sh) → no violation.
 mkdir -p "$CG_TMP/cg-claude-guard-subcmd/.claude"
 cat >"$CG_TMP/cg-claude-guard-subcmd/.claude/settings.json" <<'EOF'
-{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE"}]}]}}
+{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"set +eu 2>${null-/dev/null}; emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE"}]}]}}
 EOF
 
 # cg-cursor-present: Cursor with script present → silent.

@@ -521,6 +521,7 @@ func buildGuardWiringScriptPathForms() []guardWiringScriptPathEntry {
 func guardWiringTypeFromCmd(cmd string, fam guardShellFamily) string {
 	for _, subcmd := range []string{"credential", "git-branch"} {
 		if cmd == guardExpectedLine(subcmd, fam) ||
+			cmd == guardEmulateLegacyLine(subcmd, fam) ||
 			cmd == guardD11RevisedLegacyLine(subcmd, fam) ||
 			cmd == guardD11LegacyLine(subcmd, fam) ||
 			cmd == guardD2LegacyLine(subcmd, fam) {

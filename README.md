@@ -267,19 +267,19 @@ the vendor, not of the OS:
 | Kiro | cmd.exe | cmd.exe form | vendor docs (2026-10-04) |
 | Amazon Q | cmd.exe | cmd.exe form | vendor source (2026-10-04) |
 
-The exact hook lines emitted by `trackfw init` and `trackfw update` since v10.1.0 (D12).
+The exact hook lines emitted by `trackfw init` and `trackfw update` since v11.1.0 (D18).
 Copy these verbatim or run `trackfw init`/`trackfw update` — do not reconstruct them:
 
 **PS/POSIX form** (Claude Code, Codex, Gemini, Cursor, Windsurf, Copilot — credential guard):
 
 ```
-emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE
+set +eu 2>${null-/dev/null}; emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE
 ```
 
 **PS/POSIX form** (git-branch guard):
 
 ```
-emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE
+set +eu 2>${null-/dev/null}; emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE
 ```
 
 **cmd.exe form** (Kiro, Amazon Q):
@@ -289,10 +289,14 @@ trackfw guard credential || exit 2
 trackfw guard git-branch || exit 2
 ```
 
-The D12 line (v10.1.0, issue #595) is **fail-closed** for both POSIX shells and PowerShell.
-The leading `emulate -R sh 2>${null-/dev/null}` instructs zsh to run as POSIX sh — without
-it, zsh's EQUALS/NOMATCH expansions abort the assignment `$LASTEXITCODE=2` with an error,
-leaving the seed unset and allowing all exits. The seed `$LASTEXITCODE=2` is a PowerShell
+The D18 line (v11.1.0, REQ-2026-11-13) is **fail-closed** for both POSIX shells and PowerShell,
+including shells started with inherited `errexit`/`nounset` options.
+The leading `set +eu 2>${null-/dev/null}` is a POSIX special builtin that disables `errexit` (+e)
+and `nounset` (+u) before anything else runs, so an inherited shell option cannot abort the line
+with exit 127 before the guard executes. `emulate -R sh 2>${null-/dev/null}` instructs zsh to
+run as POSIX sh — without it, zsh's EQUALS/NOMATCH expansions abort the assignment
+`$LASTEXITCODE=2` with an error, leaving the seed unset and allowing all exits. The seed
+`$LASTEXITCODE=2` is a PowerShell
 assignment; in sh/bash the `=2: command not found` error is silently discarded. `LASTEXITCODE=$((2*!!$?))` normalizes any non-zero exit to 2 in sh/bash. The 4th segment
 `$LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}` provides the same normalization in
 PowerShell, and is inert (CommandNotFound, stderr suppressed) in sh/bash. For cmd.exe:

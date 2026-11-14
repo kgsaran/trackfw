@@ -32,10 +32,18 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/kgsaran/trackfw/internal/guardforms"
 )
 
 // stdinPayload é o JSON que Claude Code entregaria ao hook de PreToolUse.
 const stdinPayload = `{"tool_name":"Bash","tool_input":{"command":"git add -A"}}`
+
+// setEuPrefix é o prefixo que o REQ-2026-11-13 (ML-1A) adicionou para corrigir a saída 127 sob
+// errexit/nounset herdado. `set +eu` é um builtin especial POSIX — desativa errexit (+e) e nounset (+u)
+// antes que qualquer comando não encontrado possa encerrar o shell. O redirecionamento swallowa eventuais
+// mensagens de erro (nenhuma na prática; incluso por simetria com o emulate).
+const setEuPrefix = "set +eu 2>${null-/dev/null}; "
 
 // emulatePrefix é o prefixo que o REQ-2026-10-20 (ML-1B) adicionou para corrigir os dois pontos de aborto
 // do zsh. Usa `emulate -R sh` para desativar todas as opções zsh extras (EQUALS, NOMATCH, nounset, errexit,
@@ -270,19 +278,47 @@ var guardShellMatrix = []struct {
 // isolando o comportamento puro do zsh sem customizações.
 // ML-1B (REQ-2026-10-20): acrescentados dash, zsh -o errexit, zsh -o nounset, zsh -o cshnullglob
 // para cobrir as variantes de opção que a forma `unsetopt` não protegia.
+// ML-1A (REQ-2026-11-13): acrescentados bash/sh/dash com -e/-u e BASH_ENV/SHELLOPTS herdados
+// para cobrir os casos onde errexit/nounset é herdado pelo processo pai (D18).
 var shellEntries = []struct {
-	name  string
-	bin   string
-	flags []string
+	name       string
+	bin        string
+	flags      []string
+	extraEnvFn func(t *testing.T) []string // nil = sem env extra; chamado dentro do sub-test
 }{
-	{"sh", "sh", nil},
-	{"bash", "bash", nil},
-	{"zsh", "zsh", nil},
-	{"zsh-f", "zsh", []string{"-f"}},
-	{"dash", "dash", nil},
-	{"zsh-errexit", "zsh", []string{"-o", "errexit"}},
-	{"zsh-nounset", "zsh", []string{"-o", "nounset"}},
-	{"zsh-cshnullglob", "zsh", []string{"-o", "cshnullglob"}},
+	{"sh", "sh", nil, nil},
+	{"bash", "bash", nil, nil},
+	{"zsh", "zsh", nil, nil},
+	{"zsh-f", "zsh", []string{"-f"}, nil},
+	{"dash", "dash", nil, nil},
+	{"zsh-errexit", "zsh", []string{"-o", "errexit"}, nil},
+	{"zsh-nounset", "zsh", []string{"-o", "nounset"}, nil},
+	{"zsh-cshnullglob", "zsh", []string{"-o", "cshnullglob"}, nil},
+	// D18: shells POSIX com opções herdadas que causavam saída 127 na forma anterior.
+	{"bash-e", "bash", []string{"-e"}, nil},
+	{"bash-u", "bash", []string{"-u"}, nil},
+	{"sh-e", "sh", []string{"-e"}, nil},
+	{"sh-u", "sh", []string{"-u"}, nil},
+	{"dash-e", "dash", []string{"-e"}, nil},
+	// SHELLOPTS=errexit herdado via env — bash torna-o readonly dentro do processo.
+	{"bash-shellopts-errexit", "bash", nil, func(t *testing.T) []string {
+		return []string{"SHELLOPTS=errexit"}
+	}},
+	// BASH_ENV sourced com set -e / set -u.
+	{"bash-BASH_ENV-sete", "bash", nil, func(t *testing.T) []string {
+		f := filepath.Join(t.TempDir(), "bash_env_e")
+		if err := os.WriteFile(f, []byte("set -e\n"), 0600); err != nil {
+			t.Fatalf("criando BASH_ENV-sete: %v", err)
+		}
+		return []string{"BASH_ENV=" + f}
+	}},
+	{"bash-BASH_ENV-setu", "bash", nil, func(t *testing.T) []string {
+		f := filepath.Join(t.TempDir(), "bash_env_u")
+		if err := os.WriteFile(f, []byte("set -u\n"), 0600); err != nil {
+			t.Fatalf("criando BASH_ENV-setu: %v", err)
+		}
+		return []string{"BASH_ENV=" + f}
+	}},
 }
 
 // makeFakeTrackfw cria um stub "trackfw" em dir que:
@@ -306,10 +342,15 @@ func makeFakeTrackfw(t *testing.T, dir string) {
 // runGuardLine executa a linha de guard via o shell indicado.
 // Retorna (exitCode, stderr, stdinCaptured, erro de execução).
 // stdinCaptured é o conteúdo de stdin.out gravado pelo stub, ou "" se o stub não rodou.
+//
+// extraEnv: variáveis adicionais a injetar (ex: SHELLOPTS=errexit, BASH_ENV=/path/to/file).
+// BASH_ENV e SHELLOPTS são sempre removidos do env herdado antes de aplicar extraEnv, para que o
+// test controle exatamente quais dessas variáveis estão presentes.
 func runGuardLine(
 	t *testing.T,
 	shellBin string,
 	shellFlags []string,
+	extraEnv []string,
 	line string,
 	fakeDir string, // diretório com o stub; "" = trackfw ausente do PATH
 	fakeRC int,
@@ -331,10 +372,14 @@ func runGuardLine(
 	}
 
 	// Propagar env mínimo, sobrescrevendo PATH e adicionando FAKE_RC.
+	// BASH_ENV e SHELLOPTS são removidos do env herdado — o test os controla via extraEnv.
 	base := os.Environ()
-	filtered := make([]string, 0, len(base)+2)
+	filtered := make([]string, 0, len(base)+2+len(extraEnv))
 	for _, e := range base {
-		if strings.HasPrefix(e, "PATH=") || strings.HasPrefix(e, "FAKE_RC=") {
+		if strings.HasPrefix(e, "PATH=") ||
+			strings.HasPrefix(e, "FAKE_RC=") ||
+			strings.HasPrefix(e, "BASH_ENV=") ||
+			strings.HasPrefix(e, "SHELLOPTS=") {
 			continue
 		}
 		filtered = append(filtered, e)
@@ -343,6 +388,7 @@ func runGuardLine(
 	if fakeDir != "" {
 		filtered = append(filtered, fmt.Sprintf("FAKE_RC=%d", fakeRC))
 	}
+	filtered = append(filtered, extraEnv...)
 	cmd.Env = filtered
 
 	cmd.Stdin = strings.NewReader(stdinPayload)
@@ -729,11 +775,17 @@ func TestGuardLineShellMatrix(t *testing.T) {
 						t.Skipf("%s não encontrado em PATH — shell ausente neste ambiente", sh.bin)
 					}
 
+					// Construir env extra (BASH_ENV, SHELLOPTS, etc.) para este shell.
+					var xenv []string
+					if sh.extraEnvFn != nil {
+						xenv = sh.extraEnvFn(t)
+					}
+
 					// Caso 1: FAKE_RC=0 (allow) → exit 0, stdin preservado.
 					t.Run("RC0-allow", func(t *testing.T) {
 						dir := t.TempDir()
 						makeFakeTrackfw(t, dir)
-						code, _, captured := runGuardLine(t, shellPath, sh.flags, guard.line, dir, 0)
+						code, _, captured := runGuardLine(t, shellPath, sh.flags, xenv, guard.line, dir, 0)
 						if code != 0 {
 							t.Errorf("FAKE_RC=0: esperado exit 0, obteve %d", code)
 						}
@@ -746,7 +798,7 @@ func TestGuardLineShellMatrix(t *testing.T) {
 					t.Run("RC2-deny", func(t *testing.T) {
 						dir := t.TempDir()
 						makeFakeTrackfw(t, dir)
-						code, stderr, captured := runGuardLine(t, shellPath, sh.flags, guard.line, dir, 2)
+						code, stderr, captured := runGuardLine(t, shellPath, sh.flags, xenv, guard.line, dir, 2)
 						if code != 2 {
 							t.Errorf("FAKE_RC=2: esperado exit 2, obteve %d", code)
 						}
@@ -762,7 +814,7 @@ func TestGuardLineShellMatrix(t *testing.T) {
 					t.Run("RC1-deny-normalizado", func(t *testing.T) {
 						dir := t.TempDir()
 						makeFakeTrackfw(t, dir)
-						code, _, _ := runGuardLine(t, shellPath, sh.flags, guard.line, dir, 1)
+						code, _, _ := runGuardLine(t, shellPath, sh.flags, xenv, guard.line, dir, 1)
 						if code != 2 {
 							t.Errorf("FAKE_RC=1: esperado exit 2 (normalizado), obteve %d", code)
 						}
@@ -770,7 +822,7 @@ func TestGuardLineShellMatrix(t *testing.T) {
 
 					// Caso 4: trackfw ausente do PATH → fail-closed, exit 2.
 					t.Run("absent", func(t *testing.T) {
-						code, _, _ := runGuardLine(t, shellPath, sh.flags, guard.line, "", 0)
+						code, _, _ := runGuardLine(t, shellPath, sh.flags, xenv, guard.line, "", 0)
 						if code != 2 {
 							t.Errorf("trackfw ausente: esperado exit 2, obteve %d", code)
 						}
@@ -872,13 +924,15 @@ func TestGuardLineShellMatrix(t *testing.T) {
 	}
 }
 
-// TestGuardLineShellMatrix_DefeitoAntigo demonstra que a forma ANTIGA (sem o prefixo emulate -R sh)
+// TestGuardLineShellMatrix_DefeitoAntigo demonstra que a forma ANTIGA (sem emulate -R sh e sem set +eu)
 // falha sob zsh com FAKE_RC=2 — saindo com exit ≠ 2.
 // Esse braço é a "prova de mordida": se o teste passar com a forma antiga, ele não distingue
 // defeito de correção e não tem valor como regressão.
 //
 // Reconciliação (REQ-2026-10-20): afirma que a forma D11 revised sem emulate -R sh sai ≠ 2
 // sob zsh, confirmando que o prefixo emulate é necessário.
+// Atualizado (REQ-2026-11-13): a forma atual começa com setEuPrefix + emulatePrefix; ambos são
+// removidos para obter o corpo D11Rev-era, que é o "defeito original" a demonstrar.
 func TestGuardLineShellMatrix_DefeitoAntigo(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shells POSIX não disponíveis em Windows")
@@ -892,14 +946,21 @@ func TestGuardLineShellMatrix_DefeitoAntigo(t *testing.T) {
 	for _, guard := range guardShellMatrix {
 		guard := guard
 		t.Run(guard.name, func(t *testing.T) {
-			// Confirmar que o prefixo emulate existe nas constantes (falha de compilação mascararia o defeito).
-			if !strings.HasPrefix(guard.line, emulatePrefix) {
-				t.Fatalf("constante %q não começa com o prefixo emulate esperado %q — a correção foi removida?",
+			// Confirmar que a forma atual começa com setEuPrefix (D18) seguido de emulatePrefix (D11Rev).
+			// Se qualquer um estiver ausente, a correção foi removida — falha de compilação mascararia o defeito.
+			if !strings.HasPrefix(guard.line, setEuPrefix) {
+				t.Fatalf("constante %q não começa com setEuPrefix %q — fix D18 foi removido?",
+					guard.name, setEuPrefix)
+			}
+			afterSetEu := strings.TrimPrefix(guard.line, setEuPrefix)
+			if !strings.HasPrefix(afterSetEu, emulatePrefix) {
+				t.Fatalf("constante %q após remoção de setEuPrefix não começa com emulatePrefix %q — fix D11Rev foi removido?",
 					guard.name, emulatePrefix)
 			}
 
-			// Forma antiga: remover o prefixo emulate da linha gerada (D11 revised, sem nenhum prefixo).
-			oldLine := strings.TrimPrefix(guard.line, emulatePrefix)
+			// Forma antiga D11Rev-era: o corpo sem nenhum prefixo (nem set+eu nem emulate).
+			// Essa é a forma que falha sob zsh por causa de EQUALS e NOMATCH.
+			oldLine := strings.TrimPrefix(afterSetEu, emulatePrefix)
 
 			// Exercitar sob zsh com FAKE_RC=2.
 			dir := t.TempDir()
@@ -915,7 +976,10 @@ func TestGuardLineShellMatrix_DefeitoAntigo(t *testing.T) {
 			base := os.Environ()
 			filtered := make([]string, 0, len(base)+2)
 			for _, e := range base {
-				if strings.HasPrefix(e, "PATH=") || strings.HasPrefix(e, "FAKE_RC=") {
+				if strings.HasPrefix(e, "PATH=") ||
+					strings.HasPrefix(e, "FAKE_RC=") ||
+					strings.HasPrefix(e, "BASH_ENV=") ||
+					strings.HasPrefix(e, "SHELLOPTS=") {
 					continue
 				}
 				filtered = append(filtered, e)
@@ -936,13 +1000,13 @@ func TestGuardLineShellMatrix_DefeitoAntigo(t *testing.T) {
 			// Se sair com exit 2, o braço não detecta o defeito original — é falso-verde.
 			if code == 2 {
 				t.Errorf(
-					"braço do defeito (%s): forma antiga saiu com exit 2 sob zsh — "+
+					"braço do defeito (%s): forma D11Rev-era saiu com exit 2 sob zsh — "+
 						"o prefixo emulate pode não ser necessário para este guard ou o zsh está configurado de forma não-padrão; "+
 						"verificar ambiente zsh",
 					guard.name,
 				)
 			} else {
-				t.Logf("braço do defeito (%s): forma antiga saiu com exit %d (esperado ≠ 2) — defeito confirmado", guard.name, code)
+				t.Logf("braço do defeito (%s): forma D11Rev-era saiu com exit %d (esperado ≠ 2) — defeito D11Rev confirmado", guard.name, code)
 			}
 		})
 	}
@@ -968,15 +1032,20 @@ func TestGuardLineShellMatrix_UnsetoptInsuficiente(t *testing.T) {
 	for _, guard := range guardShellMatrix {
 		guard := guard
 		t.Run(guard.name, func(t *testing.T) {
-			// Verificar que a constante começa com emulate (não unsetopt) — se começar com
-			// unsetopt, a regressão ficou sem cobertura.
-			if !strings.HasPrefix(guard.line, emulatePrefix) {
-				t.Fatalf("constante %q não começa com emulatePrefix — forma errada aplicada",
+			// Verificar que a constante começa com setEuPrefix + emulatePrefix — a regressão
+			// precisa de ambos para confirmar que apenas emulate não era suficiente.
+			if !strings.HasPrefix(guard.line, setEuPrefix) {
+				t.Fatalf("constante %q não começa com setEuPrefix — fix D18 foi removido?",
+					guard.name)
+			}
+			afterSetEu := strings.TrimPrefix(guard.line, setEuPrefix)
+			if !strings.HasPrefix(afterSetEu, emulatePrefix) {
+				t.Fatalf("constante %q após remoção de setEuPrefix não começa com emulatePrefix — fix D11Rev foi removido?",
 					guard.name)
 			}
 
-			// Construir a forma unsetopt: unsetoptOldPrefix + corpo sem o emulate.
-			body := strings.TrimPrefix(guard.line, emulatePrefix)
+			// Construir a forma unsetopt: unsetoptOldPrefix + corpo sem os dois prefixos.
+			body := strings.TrimPrefix(afterSetEu, emulatePrefix)
 			unsetoptLine := unsetoptOldPrefix + body
 
 			// Exercitar sob zsh -o nounset com FAKE_RC=2.
@@ -993,7 +1062,10 @@ func TestGuardLineShellMatrix_UnsetoptInsuficiente(t *testing.T) {
 			base := os.Environ()
 			filtered := make([]string, 0, len(base)+2)
 			for _, e := range base {
-				if strings.HasPrefix(e, "PATH=") || strings.HasPrefix(e, "FAKE_RC=") {
+				if strings.HasPrefix(e, "PATH=") ||
+					strings.HasPrefix(e, "FAKE_RC=") ||
+					strings.HasPrefix(e, "BASH_ENV=") ||
+					strings.HasPrefix(e, "SHELLOPTS=") {
 					continue
 				}
 				filtered = append(filtered, e)
@@ -1021,6 +1093,118 @@ func TestGuardLineShellMatrix_UnsetoptInsuficiente(t *testing.T) {
 			} else {
 				t.Logf("forma unsetopt saiu com exit %d (≠ 2) sob zsh -o nounset (%s) — "+
 					"insuficiência confirmada; emulate -R sh é necessário", code, guard.name)
+			}
+		})
+	}
+}
+
+// TestGuardLineShellMatrix_D18ContraArm demonstra que a forma D18 legacy (emulate -R sh sem o
+// prefixo set +eu) falha sob shells POSIX com errexit ou nounset herdado — saindo com exit ≠ 2.
+// Essa é a "prova de mordida" do D18: se a forma legada funcionasse nesses ambientes, o fix D18
+// seria desnecessário e este braço seria falso-verde.
+//
+// Reconciliação (REQ-2026-11-13 ML-1A): afirma que cada uma das quatro formas legadas D18
+// (guardforms.LegacyD18*PSPOSIX) sai ≠ 2 sob bash -e, bash -u, sh -e, sh -u e dash -e,
+// confirmando que o prefixo `set +eu` é necessário para esses ambientes.
+func TestGuardLineShellMatrix_D18ContraArm(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shells POSIX não disponíveis em Windows")
+	}
+
+	// Mapeamento guard-name → D18 legacy constant (guardforms).
+	type d18Entry struct {
+		name    string
+		legLine string
+	}
+	d18Matrix := []d18Entry{
+		{"git-branch", guardforms.LegacyD18GitBranchPSPOSIX},
+		{"credential", guardforms.LegacyD18CredentialPSPOSIX},
+		{"write-scope", guardforms.LegacyD18WriteScopePSPOSIX},
+		{"credential-global", guardforms.LegacyD18CredentialGlobalPSPOSIX},
+	}
+
+	// Shells POSIX com opções herdadas que causavam saída 127 na forma legada.
+	// dash -e: pulado se dash não estiver disponível.
+	type d18Shell struct {
+		name  string
+		bin   string
+		flags []string
+	}
+	d18Shells := []d18Shell{
+		{"bash-e", "bash", []string{"-e"}},
+		{"bash-u", "bash", []string{"-u"}},
+		{"sh-e", "sh", []string{"-e"}},
+		{"sh-u", "sh", []string{"-u"}},
+		{"dash-e", "dash", []string{"-e"}},
+	}
+
+	for _, guard := range d18Matrix {
+		guard := guard
+		t.Run(guard.name, func(t *testing.T) {
+			for _, sh := range d18Shells {
+				sh := sh
+				t.Run(sh.name, func(t *testing.T) {
+					shellPath, err := exec.LookPath(sh.bin)
+					if err != nil {
+						t.Skipf("%s não encontrado em PATH — braço D18 não aplicável neste ambiente", sh.bin)
+					}
+
+					dir := t.TempDir()
+					makeFakeTrackfw(t, dir)
+
+					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+					defer cancel()
+
+					args := append(sh.flags, "-c", guard.legLine)
+					cmd := exec.CommandContext(ctx, shellPath, args...)
+
+					pathVal := dir + ":/usr/bin:/bin"
+					base := os.Environ()
+					filtered := make([]string, 0, len(base)+2)
+					for _, e := range base {
+						if strings.HasPrefix(e, "PATH=") ||
+							strings.HasPrefix(e, "FAKE_RC=") ||
+							strings.HasPrefix(e, "BASH_ENV=") ||
+							strings.HasPrefix(e, "SHELLOPTS=") {
+							continue
+						}
+						filtered = append(filtered, e)
+					}
+					filtered = append(filtered, "PATH="+pathVal, "FAKE_RC=2")
+					cmd.Env = filtered
+					cmd.Stdin = strings.NewReader(stdinPayload)
+
+					runErr := cmd.Run()
+					code := 0
+					if runErr != nil {
+						if exitErr, ok := runErr.(*exec.ExitError); ok {
+							code = exitErr.ExitCode()
+						}
+					}
+
+					// A forma D18 legacy DEVE falhar (sair ≠ 2) sob o shell com opção herdada.
+					// Se sair com exit 2, o braço não detecta o defeito — é falso-verde.
+					if code == 2 {
+						t.Errorf(
+							"D18 contra-braço (%s/%s): forma legada saiu com exit 2 — "+
+								"esperado exit ≠ 2; verificar se a forma legada foi alterada em guardforms",
+							guard.name, sh.name,
+						)
+					} else {
+						t.Logf("D18 contra-braço (%s/%s): forma legada saiu com exit %d (≠ 2) — defeito D18 confirmado",
+							guard.name, sh.name, code)
+					}
+
+					// Confirmar que o guard nunca rodou (stdin.out não deve existir).
+					stdinOutPath := filepath.Join(dir, "stdin.out")
+					if _, statErr := os.Stat(stdinOutPath); statErr == nil {
+						t.Errorf(
+							"D18 contra-braço (%s/%s): stdin.out existe — guard rodou quando não deveria; "+
+								"a forma legada pode estar passando por outro mecanismo",
+							guard.name, sh.name,
+						)
+					}
+				})
 			}
 		})
 	}

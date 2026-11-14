@@ -682,8 +682,17 @@ func validateGuardHookResolvable(ruleName, scriptMarker, subcmdMarker, subcmdNam
 				legacyD2Line := guardD2LegacyLine(subcmdName, hf.family)
 				legacyD11Line := guardD11LegacyLine(subcmdName, hf.family)
 				legacyD11RevLine := guardD11RevisedLegacyLine(subcmdName, hf.family)
+				legacyD18Line := guardEmulateLegacyLine(subcmdName, hf.family)
 				if m.raw == expectedLine {
-					// Linha exata REQ-2026-10-20 fail-closed → OK; marcar para sonda do binário.
+					// Linha exata D18 (REQ-2026-11-13) fail-closed → OK; marcar para sonda do binário.
+					anySubcmdFormFound = true
+					if hf.family == guardShellFamilyPSPosix {
+						hasPSPosixSubcmd = true
+					}
+				} else if m.raw == legacyD18Line {
+					// D18 legado: forma com emulate mas sem set+eu (pré-REQ-2026-11-13) — sai 127
+					// sob errexit/nounset herdados em POSIX shells.
+					// Tratada como warning (via validateGuardHookD18LegacyWarnings), não violation.
 					anySubcmdFormFound = true
 					if hf.family == guardShellFamilyPSPosix {
 						hasPSPosixSubcmd = true
@@ -1376,6 +1385,60 @@ func validateCredentialGuardHookD11RevisedLegacyWarnings() ([]string, error) {
 // pré-REQ-2026-10-20 para a regra git_branch_guard_hook_resolvable.
 func validateGitBranchGuardHookD11RevisedLegacyWarnings() ([]string, error) {
 	return validateGuardHookD11RevisedLegacyWarnings(gitBranchGuardSubcmdMarker, "git-branch")
+}
+
+// validateGuardHookD18LegacyWarnings retorna avisos (always-warning, roteados via
+// applyRuleWarnOnly) para arquivos de hook de PROJETO que ainda usam a forma D18 legada
+// (emulate sem set+eu, pré-REQ-2026-11-13). A forma sai 127 sob errexit/nounset herdados
+// em POSIX shells, liberando o comando sem chamar o guard (ADR-2026-10-04 D18).
+func validateGuardHookD18LegacyWarnings(subcmdMarker, subcmdName string) ([]string, error) {
+	root, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	if resolvedRoot, symErr := filepath.EvalSymlinks(root); symErr == nil {
+		root = resolvedRoot
+	}
+	var warnings []string
+	for _, hf := range credentialGuardHookFiles {
+		fullPath := filepath.Join(root, hf.path)
+		content, readErr := readRegularFile(fullPath)
+		if readErr != nil {
+			continue
+		}
+		var parsed interface{}
+		if json.Unmarshal(content, &parsed) != nil {
+			continue
+		}
+		var subcmdCommands []guardCommandMatch
+		collectCommandsWithMarkerBySchema(parsed, guardWiringHookLayout[hf.path], subcmdMarker, &subcmdCommands)
+		legacyD18Line := guardEmulateLegacyLine(subcmdName, hf.family)
+		expectedLine := guardExpectedLine(subcmdName, hf.family)
+		for _, m := range subcmdCommands {
+			if m.raw == legacyD18Line && m.raw != expectedLine {
+				warnings = append(warnings, fmt.Sprintf(
+					"%s (%s) has %q — D18 legacy form pre-REQ-2026-11-13, exits 127 under "+
+						"inherited errexit/nounset in POSIX shells (bash -e, sh -u, etc.); "+
+						"run `trackfw update` to migrate to the form with the `set +eu` prefix",
+					hf.path, hf.cli, m.raw,
+				))
+				break // um aviso por arquivo é suficiente
+			}
+		}
+	}
+	return warnings, nil
+}
+
+// validateCredentialGuardHookD18LegacyWarnings retorna os avisos de forma D18 legada
+// pré-REQ-2026-11-13 para a regra credential_guard_hook_resolvable.
+func validateCredentialGuardHookD18LegacyWarnings() ([]string, error) {
+	return validateGuardHookD18LegacyWarnings(credentialGuardSubcmdMarker, "credential")
+}
+
+// validateGitBranchGuardHookD18LegacyWarnings retorna os avisos de forma D18 legada
+// pré-REQ-2026-11-13 para a regra git_branch_guard_hook_resolvable.
+func validateGitBranchGuardHookD18LegacyWarnings() ([]string, error) {
+	return validateGuardHookD18LegacyWarnings(gitBranchGuardSubcmdMarker, "git-branch")
 }
 
 // claudeGuardPowerShellSubcmdMarkers is the set of Claude Code guard subcmd prefixes

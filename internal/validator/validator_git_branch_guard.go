@@ -371,8 +371,17 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker, subcmdMarker, sub
 				legacyD2Line := guardD2LegacyLine(subcmdName, gf.family)
 				legacyD11Line := guardD11LegacyLine(subcmdName, gf.family)
 				legacyD11RevLine := guardD11RevisedLegacyLine(subcmdName, gf.family)
+				legacyD18Line := guardEmulateLegacyLine(subcmdName, gf.family)
 				if m.raw == expectedLine {
-					// Linha exata REQ-2026-10-20 fail-closed → OK.
+					// Linha exata D18 (REQ-2026-11-13) fail-closed → OK.
+					anySubcmdFormFound = true
+					if gf.family == guardShellFamilyPSPosix {
+						hasPSPosixSubcmd = true
+					}
+				} else if m.raw == legacyD18Line {
+					// D18 legado: forma com emulate mas sem set+eu (pré-REQ-2026-11-13) — sai 127
+					// sob errexit/nounset herdados em POSIX shells.
+					// Tratada como warning (via validateGuardGlobalHookD18LegacyWarnings), não violation.
 					anySubcmdFormFound = true
 					if gf.family == guardShellFamilyPSPosix {
 						hasPSPosixSubcmd = true
@@ -686,6 +695,68 @@ func validateCredentialGuardGlobalHookD11RevisedLegacyWarnings() ([]string, erro
 // D11 revised pré-REQ-2026-10-20 para configs globais de git-branch-guard.
 func validateGitBranchGuardGlobalHookD11RevisedLegacyWarnings() ([]string, error) {
 	return validateGuardGlobalHookD11RevisedLegacyWarnings(gitBranchGuardScriptMarker, gitBranchGuardSubcmdMarker, "git-branch")
+}
+
+// validateGuardGlobalHookD18LegacyWarnings retorna avisos para configs GLOBAIS que ainda
+// usam a forma D18 legada (emulate sem set+eu, pré-REQ-2026-11-13). A forma sai 127 sob
+// errexit/nounset herdados em POSIX shells (ADR-2026-10-04 D18).
+func validateGuardGlobalHookD18LegacyWarnings(scriptMarker, subcmdMarker, subcmdName string) ([]string, error) {
+	home, err := homedir.Dir()
+	if err != nil || home == "" {
+		return nil, nil
+	}
+
+	claudeDir, claudeDirErr := agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver)
+
+	var warnings []string
+	for _, gf := range globalGuardConfigFiles {
+		relPath := globalGuardConfigPath(gf, scriptMarker)
+		var fullPath string
+		if gf.cli == "Claude Code" {
+			if claudeDirErr != nil {
+				continue
+			}
+			fullPath = filepath.Join(claudeDir, "settings.json")
+		} else {
+			fullPath = filepath.Join(home, relPath)
+		}
+		content, readErr := readRegularFile(fullPath)
+		if readErr != nil {
+			continue
+		}
+		var parsed interface{}
+		if json.Unmarshal(content, &parsed) != nil {
+			continue
+		}
+		var subcmdCommands []guardCommandMatch
+		collectCommandsWithMarkerBySchema(parsed, guardGlobalHookLayout[relPath], subcmdMarker, &subcmdCommands)
+		legacyD18Line := guardEmulateLegacyLine(subcmdName, gf.family)
+		expectedLine := guardExpectedLine(subcmdName, gf.family)
+		for _, m := range subcmdCommands {
+			if m.raw == legacyD18Line && m.raw != expectedLine {
+				warnings = append(warnings, fmt.Sprintf(
+					"~/%s (%s, global scope) has %q — D18 legacy form pre-REQ-2026-11-13, exits 127 under "+
+						"inherited errexit/nounset in POSIX shells; "+
+						"run `trackfw update harness` to migrate to the form with the `set +eu` prefix",
+					relPath, gf.cli, m.raw,
+				))
+				break // um aviso por arquivo é suficiente
+			}
+		}
+	}
+	return warnings, nil
+}
+
+// validateCredentialGuardGlobalHookD18LegacyWarnings retorna os avisos de forma D18 legada
+// pré-REQ-2026-11-13 para configs globais de credential-guard.
+func validateCredentialGuardGlobalHookD18LegacyWarnings() ([]string, error) {
+	return validateGuardGlobalHookD18LegacyWarnings(credentialGuardScriptMarker, credentialGuardSubcmdMarker, "credential --global")
+}
+
+// validateGitBranchGuardGlobalHookD18LegacyWarnings retorna os avisos de forma D18 legada
+// pré-REQ-2026-11-13 para configs globais de git-branch-guard.
+func validateGitBranchGuardGlobalHookD18LegacyWarnings() ([]string, error) {
+	return validateGuardGlobalHookD18LegacyWarnings(gitBranchGuardScriptMarker, gitBranchGuardSubcmdMarker, "git-branch")
 }
 
 // validateGuardGlobalScriptIntegrity is the GLOBAL-scope counterpart of

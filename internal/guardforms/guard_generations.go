@@ -20,7 +20,9 @@ package guardforms
 const (
 	// CredentialCurrentPSPOSIX is the canonical credential guard command for the
 	// POSIX/PS shell family (used by Claude, Codex, Gemini, Cursor, Windsurf, Copilot, Kiro).
-	CredentialCurrentPSPOSIX = `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+	// D18: prefixed with "set +eu 2>${null-/dev/null}; " to disable errexit/nounset
+	// before any segment that fails by design under those options (REQ-2026-11-13, ADR D18).
+	CredentialCurrentPSPOSIX = `set +eu 2>${null-/dev/null}; emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
 
 	// CredentialCurrentCmdExe is the canonical credential guard command for the
 	// cmd.exe shell family (used by Amazon Q, Kiro on Windows).
@@ -28,7 +30,8 @@ const (
 
 	// GitBranchCurrentPSPOSIX is the canonical git-branch guard command for the
 	// POSIX/PS shell family.
-	GitBranchCurrentPSPOSIX = `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+	// D18: prefixed with "set +eu 2>${null-/dev/null}; " (REQ-2026-11-13, ADR D18).
+	GitBranchCurrentPSPOSIX = `set +eu 2>${null-/dev/null}; emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
 
 	// GitBranchCurrentCmdExe is the canonical git-branch guard command for the
 	// cmd.exe shell family.
@@ -42,14 +45,16 @@ const (
 	// (`Bash|PowerShell`) names the tool matchers, not the executing shell.
 	// write-scope is wired only in the Write|Edit|NotebookEdit envelope, which is
 	// never executed by cmd.exe.
-	WriteScopeCurrentPSPOSIX = `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard write-scope; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+	// D18: prefixed with "set +eu 2>${null-/dev/null}; " (REQ-2026-11-13, ADR D18).
+	WriteScopeCurrentPSPOSIX = `set +eu 2>${null-/dev/null}; emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard write-scope; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
 )
 
 // ─── Global (--global) current forms ───────────────────────────────────────
 
 const (
 	// CredentialGlobalCurrentPSPOSIX is the canonical global credential guard command.
-	CredentialGlobalCurrentPSPOSIX = `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+	// D18: prefixed with "set +eu 2>${null-/dev/null}; " (REQ-2026-11-13, ADR D18).
+	CredentialGlobalCurrentPSPOSIX = `set +eu 2>${null-/dev/null}; emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
 
 	// CredentialGlobalCurrentCmdExe is the canonical global credential guard command for cmd.exe.
 	CredentialGlobalCurrentCmdExe = "trackfw guard credential --global || exit 2"
@@ -132,6 +137,27 @@ const (
 	LegacyWABashGitBranchPSPOSIX = `/bin/bash -c '$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE'`
 )
 
+// ─── Inline legacy forms — D18 (emulate prefix without set+eu) ─────────────
+//
+// These are the forms emitted before REQ-2026-11-13 / ADR D18 added the
+// "set +eu 2>${null-/dev/null}; " prefix. They exit 127 under inherited
+// errexit or nounset in POSIX shells. Exact-equality matching only (D12).
+
+const (
+	// LegacyD18CredentialPSPOSIX is the D18 legacy credential guard form
+	// (the previous current form, without the set+eu prefix).
+	LegacyD18CredentialPSPOSIX = `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+
+	// LegacyD18CredentialGlobalPSPOSIX is the D18 legacy global credential guard form.
+	LegacyD18CredentialGlobalPSPOSIX = `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+
+	// LegacyD18GitBranchPSPOSIX is the D18 legacy git-branch guard form.
+	LegacyD18GitBranchPSPOSIX = `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+
+	// LegacyD18WriteScopePSPOSIX is the D18 legacy write-scope guard form.
+	LegacyD18WriteScopePSPOSIX = `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard write-scope; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+)
+
 // ─── Inline legacy forms — cmd.exe family ──────────────────────────────────
 
 const (
@@ -167,6 +193,7 @@ var CredentialLegacyPSPOSIX = []string{
 	LegacyD11CredentialPSPOSIX,
 	LegacyD11RevCredentialPSPOSIX,
 	LegacyWABashCredentialPSPOSIX,
+	LegacyD18CredentialPSPOSIX,
 }
 
 // CredentialGlobalLegacyPSPOSIX is the complete list of all global POSIX/PS
@@ -176,6 +203,7 @@ var CredentialGlobalLegacyPSPOSIX = []string{
 	LegacyD11CredentialGlobalPSPOSIX,
 	LegacyD11RevCredentialGlobalPSPOSIX,
 	LegacyWABashCredentialGlobalPSPOSIX,
+	LegacyD18CredentialGlobalPSPOSIX,
 }
 
 // CredentialLegacyCmdExe is the complete list of all non-global cmd.exe
@@ -196,12 +224,19 @@ var GitBranchLegacyPSPOSIX = []string{
 	LegacyD11GitBranchPSPOSIX,
 	LegacyD11RevGitBranchPSPOSIX,
 	LegacyWABashGitBranchPSPOSIX,
+	LegacyD18GitBranchPSPOSIX,
 }
 
 // GitBranchLegacyCmdExe is the complete list of all cmd.exe legacy forms
 // for git-branch guard.
 var GitBranchLegacyCmdExe = []string{
 	LegacyD2GitBranchCmdExe,
+}
+
+// WriteScopeLegacyPSPOSIX is the complete list of all POSIX/PS legacy forms
+// for the write-scope guard.
+var WriteScopeLegacyPSPOSIX = []string{
+	LegacyD18WriteScopePSPOSIX,
 }
 
 // CredentialScriptPathForms returns the subset of CredentialLegacyPSPOSIX that are

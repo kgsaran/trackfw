@@ -373,6 +373,15 @@ func InjectClaudeHooks(rootDir string) error {
 	migrateHookCommand(hooks["PreToolUse"], claudeShellMatcher, legacyWABashGitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
 	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyWABashGitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
 
+	// REQ-2026-11-13 D18: migrate emulate-without-set+eu forms → new D18 forms (with set+eu prefix).
+	for _, matcher := range []string{claudeShellMatcher, "Bash", "Read", "Write|Edit"} {
+		migrateHookCommand(hooks["PreToolUse"], matcher, legacyD18CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
+		migrateHookCommand(hooks["PostToolUse"], matcher, legacyD18CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
+	}
+	migrateHookCommand(hooks["PreToolUse"], claudeShellMatcher, legacyD18GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
+	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyD18GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
+	migrateHookCommand(hooks["PreToolUse"], writeScopeMatcher, legacyD18WriteScopeCmdPSPOSIX, guardWriteScopeCmdPSPOSIX)
+
 	// ML-5A (REQ-2026-09-05): upgrade "Bash" matcher → claudeShellMatcher
 	// ("Bash|PowerShell") for all guard hook blocks.
 	// Claude Code 2.1.292+ on Windows uses "PowerShell" as the primary shell
@@ -398,6 +407,8 @@ func InjectClaudeHooks(rootDir string) error {
 	for _, m := range []string{claudeShellMatcher, "Bash"} {
 		hooks["PreToolUse"] = migrateDedupGuardInNestedArray(hooks["PreToolUse"], m, guardGitBranchCmdPSPOSIX, guardforms.GitBranchLegacyPSPOSIX)
 	}
+	// D13 dedup for write-scope (REQ-2026-11-13): collapse duplicates for the write-scope matcher.
+	hooks["PreToolUse"] = migrateDedupGuardInNestedArray(hooks["PreToolUse"], writeScopeMatcher, guardWriteScopeCmdPSPOSIX, guardforms.WriteScopeLegacyPSPOSIX)
 
 	// D15 (ADR-2026-10-04 adendo 2026-10-24, REQ-2026-10-23 #613): project-scope
 	// wiring is always emitted regardless of global guard state. No generator
@@ -582,6 +593,14 @@ const (
 	legacyWABashCredentialGlobalCmdPSPOSIX = guardforms.LegacyWABashCredentialGlobalPSPOSIX
 )
 
+// D18 legacy forms (emulate without set+eu, pre-REQ-2026-11-13) — D12 aliases. Literals in internal/guardforms.
+const (
+	legacyD18CredentialCmdPSPOSIX       = guardforms.LegacyD18CredentialPSPOSIX
+	legacyD18CredentialGlobalCmdPSPOSIX = guardforms.LegacyD18CredentialGlobalPSPOSIX
+	legacyD18GitBranchCmdPSPOSIX        = guardforms.LegacyD18GitBranchPSPOSIX
+	legacyD18WriteScopeCmdPSPOSIX       = guardforms.LegacyD18WriteScopePSPOSIX
+)
+
 // InjectCodexHooks injects Codex CLI attention hooks into .codex/hooks.json.
 //
 // Two independent hook events are wired here:
@@ -680,6 +699,13 @@ func InjectCodexHooks(rootDir string) error {
 	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyD11GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
 	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyD11RevGitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
 	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyWABashGitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
+
+	// REQ-2026-11-13 D18: migrate emulate-without-set+eu forms → new D18 forms.
+	for _, matcher := range []string{"Bash", "apply_patch"} {
+		migrateHookCommand(hooks["PreToolUse"], matcher, legacyD18CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
+		migrateHookCommand(hooks["PostToolUse"], matcher, legacyD18CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
+	}
+	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyD18GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
 
 	hooks["PermissionRequest"] = mergeClaudeHookArray(hooks["PermissionRequest"], ".*", codexSignalCmd)
 
@@ -831,6 +857,13 @@ func InjectGeminiHooks(rootDir string) error {
 	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", legacyD11GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
 	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", legacyD11RevGitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
 	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", legacyWABashGitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
+
+	// REQ-2026-11-13 D18: migrate emulate-without-set+eu forms → new D18 forms.
+	for _, matcher := range []string{"run_shell_command", "read_file|read_many_files", "write_file|replace"} {
+		migrateHookCommand(hooks["BeforeTool"], matcher, legacyD18CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
+		migrateHookCommand(hooks["AfterTool"], matcher, legacyD18CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
+	}
+	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", legacyD18GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
 
 	hooks["Notification"] = mergeClaudeHookArray(hooks["Notification"], "ToolPermission", geminiSignalCmd)
 

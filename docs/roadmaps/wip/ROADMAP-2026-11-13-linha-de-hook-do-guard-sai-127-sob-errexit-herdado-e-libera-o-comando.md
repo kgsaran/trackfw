@@ -30,12 +30,12 @@ O literal `emulate -R sh` aparece também em `internal/generators/agentfiles.go`
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
 - [x] AC1 — inventário e matriz medida da forma atual (ML-0A)
-- [ ] AC2 — deny sai 2 sob as opções herdadas (ML-1A)
-- [ ] AC3 — allow sai 0 sob as opções herdadas (ML-1A)
+- [x] AC2 — deny sai 2 sob as opções herdadas (ML-1A)
+- [x] AC3 — allow sai 0 sob as opções herdadas (ML-1A)
 - [ ] AC4 — PowerShell 5.1 e 7 no Windows (ML-1B)
-- [ ] AC5 — matriz de teste com contra-braço (ML-1A)
-- [ ] AC6 — geração legada, aviso e migração sem duplicata (ML-1A)
-- [ ] AC7 — configs deste repositório migradas (ML-1A)
+- [x] AC5 — matriz de teste com contra-braço (ML-1A)
+- [x] AC6 — geração legada, aviso e migração sem duplicata (ML-1A)
+- [x] AC7 — configs deste repositório migradas (ML-1A)
 - [ ] AC8 — `make quality` verde (ML-2B)
 
 ## Status Legend
@@ -99,7 +99,7 @@ test -s docs/seguranca/2026-11-13-wave0-guard-errexit-herdado.md
 > fixar, e os dois podem tocar `guard_line_shell_test.go`.
 
 ### ML-1A — Forma nova da linha, geração legada, migração e matriz POSIX
-**Status:** ⬜ Pending
+**Status:** ✅ Done
 **Squad:** apolo-tf
 **Files affected:**
 - produto: `internal/guardforms/guard_generations.go`, `internal/generators/agentfiles.go`,
@@ -129,10 +129,36 @@ test -s docs/seguranca/2026-11-13-wave0-guard-errexit-herdado.md
    nova.
 
 **Acceptance criteria:**
-- [ ] AC2, AC3, AC5, AC6 e AC7 da REQ
-- [ ] `go build ./...` e os testes dos pacotes tocados verdes
-- [ ] `scripts/check-git-branch-guard-hook-schema.sh` e `make parity-rest` verdes
-- [ ] Relatório com uma frase por teste novo dizendo qual conclusão ele afirma
+- [x] AC2, AC3, AC5, AC6 e AC7 da REQ
+- [x] `go build ./...` e os testes dos pacotes tocados verdes
+- [x] `scripts/check-git-branch-guard-hook-schema.sh` e `make parity-rest` verdes
+- [x] Relatório com uma frase por teste novo dizendo qual conclusão ele afirma
+
+**Auditoria (Zeus, 2026-11-13):** aprovado depois do corretivo ML-1A2.
+- Mutação: tirar o `set +eu` das quatro constantes `*CurrentPSPOSIX` reprova 165 subtestes de
+  `TestGuardLineShellMatrix`; restaurado. A matriz afirma rc e marcador do guard para allow (0), deny (2), deny
+  não canônico e guard ausente, sob `bash -e/-u`, `sh -e/-u`, `dash -e`, `SHELLOPTS=errexit` via env e `BASH_ENV`.
+- As três configs do repositório diferem do HEAD só pelo prefixo (comparação por substituição), e o JSON é válido.
+- `./bin/trackfw validate` recompilado: rc=0, nenhum `guard_wiring_removed`. As configs globais da máquina do KG
+  aparecem com o aviso D18 legado, como esperado. O executor do ML-1A2 relatou 19 `guard_wiring_removed` como
+  "pré-existentes"; era binário velho lendo a forma nova.
+- Faltava teste da migração e do aviso (AC6): virou o ML-1A2.
+
+### ML-1A2 — Testes da migração e do aviso D18 (corretivo)
+**Status:** ✅ Done
+**Squad:** artemis-tf
+**Files affected:** `internal/generators/guard_d18_migration_test.go`, `internal/validator/validator_guard_d18_legacy_test.go`
+
+**Acceptance criteria:**
+- [x] Migração por CLI (Claude, Codex, Gemini, Cursor, Copilot), idempotência por bytes, D11 revista direto para a
+  forma nova, mistura colapsada e escopo global: 11 testes `TestD18Migration_*`
+- [x] Aviso do validador para D18 legada, silêncio na forma nova, D11 revista com o próprio aviso e sem violation:
+  4 testes `TestD18LegacyWarning_*`
+- [x] Contra-braços: sem a entrada D18 no registro (e sem o laço explícito) a migração reprova; sem o bloco do aviso,
+  o teste do aviso reprova. Conferi os 15 nomes com `-run` e `-v`: 15 `--- PASS`.
+
+**Nota para o red team:** o laço explícito de migração D18 em `agentfiles.go` é redundante com o dedup por registro
+(o contra-braço só reprova removendo os dois). Avaliar se é código morto.
 
 **Wave gates:**
 ```bash
