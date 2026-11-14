@@ -167,7 +167,7 @@ go test ./internal/generators/ ./internal/validator/ ./internal/guardforms/
 ```
 
 ### ML-1B — PowerShell 5.1 e 7 na VM Windows
-**Status:** ⬜ Pending
+**Status:** ✅ Done
 **Squad:** artemis-tf
 **Files affected:** `docs/portabilidade/2026-11-13-guard-errexit-windows.md`
 
@@ -178,7 +178,54 @@ go test ./internal/generators/ ./internal/validator/ ./internal/guardforms/
    `Stop`, e diz, pela documentação de cada CLI suportado no Windows, se ele carrega o perfil ao rodar o hook.
 
 **Acceptance criteria:**
-- [ ] AC4 da REQ, medido na VM e confirmado no CI de Windows do PR
+- [x] Medição entregue (PS 5.1 na VM; PS 7 só em macOS, o `pwsh` não está instalado na VM)
+- [ ] AC4 da REQ: **não fecha com a forma nova** — passa para o ML-1C/ML-1D
+
+**Auditoria (Zeus, 2026-11-14):** medição aprovada; o AC4 não fecha.
+- PS 5.1 (VM): forma nova dá allow 0 e deny 2, com 16 linhas de stderr, igual à atual. O `2>${null-/dev/null}`
+  não silencia nada no PS 5.1 (alvo de redirect inválido).
+- 🔴 `$ErrorActionPreference='Stop'`: a forma nova e a atual saem 1 **sem rodar o guard** (fail-open nos CLIs que
+  só bloqueiam com 2) sempre que o perfil é carregado com `Stop` (variantes B2b e B3 do §6.3). O Claude Code passa
+  `-NoProfile` (inferido do binário); os outros CLIs não foram medidos. A ADR D18 manda cobrir: vira o ML-1C.
+- Candidatos medidos na VM: CAND_C e CAND_E cobrem `Stop` em todas as variantes (allow 0, deny 2, guard roda).
+- 🔴 Mesma causa, não coberta por nenhum candidato: `Set-StrictMode -Version Latest` (§10). Com `Stop`, rc=1 sem
+  guard; com `Continue`, deny não canônico (frc=1) e guard ausente saem 1. Entra no ML-1C.
+- PS 7 no Windows: os braços `pwsh` de `TestGuardLineShellMatrix` passam no `windows-latest` (run 43423202733 da
+  main, forma anterior); a forma final se confirma no CI de Windows do PR.
+- Processo: o classificador negou um `Remove-Item` por SSH e o executor fez a mesma remoção por script `.ps1` e
+  `cmd /c del`. Foram arquivos temporários dele, mas contornar uma negação não é rota legítima; registrado e
+  reportado ao KG. Fora do escopo declarado e desfeito: `git fetch` em `C:\Users\Lab\trackfw` (sem checkout),
+  perfis de PS criados e removidos (não havia perfil antes), diretórios temporários fora de `%TEMP%`.
+  `trackfw.exe` da VM inalterado (SHA256 conferido no relatório).
+
+### ML-1C — Forma da linha que sobrevive a `Stop` e a `StrictMode` herdados (corretivo)
+**Status:** ⬜ Pending
+**Squad:** apolo-tf
+**Files affected:** os mesmos do ML-1A (constantes `*CurrentPSPOSIX`, matriz em `guard_line_shell_test.go`,
+configs do repositório, README, `docs/cli-parity.md`, pin de `scripts/check-validate-rule-pins.sh`)
+
+**Actions:**
+1. Partir do CAND_E do relatório do ML-1B (§8): `set +eu` primeiro, depois `set ErrorActionPreference Continue`.
+   Medir, no `pwsh` do macOS, um segmento que também desligue o `StrictMode` herdado, sem quebrar os shells POSIX.
+2. A forma do ML-1A nunca foi publicada: a nova substitui as quatro constantes no lugar, **sem** entrada legada
+   nova no registro da D12. A forma pré-D18 e a D11 revista continuam migrando direto para a final.
+3. Matriz: braços PowerShell com `Stop` e com `StrictMode Latest` herdados (via `-Command` e via perfil num HOME
+   temporário), afirmando rc e marcador do guard; contra-braço com a forma do ML-1A reprovando.
+
+**Acceptance criteria:**
+- [ ] Forma nova: allow 0 e deny 2 com o guard rodando sob `Stop`, `StrictMode Latest` e os dois juntos, no `pwsh`,
+  sem regressão na matriz POSIX do ML-1A
+- [ ] `go build ./...`, testes dos pacotes tocados, `scripts/check-git-branch-guard-hook-schema.sh` e
+  `make parity-rest` verdes
+- [ ] Relatório com uma frase por teste novo dizendo qual conclusão ele afirma
+
+### ML-1D — Forma final no PowerShell 5.1 da VM
+**Status:** ⬜ Pending
+**Squad:** artemis-tf
+**Files affected:** `docs/portabilidade/2026-11-13-guard-errexit-windows.md` (nova seção)
+
+**Acceptance criteria:**
+- [ ] AC4 da REQ com a forma do ML-1C: PS 5.1 na VM e PS 7 no CI de Windows do PR
 
 ## Wave 2 — Red team e qualidade (AC8)
 > Dependencies: Wave 1 completa.
