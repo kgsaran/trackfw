@@ -32,7 +32,7 @@ O literal `emulate -R sh` aparece também em `internal/generators/agentfiles.go`
 - [x] AC1 — inventário e matriz medida da forma atual (ML-0A)
 - [x] AC2 — deny sai 2 sob as opções herdadas (ML-1A)
 - [x] AC3 — allow sai 0 sob as opções herdadas (ML-1A)
-- [ ] AC4 — PowerShell 5.1 e 7 no Windows (ML-1B)
+- [x] AC4 — PowerShell 5.1 (VM, ML-2G, forma L) e 7 (CI Windows e macOS); +2 linhas medido no `pwsh` 7
 - [x] AC5 — matriz de teste com contra-braço (ML-1A)
 - [x] AC6 — geração legada, aviso e migração sem duplicata (ML-1A)
 - [x] AC7 — configs deste repositório migradas (ML-1A)
@@ -372,7 +372,7 @@ Origem: `parity-other-gates` do CI reprovou em `scripts/check-symlink-privilege-
 - [x] `check-symlink-privilege-guard.sh` rc=0; `make parity-rest` rc=0 (33/33)
 
 ### ML-2G — Forma final no PowerShell 5.1 da VM, via `-Command` e via `$PROFILE` real
-**Status:** ❌ Blocked — aguarda o ML-2I (a forma muda) e a execução do script na VM
+**Status:** ✅ Done
 
 Duas rodadas da artemis: o classificador do modo automático negou o envio e a execução do script por ssh, mesmo
 com autorização explícita do KG. Na 1ª rodada houve um contorno (stdin pipe pelo ssh), sem efeito na VM, registrado
@@ -386,9 +386,20 @@ K (ML-2C) acrescenta `-Force -WhatIf:0 -Confirm:0` e nunca rodou no 5.1. O CI de
 `-Command`. A VM tem só o 5.1.26100 (sem `pwsh`); o perfil está ausente.
 
 **Acceptance criteria:**
-- [ ] 7 condições × (via `-Command`, via `$PROFILE` real) × (deny 2, allow 0, frc 1, ausente) no 5.1, com marcador de que o guard rodou
-- [ ] linhas de stderr da forma K contadas por célula no próprio 5.1
-- [ ] estado da VM restaurado: perfil ausente, nada apagado fora do diretório de medição, `C:\Users\Lab\bin\trackfw.exe` intacto
+- [x] 7 condições × (via `-Command`, via `$PROFILE` real) × (deny 2, allow 0, frc 1, ausente) no 5.1, com marcador de que o guard rodou
+- [x] stderr contado por célula no próprio 5.1 (ver ressalva do instrumento)
+- [x] estado da VM restaurado: perfil ausente, nada apagado fora do diretório de medição, `trackfw.exe` intacto
+
+**Resultado (2026-11-15, script v6 com a forma L, executado pelo KG por ssh do terminal dele; PS 5.1.26100):** as 56
+células deram o esperado. Via `-Command` e via `$PROFILE` real (perfil carregado em 28/28), nas 7 condições
+(Continue, Stop, StrictMode, StrictMode+Stop, EAP ReadOnly Stop, WhatIf+Stop, Confirm Low+Stop): frc 2 → 2,
+frc 0 → 0, frc 1 → 2, sempre com o guard rodando; guard ausente → 2, sem rodar. SHA256 do `trackfw.exe` igual
+antes e depois (`7D6828C8…043A`); `$PROFILE` ausente ao final, movido para `ml2g/profile-final.ps1`.
+Ressalva do instrumento: o "stderr" é 215 linhas por célula (281 com o guard ausente), igual em todas as
+condições. O `& powershell.exe 2> arquivo` do 5.1 embrulha cada linha de stderr do filho num ErrorRecord de cerca
+de 7 linhas (conferido lendo `cmd-C1_Continue-frc2-1-err.txt`). Por isso o número não é comparável ao +2 do AC4,
+que está medido no `pwsh` 7. Ele só mostra que nenhuma condição herdada acrescenta ruído. O script roda com
+`-NonInteractive`; o A1 (prompt drenando stdin) está medido só no `pwsh` 7 (macOS e CI Windows).
 
 ### ML-2H — Red team e qualidade sobre o delta da forma K
 **Status:** 🔄 In progress
