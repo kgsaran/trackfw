@@ -199,7 +199,7 @@ go test ./internal/generators/ ./internal/validator/ ./internal/guardforms/
   `trackfw.exe` da VM inalterado (SHA256 conferido no relatório).
 
 ### ML-1C — Forma da linha que sobrevive a `Stop` e a `StrictMode` herdados (corretivo)
-**Status:** ⬜ Pending
+**Status:** ✅ Done
 **Squad:** apolo-tf
 **Files affected:** os mesmos do ML-1A (constantes `*CurrentPSPOSIX`, matriz em `guard_line_shell_test.go`,
 configs do repositório, README, `docs/cli-parity.md`, pin de `scripts/check-validate-rule-pins.sh`)
@@ -213,11 +213,29 @@ configs do repositório, README, `docs/cli-parity.md`, pin de `scripts/check-val
    temporário), afirmando rc e marcador do guard; contra-braço com a forma do ML-1A reprovando.
 
 **Acceptance criteria:**
-- [ ] Forma nova: allow 0 e deny 2 com o guard rodando sob `Stop`, `StrictMode Latest` e os dois juntos, no `pwsh`,
+- [x] Forma nova: allow 0 e deny 2 com o guard rodando sob `Stop`, `StrictMode Latest` e os dois juntos, no `pwsh`,
   sem regressão na matriz POSIX do ML-1A
-- [ ] `go build ./...`, testes dos pacotes tocados, `scripts/check-git-branch-guard-hook-schema.sh` e
+- [x] `go build ./...`, testes dos pacotes tocados, `scripts/check-git-branch-guard-hook-schema.sh` e
   `make parity-rest` verdes
-- [ ] Relatório com uma frase por teste novo dizendo qual conclusão ele afirma
+- [x] Relatório com uma frase por teste novo dizendo qual conclusão ele afirma
+
+**Auditoria (Zeus, 2026-11-15):** aprovado depois de dois corretivos.
+- ML-1C entregou a CAND_F (`set +eu; Set-StrictMode -Off; set ErrorActionPreference Continue; ...`): rc certo no
+  `pwsh`, mas `Set-StrictMode: command not found` no stderr de sh, bash, zsh e dash em **toda** chamada (medido:
+  0 linha na forma do ML-1A, 1 na CAND_F). Reprovado.
+- ML-1C2 adotou a forma H:
+  `set +eu; set ErrorActionPreference Continue; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard <x>; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE`.
+  No POSIX, `null=/dev/null` define o alvo de todo redirect; no PowerShell, `$null` é automática e existe sob
+  `StrictMode`. Medi: sh/bash/zsh/dash com e sem `-e`/`-u`, frc 0/2/1 → 0/2/2, guard roda, **0** linha de stderr;
+  `pwsh` sob Continue, `Stop` e `StrictMode`+`Stop` → 0/2/2 com guard, 6 linhas (forma do ML-1A: 4). AC4 reescrito
+  pelo KG para aceitar +2 no PowerShell.
+- `TestGuardLineShellMatrix_PreambleNoStderr`: 262 `--- PASS`. Mutação (reinserir `Set-StrictMode -Off;` sem
+  redirect nas quatro constantes): 261 `--- FAIL`; restaurado.
+- ML-1C3 removeu a CAND_F do registro de formas legadas (nunca publicada; a entrada só ampliava o que o `validate`
+  aceita como guard ligado). O contra-braço guarda o literal localmente no teste.
+- Schema gate e `make parity-rest`: rc=0.
+- O braço de perfil de `TestGuardLineShellMatrix_PSInheritedState` usa `XDG_CONFIG_HOME` e não roda no Windows; o
+  perfil no PowerShell 5.1 fica para o ML-1D.
 
 ### ML-1D — Forma final no PowerShell 5.1 da VM
 **Status:** ⬜ Pending

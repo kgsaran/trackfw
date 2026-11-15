@@ -373,7 +373,7 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker, subcmdMarker, sub
 				legacyD11RevLine := guardD11RevisedLegacyLine(subcmdName, gf.family)
 				legacyD18Line := guardEmulateLegacyLine(subcmdName, gf.family)
 				if m.raw == expectedLine {
-					// Linha exata D18 (REQ-2026-11-13) fail-closed → OK.
+					// Linha exata H (REQ-2026-11-13 ML-1C2) fail-closed → OK.
 					anySubcmdFormFound = true
 					if gf.family == guardShellFamilyPSPosix {
 						hasPSPosixSubcmd = true

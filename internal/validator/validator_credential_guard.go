@@ -684,7 +684,7 @@ func validateGuardHookResolvable(ruleName, scriptMarker, subcmdMarker, subcmdNam
 				legacyD11RevLine := guardD11RevisedLegacyLine(subcmdName, hf.family)
 				legacyD18Line := guardEmulateLegacyLine(subcmdName, hf.family)
 				if m.raw == expectedLine {
-					// Linha exata D18 (REQ-2026-11-13) fail-closed → OK; marcar para sonda do binário.
+					// Linha exata H (REQ-2026-11-13 ML-1C2) fail-closed → OK; marcar para sonda do binário.
 					anySubcmdFormFound = true
 					if hf.family == guardShellFamilyPSPosix {
 						hasPSPosixSubcmd = true

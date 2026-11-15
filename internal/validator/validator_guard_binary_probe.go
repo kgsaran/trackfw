@@ -91,7 +91,7 @@ func guardExpectedLine(subcmdName string, fam guardShellFamily) string {
 	if fam == guardShellFamilyCmdExe {
 		return "trackfw guard " + subcmdName + " || exit 2"
 	}
-	return `set +eu 2>${null-/dev/null}; emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard ` + subcmdName + `; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+	return `set +eu; set ErrorActionPreference Continue; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard ` + subcmdName + `; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE`
 }
 
 // guardEmulateLegacyLine retorna a linha D18 legada (emulate sem set+eu, pré-REQ-2026-11-13).

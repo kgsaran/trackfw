@@ -267,19 +267,19 @@ the vendor, not of the OS:
 | Kiro | cmd.exe | cmd.exe form | vendor docs (2026-10-04) |
 | Amazon Q | cmd.exe | cmd.exe form | vendor source (2026-10-04) |
 
-The exact hook lines emitted by `trackfw init` and `trackfw update` since v11.1.0 (D18).
+The exact hook lines emitted by `trackfw init` and `trackfw update` (D18 ML-1C2, REQ-2026-11-13).
 Copy these verbatim or run `trackfw init`/`trackfw update` — do not reconstruct them:
 
 **PS/POSIX form** (Claude Code, Codex, Gemini, Cursor, Windsurf, Copilot — credential guard):
 
 ```
-set +eu 2>${null-/dev/null}; emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE
+set +eu; set ErrorActionPreference Continue; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE
 ```
 
 **PS/POSIX form** (git-branch guard):
 
 ```
-set +eu 2>${null-/dev/null}; emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE
+set +eu; set ErrorActionPreference Continue; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE
 ```
 
 **cmd.exe form** (Kiro, Amazon Q):
@@ -289,23 +289,36 @@ trackfw guard credential || exit 2
 trackfw guard git-branch || exit 2
 ```
 
-The D18 line (v11.1.0, REQ-2026-11-13) is **fail-closed** for both POSIX shells and PowerShell,
-including shells started with inherited `errexit`/`nounset` options.
-The leading `set +eu 2>${null-/dev/null}` is a POSIX special builtin that disables `errexit` (+e)
-and `nounset` (+u) before anything else runs, so an inherited shell option cannot abort the line
-with exit 127 before the guard executes. `emulate -R sh 2>${null-/dev/null}` instructs zsh to
-run as POSIX sh — without it, zsh's EQUALS/NOMATCH expansions abort the assignment
-`$LASTEXITCODE=2` with an error, leaving the seed unset and allowing all exits. The seed
-`$LASTEXITCODE=2` is a PowerShell
-assignment; in sh/bash the `=2: command not found` error is silently discarded. `LASTEXITCODE=$((2*!!$?))` normalizes any non-zero exit to 2 in sh/bash. The 4th segment
-`$LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}` provides the same normalization in
+The D18 line (REQ-2026-11-13 ML-1C2) is **fail-closed** for both POSIX shells and
+PowerShell, including shells started with inherited `errexit`/`nounset` options and environments
+where `$ErrorActionPreference='Stop'` or `Set-StrictMode -Version Latest` is active.
+The four-segment preamble works as follows (order matters):
+
+- **`set +eu`** — POSIX: special builtin that disables `errexit` (+e) and `nounset` (+u); no
+  undefined-variable access, no redirect. PS: `Set-Variable "+eu"` — sets a variable silently.
+- **`set ErrorActionPreference Continue`** — PS: resets EAP to Continue **before** `null=/dev/null`
+  runs, ensuring the CommandNotFound that follows is non-terminating even under inherited `Stop`.
+  POSIX: `set` with two positional parameters; sets `$1`/`$2`, exit 0.
+- **`null=/dev/null`** — POSIX: variable assignment, defines `$null=/dev/null` so subsequent
+  `2>$null` redirects are silenced (zero extra stderr lines per call). PS: attempts to invoke
+  command `null =/dev/null` → CommandNotFound, non-terminating since EAP=Continue was set above
+  — accepted stderr noise (+2 lines on PS; POSIX is the majority platform).
+- **`Set-StrictMode -Off 2>$null`** — PS: disables StrictMode; `$null` is an automatic PS variable
+  (always defined, safe even under inherited StrictMode). POSIX: command-not-found, stderr
+  redirected to `$null` (=/dev/null from step 3) — zero extra POSIX stderr lines.
+
+After the preamble, `emulate -R sh 2>$null` instructs zsh to run as POSIX sh (without it,
+zsh's EQUALS/NOMATCH expansions abort `$LASTEXITCODE=2`). The seed `$LASTEXITCODE=2` is a
+PowerShell assignment; in sh/bash the `=2: command not found` error is redirected to `$null`
+(=/dev/null). `LASTEXITCODE=$((2*!!$?))` normalizes any non-zero exit to 2 in sh/bash. The
+4th segment `$LASTEXITCODE=2*!!$LASTEXITCODE 2>$null` provides the same normalization in
 PowerShell, and is inert (CommandNotFound, stderr suppressed) in sh/bash. For cmd.exe:
 `|| exit 2` is the native short-circuit.
 
-**Under PowerShell**, a `deny` exit also emits two `CommandNotFound` error blocks to stderr
-(one for `emulate`, one for the `$LASTEXITCODE=2*...` segment) alongside the guard's own
-deny reason. The deny reason is preserved — it is the last line of stderr. Measure 2026-10-29
-(CI run 40882950230, job `windows-full-suites`, `TestGuardLineShellMatrix`).
+**Under PowerShell**, a `deny` exit emits three `CommandNotFound` error blocks to stderr
+(one for `null=/dev/null`, one for `emulate`, one for the `$LASTEXITCODE=2*...` segment)
+alongside the guard's own deny reason. The deny reason is preserved — it is the last line of
+stderr. Measure 2026-11-14 (ML-1C2).
 
 **What was measured in the VM (Windows 11 ARM64, 2026-10-06):** PowerShell 5, cmd.exe,
 and Git Bash (non-login, explicit PATH to the branch binary) all block
