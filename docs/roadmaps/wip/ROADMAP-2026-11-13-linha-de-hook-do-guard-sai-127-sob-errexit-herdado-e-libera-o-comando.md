@@ -36,7 +36,7 @@ O literal `emulate -R sh` aparece também em `internal/generators/agentfiles.go`
 - [x] AC5 — matriz de teste com contra-braço (ML-1A)
 - [x] AC6 — geração legada, aviso e migração sem duplicata (ML-1A)
 - [x] AC7 — configs deste repositório migradas (ML-1A)
-- [ ] AC8 — `make quality` verde (ML-2B)
+- [x] AC8 — `make quality` verde (ML-2B)
 
 ## Status Legend
 ⬜ Pending · 🔄 In progress · ✅ Done · ❌ Blocked
@@ -359,9 +359,21 @@ t.TempDir e pula sem dash ou no Windows. Rodei os dois testes (todos PASS) e o p
 validate` rc=0 na minha rodada; o relatório dizia rc=1. Residual aceito: shell derivado de dash com outro nome
 (busybox ash) é classificado como bash.
 
+### ML-2F — Symlink do ML-2E sem guarda de capacidade
+**Status:** ✅ Done
+**Squad:** artemis-tf
+
+Origem: `parity-other-gates` do CI reprovou em `scripts/check-symlink-privilege-guard.sh`. O
+`TestD18ContraArm_ShAsDashSim` chamava `os.Symlink` direto. Eu não rodei o `make quality` depois do ML-2E.
+
+**Acceptance criteria:**
+- [x] `os.Symlink` trocado por `symlinkOrSkip(t, dashPath, shLink)`; diff de 1+/3−, só no arquivo de teste
+- [x] `check-symlink-privilege-guard.sh` rc=0; `make parity-rest` rc=0 (33/33)
+
 ### ML-2B — `make quality` com a máquina ociosa
-**Status:** ⬜ Pending
+**Status:** ✅ Done
 **Squad:** zeus-tf
 
 **Acceptance criteria:**
-- [ ] `make quality` rc=0
+- [x] `make quality` rc=0 — 1ª rodada rc=2 (timeout + literal PT → ML-2D); rodada após ML-2D rc=0; rodada final após
+  ML-2E/2F rc=0 (2026-11-15, máquina ociosa, `internal/generators` 83,3 s)

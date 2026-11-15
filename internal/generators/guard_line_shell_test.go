@@ -2781,9 +2781,7 @@ func TestD18ContraArm_ShAsDashSim(t *testing.T) {
 	// Criar symlink sh → dash simulando /bin/sh→/bin/dash (Linux).
 	linkDir := t.TempDir()
 	shLink := filepath.Join(linkDir, "sh")
-	if err := os.Symlink(dashPath, shLink); err != nil {
-		t.Fatalf("criando symlink sh→dash: %v", err)
-	}
+	symlinkOrSkip(t, dashPath, shLink)
 
 	// d18ShellKind deve classificar shLink como "dash" — sem isso o resto do teste não tem sentido.
 	// Mesmo shellPath passado para d18ShellKind e exec.CommandContext: sem divergência.
