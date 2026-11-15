@@ -1,5 +1,5 @@
 ---
-title: "Linha de hook poliglota sob Stop e StrictMode herdados do perfil do PowerShell"
+title: "Linha de hook poliglota sob Stop e StrictMode herdados do perfil do PowerShell (formas H, K e L)"
 date: 2026-11-15
 tags: [guard, windows, powershell, hooks, stderr]
 ---
@@ -43,6 +43,36 @@ linha chega ao modelo.
 - O custo: o PowerShell imprime 2 linhas a mais, porque `null=/dev/null` não é comando lá. O KG aceitou esse
   custo no AC4.
 - O teste `TestGuardLineShellMatrix_PreambleNoStderr` afirma que o POSIX não ganha nenhuma linha de stderr.
+
+## 4. A forma H ainda caía, e a K drenava o stdin: forma L
+
+A forma H ainda falhava em dois casos:
+- **EAP ReadOnly no perfil.** Um perfil com `Set-Variable ErrorActionPreference Stop -Option ReadOnly` faz o
+  `set ErrorActionPreference Continue` falhar, e a linha sai 1.
+- **WhatIf e Confirm herdados.** `$WhatIfPreference` ou `$ConfirmPreference` herdados fazem o `Set-Variable`
+  simular a operação ou pedir confirmação.
+
+**Forma K:** `set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0` como primeiro segmento.
+- `-Force` sobrepõe o ReadOnly.
+- `-WhatIf:0` e `-Confirm:0` são usados porque `$false` é variável indefinida sob nounset antes do `set +eu`.
+
+Mesmo assim, a K tinha um defeito. Sem `-NonInteractive` e com `$ConfirmPreference` em Low ou Medium, o
+`set +eu` (que é `Set-Variable '+eu'`, com ConfirmImpact Medium) abre um prompt.
+- O prompt lê o stdin do processo e consome o payload JSON do hook.
+- O guard recebe 0 bytes. Com stdin vazio, `git-branch`, `credential` e `credential-global` liberam o comando.
+- A forma da `main` não tem o problema, porque não há cmdlet antes do guard.
+
+**Forma L:** `set ConfirmPreference None -Force -WhatIf:0 -Confirm:0;` logo após o reset de EAP.
+- No POSIX, o segmento só define parâmetros posicionais.
+- Teste: `TestGuardLineShellMatrix_LContraArm_ConfirmLow`.
+- Lição: um braço PS que roda sempre com `-NonInteractive` não enxerga prompt. O braço precisa rodar sem a flag e
+  comparar os bytes que o guard recebeu com os bytes enviados.
+
+## 5. No Linux, `sh -u` é `dash -u`, e a forma legada sai 2
+
+O `dash` aborta com 2 ao expandir uma variável indefinida sob `-u`. No macOS, `sh` é bash e dá 127. O
+contra-braço precisa classificar pelo shell resolvido (`filepath.EvalSymlinks`), não pelo nome `sh`. A prova
+invariante é o guard não ter rodado. Esse caso reprovou 4 runs do job `go` do CI antes de alguém abrir o log.
 
 ## Armadilhas de medição desta rodada
 

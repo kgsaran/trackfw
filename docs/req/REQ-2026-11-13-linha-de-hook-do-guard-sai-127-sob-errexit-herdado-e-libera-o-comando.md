@@ -24,6 +24,12 @@ medição: `env SHELLOPTS=errexit bash` também dá 127 (o prefixo `SHELLOPTS=` 
 `readonly` e mascarava o defeito). No PowerShell 7, `$ErrorActionPreference='Stop'` faz a linha sair 1 sem
 chamar o guard. A forma legada D11 revista tem o mesmo defeito.
 
+**Correção (2026-11-15, CI de Linux do PR #687):** a medição acima é do macOS, onde `sh` é bash. No Linux, `sh` é
+`dash`, e sob `-u` a forma legada sai **2 sem rodar o guard**: o `dash` aborta ao expandir `$LASTEXITCODE`
+indefinido. Ali a forma legada bloqueia tudo (fail-closed) em vez de liberar. O defeito comum a todos os shells é
+que o guard não roda; o código de saída varia por shell. O contra-braço `TestGuardLineShellMatrix_D18ContraArm`
+afirma isso por shell resolvido (ML-2E).
+
 Origem: resíduo R4 declarado e não corrigido na REQ-2026-10-20 (roadmap `done/`, linha 246). A varredura de
 issues de 2026-11-13 não achou issue aberta com o mesmo mecanismo.
 
