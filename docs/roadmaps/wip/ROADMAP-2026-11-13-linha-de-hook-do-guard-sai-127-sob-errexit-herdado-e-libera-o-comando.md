@@ -318,6 +318,25 @@ de `guardExpectedLine` em `internal/validator/`
 - Gates do executor: build, vet, testes dos 4 pacotes, schema, pins de regra, `make parity-rest` (33/33),
   `./bin/trackfw validate` rc=0; grep da forma H vazio nos sítios vivos.
 
+### ML-2D — Tempo da matriz do PowerShell e literal PT (corretivo do ML-2B)
+**Status:** ✅ Done
+**Squad:** apolo-tf
+
+Origem: a 1ª rodada do ML-2B reprovou (rc=2). `internal/generators` estourou o timeout de 2m
+(`TestGuardLineShellMatrix_PSInheritedState` ~95 s; pacote na main 71,9 s) e `TestNoPTLiteralsInProductGo`
+pegou "pré-" em `validator_write_scope_wiring.go:99`.
+
+**Acceptance criteria:**
+- [x] pacote `internal/generators` ≤ 90 s local — executor: 82,5/82,6/83,5 s; auditoria: 82,4/79,0 s
+- [x] matriz completa (7 condições × via-command/via-profile × RC 0/2/1/ausente) só em git-branch; smoke nos outros 3
+- [x] `TestGuardLineShellMatrix_PSConstantsStructural`: as 4 constantes só diferem no subcomando
+- [x] literal PT reescrito em inglês, sem allowlist; `go test ./internal/i18nguard/` ok
+- [x] contra-braços intactos
+
+**Auditoria (zeus):** nomes conferidos com `-run '^Nome$' -v` (3/3 PASS). Mutação própria: remover
+` -Force -WhatIf:0 -Confirm:0` das constantes → readonly-stop e whatif-stop reprovam via-command e via-profile;
+restaurado (`cmp`). Semáforo de 4 chamadas pwsh concorrentes fica fora de `execPSCommand` para não travar a sonda.
+
 ### ML-2B — `make quality` com a máquina ociosa
 **Status:** ⬜ Pending
 **Squad:** zeus-tf

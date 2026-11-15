@@ -96,7 +96,7 @@ func validateWriteScopeWiringD18LegacyMigration() []string {
 		return nil
 	}
 	return []string{fmt.Sprintf(
-		"%s PreToolUse[%s] has D18 legacy write-scope form (pré-REQ-2026-11-13, "+
+		"%s PreToolUse[%s] has D18 legacy write-scope form (pre-REQ-2026-11-13, "+
 			"exits 127 under inherited errexit/nounset in POSIX shells); "+
 			"run `trackfw update` to migrate to the current form",
 		path, writeScopeWiringMatcher,
