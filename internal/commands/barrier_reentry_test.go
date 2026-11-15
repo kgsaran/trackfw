@@ -21,7 +21,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -183,10 +182,6 @@ func stackJSON(t *testing.T, entries [][2]string) string {
 // ────────────────────────────────────────────────────────────────────────────
 
 func TestBarrierReentry_T1_DirectReentrance(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("shell gate com fusível requer sh POSIX; Windows coberto por windows-known-failures.json")
-	}
-
 	// Gate: fusível + chamada barrier sobre o mesmo roadmap/wave.
 	// Tudo em UMA linha porque cada gateCommands[i] é um sh -c independente.
 	// $T_BIN, $T_DIR, $T_ROADMAP são passados por env (cmd.Env abaixo).
@@ -199,9 +194,13 @@ func TestBarrierReentry_T1_DirectReentrance(t *testing.T) {
 
 	env := cleanEnvForReentry()
 	env = append(env,
-		"T_BIN="+barrierBinary(t),
-		"T_DIR="+dir2,
-		"T_ROADMAP="+roadmapPath2,
+		// ToSlash: Git Bash sh handles forward-slash Windows paths in
+		// redirections and binary invocations; backslashes in env vars may
+		// confuse the shell. barrierReentryKey normalises back to OS
+		// separators internally via filepath.Abs, so key matching is unaffected.
+		"T_BIN="+filepath.ToSlash(barrierBinary(t)),
+		"T_DIR="+filepath.ToSlash(dir2),
+		"T_ROADMAP="+filepath.ToSlash(roadmapPath2),
 	)
 
 	_, stderr, code := runBarrierReentry(t, dir2, env, roadmapPath2, "--wave", "1", "--trust-local-gates")
@@ -227,10 +226,6 @@ func TestBarrierReentry_T1_DirectReentrance(t *testing.T) {
 // ────────────────────────────────────────────────────────────────────────────
 
 func TestBarrierReentry_T2_IndirectReentrance(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("shell gate com fusível requer sh POSIX; Windows coberto por windows-known-failures.json")
-	}
-
 	// Gate que chama um script intermediário reenter.sh, que por sua vez invoca
 	// barrier no mesmo par — a reentrada é por indireção, não direta.
 	fusedGate := `[ "${T_FUSE:-0}" -lt 3 ] || { echo fused >"$T_DIR/fuse.txt"; exit 99; }; export T_FUSE=$(( ${T_FUSE:-0} + 1 )); sh "$T_DIR/reenter.sh"`
@@ -250,9 +245,9 @@ func TestBarrierReentry_T2_IndirectReentrance(t *testing.T) {
 
 	env := cleanEnvForReentry()
 	env = append(env,
-		"T_BIN="+barrierBinary(t),
-		"T_DIR="+dir,
-		"T_ROADMAP="+roadmapPath,
+		"T_BIN="+filepath.ToSlash(barrierBinary(t)),
+		"T_DIR="+filepath.ToSlash(dir),
+		"T_ROADMAP="+filepath.ToSlash(roadmapPath),
 	)
 
 	_, stderr, code := runBarrierReentry(t, dir, env, roadmapPath, "--wave", "1", "--trust-local-gates")
@@ -276,10 +271,6 @@ func TestBarrierReentry_T2_IndirectReentrance(t *testing.T) {
 // ────────────────────────────────────────────────────────────────────────────
 
 func TestBarrierReentry_T3_LegitimateNested(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("shell gate requer sh POSIX; Windows coberto por windows-known-files.json")
-	}
-
 	// Fixture B: roadmap diferente com gate trivial (exit 0); o barrier interno deve passar.
 	dirB, roadmapB := setupReentryFixture(t, []string{`echo "inner ok"`})
 
@@ -290,17 +281,22 @@ func TestBarrierReentry_T3_LegitimateNested(t *testing.T) {
 	innerErr := filepath.Join(dirB, "inner.err")
 	stackFile := filepath.Join(dirB, "stack.txt")
 
-	gateA := `echo "$TRACKFW_BARRIER_STACK" >"` + stackFile + `"; ` +
-		`cd "$T_DIR_B" && "$T_BIN" barrier "$T_ROADMAP_B" --wave 1 --trust-local-gates 2>"` + innerErr + `"; ` +
-		`rc=$?; echo $rc >"` + innerRC + `"; exit $rc`
+	// Use printf instead of echo: some sh implementations (macOS /bin/sh with
+	// xpg_echo) interpret backslash sequences in echo arguments, which would
+	// corrupt the JSON value of TRACKFW_BARRIER_STACK on Windows paths.
+	// Apply filepath.ToSlash to hardcoded paths embedded in the shell string
+	// so that Git Bash sh receives unambiguous forward-slash paths in redirections.
+	gateA := `printf '%s\n' "$TRACKFW_BARRIER_STACK" >"` + filepath.ToSlash(stackFile) + `"; ` +
+		`cd "$T_DIR_B" && "$T_BIN" barrier "$T_ROADMAP_B" --wave 1 --trust-local-gates 2>"` + filepath.ToSlash(innerErr) + `"; ` +
+		`rc=$?; echo $rc >"` + filepath.ToSlash(innerRC) + `"; exit $rc`
 
 	dirA, roadmapA := setupReentryFixture(t, []string{gateA})
 
 	env := cleanEnvForReentry()
 	env = append(env,
-		"T_BIN="+barrierBinary(t),
-		"T_DIR_B="+dirB,
-		"T_ROADMAP_B="+roadmapB,
+		"T_BIN="+filepath.ToSlash(barrierBinary(t)),
+		"T_DIR_B="+filepath.ToSlash(dirB),
+		"T_ROADMAP_B="+filepath.ToSlash(roadmapB),
 	)
 
 	_, stderr, code := runBarrierReentry(t, dirA, env, roadmapA, "--wave", "1", "--trust-local-gates")
@@ -320,7 +316,19 @@ func TestBarrierReentry_T3_LegitimateNested(t *testing.T) {
 		t.Fatalf("T3: inner.rc = %q, quer \"0\"; inner.err = %q", strings.TrimSpace(string(rcBytes)), string(innerErrBytes))
 	}
 
-	// AC3: stack.txt deve conter o path resolvido do roadmapA (a chave que A colocou na pilha)
+	// AC3: stack.txt deve conter exactamente uma entrada com o path canónico de
+	// roadmapA e Wave "1". A pilha do outer começa vazia; quando o gate executa,
+	// o outer já inseriu a sua chave — única entrada esperada.
+	// Oráculo exacto: barrierReentryKey armazena EvalSymlinks(Abs(roadmapPath));
+	// reproduzimos o mesmo cálculo independentemente para o comparar por string.
+	//
+	// NOTA Windows: buildChildEnv chama json.Marshal que escapa '\' como '\\'.
+	// Medido (scratchpad/json_escape_main.go, Go 1.23 darwin):
+	//   raw JSON: [{"roadmap":"C:\\a\\b.md","wave":"1"}]
+	//   strings.Contains(raw, C:\a\b.md): false
+	//   decoded[0].Roadmap == C:\a\b.md: true
+	// Logo: strings.Contains sobre os bytes crus falha no Windows. Decodificar o
+	// JSON com json.Unmarshal primeiro e então comparar por string é o padrão correto.
 	resolvedA, err := filepath.EvalSymlinks(roadmapA)
 	if err != nil {
 		resolvedA = roadmapA // fallback se EvalSymlinks falhar
@@ -329,8 +337,18 @@ func TestBarrierReentry_T3_LegitimateNested(t *testing.T) {
 	if err != nil {
 		t.Fatalf("T3: stack.txt não encontrado (%v)", err)
 	}
-	if !strings.Contains(string(stackContent), resolvedA) {
-		t.Errorf("T3: stack.txt = %q; esperava conter o path resolvido de roadmapA %q", string(stackContent), resolvedA)
+	var stackEntries []struct {
+		Roadmap string `json:"roadmap"`
+		Wave    string `json:"wave"`
+	}
+	if jsonErr := json.Unmarshal(stackContent, &stackEntries); jsonErr != nil {
+		t.Fatalf("T3: stack.txt não é JSON válido: %v\nconteúdo: %q", jsonErr, string(stackContent))
+	}
+	if len(stackEntries) != 1 {
+		t.Errorf("T3: stack tem %d entradas, quer exactamente 1; entradas = %v", len(stackEntries), stackEntries)
+	} else if stackEntries[0].Roadmap != resolvedA || stackEntries[0].Wave != "1" {
+		t.Errorf("T3: stack[0] = {Roadmap: %q, Wave: %q}, quer {Roadmap: %q, Wave: %q}",
+			stackEntries[0].Roadmap, stackEntries[0].Wave, resolvedA, "1")
 	}
 
 	// AC4: inner.err NÃO deve conter "reentrant call" nem "depth limit"
@@ -435,9 +453,9 @@ func TestBarrierReentry_T6_MalformedStack(t *testing.T) {
 // ────────────────────────────────────────────────────────────────────────────
 
 func TestBarrierReentry_T7_Canonicalization(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("os.Symlink pode falhar no Windows sem permissão de admin")
-	}
+	// No unconditional GOOS skip: symlinkOrSkip in subtest 7a handles privilege
+	// errors on Windows (Developer Mode off → ERROR_PRIVILEGE_NOT_HELD → t.Skipf).
+	// Subtest 7b (wave label normalisation) uses no symlinks and runs everywhere.
 
 	// ── 7a: symlink ──────────────────────────────────────────────────────────
 	t.Run("symlink", func(t *testing.T) {
@@ -464,9 +482,9 @@ func TestBarrierReentry_T7_Canonicalization(t *testing.T) {
 
 		env := cleanEnvForReentry()
 		env = append(env,
-			"T_BIN="+barrierBinary(t),
-			"T_DIR="+dir2,
-			"T_SYM_ROADMAP="+symInDir2,
+			"T_BIN="+filepath.ToSlash(barrierBinary(t)),
+			"T_DIR="+filepath.ToSlash(dir2),
+			"T_SYM_ROADMAP="+filepath.ToSlash(symInDir2),
 		)
 
 		_, stderr, code := runBarrierReentry(t, dir2, env, roadmapPath2, "--wave", "1", "--trust-local-gates")
@@ -525,9 +543,9 @@ func TestBarrierReentry_T7_Canonicalization(t *testing.T) {
 
 		env := cleanEnvForReentry()
 		env = append(env,
-			"T_BIN="+barrierBinary(t),
-			"T_DIR="+dir,
-			"T_ROADMAP="+roadmapPath,
+			"T_BIN="+filepath.ToSlash(barrierBinary(t)),
+			"T_DIR="+filepath.ToSlash(dir),
+			"T_ROADMAP="+filepath.ToSlash(roadmapPath),
 		)
 
 		// Primeiro: verifica que a wave "1b" existe (baseline, deve sair 0 se
@@ -720,9 +738,16 @@ func TestBarrierReentry_T7e_APFSCaseInsensitive(t *testing.T) {
 	}
 
 	if resolvedOrig == resolvedUpper {
-		// EvalSymlinks normalizou o case (Windows ou filesystem incomum) — o bypass não ocorreria,
-		// tornando o teste trivial. Pular.
-		t.Skip("T7e: EvalSymlinks normalizou case — skip (bypass não ocorreria)")
+		// EvalSymlinks normalizou o case: em NTFS, filepath.EvalSymlinks chama
+		// toNorm → normBase → syscall.FindFirstFile, que devolve o nome canônico
+		// do arquivo (o case registrado na criação), tornando resolvedOrig ==
+		// resolvedUpper. Com isso, sameRoadmapFile detecta a reentrada pelo caminho
+		// rápido (string equality), não pelo os.SameFile — o bypass que este teste
+		// mede (caminhos com case diferente → strings diferentes → os.SameFile)
+		// não ocorre no Windows. Comportamento APFS (EvalSymlinks preserva o case
+		// fornecido, logo os dois strings ficam diferentes) não é reproduzível no
+		// Windows. // (c) plataforma
+		t.Skip("T7e: EvalSymlinks normalizou case via FindFirstFile (NTFS) — comportamento APFS não reproduzível no Windows // (c)")
 	}
 
 	// Injetar stack com o path UPPERCASE (como se o outer tivesse sido chamado com upperPath2).
