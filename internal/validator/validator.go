@@ -237,6 +237,11 @@ var ruleDefaults = map[string]string{
 	// ML-3A (ADR-2026-10-23 D3): warning (not error) until next major version per contract item 7.
 	// Detects absence of PreToolUse[Write|Edit|NotebookEdit] with write-scope guard in .claude/settings.json.
 	"write_scope_not_wired": "warning",
+	// ML-2C (REQ-2026-11-13): always-warning D18 migration notice for write-scope hook.
+	// Emitted when the hook has a WriteScopeLegacyPSPOSIX form (exits 127 under inherited
+	// errexit/nounset). Routed exclusively via applyRuleWarnOnly — never a violation.
+	// Kept "warning" (not absent-from-defaults/"error") so that "off" silences it cleanly.
+	"write_scope_guard_hook_resolvable": "warning",
 	// D4 (ADR-2026-10-14, REQ-2026-09-01 ML-1B): HOME ≠ USERPROFILE on Windows —
 	// informative-only diagnostic, never blockable. Routed via applyRuleWarnOnly.
 	"home_divergence_windows": "warning",
@@ -1251,6 +1256,10 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	// Mirror site in validateUnfilteredTagged below.
 	// 🔴 Forgetting the mirror site silences this rule from --json output.
 	applyRule("write_scope_not_wired", validateWriteScopeWiring(), &violations, &warnings)
+	// ML-2C (REQ-2026-11-13): D18 legacy write-scope form migration notice (always-warning).
+	// Rule key is write_scope_guard_hook_resolvable, NOT write_scope_not_wired — the two must
+	// be distinguishable: "hook absent" vs "hook present but needs migration".
+	applyRuleWarnOnly("write_scope_guard_hook_resolvable", validateWriteScopeWiringD18LegacyMigration(), &warnings)
 
 	// ML-2B: detecta trackfw.exe/.cmd/.bat na raiz do projeto (cmd.exe busca no cwd antes do PATH).
 	binaryInRootMsgs, e := validateTrackfwBinaryInProjectRoot()
@@ -1811,6 +1820,9 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 	// ML-3A (ADR-2026-10-23 D3): mirror of ValidateUnfiltered write_scope_not_wired block.
 	// 🔴 Missing this site silences write_scope_not_wired from --json output (Validate() path).
 	applyRuleTagged("write_scope_not_wired", validateWriteScopeWiring(), &violations, &warnings)
+	// ML-2C (REQ-2026-11-13): D18 legacy write-scope migration notice mirror (always-warning).
+	// Rule key is write_scope_guard_hook_resolvable — see ValidateUnfiltered site for rationale.
+	applyRuleWarnOnlyTagged("write_scope_guard_hook_resolvable", validateWriteScopeWiringD18LegacyMigration(), &warnings)
 
 	// ML-2B: mirror of ValidateUnfiltered binary-in-root block.
 	// 🔴 Missing this site silences trackfw_binary_in_project_root from --json output.

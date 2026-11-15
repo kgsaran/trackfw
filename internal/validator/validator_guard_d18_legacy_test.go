@@ -179,3 +179,104 @@ func TestD18LegacyWarning_D18LegacyNotAViolation(t *testing.T) {
 		t.Errorf("D18 legacy form should not produce a credential violation; got %v", violations)
 	}
 }
+
+// ─── Write-scope D18 migration tests (ML-2C, REQ-2026-11-13, B2) ────────────────
+//
+// These tests verify the write-scope D18 migration notice added in ML-2C:
+//   WS1: Legacy D18 write-scope form → migration warning (write_scope_guard_hook_resolvable)
+//   WS2: Current write-scope form → no migration warning
+//   WS3: Absent settings.json → no migration warning (validateWriteScopeWiringD18LegacyMigration is silent)
+//   WS4: Legacy write-scope form → no write_scope_not_wired violation
+//
+// All tests call validator internals directly (package validator) and use chdir+config.Reset.
+
+// TestD18WriteScopeWarning_LegacyFormEmitsMigrationNotice asserts that the D18 legacy
+// write-scope form in .claude/settings.json PreToolUse[Write|Edit|NotebookEdit] produces a
+// migration notice from validateWriteScopeWiringD18LegacyMigration, NOT a write_scope_not_wired
+// violation — the hook is treated as "wired" with a migration notice only.
+//
+// Reconciliação: D18 legacy write-scope form emits a migration notice via
+// validateWriteScopeWiringD18LegacyMigration — if settingsWriteScopeHookStatus does not
+// return writeScopeHookLegacyD18 for LegacyD18WriteScopePSPOSIX, this test fails.
+func TestD18WriteScopeWarning_LegacyFormEmitsMigrationNotice(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	writeFile(t, dir, ".claude/settings.json",
+		nestedClaudeSettingsJSON("Write|Edit|NotebookEdit", guardforms.LegacyD18WriteScopePSPOSIX))
+
+	warnings := validateWriteScopeWiringD18LegacyMigration()
+
+	const wantSubstr = "D18 legacy write-scope form"
+	if !hasWarning(warnings, wantSubstr) {
+		t.Errorf("expected migration warning containing %q; got %v", wantSubstr, warnings)
+	}
+	if !hasWarning(warnings, ".claude/settings.json") {
+		t.Errorf("expected migration warning to name the file; got %v", warnings)
+	}
+}
+
+// TestD18WriteScopeWarning_CurrentFormSilent asserts that the current write-scope form
+// (WriteScopeCurrentPSPOSIX, form K) does not trigger the D18 migration notice.
+//
+// Reconciliação: current write-scope form does not emit a migration notice — the condition
+// checks settingsWriteScopeHookStatus == writeScopeHookLegacyD18, which is false for the
+// current form, so the function returns nil.
+func TestD18WriteScopeWarning_CurrentFormSilent(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	writeFile(t, dir, ".claude/settings.json",
+		nestedClaudeSettingsJSON("Write|Edit|NotebookEdit", guardforms.WriteScopeCurrentPSPOSIX))
+
+	warnings := validateWriteScopeWiringD18LegacyMigration()
+
+	if len(warnings) != 0 {
+		t.Errorf("expected no migration warning for current form; got %v", warnings)
+	}
+}
+
+// TestD18WriteScopeWarning_AbsentSettingsSilent asserts that an absent .claude/settings.json
+// does not trigger validateWriteScopeWiringD18LegacyMigration. The absence case is handled
+// exclusively by validateWriteScopeWiring (write_scope_not_wired).
+//
+// Reconciliação: absent settings.json returns nil from validateWriteScopeWiringD18LegacyMigration —
+// the function returns nil on any read error, delegating absence handling to validateWriteScopeWiring.
+func TestD18WriteScopeWarning_AbsentSettingsSilent(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	// No .claude/settings.json written — file is absent.
+	warnings := validateWriteScopeWiringD18LegacyMigration()
+
+	if len(warnings) != 0 {
+		t.Errorf("expected no migration warning when settings.json absent; got %v", warnings)
+	}
+}
+
+// TestD18WriteScopeWarning_LegacyFormNotAViolation asserts that the D18 legacy write-scope
+// form does not produce a write_scope_not_wired violation from validateWriteScopeWiring.
+// The legacy form is treated as "wired" (writeScopeHookLegacyD18); only the migration
+// notice is emitted via the separate write_scope_guard_hook_resolvable path.
+//
+// Reconciliação: legacy D18 write-scope form is not a write_scope_not_wired violation —
+// validateWriteScopeWiring returns nil for writeScopeHookLegacyD18, so if
+// settingsWriteScopeHookStatus were to return writeScopeHookAbsent for the legacy form,
+// this test would fail.
+func TestD18WriteScopeWarning_LegacyFormNotAViolation(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	writeFile(t, dir, ".claude/settings.json",
+		nestedClaudeSettingsJSON("Write|Edit|NotebookEdit", guardforms.LegacyD18WriteScopePSPOSIX))
+
+	violations := validateWriteScopeWiring()
+
+	if len(violations) != 0 {
+		t.Errorf("D18 legacy write-scope form should not produce a write_scope_not_wired violation; got %v", violations)
+	}
+}

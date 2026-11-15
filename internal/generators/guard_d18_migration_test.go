@@ -99,11 +99,14 @@ func d18IsolateHome(t *testing.T) string {
 
 // TestD18Migration_Claude_CredentialRead asserts that D18 legacy credential form in
 // Claude's PreToolUse[Read] is rewritten to the current D18 form by InjectClaudeHooks.
-// The Read matcher has NO dedup backstop (migrateDedupGuardInNestedArray only runs for
-// Bash|PowerShell and Bash), so the explicit migrateHookCommand call is load-bearing.
+// The D13 migrateDedupGuardInNestedArray loop covers all matchers including Read via
+// CredentialLegacyPSPOSIX — the previous explicit migrateHookCommand D18 call was
+// inert and was removed in ML-2C (B1 corrective).
 //
-// Reconciliação: D18 legacy in Read matcher migrates to current — if the explicit D18
-// migrateHookCommand loop in InjectClaudeHooks is removed, this test fails.
+// Reconciliação: D18 legacy in Read matcher migrates to current — handled by
+// migrateDedupGuardInNestedArray(CredentialLegacyPSPOSIX) which includes Read in its
+// matcher list; if LegacyD18CredentialPSPOSIX is removed from CredentialLegacyPSPOSIX,
+// this test fails.
 func TestD18Migration_Claude_CredentialRead(t *testing.T) {
 	dir := t.TempDir()
 	d18IsolateHome(t)
@@ -241,9 +244,9 @@ func TestD18Migration_Claude_WriteScope(t *testing.T) {
 // TestD18Migration_Codex_CredentialApplyPatch asserts that D18 legacy credential form
 // in Codex's PreToolUse[apply_patch] is rewritten to current by InjectCodexHooks.
 //
-// Reconciliação: D18 legacy in Codex apply_patch migrates to current — both the
-// explicit migrateHookCommand D18 call and the subsequent migrateDedupGuardInNestedArray
-// (CredentialLegacyPSPOSIX) handle it.
+// Reconciliação: D18 legacy in Codex apply_patch migrates to current — handled by
+// migrateDedupGuardInNestedArray(CredentialLegacyPSPOSIX) which covers apply_patch;
+// the previous explicit migrateHookCommand D18 call was inert and removed in ML-2C.
 func TestD18Migration_Codex_CredentialApplyPatch(t *testing.T) {
 	dir := t.TempDir()
 	d18IsolateHome(t)
@@ -287,8 +290,10 @@ func TestD18Migration_Codex_CredentialApplyPatch(t *testing.T) {
 // TestD18Migration_Gemini_CredentialReadFile asserts that D18 legacy credential form
 // in Gemini's BeforeTool[read_file|read_many_files] is rewritten to current.
 //
-// Reconciliação: D18 legacy in Gemini read_file matcher migrates to current — the
-// explicit migrateHookCommand D18 loop in InjectGeminiHooks covers this matcher.
+// Reconciliação: D18 legacy in Gemini read_file matcher migrates to current — handled
+// by migrateDedupGuardInNestedArray(CredentialLegacyPSPOSIX) which covers
+// read_file|read_many_files; the previous explicit migrateHookCommand D18 loop was
+// inert and removed in ML-2C (B1 corrective).
 func TestD18Migration_Gemini_CredentialReadFile(t *testing.T) {
 	dir := t.TempDir()
 	d18IsolateHome(t)

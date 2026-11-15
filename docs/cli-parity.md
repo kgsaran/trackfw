@@ -6860,9 +6860,9 @@ todo CLI de agente), via subcomando Go `trackfw guard`:
 
 | Família de shell | Linha de hook emitida (REQ-2026-11-13 / D18 ML-1C2) |
 |---|---|
-| PS/POSIX (Claude Code, Codex, Gemini CLI, Cursor, Copilot, Windsurf) | `set +eu; set ErrorActionPreference Continue; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE` |
+| PS/POSIX (Claude Code, Codex, Gemini CLI, Cursor, Copilot, Windsurf) | `set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE` |
 | cmd.exe (Kiro, Amazon Q) | `trackfw guard git-branch \|\| exit 2` |
-| Idem para credential-guard | `set +eu; set ErrorActionPreference Continue; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE` / `trackfw guard credential \|\| exit 2` |
+| Idem para credential-guard | `set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE` / `trackfw guard credential \|\| exit 2` |
 
 **REQ-2026-10-20 — correção de falha do hook sob zsh (ADR-2026-10-04, 2026-10-21):**
 A linha D11 (ML-6C) falhava silenciosamente sob zsh devido a duas opções ativas por padrão:
@@ -6884,24 +6884,35 @@ CommandNotFound no PS 5.1 (medido, achado A6) — duas linhas aparecem no stderr
 A linha D11 resolve o problema da D2 que era **fail-open** quando `trackfw` estava ausente do PATH:
 o hook saía com exit 0 e o agente prosseguia sem interrupção.
 
-Mecanismo da linha PS/POSIX (poliglota sh/bash/zsh/PowerShell 5.1 e 7):
+Mecanismo da linha PS/POSIX — prefixo de cinco segmentos (forma K, REQ-2026-11-13 ML-2C):
 
-- `set +eu` — POSIX: special builtin; desativa `errexit` (+e) e `nounset` (+u) antes que qualquer
-  comando seja executado (sem redirecionamento — nenhum acesso a variável indefinida). PS:
-  `Set-Variable "+eu"` — cria variável em silêncio; sem erro mesmo sob StrictMode (REQ-2026-11-13, D18 ML-1C2).
-- `set ErrorActionPreference Continue` — PS: `Set-Variable ErrorActionPreference Continue`; reseta
-  EAP para Continue **antes** de `null=/dev/null`, neutralizando `$ErrorActionPreference='Stop'`
-  herdado de forma que o CommandNotFound seguinte seja não-terminante. POSIX: `set` com dois
-  argumentos posicionais ($1/$2), exit 0 (REQ-2026-11-13, D18 ML-1C2).
+- `set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0` — PS: `Set-Variable`; `-Force`
+  sobrescreve proteção ReadOnly/Constant (sem ele, um EAP ReadOnly herdado não pode ser redefinido);
+  `-WhatIf:0` e `-Confirm:0` desativam os modos WhatIf e Confirm para esta chamada (inteiro `0` =
+  `$false` para parâmetros switch; `:0` em vez de `$false` porque `$false` seria referência a
+  variável indefinida sob POSIX `nounset` — `nounset` só é desativado no segmento 2). Deve vir
+  **primeiro** para que o segmento 2 não seja suprimido por um `$WhatIfPreference` ativo. POSIX:
+  `set` com argumentos posicionais, exit 0 — sem processamento de opções porque o primeiro argumento
+  (`ErrorActionPreference`) não começa com `-` nem `+` (REQ-2026-11-13, D18 ML-2C).
+- `set +eu` — POSIX: special builtin; desativa `errexit` (+e) e `nounset` (+u) sem redirecionamento.
+  Vem **depois** do segmento 1: se `$ConfirmPreference='Low'` estivesse ativo ao processar `set +eu`,
+  `Set-Variable "+eu"` (a interpretação PS) pediria confirmação — suprimida por `-Confirm:0` acima.
+  PS: `Set-Variable "+eu"` — cria variável em silêncio, sem erro em qualquer estado
+  (REQ-2026-11-13, D18 ML-2C).
 - `null=/dev/null` — POSIX: atribuição de variável; define `$null=/dev/null` para que os
   redirecionamentos `2>$null` seguintes sejam silenciados (zero linhas extras de stderr por chamada
-  no shell majoritário). PS: tenta invocar comando `null =/dev/null` → CommandNotFound,
-  não-terminante pois EAP=Continue foi definido acima — ruído aceito (+2 linhas no stderr PS por
-  execução; POSIX é a plataforma majoritária) (REQ-2026-11-13, D18 ML-1C2).
+  no shell POSIX). PS: tenta invocar comando `null =/dev/null` → CommandNotFound,
+  não-terminante pois EAP=Continue foi forçado acima — ruído aceito
+  (REQ-2026-11-13, D18 ML-2C).
 - `Set-StrictMode -Off 2>$null` — PS: desativa o StrictMode; `$null` é variável automática do PS
   (sempre definida, segura mesmo sob StrictMode herdado). POSIX: CommandNotFound, stderr
   redirecionado para `$null` (=/dev/null do passo anterior) — zero linhas extras de stderr POSIX
-  (REQ-2026-11-13, D18 ML-1C2).
+  (REQ-2026-11-13, D18 ML-2C).
+
+**Custo medido de stderr (forma K):** **0 linhas extras em shells POSIX** por chamada; **6 linhas em
+`pwsh` 7** (EAP=Continue; **7** quando `$ConfirmPreference='Low'`) contra **4 linhas** da forma
+pré-K (REQ-2026-11-13 ML-1A). Medição: roadmap §ML-2A, 2026-11-15.
+
 - `emulate -R sh 2>$null` — restaura as opções padrão de sh no escopo do hook, desativando EQUALS, NOMATCH e demais opções zsh; em sh/bash/dash é CommandNotFound (stderr descartado pelo redirecionamento para `$null`); em PS 5.1/7 é CommandNotFound — uma linha no stderr por execução, `$LASTEXITCODE` não afetado (REQ-2026-10-20, ADR-2026-10-04 adendo 2026-10-21).
 - `$LASTEXITCODE=2` — semente de fallback: em PS 5.1 é atribuição da variável automática; em
   sh/bash/zsh é um comando inexistente `=2` que retorna exit ≠ 0 (stderr redirecionado para `$null`).
@@ -7212,7 +7223,7 @@ adicionou Windsurf e Amazon Q à lista `credentialGuardHookFiles`:
 O validador coleta entradas de hook que contenham `trackfw guard git-branch` ou `trackfw guard
 credential` e verifica se a linha é **exatamente** a esperada para a família de shell daquele CLI
 (`guardExpectedLine` em `validator_guard_binary_probe.go`):
-- PS/POSIX (REQ-2026-11-13 / D18 ML-1C2) → `set +eu; set ErrorActionPreference Continue; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard <nome>; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE`
+- PS/POSIX (REQ-2026-11-13 / D18 ML-1C2) → `set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard <nome>; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE`
 - cmd.exe (D11) → `trackfw guard <nome> || exit 2`
 
 A D2 revisada (`trackfw guard <nome>; exit $LASTEXITCODE` / `trackfw guard <nome>`), a D11
@@ -9905,7 +9916,7 @@ When a pattern such as `*.entry`, `.*`, or `*-entries` covers these paths, entri
 **Linha de hook emitida pelo gerador (PS/POSIX — Claude Code only, §Z, sem forma cmd.exe):**
 
 ```
-set +eu; set ErrorActionPreference Continue; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard write-scope; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE
+set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard write-scope; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE
 ```
 
 **Matcher:** `Write|Edit|NotebookEdit` — lista exata, `|` é separador, NÃO uma regex. NUNCA usar `Edit.*` (vira regex JavaScript que casa tudo começando com "Edit").
@@ -9935,6 +9946,9 @@ YAML inválido → deny (fail-closed). Extensão adiciona entradas, nunca remove
 
 **Regra `write_scope_not_wired`** (`validate`):
 Aviso (severidade default `warning`, nunca `error` até a próxima versão major) quando `.claude/settings.json` não tem o PreToolUse `Write|Edit|NotebookEdit` com o comando canônico do write-scope. `trackfw init`/`trackfw update` instalam o hook automaticamente.
+
+**Regra `write_scope_guard_hook_resolvable`** (`validate`):
+Aviso de migração D18 (severidade default `warning`, sempre warning, nunca violation — roteado exclusivamente via `applyRuleWarnOnly`) quando `.claude/settings.json` tem um hook `Write|Edit|NotebookEdit` com a forma legada D18 (`LegacyD18WriteScopePSPOSIX` em `guard_generations.go`) em vez da forma K atual. A chave é separada de `write_scope_not_wired` para que silenciar a ausência do hook não silencie também o aviso de migração, e para que ferramentas possam distinguir "hook ausente" de "hook presente mas desatualizado". A forma legada é aceita como hook ligado (não dispara `write_scope_not_wired`); apenas o aviso de migração é emitido. Rode `trackfw update` para migrar. Análogo a `credential_guard_hook_resolvable` / `git_branch_guard_hook_resolvable`, que cumprem o mesmo papel para os outros guards.
 
 **Ordering constraint:** o hook em `.claude/settings.json` deve ser instalado APENAS quando o binário já tem `write-scope` disponível. Instalar o hook contra a versão anterior (que trata `write-scope` como subcomando desconhecido → exit 2 via guardError) nega todas as operações Write/Edit/NotebookEdit na sessão.
 

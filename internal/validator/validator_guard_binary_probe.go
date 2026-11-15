@@ -17,6 +17,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/kgsaran/trackfw/internal/guardforms"
 )
 
 // guardProbeEndedByDeadline reporta se foi o prazo do contexto que encerrou o comando.
@@ -84,14 +86,22 @@ const (
 	guardShellFamilyCmdExe
 )
 
-// guardExpectedLine retorna a linha exata de hook D18 (REQ-2026-11-13) fail-closed (com prefixo
-// set+eu e emulate -R sh) para a família de shell e nome de subcomando dados
-// (ADR-2026-10-04 D18). O subcmdName pode incluir flags (ex.: "credential --global").
+// guardExpectedLine retorna a linha exata de hook D18 ML-2C (REQ-2026-11-13) fail-closed
+// (forma K: com prefixo set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0 e
+// emulate -R sh) para a família de shell e nome de subcomando dados (ADR-2026-10-04 D18).
+// O subcmdName pode incluir flags (ex.: "credential --global").
+//
+// A construção desta função espelha as constantes em guardforms: preamble K + subcomando +
+// sufixo. Um teste em validator_guard_binary_probe_test.go confirma a paridade em tempo de
+// compilação (via go test), de modo que drift entre esta função e as constantes é detectado
+// imediatamente sem esperar o gate de integração.
 func guardExpectedLine(subcmdName string, fam guardShellFamily) string {
 	if fam == guardShellFamilyCmdExe {
 		return "trackfw guard " + subcmdName + " || exit 2"
 	}
-	return `set +eu; set ErrorActionPreference Continue; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard ` + subcmdName + `; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE`
+	return guardforms.CredentialCurrentPSPOSIX[:strings.Index(guardforms.CredentialCurrentPSPOSIX, "trackfw guard credential")] +
+		"trackfw guard " + subcmdName +
+		guardforms.CredentialCurrentPSPOSIX[strings.Index(guardforms.CredentialCurrentPSPOSIX, "; LASTEXITCODE=$(("):]
 }
 
 // guardEmulateLegacyLine retorna a linha D18 legada (emulate sem set+eu, pré-REQ-2026-11-13).

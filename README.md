@@ -273,13 +273,13 @@ Copy these verbatim or run `trackfw init`/`trackfw update` — do not reconstruc
 **PS/POSIX form** (Claude Code, Codex, Gemini, Cursor, Windsurf, Copilot — credential guard):
 
 ```
-set +eu; set ErrorActionPreference Continue; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE
+set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE
 ```
 
 **PS/POSIX form** (git-branch guard):
 
 ```
-set +eu; set ErrorActionPreference Continue; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE
+set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE
 ```
 
 **cmd.exe form** (Kiro, Amazon Q):
@@ -289,36 +289,51 @@ trackfw guard credential || exit 2
 trackfw guard git-branch || exit 2
 ```
 
-The D18 line (REQ-2026-11-13 ML-1C2) is **fail-closed** for both POSIX shells and
+The D18 line (REQ-2026-11-13 ML-2C, form K) is **fail-closed** for both POSIX shells and
 PowerShell, including shells started with inherited `errexit`/`nounset` options and environments
-where `$ErrorActionPreference='Stop'` or `Set-StrictMode -Version Latest` is active.
-The four-segment preamble works as follows (order matters):
+where `$ErrorActionPreference='Stop'`, `$ErrorActionPreference` is ReadOnly, `$WhatIfPreference=$true`,
+`$ConfirmPreference='Low'`, or `Set-StrictMode -Version Latest` is active.
+The five-segment preamble works as follows (order matters):
 
+- **`set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0`** — PS: `Set-Variable`
+  with `-Force` (overrides ReadOnly/Constant protection — without it, an inherited ReadOnly EAP
+  cannot be reset); `-WhatIf:0` and `-Confirm:0` disable WhatIf and Confirm mode for this call
+  (integer `0` = `$false` for switch params; `:0` is used rather than `$false` because `$false`
+  is an undefined variable reference under POSIX `nounset`, which would abort in POSIX shells
+  before segment 2 runs the `set +eu` builtin). Must come **first** so that segment 2 is not
+  suppressed by an active WhatIf preference. POSIX: `set` with positional parameters, exit 0 —
+  no option processing because the first argument (`ErrorActionPreference`) does not start with
+  `-` or `+`.
 - **`set +eu`** — POSIX: special builtin that disables `errexit` (+e) and `nounset` (+u); no
-  undefined-variable access, no redirect. PS: `Set-Variable "+eu"` — sets a variable silently.
-- **`set ErrorActionPreference Continue`** — PS: resets EAP to Continue **before** `null=/dev/null`
-  runs, ensuring the CommandNotFound that follows is non-terminating even under inherited `Stop`.
-  POSIX: `set` with two positional parameters; sets `$1`/`$2`, exit 0.
+  undefined-variable access, no redirect. Runs **after** segment 1: if `$ConfirmPreference='Low'`
+  were active when segment 1 ran, `Set-Variable "+eu"` (the PS interpretation of `set +eu`)
+  would prompt for confirmation — that prompt is suppressed by the `-Confirm:0` flag above.
+  PS: `Set-Variable "+eu"` — sets a variable silently under any state.
 - **`null=/dev/null`** — POSIX: variable assignment, defines `$null=/dev/null` so subsequent
-  `2>$null` redirects are silenced (zero extra stderr lines per call). PS: attempts to invoke
-  command `null =/dev/null` → CommandNotFound, non-terminating since EAP=Continue was set above
-  — accepted stderr noise (+2 lines on PS; POSIX is the majority platform).
-- **`Set-StrictMode -Off 2>$null`** — PS: disables StrictMode; `$null` is an automatic PS variable
-  (always defined, safe even under inherited StrictMode). POSIX: command-not-found, stderr
-  redirected to `$null` (=/dev/null from step 3) — zero extra POSIX stderr lines.
+  `2>$null` redirects are silenced (zero extra stderr lines per call in POSIX). PS: attempts to
+  invoke command `null =/dev/null` → CommandNotFound, non-terminating since EAP=Continue was
+  forced above — accepted stderr noise.
+- **`Set-StrictMode -Off 2>$null`** — PS: disables StrictMode; `$null` is an automatic PS
+  variable (always defined, safe even under inherited StrictMode). POSIX: command-not-found,
+  stderr redirected to `$null` (=/dev/null from step 3) — zero extra POSIX stderr lines.
 
 After the preamble, `emulate -R sh 2>$null` instructs zsh to run as POSIX sh (without it,
 zsh's EQUALS/NOMATCH expansions abort `$LASTEXITCODE=2`). The seed `$LASTEXITCODE=2` is a
 PowerShell assignment; in sh/bash the `=2: command not found` error is redirected to `$null`
 (=/dev/null). `LASTEXITCODE=$((2*!!$?))` normalizes any non-zero exit to 2 in sh/bash. The
-4th segment `$LASTEXITCODE=2*!!$LASTEXITCODE 2>$null` provides the same normalization in
+PS segment `$LASTEXITCODE=2*!!$LASTEXITCODE 2>$null` provides the same normalization in
 PowerShell, and is inert (CommandNotFound, stderr suppressed) in sh/bash. For cmd.exe:
 `|| exit 2` is the native short-circuit.
+
+**Measured stderr cost (form K):** **0 extra lines in POSIX shells** per hook call;
+**6 lines in pwsh 7** (EAP=Continue; **7** when `$ConfirmPreference='Low'`) vs **4 lines**
+for the pre-K form (REQ-2026-11-13 ML-1A). Measurement: roadmap §ML-2A, 2026-11-15
+(`docs/roadmaps/wip/ROADMAP-2026-11-13-linha-de-hook-do-guard-sai-127-sob-errexit-herdado-e-libera-o-comando.md`).
 
 **Under PowerShell**, a `deny` exit emits three `CommandNotFound` error blocks to stderr
 (one for `null=/dev/null`, one for `emulate`, one for the `$LASTEXITCODE=2*...` segment)
 alongside the guard's own deny reason. The deny reason is preserved — it is the last line of
-stderr. Measure 2026-11-14 (ML-1C2).
+stderr.
 
 **What was measured in the VM (Windows 11 ARM64, 2026-10-06):** PowerShell 5, cmd.exe,
 and Git Bash (non-login, explicit PATH to the branch binary) all block

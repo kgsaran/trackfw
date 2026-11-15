@@ -46,16 +46,18 @@ const stdinPayload = `{"tool_name":"Bash","tool_input":{"command":"git add -A"}}
 //	ml1aLine = setEuPrefix + guardforms.LegacyD18*PSPOSIX
 //
 // NÃO use setEuPrefix para verificar o prefixo da forma atual — a forma atual começa com
-// ml1dPrefix (quatro segmentos).
+// ml1dPrefix (cinco segmentos — forma K).
 const setEuPrefix = "set +eu 2>${null-/dev/null}; "
 
-// ml1dPrefix é o preamble de quatro segmentos da forma H, adicionada pela REQ-2026-11-13
-// ML-1C2 (D18 rev2). Define null=/dev/null antes de qualquer 2>$null, garantindo zero linhas
-// de preamble no stderr POSIX. Em PowerShell, $null é variável automática (sempre definida).
+// ml1dPrefix é o preamble de cinco segmentos da forma K, adicionada pela REQ-2026-11-13
+// ML-2C. Coloca o reset de EAP com -Force/-WhatIf:0/-Confirm:0 ANTES do set +eu, para que
+// WhatIf não suprima o próprio set +eu. Define null=/dev/null antes de qualquer 2>$null,
+// garantindo zero linhas de preamble no stderr POSIX. Em PowerShell, $null é variável
+// automática (sempre definida).
 //
 // Uso: verificar que a forma atual começa com este prefixo; âncora de sanidade nos
 // contra-braços (os oldLine/legacyLine vêm de guardforms, não derivados de guard.line).
-const ml1dPrefix = "set +eu; set ErrorActionPreference Continue; null=/dev/null; Set-StrictMode -Off 2>$null; "
+const ml1dPrefix = "set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; "
 
 // ml1dEmulateSegment é o segmento emulate da forma H (ML-1C2). Usa 2>$null para suprimir o
 // command-not-found de emulate em POSIX (onde $null já foi definido como /dev/null).
@@ -982,9 +984,9 @@ func TestGuardLineShellMatrix_DefeitoAntigo(t *testing.T) {
 		guard := guard
 		t.Run(guard.name, func(t *testing.T) {
 			// Sanidade: confirmar que a forma atual começa com ml1dPrefix seguido de ml1dEmulateSegment.
-			// Se qualquer um estiver ausente, a correção ML-1C2 foi removida.
+			// Se qualquer um estiver ausente, a correção ML-2C (forma K) foi removida.
 			if !strings.HasPrefix(guard.line, ml1dPrefix) {
-				t.Fatalf("constante %q não começa com ml1dPrefix %q — fix D18 ML-1C2 foi removido?",
+				t.Fatalf("constante %q não começa com ml1dPrefix %q — fix D18 ML-2C (forma K) foi removido?",
 					guard.name, ml1dPrefix)
 			}
 			afterML1D := strings.TrimPrefix(guard.line, ml1dPrefix)
@@ -1090,7 +1092,7 @@ func TestGuardLineShellMatrix_UnsetoptInsuficiente(t *testing.T) {
 			// Sanidade: verificar que a constante começa com ml1dPrefix + ml1dEmulateSegment.
 			// A regressão precisa de ambos para confirmar que apenas emulate não era suficiente.
 			if !strings.HasPrefix(guard.line, ml1dPrefix) {
-				t.Fatalf("constante %q não começa com ml1dPrefix — fix D18 ML-1C2 foi removido?",
+				t.Fatalf("constante %q não começa com ml1dPrefix — fix D18 ML-2C (forma K) foi removido?",
 					guard.name)
 			}
 			afterML1D := strings.TrimPrefix(guard.line, ml1dPrefix)
@@ -1989,18 +1991,20 @@ func runGuardLinePSNoProfile(
 	return r.exitCode, r.stderr, captured
 }
 
-// TestGuardLineShellMatrix_PSInheritedState testa a forma H (ML-1C2) sob estados PS
-// herdados: EAP=Stop e StrictMode Latest, sozinhos e juntos, via duas formas de herança:
+// TestGuardLineShellMatrix_PSInheritedState testa a forma K (ML-2C) sob estados PS
+// herdados: EAP=Stop, StrictMode Latest, ReadOnly-Stop, WhatIf+Stop e ConfirmLow+Stop,
+// sozinhos e combinados, via duas formas de herança:
 //
 //   - via -Command: o estado é injetado como prefixo na linha de comando.
 //   - via perfil: o estado é definido num perfil temporário em XDG_CONFIG_HOME.
 //
-// Reconciliação (REQ-2026-11-13 ML-1C2):
-//   - Braço -Command: afirma que a forma H sai com RC correto (0 = allow, 2 = deny ou
-//     ausente) mesmo quando EAP=Stop ou StrictMode Latest estão ativos antes da linha —
-//     o preamble (set ErrorActionPreference Continue; null=/dev/null; Set-StrictMode -Off 2>$null)
+// Reconciliação (REQ-2026-11-13 ML-2C):
+//   - Braço -Command: afirma que a forma K sai com RC correto (0 = allow, 2 = deny ou
+//     ausente) mesmo quando EAP=Stop, ReadOnly-EAP, WhatIf=$true ou ConfirmPreference=Low
+//     estão ativos antes da linha — o preamble K (set ErrorActionPreference Continue
+//     -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null)
 //     os neutraliza sem emitir ruído no stderr POSIX.
-//   - Braço perfil: afirma que a forma H sobrevive ao mesmo estado imposto pelo perfil
+//   - Braço perfil: afirma que a forma K sobrevive ao mesmo estado imposto pelo perfil
 //     do usuário, cobrindo o cenário real onde o perfil do sistema já define esses estados.
 func TestGuardLineShellMatrix_PSInheritedState(t *testing.T) {
 	psBin, err := exec.LookPath("pwsh")
@@ -2018,6 +2022,10 @@ func TestGuardLineShellMatrix_PSInheritedState(t *testing.T) {
 		{"stop-via-command", "$ErrorActionPreference='Stop'; "},
 		{"strictmode-via-command", "Set-StrictMode -Version Latest; "},
 		{"stop-and-strictmode-via-command", "Set-StrictMode -Version Latest; $ErrorActionPreference='Stop'; "},
+		// ML-2C: novos estados que a forma K deve neutralizar.
+		{"readonly-stop-via-command", "Set-Variable -Name ErrorActionPreference -Value Stop -Option ReadOnly; "},
+		{"whatif-stop-via-command", "$WhatIfPreference = $true; $ErrorActionPreference = 'Stop'; "},
+		{"confirm-low-stop-via-command", "$ConfirmPreference = 'Low'; $ErrorActionPreference = 'Stop'; "},
 	}
 
 	// Condições via perfil: conteúdo PS escrito em Microsoft.PowerShell_profile.ps1.
@@ -2029,6 +2037,10 @@ func TestGuardLineShellMatrix_PSInheritedState(t *testing.T) {
 		{"stop-via-profile", "$ErrorActionPreference = 'Stop'\n"},
 		{"strictmode-via-profile", "Set-StrictMode -Version Latest\n"},
 		{"stop-and-strictmode-via-profile", "Set-StrictMode -Version Latest\n$ErrorActionPreference = 'Stop'\n"},
+		// ML-2C: novos estados via perfil que a forma K deve neutralizar.
+		{"readonly-stop-via-profile", "Set-Variable -Name ErrorActionPreference -Value Stop -Option ReadOnly\n"},
+		{"whatif-stop-via-profile", "$WhatIfPreference = $true\n$ErrorActionPreference = 'Stop'\n"},
+		{"confirm-low-stop-via-profile", "$ConfirmPreference = 'Low'\n$ErrorActionPreference = 'Stop'\n"},
 	}
 
 	for _, guard := range guardShellMatrix {
@@ -2108,9 +2120,11 @@ func TestGuardLineShellMatrix_PSInheritedState(t *testing.T) {
 						t.Fatalf("criando diretório de perfil: %v", mkErr)
 					}
 					markerPath := filepath.Join(xdgDir, "profile_loaded")
-					// Perfil: define estado + escreve marcador para confirmar carregamento.
-					profileContent := pcond.content +
-						`New-Item -Path "` + markerPath + `" -ItemType File -Force | Out-Null` + "\n"
+					// Perfil: escreve marcador ANTES de definir o estado — WhatIf=$true suprimiria
+					// New-Item se o estado fosse definido primeiro; Confirm-Low+Stop e ReadOnly-Stop
+					// também exigem esta ordem fixa.
+					profileContent := `New-Item -Path "` + markerPath + `" -ItemType File -Force | Out-Null` + "\n" +
+						pcond.content
 					profileFile := filepath.Join(profileDir, "Microsoft.PowerShell_profile.ps1")
 					if wErr := os.WriteFile(profileFile, []byte(profileContent), 0644); wErr != nil {
 						t.Fatalf("escrevendo perfil: %v", wErr)
@@ -2126,7 +2140,9 @@ func TestGuardLineShellMatrix_PSInheritedState(t *testing.T) {
 						t.Skipf("perfil não carregado (marcador ausente em %s) — XDG_CONFIG_HOME pode não ser suportado nesta versão do pwsh; pulando braço de perfil", markerPath)
 					}
 
-					// Recriar marcador para verificação posterior por sub-teste.
+					// Remover marcador da verificação de carregamento. O perfil o cria
+					// antes do estado (primeira linha do perfil — linha 2123), garantindo
+					// que New-Item execute antes que WhatIf, Confirm ou Stop possam suprimi-lo.
 					if rmErr := os.Remove(markerPath); rmErr != nil {
 						t.Fatalf("removendo marcador antes de sub-teste: %v", rmErr)
 					}
@@ -2181,20 +2197,101 @@ func TestGuardLineShellMatrix_PSInheritedState(t *testing.T) {
 	}
 }
 
+// TestGuardLineShellMatrix_HContraArm_ReadOnlyStop demonstra que a forma H (nunca released,
+// substituída por ML-2C/forma K) falha sob PowerShell com EAP configurado como ReadOnly=Stop —
+// saindo com exit ≠ 0 e sem rodar o guard. Esta é a "prova de mordida" do ML-2C: se a forma
+// H passasse sob ReadOnly-Stop, o -Force em K seria desnecessário.
+//
+// A forma H é construída a partir de peças da forma K (nunca como literal contíguo) para evitar
+// que o teste em si seja um veículo de propagação da forma defeituosa:
+//
+//	hForm = hPreamble + K[após os dois primeiros segmentos de K]
+//
+// Reconciliação (REQ-2026-11-13 ML-2C): afirma que a forma H sai com exit ≠ 0 sob
+// ReadOnly-Stop (Set-Variable -Option ReadOnly com Value Stop), confirmando que -Force
+// em K é necessário para sobrescrever a variável somente-leitura.
+func TestGuardLineShellMatrix_HContraArm_ReadOnlyStop(t *testing.T) {
+	psBin, err := exec.LookPath("pwsh")
+	if err != nil {
+		t.Skip("pwsh não encontrado — contra-braço H ReadOnly-Stop não aplicável neste ambiente")
+	}
+	ensurePSWarmup(t, psBin)
+
+	// Prefixo ReadOnly-Stop: define EAP como Stop com opção ReadOnly (simula perfil restritivo).
+	const readOnlyStopPrefix = "Set-Variable -Name ErrorActionPreference -Value Stop -Option ReadOnly; "
+
+	// Segmentos do K que constituem o preamble (devem ser mantidos sincronizados com ml1dPrefix).
+	const kSeg1 = "set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; "
+	const kSeg2 = "set +eu; "
+	// Preamble da forma H: ordena set +eu primeiro, sem -Force/-WhatIf:0/-Confirm:0.
+	const hPreamble = "set +eu; set ErrorActionPreference Continue; "
+
+	for _, guard := range guardShellMatrix {
+		guard := guard
+		t.Run(guard.name, func(t *testing.T) {
+			// Sanidade: confirmar que a forma K começa com os dois segmentos esperados.
+			if !strings.HasPrefix(guard.line, kSeg1+kSeg2) {
+				t.Fatalf("forma K de %q não começa com kSeg1+kSeg2 — forma K foi alterada?", guard.name)
+			}
+
+			// Construir forma H a partir das peças de K (H nunca foi released).
+			hForm := hPreamble + guard.line[len(kSeg1)+len(kSeg2):]
+
+			// Verificar sanidade: H não deve conter -Force.
+			if strings.Contains(hForm, "-Force") {
+				t.Fatalf("forma H construída para %q ainda contém -Force — verificar derivação", guard.name)
+			}
+
+			// Executar a forma H sob ReadOnly-Stop via -Command.
+			lineUnderReadOnly := readOnlyStopPrefix + hForm
+
+			dir := t.TempDir()
+			makeFakeTrackfwForOS(t, dir)
+
+			r := execPSCommand(psBin, lineUnderReadOnly, dir, 2, psCallDeadlineCeil)
+			if r.timedOut {
+				t.Skipf("contra-braço H ReadOnly-Stop: timeout ao executar forma H sob ReadOnly-Stop — pulando")
+			}
+			if r.runErr != nil {
+				t.Fatalf("contra-braço H ReadOnly-Stop: erro de execução: %v", r.runErr)
+			}
+
+			// A forma H DEVE falhar sob ReadOnly-Stop (exit ≠ 0).
+			if r.exitCode == 0 {
+				t.Errorf(
+					"contra-braço H ReadOnly-Stop (%s): forma H saiu com exit 0 sob ReadOnly-Stop — "+
+						"esperado exit ≠ 0; o -Force em K pode ser desnecessário",
+					guard.name,
+				)
+			} else {
+				t.Logf("contra-braço H ReadOnly-Stop (%s): forma H saiu com exit %d (esperado ≠ 0) — defeito H confirmado", guard.name, r.exitCode)
+			}
+
+			// Confirmar que o guard nunca rodou (stdin.out não deve existir).
+			if _, statErr := os.Stat(filepath.Join(dir, "stdin.out")); statErr == nil {
+				t.Errorf(
+					"contra-braço H ReadOnly-Stop (%s): stdin.out existe — guard rodou quando não deveria",
+					guard.name,
+				)
+			}
+		})
+	}
+}
+
 // TestGuardLineShellMatrix_D18NovaContraArm_Stop demonstra que a forma ML-1A (REQ-2026-11-13 ML-1A,
-// substituída por ML-1C e depois ML-1C2) falha sob PowerShell com EAP=Stop herdado — saindo com
-// exit ≠ 0 e sem rodar o guard. Esta é a "prova de mordida" do ML-1C/ML-1C2: se a forma ML-1A
+// substituída por ML-1C, ML-1C2 e depois ML-2C/forma K) falha sob PowerShell com EAP=Stop herdado —
+// saindo com exit ≠ 0 e sem rodar o guard. Esta é a "prova de mordida" do ML-2C: se a forma ML-1A
 // passasse sob Stop, o fix seria desnecessário e este braço seria falso-verde.
 //
 // A forma ML-1A é construída a partir de guardforms.LegacyD18*PSPOSIX (constante estável):
 //
 //	ml1aLine = setEuPrefix + guardforms.LegacyD18*PSPOSIX
 //
-// Reconciliação (REQ-2026-11-13 ML-1C): afirma que a forma ML-1A (`set +eu 2>${null-/dev/null}; …`)
+// Reconciliação (REQ-2026-11-13 ML-1C/ML-2C): afirma que a forma ML-1A (`set +eu 2>${null-/dev/null}; …`)
 // sai com exit ≠ 0 sob EAP=Stop — `emulate -R sh 2>${null-/dev/null}` em ML-1A usa ${null-/dev/null}
 // como alvo de redirecionamento; sob Stop, a CommandNotFound do `emulate` vira exceção terminante que
-// propaga antes que `2>${null-/dev/null}` possa suprimi-la, saindo exit 1. ML-1C2 resolve isso com
-// null=/dev/null ANTES de Set-StrictMode -Off 2>$null — zero stderr em POSIX.
+// propaga antes que `2>${null-/dev/null}` possa suprimi-la, saindo exit 1. ML-2C/forma K mantém
+// null=/dev/null e adiciona -Force/-WhatIf:0/-Confirm:0 no preamble — zero stderr em POSIX.
 func TestGuardLineShellMatrix_D18NovaContraArm_Stop(t *testing.T) {
 	psBin, err := exec.LookPath("pwsh")
 	if err != nil {
@@ -2221,9 +2318,9 @@ func TestGuardLineShellMatrix_D18NovaContraArm_Stop(t *testing.T) {
 	for _, guard := range guardShellMatrix {
 		guard := guard
 		t.Run(guard.name, func(t *testing.T) {
-			// Sanidade: verificar que ml1dPrefix está presente — forma atual deve ser H.
+			// Sanidade: verificar que ml1dPrefix está presente — forma atual deve ser K.
 			if !strings.HasPrefix(guard.line, ml1dPrefix) {
-				t.Fatalf("constante %q não começa com ml1dPrefix %q — forma H (ML-1C2) foi removida?",
+				t.Fatalf("constante %q não começa com ml1dPrefix %q — forma K (ML-2C) foi removida?",
 					guard.name, ml1dPrefix)
 			}
 
@@ -2278,7 +2375,7 @@ func TestGuardLineShellMatrix_D18NovaContraArm_Stop(t *testing.T) {
 	}
 }
 
-// TestGuardLineShellMatrix_PreambleNoStderr afirma que a forma H (ML-1C2) não produz ruído de
+// TestGuardLineShellMatrix_PreambleNoStderr afirma que a forma K (ML-2C) não produz ruído de
 // preamble no stderr em shells POSIX — o stderr é byte-idêntico ao que o guard fake escreve.
 // Isto é: zero linhas extras antes ou depois do conteúdo normal do guard.
 //
@@ -2286,7 +2383,7 @@ func TestGuardLineShellMatrix_D18NovaContraArm_Stop(t *testing.T) {
 // porque `Set-StrictMode -Off` sem redirecionamento emite uma linha de "command not found"
 // antes do output do guard. A forma está em candFCredentialPSPOSIX dentro do sub-teste.
 //
-// Reconciliação (REQ-2026-11-13 ML-1C2): afirma que nenhuma das formas atuais emite linhas
+// Reconciliação (REQ-2026-11-13 ML-2C): afirma que nenhuma das formas atuais emite linhas
 // adicionais de stderr por chamada POSIX (zero linhas de preamble, independente de allow/deny).
 func TestGuardLineShellMatrix_PreambleNoStderr(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -2309,7 +2406,7 @@ func TestGuardLineShellMatrix_PreambleNoStderr(t *testing.T) {
 	// Stderr esperado = apenas o que o guard escreve; zero ruído de preamble.
 	const expectedStderr = "motivo-deny-fake"
 
-	// ── Braço H (forma atual) ─────────────────────────────────────────────────
+	// ── Braço K (forma atual) ─────────────────────────────────────────────────
 	for _, guard := range guardShellMatrix {
 		guard := guard
 		t.Run(guard.name, func(t *testing.T) {

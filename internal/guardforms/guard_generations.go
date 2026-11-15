@@ -20,19 +20,28 @@ package guardforms
 const (
 	// CredentialCurrentPSPOSIX is the canonical credential guard command for the
 	// POSIX/PS shell family (used by Claude, Codex, Gemini, Cursor, Windsurf, Copilot, Kiro).
-	// D18 ML-1C2 (REQ-2026-11-13): four-segment preamble that survives inherited
-	// $ErrorActionPreference='Stop' and Set-StrictMode -Version Latest in PowerShell,
+	// D18 ML-2C (REQ-2026-11-13): five-segment preamble that survives inherited
+	// $ErrorActionPreference='Stop', ReadOnly EAP, $WhatIfPreference=$true,
+	// $ConfirmPreference='Low', and Set-StrictMode -Version Latest in PowerShell,
 	// and produces zero extra stderr lines in POSIX shells on every hook call.
 	//
 	// Segment order and rationale (each segment is safe in both runtimes):
-	//   1. set +eu         — POSIX: disables errexit/nounset; PS: Set-Variable "+eu" (silent).
-	//   2. set ErrorActionPreference Continue
-	//                      — PS: resets EAP to Continue BEFORE null=/dev/null runs, so the
-	//                        CommandNotFound that follows is non-terminating even under inherited
-	//                        Stop.  POSIX: sets positional params ($1/$2), exit 0.
+	//   1. set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0
+	//                      — PS: resets EAP to Continue with -Force (overrides ReadOnly),
+	//                        disables WhatIf mode (-WhatIf:0, integer 0 = $false for switch
+	//                        params, avoids $false variable reference which could be unset
+	//                        under POSIX nounset before segment 2 runs), disables Confirm mode
+	//                        (-Confirm:0). Must come FIRST so that segment 2 (set +eu) is not
+	//                        suppressed by an active WhatIf preference.  POSIX: sets positional
+	//                        params ($1=ErrorActionPreference, $2=Continue, …), exit 0 — no
+	//                        option processing because the first arg does not start with - or +.
+	//   2. set +eu         — POSIX: special builtin that disables errexit (+e) and nounset (+u).
+	//                        Runs AFTER segment 1 so that WhatIf is already disabled (otherwise
+	//                        segment 1 would suppress it in WhatIf mode).
+	//                        PS: Set-Variable "+eu" (silent, no error under any state).
 	//   3. null=/dev/null  — POSIX: variable assignment, defines $null=/dev/null so subsequent
 	//                        2>$null redirects are silenced.  PS: CommandNotFound (non-terminating,
-	//                        since EAP=Continue was set above) — stderr noise accepted on PS.
+	//                        since EAP=Continue was forced above) — stderr noise accepted on PS.
 	//   4. Set-StrictMode -Off 2>$null
 	//                      — PS: disables StrictMode; $null is an automatic PS variable (always
 	//                        defined, safe even under inherited StrictMode) so the redirect never
@@ -41,9 +50,10 @@ const (
 	//
 	// After the preamble, all subsequent 2>$null redirects are safe because $null=/dev/null in
 	// POSIX and $null is the auto null-stream in PS.
-	// (REQ-2026-11-13 ML-1C2, supersedes ML-1C which used 2>${null-/dev/null} and produced
-	// one extra stderr line per POSIX shell call from Set-StrictMode -Off.)
-	CredentialCurrentPSPOSIX = `set +eu; set ErrorActionPreference Continue; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE`
+	// (REQ-2026-11-13 ML-2C, supersedes ML-1C2 form H which lacked -Force/-WhatIf:0/-Confirm:0
+	// and failed when EAP was ReadOnly=Stop or WhatIfPreference was active.
+	// Form H was never released/tagged — this K form is the first published preamble.)
+	CredentialCurrentPSPOSIX = `set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE`
 
 	// CredentialCurrentCmdExe is the canonical credential guard command for the
 	// cmd.exe shell family (used by Amazon Q, Kiro on Windows).
@@ -51,8 +61,8 @@ const (
 
 	// GitBranchCurrentPSPOSIX is the canonical git-branch guard command for the
 	// POSIX/PS shell family.
-	// D18 ML-1C2 (REQ-2026-11-13): four-segment preamble (see CredentialCurrentPSPOSIX).
-	GitBranchCurrentPSPOSIX = `set +eu; set ErrorActionPreference Continue; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE`
+	// D18 ML-2C (REQ-2026-11-13): five-segment preamble (see CredentialCurrentPSPOSIX).
+	GitBranchCurrentPSPOSIX = `set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE`
 
 	// GitBranchCurrentCmdExe is the canonical git-branch guard command for the
 	// cmd.exe shell family.
@@ -66,16 +76,16 @@ const (
 	// (`Bash|PowerShell`) names the tool matchers, not the executing shell.
 	// write-scope is wired only in the Write|Edit|NotebookEdit envelope, which is
 	// never executed by cmd.exe.
-	// D18 ML-1C2 (REQ-2026-11-13): four-segment preamble (see CredentialCurrentPSPOSIX).
-	WriteScopeCurrentPSPOSIX = `set +eu; set ErrorActionPreference Continue; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard write-scope; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE`
+	// D18 ML-2C (REQ-2026-11-13): five-segment preamble (see CredentialCurrentPSPOSIX).
+	WriteScopeCurrentPSPOSIX = `set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard write-scope; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE`
 )
 
 // ─── Global (--global) current forms ───────────────────────────────────────
 
 const (
 	// CredentialGlobalCurrentPSPOSIX is the canonical global credential guard command.
-	// D18 ML-1C2 (REQ-2026-11-13): four-segment preamble (see CredentialCurrentPSPOSIX).
-	CredentialGlobalCurrentPSPOSIX = `set +eu; set ErrorActionPreference Continue; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE`
+	// D18 ML-2C (REQ-2026-11-13): five-segment preamble (see CredentialCurrentPSPOSIX).
+	CredentialGlobalCurrentPSPOSIX = `set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE`
 
 	// CredentialGlobalCurrentCmdExe is the canonical global credential guard command for cmd.exe.
 	CredentialGlobalCurrentCmdExe = "trackfw guard credential --global || exit 2"
