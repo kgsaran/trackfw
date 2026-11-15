@@ -261,7 +261,7 @@ configs do repositório, README, `docs/cli-parity.md`, pin de `scripts/check-val
 > Dependencies: Wave 1 completa.
 
 ### ML-2A — Red team da forma nova
-**Status:** 🔄 In progress
+**Status:** ✅ Done
 **Squad:** hades-tf, hefesto-tf
 **Files affected:** `docs/seguranca/2026-11-13-wave2-redteam-guard-errexit-herdado.md` (hades-tf), `docs/qualidade/2026-11-15-revisao-linha-de-hook-forma-h.md` (hefesto-tf)
 **Status do PR:** draft #687
@@ -270,6 +270,40 @@ configs do repositório, README, `docs/cli-parity.md`, pin de `scripts/check-val
 
 **Acceptance criteria:**
 - [ ] Parecer com cada tentativa e o rc medido; achado de mesma causa vira ML nesta REQ
+
+**Auditoria (Zeus, 2026-11-15):** red team aprova com ressalva; qualidade bloqueia. Os achados viram o ML-2C.
+- hades A1 (confirmado por mim no `pwsh` 7.6.9): perfil com `ErrorActionPreference` ReadOnly=`Stop` → forma H sai 1
+  sem o guard. hades classificou `$WhatIfPreference=$true` e `$ConfirmPreference='Low'` com `Stop` como residuais;
+  reclassifico como **em escopo** (estado que o perfil carrega, como o `Stop`): medi os dois saindo 1 sem o guard.
+- Forma K, medida por mim: `set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set +eu; ` no lugar de
+  `set +eu; set ErrorActionPreference Continue; `. No `pwsh`: 0/2/2 com guard sob ReadOnly, WhatIf, Confirm,
+  `StrictMode`+`Stop`; 6 linhas de stderr (7 no caso Confirm). POSIX (sh, bash, zsh, dash com `-e`/`-u`, `BASH_ENV`
+  com `set -e`/`set -u`): 0/2/2 com guard, 0 linha de stderr. `-WhatIf:0` em vez de `$false` porque `$false` é
+  variável não definida sob `nounset` antes do `set +eu`.
+- hades V1a/V1d (`readonly null` e `readonly LASTEXITCODE` via `BASH_ENV`): **residual aceito**, mesma classe do
+  `trap ... ERR` via `BASH_ENV` da Wave 0 (código do usuário antes do hook).
+- hefesto B2 (confirmado em `internal/validator/validator_write_scope_wiring.go:108`): o write-scope só aceita
+  `WriteScopeCurrentPSPOSIX`; o hook gerado pela main vira violação "não instalado" em vez de aviso de migração.
+- hefesto B1: os laços explícitos de migração D18 em `agentfiles.go` são inertes (mutação mantém os 11 testes
+  verdes); três frases de reconciliação afirmam o contrário.
+- hefesto notas 2, 3 e 6: `guardExpectedLine` sem teste que a amarre às constantes; comentário órfão em
+  `guard_line_shell_test.go:2129`; contagem de blocos de erro divergente entre README e `docs/cli-parity.md`.
+
+### ML-2C — Forma K, write-scope legado e limpeza (corretivo)
+**Status:** ⬜ Pending
+**Squad:** apolo-tf
+**Files affected:** constantes e sítios da forma (os do ML-1C), `internal/validator/validator_write_scope_wiring.go`,
+`internal/validator/validator_guard_d18_legacy_test.go`, `internal/generators/agentfiles.go`,
+`internal/generators/guard_d18_migration_test.go`, `internal/generators/guard_line_shell_test.go`, teste novo de pino
+de `guardExpectedLine` em `internal/validator/`
+
+**Acceptance criteria:**
+- [ ] Forma K nas quatro constantes, sem entrada legada para H (nunca publicada); matriz com ReadOnly, WhatIf e
+  Confirm herdados, e contra-braço com a forma H reprovando
+- [ ] Write-scope na forma legada D18 dá aviso de migração (não violação), com teste
+- [ ] Laços explícitos D18 removidos; frases de reconciliação dos testes de migração corretas
+- [ ] Teste que falha se `guardExpectedLine` divergir das constantes
+- [ ] Gates da Wave 1, schema gate, `make parity-rest` e `./bin/trackfw validate` verdes
 
 ### ML-2B — `make quality` com a máquina ociosa
 **Status:** ⬜ Pending
