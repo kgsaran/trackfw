@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-11-13
 req: "docs/req/REQ-2026-11-13-linha-de-hook-do-guard-sai-127-sob-errexit-herdado-e-libera-o-comando.md"
 squad: "hades-tf, apolo-tf, artemis-tf, hefesto-tf, zeus-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, artemis-tf, hefesto-tf, zeus-tf"
 
 # Roadmap: linha de hook do guard sai 127 sob errexit herdado e libera o comando
 
-> Created: 2026-11-13 | Status: wip
+> Created: 2026-11-13 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-11-13-linha-de-hook-do-guard-sai-127-sob-errexit-herdado-e-libera-o-comando.md -->
