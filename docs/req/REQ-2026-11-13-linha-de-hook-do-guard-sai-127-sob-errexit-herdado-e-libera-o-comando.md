@@ -1,0 +1,67 @@
+---
+status: Open
+date: 2026-11-13
+author: ""
+adr: "docs/adr/ADR-2026-10-04-o-guard-de-hook-e-um-subcomando-go-do-trackfw-e-a-linha-de-hook-e-a-mesma-string-em-todo-shell.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-11-13-linha-de-hook-do-guard-sai-127-sob-errexit-herdado-e-libera-o-comando.md"
+---
+
+# REQ: linha de hook do guard sai 127 sob errexit herdado e libera o comando
+
+> Date: 2026-11-13 | Status: Open
+| Linear Issue: 
+| Jira Issue: 
+
+## Motivation
+A linha de hook gerada pelo trackfw (família PS/POSIX, ADR-2026-10-04) é poliglota: em sh/bash/dash,
+`emulate` e `$LASTEXITCODE=2` são comandos inexistentes por desenho. Com `errexit` ou `nounset` herdados, o
+shell sai 127 no primeiro desses pontos, antes de chamar `trackfw guard`. O CLI de agente lê 127 como erro
+não bloqueante, e o comando passa: o guard de credencial e o de branch ficam desligados sem aviso.
+
+Medido em 2026-11-13 (macOS, guard falso que nega com 2): `bash -e`, `bash -u`, `sh -e`, `sh -u`, `dash -e` e
+`bash` com `BASH_ENV` contendo `set -e` dão 127. `bash`, `zsh -e` e `zsh -u` dão 2. A Wave 0 corrigiu uma
+medição: `env SHELLOPTS=errexit bash` também dá 127 (o prefixo `SHELLOPTS=` dentro do bash é rejeitado por
+`readonly` e mascarava o defeito). No PowerShell 7, `$ErrorActionPreference='Stop'` faz a linha sair 1 sem
+chamar o guard. A forma legada D11 revista tem o mesmo defeito.
+
+**Correção (2026-11-15, CI de Linux do PR #687):** a medição acima é do macOS, onde `sh` é bash. No Linux, `sh` é
+`dash`, e sob `-u` a forma legada sai **2 sem rodar o guard**: o `dash` aborta ao expandir `$LASTEXITCODE`
+indefinido. Ali a forma legada bloqueia tudo (fail-closed) em vez de liberar. O defeito comum a todos os shells é
+que o guard não roda; o código de saída varia por shell. O contra-braço `TestGuardLineShellMatrix_D18ContraArm`
+afirma isso por shell resolvido (ML-2E).
+
+Origem: resíduo R4 declarado e não corrigido na REQ-2026-10-20 (roadmap `done/`, linha 246). A varredura de
+issues de 2026-11-13 não achou issue aberta com o mesmo mecanismo.
+
+Fora desta REQ, por decisão medida: `GIT_TERMINAL_PROMPT=0` nas chamadas git de rede. Sem terminal o git falha
+em 0 s (`vault/notes/git-terminal-prompt-sem-terminal-falha-na-hora-2026-10-31.md`, decisão do KG de
+2026-10-31); não há defeito a corrigir.
+
+### Negative scope
+- Não muda o subcomando `trackfw guard` nem as regras de bloqueio dele.
+- Não muda a família POSIX-only nem a nativa de Windows, salvo se a Wave 0 medir o mesmo defeito nelas (aí
+  entram como ML nesta REQ).
+- Não acrescenta gate estático novo (direção de 2026-10-28); a regressão fica na matriz de testes existente.
+- Não trata `GIT_TERMINAL_PROMPT` nem prompts de SSH ou credential helper gráfico.
+
+## Acceptance Criteria
+- [ ] AC1 — inventário de toda forma de linha de hook gerada ou aceita como corrente, com o rc medido sob cada opção herdada (Wave 0)
+- [ ] AC2 — com guard que nega (2), a linha nova sai 2 sob `bash -e`, `bash -u`, `sh -e`, `sh -u`, `dash -e`, `zsh -e`, `zsh -u`, `BASH_ENV` com `set -e` e `set -u`, e sem opção nenhuma
+- [ ] AC3 — com guard que permite (0), a linha nova sai 0 nas mesmas condições
+- [ ] AC4 — PowerShell 5.1 e 7 no Windows: deny 2 e allow 0 com o guard rodando, também sob `$ErrorActionPreference='Stop'` e `Set-StrictMode -Version Latest` herdados (via `-Command` e via perfil); stderr medido, com **zero** linha a mais que a forma atual nos shells POSIX e no máximo **+2** linhas no PowerShell
+  - *Revisto em 2026-11-15 por decisão do KG.* O texto anterior pedia stderr no PowerShell não maior que o da forma atual. Nenhuma forma medida cobre `Stop` e `StrictMode` sem custo nos dois lados: a CAND_F mantinha o PowerShell e imprimia `Set-StrictMode: command not found` em toda chamada POSIX (macOS/Linux, a maioria); a forma H (`null=/dev/null` + `2>$null`) não imprime nada a mais no POSIX e custa 2 linhas no PowerShell, que já imprime de 4 a 16.
+- [ ] AC5 — `TestGuardLineShellMatrix` cobre as opções herdadas do AC2, e a forma atual reprova nele (contra-braço)
+- [ ] AC6 — a forma atual e a D11 revista viram geração legada no registro da D12 (igualdade exata, nunca `Contains`/`HasSuffix`): `validate` avisa e `trackfw update harness` migra as duas para a forma nova sem duplicar entrada
+- [ ] AC7 — configs de hook deste repositório migradas para a forma nova
+- [ ] AC8 — `make quality` verde
+
+## Linked ADR
+<!-- Reference the ADR that governs this requirement -->
+ADR: docs/adr/ADR-2026-10-04-o-guard-de-hook-e-um-subcomando-go-do-trackfw-e-a-linha-de-hook-e-a-mesma-string-em-todo-shell.md
+
+## Blocked by ADRs
+<!-- none -->
+
+## Linked Roadmap
+<!-- Reference the roadmap that implements this requirement -->
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-11-13-linha-de-hook-do-guard-sai-127-sob-errexit-herdado-e-libera-o-comando.md

@@ -1103,6 +1103,9 @@ func harnessCredentialGuardTargetClaude(home, claudeDir string, claudeDirErr err
 			migrateHookCommand(hooks["PostToolUse"], matcher, legacyD2CredentialGlobalCmdPSPOSIX, guardCredentialGlobalCmdPSPOSIX)
 			migrateHookCommand(hooks["PreToolUse"], matcher, legacyD11CredentialGlobalCmdPSPOSIX, guardCredentialGlobalCmdPSPOSIX)
 			migrateHookCommand(hooks["PostToolUse"], matcher, legacyD11CredentialGlobalCmdPSPOSIX, guardCredentialGlobalCmdPSPOSIX)
+			// REQ-2026-11-13 D18: migrate emulate-without-set+eu global credential forms.
+			migrateHookCommand(hooks["PreToolUse"], matcher, legacyD18CredentialGlobalCmdPSPOSIX, guardCredentialGlobalCmdPSPOSIX)
+			migrateHookCommand(hooks["PostToolUse"], matcher, legacyD18CredentialGlobalCmdPSPOSIX, guardCredentialGlobalCmdPSPOSIX)
 		}
 		migrateGuardHookMatcher(hooks["PreToolUse"], "Bash", claudeShellMatcher, guardCredentialGlobalCmdPSPOSIX)
 		migrateGuardHookMatcher(hooks["PostToolUse"], "Bash", claudeShellMatcher, guardCredentialGlobalCmdPSPOSIX)
@@ -1248,6 +1251,9 @@ func harnessCredentialGuardTargetCodex(home string, opts UpdateOptions) TargetRe
 		migrateHookCommand(hooks["PostToolUse"], "Bash", legacyD2CredentialGlobalCmdPSPOSIX, guardCredentialGlobalCmdPSPOSIX)
 		migrateHookCommand(hooks["PreToolUse"], "Bash", legacyD11CredentialGlobalCmdPSPOSIX, guardCredentialGlobalCmdPSPOSIX)
 		migrateHookCommand(hooks["PostToolUse"], "Bash", legacyD11CredentialGlobalCmdPSPOSIX, guardCredentialGlobalCmdPSPOSIX)
+		// REQ-2026-11-13 D18: migrate emulate-without-set+eu global credential forms.
+		migrateHookCommand(hooks["PreToolUse"], "Bash", legacyD18CredentialGlobalCmdPSPOSIX, guardCredentialGlobalCmdPSPOSIX)
+		migrateHookCommand(hooks["PostToolUse"], "Bash", legacyD18CredentialGlobalCmdPSPOSIX, guardCredentialGlobalCmdPSPOSIX)
 	}
 	// D13 dedup (REQ-2026-10-23): after individual migrations, collapse any
 	// remaining duplicates (e.g. two legacy forms simultaneously present → two
@@ -1373,6 +1379,9 @@ func harnessCredentialGuardTargetGemini(home string, opts UpdateOptions) TargetR
 		migrateHookCommand(hooks["AfterTool"], "run_shell_command", legacyD2CredentialGlobalCmdPSPOSIX, guardCredentialGlobalCmdPSPOSIX)
 		migrateHookCommand(hooks["BeforeTool"], "run_shell_command", legacyD11CredentialGlobalCmdPSPOSIX, guardCredentialGlobalCmdPSPOSIX)
 		migrateHookCommand(hooks["AfterTool"], "run_shell_command", legacyD11CredentialGlobalCmdPSPOSIX, guardCredentialGlobalCmdPSPOSIX)
+		// REQ-2026-11-13 D18: migrate emulate-without-set+eu global credential forms.
+		migrateHookCommand(hooks["BeforeTool"], "run_shell_command", legacyD18CredentialGlobalCmdPSPOSIX, guardCredentialGlobalCmdPSPOSIX)
+		migrateHookCommand(hooks["AfterTool"], "run_shell_command", legacyD18CredentialGlobalCmdPSPOSIX, guardCredentialGlobalCmdPSPOSIX)
 	}
 	// D13 dedup (REQ-2026-10-23): collapse duplicates after individual migrations.
 	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
@@ -1515,6 +1524,9 @@ func harnessCredentialGuardTargetCursor(home string, opts UpdateOptions) TargetR
 		migrateCursorSimpleCommand(hooks["afterShellExecution"], legacyD2CredentialGlobalCmdPSPOSIX, guardCredentialGlobalCmdPSPOSIX, cursorGetCmd)
 		migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyD11CredentialGlobalCmdPSPOSIX, guardCredentialGlobalCmdPSPOSIX, cursorGetCmd)
 		migrateCursorSimpleCommand(hooks["afterShellExecution"], legacyD11CredentialGlobalCmdPSPOSIX, guardCredentialGlobalCmdPSPOSIX, cursorGetCmd)
+		// REQ-2026-11-13 D18: migrate emulate-without-set+eu global credential forms.
+		migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyD18CredentialGlobalCmdPSPOSIX, guardCredentialGlobalCmdPSPOSIX, cursorGetCmd)
+		migrateCursorSimpleCommand(hooks["afterShellExecution"], legacyD18CredentialGlobalCmdPSPOSIX, guardCredentialGlobalCmdPSPOSIX, cursorGetCmd)
 	}
 	// D13 dedup (REQ-2026-10-23): collapse duplicates after individual migrations.
 	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
@@ -1689,6 +1701,9 @@ func harnessCredentialGuardTargetCopilot(home string, opts UpdateOptions) Target
 				} else if bash == legacyD2CredentialGlobalCmdPSPOSIX {
 					obj["bash"] = guardCredentialGlobalCmdPSPOSIX
 				} else if bash == legacyD11CredentialGlobalCmdPSPOSIX {
+					obj["bash"] = guardCredentialGlobalCmdPSPOSIX
+				} else if bash == legacyD18CredentialGlobalCmdPSPOSIX {
+					// REQ-2026-11-13 D18: migrate emulate-without-set+eu global credential form.
 					obj["bash"] = guardCredentialGlobalCmdPSPOSIX
 				}
 			}
@@ -2108,6 +2123,9 @@ func harnessGitBranchGuardTargetClaude(home, claudeDir string, claudeDirErr erro
 			migrateHookCommand(hooks["PostToolUse"], matcher, legacyD2GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
 			migrateHookCommand(hooks["PreToolUse"], matcher, legacyD11GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
 			migrateHookCommand(hooks["PostToolUse"], matcher, legacyD11GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
+			// REQ-2026-11-13 D18: migrate emulate-without-set+eu git-branch forms.
+			migrateHookCommand(hooks["PreToolUse"], matcher, legacyD18GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
+			migrateHookCommand(hooks["PostToolUse"], matcher, legacyD18GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
 		}
 		migrateGuardHookMatcher(hooks["PreToolUse"], "Bash", claudeShellMatcher, guardGitBranchCmdPSPOSIX)
 		migrateGuardHookMatcher(hooks["PostToolUse"], "Bash", claudeShellMatcher, guardGitBranchCmdPSPOSIX)
@@ -2505,6 +2523,9 @@ func harnessGitBranchGuardTargetCopilot(home string, opts UpdateOptions) TargetR
 				} else if bash == legacyD2GitBranchCmdPSPOSIX {
 					obj["bash"] = guardGitBranchCmdPSPOSIX
 				} else if bash == legacyD11GitBranchCmdPSPOSIX {
+					obj["bash"] = guardGitBranchCmdPSPOSIX
+				} else if bash == legacyD18GitBranchCmdPSPOSIX {
+					// REQ-2026-11-13 D18: migrate emulate-without-set+eu git-branch form.
 					obj["bash"] = guardGitBranchCmdPSPOSIX
 				}
 			}

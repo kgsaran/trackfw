@@ -21,6 +21,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/kgsaran/trackfw/internal/guardforms"
 )
 
 // --------------------------------------------------------------------------
@@ -1153,5 +1155,36 @@ func TestGuardBinaryProbeOnce_BinarioSemGuard_LOW3_InstallRemedy(t *testing.T) {
 	// pip install channel must be present (from LOW-2 fix applied to this message too).
 	if !strings.Contains(msg, "pip install trackfw") {
 		t.Errorf("LOW-3: mensagem deve conter 'pip install trackfw', obteve: %q", msg)
+	}
+}
+
+// TestGuardExpectedLinePin asserts that guardExpectedLine derives its return value
+// from the guardforms constants — not from an independent 5th literal copy.
+//
+// Reconciliação (REQ-2026-11-13 ML-2C): afirma que guardExpectedLine("credential",
+// PSPosix) == guardforms.CredentialCurrentPSPOSIX, e analogamente para git-branch,
+// write-scope e credential --global. Se a constante for atualizada sem atualizar a
+// derivação, este teste falha — detectando drift antes que outros testes o mascarem.
+func TestGuardExpectedLinePin(t *testing.T) {
+	type pinCase struct {
+		name     string
+		subcmd   string
+		expected string
+	}
+	cases := []pinCase{
+		{"credential", "credential", guardforms.CredentialCurrentPSPOSIX},
+		{"git-branch", "git-branch", guardforms.GitBranchCurrentPSPOSIX},
+		{"write-scope", "write-scope", guardforms.WriteScopeCurrentPSPOSIX},
+		{"credential --global", "credential --global", guardforms.CredentialGlobalCurrentPSPOSIX},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got := guardExpectedLine(tc.subcmd, guardShellFamilyPSPosix)
+			if got != tc.expected {
+				t.Errorf("guardExpectedLine(%q, PSPosix) diverge da constante:\n got: %q\nwant: %q",
+					tc.subcmd, got, tc.expected)
+			}
+		})
 	}
 }

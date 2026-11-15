@@ -20,7 +20,51 @@ package guardforms
 const (
 	// CredentialCurrentPSPOSIX is the canonical credential guard command for the
 	// POSIX/PS shell family (used by Claude, Codex, Gemini, Cursor, Windsurf, Copilot, Kiro).
-	CredentialCurrentPSPOSIX = `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+	// D18 ML-2I (REQ-2026-11-13): six-segment preamble that survives inherited
+	// $ErrorActionPreference='Stop', ReadOnly EAP, $WhatIfPreference=$true,
+	// $ConfirmPreference='Low'/'Medium', and Set-StrictMode -Version Latest in PowerShell
+	// — even without -NonInteractive — and produces zero extra stderr lines in POSIX shells.
+	//
+	// Segment order and rationale (each segment is safe in both runtimes):
+	//   1. set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0
+	//                      — PS: resets EAP to Continue with -Force (overrides ReadOnly),
+	//                        disables WhatIf mode (-WhatIf:0, integer 0 = $false for switch
+	//                        params, avoids $false variable reference which could be unset
+	//                        under POSIX nounset before segment 3 runs), disables Confirm mode
+	//                        (-Confirm:0). Must come FIRST so that segment 3 (set +eu) is not
+	//                        suppressed by an active WhatIf preference.  POSIX: sets positional
+	//                        params ($1=ErrorActionPreference, $2=Continue, …), exit 0 — no
+	//                        option processing because the first arg does not start with - or +.
+	//   2. set ConfirmPreference None -Force -WhatIf:0 -Confirm:0
+	//                      — PS: resets ConfirmPreference to None so that subsequent Set-Variable
+	//                        calls (segment 3: Set-Variable "+eu") do not open an interactive
+	//                        confirmation prompt when $ConfirmPreference='Low' or 'Medium' is
+	//                        inherited — without -NonInteractive, such a prompt drains stdin
+	//                        and the guard receives 0 bytes of the JSON payload (fail-open).
+	//                        -Force: overrides ReadOnly protection on $ConfirmPreference.
+	//                        -WhatIf:0 / -Confirm:0: inherited from segment 1 order-of-effect.
+	//                        POSIX: sets positional params ($1=ConfirmPreference, $2=None, …),
+	//                        exit 0 — same POSIX mechanics as segment 1.
+	//   3. set +eu         — POSIX: special builtin that disables errexit (+e) and nounset (+u).
+	//                        Runs AFTER segments 1 and 2 so that WhatIf and ConfirmPreference
+	//                        are already neutralised before Set-Variable "+eu" is evaluated.
+	//                        PS: Set-Variable "+eu" (silent, no error under any state since
+	//                        ConfirmPreference=None was set by segment 2).
+	//   4. null=/dev/null  — POSIX: variable assignment, defines $null=/dev/null so subsequent
+	//                        2>$null redirects are silenced.  PS: CommandNotFound (non-terminating,
+	//                        since EAP=Continue was forced above) — stderr noise accepted on PS.
+	//   5. Set-StrictMode -Off 2>$null
+	//                      — PS: disables StrictMode; $null is an automatic PS variable (always
+	//                        defined, safe even under inherited StrictMode) so the redirect never
+	//                        throws.  POSIX: command-not-found, stderr redirected to $null
+	//                        (=/dev/null from step 4) — zero extra POSIX stderr lines.
+	//
+	// After the preamble, all subsequent 2>$null redirects are safe because $null=/dev/null in
+	// POSIX and $null is the auto null-stream in PS.
+	// (REQ-2026-11-13 ML-2I, supersedes ML-2C form K which lacked the ConfirmPreference None
+	// segment and allowed stdin drain under Confirm Low/Medium without -NonInteractive.
+	// Form K was the first published preamble; form L is its successor.)
+	CredentialCurrentPSPOSIX = `set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set ConfirmPreference None -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE`
 
 	// CredentialCurrentCmdExe is the canonical credential guard command for the
 	// cmd.exe shell family (used by Amazon Q, Kiro on Windows).
@@ -28,7 +72,8 @@ const (
 
 	// GitBranchCurrentPSPOSIX is the canonical git-branch guard command for the
 	// POSIX/PS shell family.
-	GitBranchCurrentPSPOSIX = `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+	// D18 ML-2I (REQ-2026-11-13): six-segment preamble (see CredentialCurrentPSPOSIX).
+	GitBranchCurrentPSPOSIX = `set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set ConfirmPreference None -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE`
 
 	// GitBranchCurrentCmdExe is the canonical git-branch guard command for the
 	// cmd.exe shell family.
@@ -42,14 +87,16 @@ const (
 	// (`Bash|PowerShell`) names the tool matchers, not the executing shell.
 	// write-scope is wired only in the Write|Edit|NotebookEdit envelope, which is
 	// never executed by cmd.exe.
-	WriteScopeCurrentPSPOSIX = `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard write-scope; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+	// D18 ML-2I (REQ-2026-11-13): six-segment preamble (see CredentialCurrentPSPOSIX).
+	WriteScopeCurrentPSPOSIX = `set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set ConfirmPreference None -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard write-scope; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE`
 )
 
 // ─── Global (--global) current forms ───────────────────────────────────────
 
 const (
 	// CredentialGlobalCurrentPSPOSIX is the canonical global credential guard command.
-	CredentialGlobalCurrentPSPOSIX = `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+	// D18 ML-2I (REQ-2026-11-13): six-segment preamble (see CredentialCurrentPSPOSIX).
+	CredentialGlobalCurrentPSPOSIX = `set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set ConfirmPreference None -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE`
 
 	// CredentialGlobalCurrentCmdExe is the canonical global credential guard command for cmd.exe.
 	CredentialGlobalCurrentCmdExe = "trackfw guard credential --global || exit 2"
@@ -132,6 +179,27 @@ const (
 	LegacyWABashGitBranchPSPOSIX = `/bin/bash -c '$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE'`
 )
 
+// ─── Inline legacy forms — D18 (emulate prefix without set+eu) ─────────────
+//
+// These are the forms emitted before REQ-2026-11-13 / ADR D18 added the
+// "set +eu 2>${null-/dev/null}; " prefix. They exit 127 under inherited
+// errexit or nounset in POSIX shells. Exact-equality matching only (D12).
+
+const (
+	// LegacyD18CredentialPSPOSIX is the D18 legacy credential guard form
+	// (the previous current form, without the set+eu prefix).
+	LegacyD18CredentialPSPOSIX = `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+
+	// LegacyD18CredentialGlobalPSPOSIX is the D18 legacy global credential guard form.
+	LegacyD18CredentialGlobalPSPOSIX = `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+
+	// LegacyD18GitBranchPSPOSIX is the D18 legacy git-branch guard form.
+	LegacyD18GitBranchPSPOSIX = `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+
+	// LegacyD18WriteScopePSPOSIX is the D18 legacy write-scope guard form.
+	LegacyD18WriteScopePSPOSIX = `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard write-scope; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+)
+
 // ─── Inline legacy forms — cmd.exe family ──────────────────────────────────
 
 const (
@@ -167,6 +235,7 @@ var CredentialLegacyPSPOSIX = []string{
 	LegacyD11CredentialPSPOSIX,
 	LegacyD11RevCredentialPSPOSIX,
 	LegacyWABashCredentialPSPOSIX,
+	LegacyD18CredentialPSPOSIX,
 }
 
 // CredentialGlobalLegacyPSPOSIX is the complete list of all global POSIX/PS
@@ -176,6 +245,7 @@ var CredentialGlobalLegacyPSPOSIX = []string{
 	LegacyD11CredentialGlobalPSPOSIX,
 	LegacyD11RevCredentialGlobalPSPOSIX,
 	LegacyWABashCredentialGlobalPSPOSIX,
+	LegacyD18CredentialGlobalPSPOSIX,
 }
 
 // CredentialLegacyCmdExe is the complete list of all non-global cmd.exe
@@ -196,12 +266,19 @@ var GitBranchLegacyPSPOSIX = []string{
 	LegacyD11GitBranchPSPOSIX,
 	LegacyD11RevGitBranchPSPOSIX,
 	LegacyWABashGitBranchPSPOSIX,
+	LegacyD18GitBranchPSPOSIX,
 }
 
 // GitBranchLegacyCmdExe is the complete list of all cmd.exe legacy forms
 // for git-branch guard.
 var GitBranchLegacyCmdExe = []string{
 	LegacyD2GitBranchCmdExe,
+}
+
+// WriteScopeLegacyPSPOSIX is the complete list of all POSIX/PS legacy forms
+// for the write-scope guard.
+var WriteScopeLegacyPSPOSIX = []string{
+	LegacyD18WriteScopePSPOSIX,
 }
 
 // CredentialScriptPathForms returns the subset of CredentialLegacyPSPOSIX that are

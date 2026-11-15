@@ -17,6 +17,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/kgsaran/trackfw/internal/guardforms"
 )
 
 // guardProbeEndedByDeadline reporta se foi o prazo do contexto que encerrou o comando.
@@ -84,11 +86,28 @@ const (
 	guardShellFamilyCmdExe
 )
 
-// guardExpectedLine retorna a linha exata de hook D11 revised REQ-2026-10-20 fail-closed (com prefixo
-// emulate -R sh) para a família de shell e nome de subcomando dados
-// (REQ-2026-10-20 / REQ-2026-10-20 / ADR-2026-10-04 D11 revised). O subcmdName pode incluir
-// flags (ex.: "credential --global").
+// guardExpectedLine retorna a linha exata de hook D18 ML-2I (REQ-2026-11-13) fail-closed
+// (forma L: preamble com set ErrorActionPreference Continue, set ConfirmPreference None e
+// emulate -R sh) para a família de shell e nome de subcomando dados (ADR-2026-10-04 D18).
+// O subcmdName pode incluir flags (ex.: "credential --global").
+//
+// A construção desta função espelha as constantes em guardforms: preamble L + subcomando +
+// sufixo. Um teste em validator_guard_binary_probe_test.go confirma a paridade em tempo de
+// compilação (via go test), de modo que drift entre esta função e as constantes é detectado
+// imediatamente sem esperar o gate de integração.
 func guardExpectedLine(subcmdName string, fam guardShellFamily) string {
+	if fam == guardShellFamilyCmdExe {
+		return "trackfw guard " + subcmdName + " || exit 2"
+	}
+	return guardforms.CredentialCurrentPSPOSIX[:strings.Index(guardforms.CredentialCurrentPSPOSIX, "trackfw guard credential")] +
+		"trackfw guard " + subcmdName +
+		guardforms.CredentialCurrentPSPOSIX[strings.Index(guardforms.CredentialCurrentPSPOSIX, "; LASTEXITCODE=$(("):]
+}
+
+// guardEmulateLegacyLine retorna a linha D18 legada (emulate sem set+eu, pré-REQ-2026-11-13).
+// Esta forma sai 127 sob errexit/nounset herdados em POSIX shells; é tratada como warning
+// de migração, não violation. Só relevante para a família PS/POSIX.
+func guardEmulateLegacyLine(subcmdName string, fam guardShellFamily) string {
 	if fam == guardShellFamilyCmdExe {
 		return "trackfw guard " + subcmdName + " || exit 2"
 	}

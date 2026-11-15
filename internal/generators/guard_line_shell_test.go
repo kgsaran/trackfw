@@ -32,10 +32,44 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/kgsaran/trackfw/internal/guardforms"
 )
 
 // stdinPayload é o JSON que Claude Code entregaria ao hook de PreToolUse.
 const stdinPayload = `{"tool_name":"Bash","tool_input":{"command":"git add -A"}}`
+
+// setEuPrefix é o prefixo de um segmento da forma ML-1A (REQ-2026-11-13 ML-1A, substituída por
+// ML-1C e depois ML-1C2). Mantida aqui APENAS para derivar a linha ML-1A no contra-braço de
+// EAP=Stop (TestGuardLineShellMatrix_D18NovaContraArm_Stop):
+//
+//	ml1aLine = setEuPrefix + guardforms.LegacyD18*PSPOSIX
+//
+// NÃO use setEuPrefix para verificar o prefixo da forma atual — a forma atual começa com
+// ml1dPrefix (seis segmentos — forma L, ML-2I).
+const setEuPrefix = "set +eu 2>${null-/dev/null}; "
+
+// ml1dConfirmSeg é o segmento de ConfirmPreference adicionado pela forma L (ML-2I).
+// Colocado entre o segmento EAP e o set +eu para que Set-Variable "+eu" (ConfirmImpact=Medium)
+// não abra um prompt de confirmação quando $ConfirmPreference='Low'/'Medium' está herdado
+// e o PowerShell não está rodando com -NonInteractive. Sem ele, o prompt drenaria o stdin
+// e o guard receberia 0 bytes do payload JSON (fail-open).
+const ml1dConfirmSeg = "set ConfirmPreference None -Force -WhatIf:0 -Confirm:0; "
+
+// ml1dPrefix é o preamble de seis segmentos da forma L, adicionada pela REQ-2026-11-13
+// ML-2I. Coloca o reset de EAP com -Force/-WhatIf:0/-Confirm:0 ANTES do ConfirmPreference,
+// que por sua vez vem ANTES do set +eu, para que nem WhatIf nem ConfirmPreference possam
+// suprimir o próprio set +eu. Define null=/dev/null antes de qualquer 2>$null,
+// garantindo zero linhas de preamble no stderr POSIX. Em PowerShell, $null é variável
+// automática (sempre definida).
+//
+// Uso: verificar que a forma atual começa com este prefixo; âncora de sanidade nos
+// contra-braços (os oldLine/legacyLine vêm de guardforms, não derivados de guard.line).
+const ml1dPrefix = "set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; " + ml1dConfirmSeg + "set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; "
+
+// ml1dEmulateSegment é o segmento emulate da forma H (ML-1C2). Usa 2>$null para suprimir o
+// command-not-found de emulate em POSIX (onde $null já foi definido como /dev/null).
+const ml1dEmulateSegment = "emulate -R sh 2>$null; "
 
 // emulatePrefix é o prefixo que o REQ-2026-10-20 (ML-1B) adicionou para corrigir os dois pontos de aborto
 // do zsh. Usa `emulate -R sh` para desativar todas as opções zsh extras (EQUALS, NOMATCH, nounset, errexit,
@@ -138,6 +172,14 @@ func (r *psTimeoutRegistry) retryBudget(psBin string) (culprit string, spent boo
 
 // psTimeouts é o registro global de binários PS que estouraram o prazo nesta execução.
 var psTimeouts = &psTimeoutRegistry{m: map[string]string{}, retryUsed: map[string]string{}}
+
+// psConcurrencySem limita os processos pwsh simultâneos durante os testes.
+// Sem este limitador, dezenas de testes paralelos lançam pwsh ao mesmo tempo; a
+// latência de startup sobe acima de psCallDeadlineCeil, o fail-fast de psGuardedCall
+// dispara e todos os testes subsequentes saem com -1.
+// Tamanho 4: paralelo real (4 pwsh simultâneos), bem abaixo do limite de memória/CPU
+// de um M-series com 8 vCPUs.
+var psConcurrencySem = make(chan struct{}, 4)
 
 // psProbe executa <psBin> -NoProfile -NonInteractive -Command "exit 0" uma vez, sem cache.
 // Retorna (duração, erro). Destinada a verificar se a máquina está responsiva após um estouro.
@@ -270,19 +312,47 @@ var guardShellMatrix = []struct {
 // isolando o comportamento puro do zsh sem customizações.
 // ML-1B (REQ-2026-10-20): acrescentados dash, zsh -o errexit, zsh -o nounset, zsh -o cshnullglob
 // para cobrir as variantes de opção que a forma `unsetopt` não protegia.
+// ML-1A (REQ-2026-11-13): acrescentados bash/sh/dash com -e/-u e BASH_ENV/SHELLOPTS herdados
+// para cobrir os casos onde errexit/nounset é herdado pelo processo pai (D18).
 var shellEntries = []struct {
-	name  string
-	bin   string
-	flags []string
+	name       string
+	bin        string
+	flags      []string
+	extraEnvFn func(t *testing.T) []string // nil = sem env extra; chamado dentro do sub-test
 }{
-	{"sh", "sh", nil},
-	{"bash", "bash", nil},
-	{"zsh", "zsh", nil},
-	{"zsh-f", "zsh", []string{"-f"}},
-	{"dash", "dash", nil},
-	{"zsh-errexit", "zsh", []string{"-o", "errexit"}},
-	{"zsh-nounset", "zsh", []string{"-o", "nounset"}},
-	{"zsh-cshnullglob", "zsh", []string{"-o", "cshnullglob"}},
+	{"sh", "sh", nil, nil},
+	{"bash", "bash", nil, nil},
+	{"zsh", "zsh", nil, nil},
+	{"zsh-f", "zsh", []string{"-f"}, nil},
+	{"dash", "dash", nil, nil},
+	{"zsh-errexit", "zsh", []string{"-o", "errexit"}, nil},
+	{"zsh-nounset", "zsh", []string{"-o", "nounset"}, nil},
+	{"zsh-cshnullglob", "zsh", []string{"-o", "cshnullglob"}, nil},
+	// D18: shells POSIX com opções herdadas que causavam saída 127 na forma anterior.
+	{"bash-e", "bash", []string{"-e"}, nil},
+	{"bash-u", "bash", []string{"-u"}, nil},
+	{"sh-e", "sh", []string{"-e"}, nil},
+	{"sh-u", "sh", []string{"-u"}, nil},
+	{"dash-e", "dash", []string{"-e"}, nil},
+	// SHELLOPTS=errexit herdado via env — bash torna-o readonly dentro do processo.
+	{"bash-shellopts-errexit", "bash", nil, func(t *testing.T) []string {
+		return []string{"SHELLOPTS=errexit"}
+	}},
+	// BASH_ENV sourced com set -e / set -u.
+	{"bash-BASH_ENV-sete", "bash", nil, func(t *testing.T) []string {
+		f := filepath.Join(t.TempDir(), "bash_env_e")
+		if err := os.WriteFile(f, []byte("set -e\n"), 0600); err != nil {
+			t.Fatalf("criando BASH_ENV-sete: %v", err)
+		}
+		return []string{"BASH_ENV=" + f}
+	}},
+	{"bash-BASH_ENV-setu", "bash", nil, func(t *testing.T) []string {
+		f := filepath.Join(t.TempDir(), "bash_env_u")
+		if err := os.WriteFile(f, []byte("set -u\n"), 0600); err != nil {
+			t.Fatalf("criando BASH_ENV-setu: %v", err)
+		}
+		return []string{"BASH_ENV=" + f}
+	}},
 }
 
 // makeFakeTrackfw cria um stub "trackfw" em dir que:
@@ -296,7 +366,7 @@ func makeFakeTrackfw(t *testing.T, dir string) {
 	stub := filepath.Join(dir, "trackfw")
 	content := "#!/bin/sh\n" +
 		"cat > \"$(dirname \"$0\")/stdin.out\"\n" +
-		"echo -n 'motivo-deny-fake' >&2\n" +
+		"printf '%s' 'motivo-deny-fake' >&2\n" +
 		"exit ${FAKE_RC:-0}\n"
 	if err := os.WriteFile(stub, []byte(content), 0755); err != nil {
 		t.Fatalf("criando fake trackfw: %v", err)
@@ -306,10 +376,15 @@ func makeFakeTrackfw(t *testing.T, dir string) {
 // runGuardLine executa a linha de guard via o shell indicado.
 // Retorna (exitCode, stderr, stdinCaptured, erro de execução).
 // stdinCaptured é o conteúdo de stdin.out gravado pelo stub, ou "" se o stub não rodou.
+//
+// extraEnv: variáveis adicionais a injetar (ex: SHELLOPTS=errexit, BASH_ENV=/path/to/file).
+// BASH_ENV e SHELLOPTS são sempre removidos do env herdado antes de aplicar extraEnv, para que o
+// test controle exatamente quais dessas variáveis estão presentes.
 func runGuardLine(
 	t *testing.T,
 	shellBin string,
 	shellFlags []string,
+	extraEnv []string,
 	line string,
 	fakeDir string, // diretório com o stub; "" = trackfw ausente do PATH
 	fakeRC int,
@@ -331,10 +406,14 @@ func runGuardLine(
 	}
 
 	// Propagar env mínimo, sobrescrevendo PATH e adicionando FAKE_RC.
+	// BASH_ENV e SHELLOPTS são removidos do env herdado — o test os controla via extraEnv.
 	base := os.Environ()
-	filtered := make([]string, 0, len(base)+2)
+	filtered := make([]string, 0, len(base)+2+len(extraEnv))
 	for _, e := range base {
-		if strings.HasPrefix(e, "PATH=") || strings.HasPrefix(e, "FAKE_RC=") {
+		if strings.HasPrefix(e, "PATH=") ||
+			strings.HasPrefix(e, "FAKE_RC=") ||
+			strings.HasPrefix(e, "BASH_ENV=") ||
+			strings.HasPrefix(e, "SHELLOPTS=") {
 			continue
 		}
 		filtered = append(filtered, e)
@@ -343,6 +422,7 @@ func runGuardLine(
 	if fakeDir != "" {
 		filtered = append(filtered, fmt.Sprintf("FAKE_RC=%d", fakeRC))
 	}
+	filtered = append(filtered, extraEnv...)
 	cmd.Env = filtered
 
 	cmd.Stdin = strings.NewReader(stdinPayload)
@@ -663,6 +743,8 @@ func runGuardLinePS(
 			return psProbe(psBin, psCallDeadlineCeil)
 		},
 		func(d time.Duration) psExecResult {
+			psConcurrencySem <- struct{}{}
+			defer func() { <-psConcurrencySem }()
 			return execPSCommand(psBin, line, fakeDir, fakeRC, d)
 		})
 
@@ -729,11 +811,20 @@ func TestGuardLineShellMatrix(t *testing.T) {
 						t.Skipf("%s não encontrado em PATH — shell ausente neste ambiente", sh.bin)
 					}
 
+					// Construir env extra (BASH_ENV, SHELLOPTS, etc.) para este shell.
+					var xenv []string
+					if sh.extraEnvFn != nil {
+						xenv = sh.extraEnvFn(t)
+					}
+
 					// Caso 1: FAKE_RC=0 (allow) → exit 0, stdin preservado.
+					// t.Parallel() é seguro: cada caso tem seu próprio t.TempDir() e não usa
+					// t.Setenv (extraEnvFn retorna []string, não chama os.Setenv direto).
 					t.Run("RC0-allow", func(t *testing.T) {
+						t.Parallel()
 						dir := t.TempDir()
 						makeFakeTrackfw(t, dir)
-						code, _, captured := runGuardLine(t, shellPath, sh.flags, guard.line, dir, 0)
+						code, _, captured := runGuardLine(t, shellPath, sh.flags, xenv, guard.line, dir, 0)
 						if code != 0 {
 							t.Errorf("FAKE_RC=0: esperado exit 0, obteve %d", code)
 						}
@@ -744,9 +835,10 @@ func TestGuardLineShellMatrix(t *testing.T) {
 
 					// Caso 2: FAKE_RC=2 (deny canônico) → exit 2, stderr com motivo, stdin preservado.
 					t.Run("RC2-deny", func(t *testing.T) {
+						t.Parallel()
 						dir := t.TempDir()
 						makeFakeTrackfw(t, dir)
-						code, stderr, captured := runGuardLine(t, shellPath, sh.flags, guard.line, dir, 2)
+						code, stderr, captured := runGuardLine(t, shellPath, sh.flags, xenv, guard.line, dir, 2)
 						if code != 2 {
 							t.Errorf("FAKE_RC=2: esperado exit 2, obteve %d", code)
 						}
@@ -760,17 +852,20 @@ func TestGuardLineShellMatrix(t *testing.T) {
 
 					// Caso 3: FAKE_RC=1 (deny não-canônico) → normalizado para exit 2.
 					t.Run("RC1-deny-normalizado", func(t *testing.T) {
+						t.Parallel()
 						dir := t.TempDir()
 						makeFakeTrackfw(t, dir)
-						code, _, _ := runGuardLine(t, shellPath, sh.flags, guard.line, dir, 1)
+						code, _, _ := runGuardLine(t, shellPath, sh.flags, xenv, guard.line, dir, 1)
 						if code != 2 {
 							t.Errorf("FAKE_RC=1: esperado exit 2 (normalizado), obteve %d", code)
 						}
 					})
 
 					// Caso 4: trackfw ausente do PATH → fail-closed, exit 2.
+					// t.Parallel() é seguro: usa dir="" sem modificar PATH via t.Setenv.
 					t.Run("absent", func(t *testing.T) {
-						code, _, _ := runGuardLine(t, shellPath, sh.flags, guard.line, "", 0)
+						t.Parallel()
+						code, _, _ := runGuardLine(t, shellPath, sh.flags, xenv, guard.line, "", 0)
 						if code != 2 {
 							t.Errorf("trackfw ausente: esperado exit 2, obteve %d", code)
 						}
@@ -808,6 +903,7 @@ func TestGuardLineShellMatrix(t *testing.T) {
 					// Caso 1: FAKE_RC=0 (allow) → exit 0, stdin preservado.
 					// Afirma: a linha PS/POSIX não altera o exit code quando trackfw sai 0.
 					t.Run("RC0-allow", func(t *testing.T) {
+						t.Parallel()
 						dir := t.TempDir()
 						makeFakeTrackfwForOS(t, dir)
 						code, _, captured := runGuardLinePS(t, psBin, guard.line, dir, 0)
@@ -823,6 +919,7 @@ func TestGuardLineShellMatrix(t *testing.T) {
 					// Caso 2: FAKE_RC=2 (deny canônico) → exit 2, motivo no stderr.
 					// Afirma: a linha PS/POSIX propaga exit 2 e o motivo do guard sob PowerShell.
 					t.Run("RC2-deny", func(t *testing.T) {
+						t.Parallel()
 						dir := t.TempDir()
 						makeFakeTrackfwForOS(t, dir)
 						code, stderr, captured := runGuardLinePS(t, psBin, guard.line, dir, 2)
@@ -841,6 +938,7 @@ func TestGuardLineShellMatrix(t *testing.T) {
 					// Caso 3: FAKE_RC=1 (deny não-canônico) → normalizado para exit 2.
 					// Afirma: a linha PS/POSIX normaliza exit 1 para exit 2 sob PowerShell.
 					t.Run("RC1-deny-normalizado", func(t *testing.T) {
+						t.Parallel()
 						dir := t.TempDir()
 						makeFakeTrackfwForOS(t, dir)
 						code, _, _ := runGuardLinePS(t, psBin, guard.line, dir, 1)
@@ -853,7 +951,9 @@ func TestGuardLineShellMatrix(t *testing.T) {
 					// Afirma: a linha PS/POSIX falha fechada quando trackfw não está no PATH sob PowerShell.
 					// Guarda de vacuidade: LookPath sobre o PATH montado confirma que trackfw não resolve
 					// antes de afirmar que a ausência foi realmente exercitada (não falso-verde por stub
-					// instalado no PATH do sistema). t.Setenv é seguro aqui: nenhum t.Parallel no arquivo.
+					// instalado no PATH do sistema). t.Setenv é seguro aqui: ps.name não é paralelo e
+					// os irmãos paralelos (RC0/RC2/RC1) são liberados só depois que o corpo do ps.name
+					// retorna — após o absent ter completado e restaurado PATH via Cleanup.
 					t.Run("absent", func(t *testing.T) {
 						absentPath := buildPSPath("")
 						t.Setenv("PATH", absentPath)
@@ -872,13 +972,15 @@ func TestGuardLineShellMatrix(t *testing.T) {
 	}
 }
 
-// TestGuardLineShellMatrix_DefeitoAntigo demonstra que a forma ANTIGA (sem o prefixo emulate -R sh)
+// TestGuardLineShellMatrix_DefeitoAntigo demonstra que a forma ANTIGA (sem emulate -R sh e sem set +eu)
 // falha sob zsh com FAKE_RC=2 — saindo com exit ≠ 2.
 // Esse braço é a "prova de mordida": se o teste passar com a forma antiga, ele não distingue
 // defeito de correção e não tem valor como regressão.
 //
 // Reconciliação (REQ-2026-10-20): afirma que a forma D11 revised sem emulate -R sh sai ≠ 2
 // sob zsh, confirmando que o prefixo emulate é necessário.
+// Atualizado (REQ-2026-11-13 ML-1C2): oldLine vem de guardforms.LegacyD11Rev* (constante estável)
+// em vez de ser derivada de guard.line, pois a forma H usa 2>$null que requer null=/dev/null.
 func TestGuardLineShellMatrix_DefeitoAntigo(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shells POSIX não disponíveis em Windows")
@@ -889,17 +991,46 @@ func TestGuardLineShellMatrix_DefeitoAntigo(t *testing.T) {
 		t.Skip("zsh não encontrado — braço do defeito não aplicável neste ambiente")
 	}
 
+	// Mapeamento guard-name → D11Rev legacy constant (guardforms).
+	// write-scope não tem D11RevWriteScope próprio (guard adicionado após D11Rev); usa
+	// strings.TrimPrefix(LegacyD18WriteScopePSPOSIX, emulatePrefix) como equivalente.
+	type d11revEntry struct {
+		name    string
+		oldLine string
+	}
+	d11revMatrix := []d11revEntry{
+		{"git-branch", guardforms.LegacyD11RevGitBranchPSPOSIX},
+		{"credential", guardforms.LegacyD11RevCredentialPSPOSIX},
+		{"write-scope", strings.TrimPrefix(guardforms.LegacyD18WriteScopePSPOSIX, emulatePrefix)},
+		{"credential-global", guardforms.LegacyD11RevCredentialGlobalPSPOSIX},
+	}
+	// Indexar por nome para fácil acesso no loop de guardShellMatrix.
+	d11revByName := make(map[string]string, len(d11revMatrix))
+	for _, e := range d11revMatrix {
+		d11revByName[e.name] = e.oldLine
+	}
+
 	for _, guard := range guardShellMatrix {
 		guard := guard
 		t.Run(guard.name, func(t *testing.T) {
-			// Confirmar que o prefixo emulate existe nas constantes (falha de compilação mascararia o defeito).
-			if !strings.HasPrefix(guard.line, emulatePrefix) {
-				t.Fatalf("constante %q não começa com o prefixo emulate esperado %q — a correção foi removida?",
-					guard.name, emulatePrefix)
+			// Sanidade: confirmar que a forma atual começa com ml1dPrefix seguido de ml1dEmulateSegment.
+			// Se qualquer um estiver ausente, a correção ML-2I (forma L) foi removida.
+			if !strings.HasPrefix(guard.line, ml1dPrefix) {
+				t.Fatalf("constante %q não começa com ml1dPrefix %q — fix D18 ML-2I (forma L) foi removido?",
+					guard.name, ml1dPrefix)
+			}
+			afterML1D := strings.TrimPrefix(guard.line, ml1dPrefix)
+			if !strings.HasPrefix(afterML1D, ml1dEmulateSegment) {
+				t.Fatalf("constante %q após remoção de ml1dPrefix não começa com ml1dEmulateSegment %q — fix D11Rev foi removido?",
+					guard.name, ml1dEmulateSegment)
 			}
 
-			// Forma antiga: remover o prefixo emulate da linha gerada (D11 revised, sem nenhum prefixo).
-			oldLine := strings.TrimPrefix(guard.line, emulatePrefix)
+			// Forma antiga D11Rev-era: vem de guardforms (constante estável, sem $null).
+			// Essa é a forma que falha sob zsh por causa de EQUALS e NOMATCH.
+			oldLine, ok := d11revByName[guard.name]
+			if !ok {
+				t.Fatalf("d11revByName não tem entrada para %q — atualizar mapeamento", guard.name)
+			}
 
 			// Exercitar sob zsh com FAKE_RC=2.
 			dir := t.TempDir()
@@ -915,7 +1046,10 @@ func TestGuardLineShellMatrix_DefeitoAntigo(t *testing.T) {
 			base := os.Environ()
 			filtered := make([]string, 0, len(base)+2)
 			for _, e := range base {
-				if strings.HasPrefix(e, "PATH=") || strings.HasPrefix(e, "FAKE_RC=") {
+				if strings.HasPrefix(e, "PATH=") ||
+					strings.HasPrefix(e, "FAKE_RC=") ||
+					strings.HasPrefix(e, "BASH_ENV=") ||
+					strings.HasPrefix(e, "SHELLOPTS=") {
 					continue
 				}
 				filtered = append(filtered, e)
@@ -936,13 +1070,13 @@ func TestGuardLineShellMatrix_DefeitoAntigo(t *testing.T) {
 			// Se sair com exit 2, o braço não detecta o defeito original — é falso-verde.
 			if code == 2 {
 				t.Errorf(
-					"braço do defeito (%s): forma antiga saiu com exit 2 sob zsh — "+
+					"braço do defeito (%s): forma D11Rev-era saiu com exit 2 sob zsh — "+
 						"o prefixo emulate pode não ser necessário para este guard ou o zsh está configurado de forma não-padrão; "+
 						"verificar ambiente zsh",
 					guard.name,
 				)
 			} else {
-				t.Logf("braço do defeito (%s): forma antiga saiu com exit %d (esperado ≠ 2) — defeito confirmado", guard.name, code)
+				t.Logf("braço do defeito (%s): forma D11Rev-era saiu com exit %d (esperado ≠ 2) — defeito D11Rev confirmado", guard.name, code)
 			}
 		})
 	}
@@ -965,18 +1099,43 @@ func TestGuardLineShellMatrix_UnsetoptInsuficiente(t *testing.T) {
 		t.Skip("zsh não encontrado — braço de regressão não aplicável neste ambiente")
 	}
 
+	// Mapeamento guard-name → D11Rev legacy body (mesma lógica de DefeitoAntigo).
+	// write-scope: TrimPrefix(LegacyD18WriteScopePSPOSIX, emulatePrefix).
+	type unsetoptEntry struct {
+		name string
+		body string
+	}
+	unsetoptBodies := []unsetoptEntry{
+		{"git-branch", guardforms.LegacyD11RevGitBranchPSPOSIX},
+		{"credential", guardforms.LegacyD11RevCredentialPSPOSIX},
+		{"write-scope", strings.TrimPrefix(guardforms.LegacyD18WriteScopePSPOSIX, emulatePrefix)},
+		{"credential-global", guardforms.LegacyD11RevCredentialGlobalPSPOSIX},
+	}
+	unsetoptBodyByName := make(map[string]string, len(unsetoptBodies))
+	for _, e := range unsetoptBodies {
+		unsetoptBodyByName[e.name] = e.body
+	}
+
 	for _, guard := range guardShellMatrix {
 		guard := guard
 		t.Run(guard.name, func(t *testing.T) {
-			// Verificar que a constante começa com emulate (não unsetopt) — se começar com
-			// unsetopt, a regressão ficou sem cobertura.
-			if !strings.HasPrefix(guard.line, emulatePrefix) {
-				t.Fatalf("constante %q não começa com emulatePrefix — forma errada aplicada",
+			// Sanidade: verificar que a constante começa com ml1dPrefix + ml1dEmulateSegment.
+			// A regressão precisa de ambos para confirmar que apenas emulate não era suficiente.
+			if !strings.HasPrefix(guard.line, ml1dPrefix) {
+				t.Fatalf("constante %q não começa com ml1dPrefix — fix D18 ML-2I (forma L) foi removido?",
+					guard.name)
+			}
+			afterML1D := strings.TrimPrefix(guard.line, ml1dPrefix)
+			if !strings.HasPrefix(afterML1D, ml1dEmulateSegment) {
+				t.Fatalf("constante %q após remoção de ml1dPrefix não começa com ml1dEmulateSegment — fix D11Rev foi removido?",
 					guard.name)
 			}
 
-			// Construir a forma unsetopt: unsetoptOldPrefix + corpo sem o emulate.
-			body := strings.TrimPrefix(guard.line, emulatePrefix)
+			// Construir a forma unsetopt: unsetoptOldPrefix + body D11Rev (de guardforms, com ${null-/dev/null}).
+			body, ok := unsetoptBodyByName[guard.name]
+			if !ok {
+				t.Fatalf("unsetoptBodyByName não tem entrada para %q — atualizar mapeamento", guard.name)
+			}
 			unsetoptLine := unsetoptOldPrefix + body
 
 			// Exercitar sob zsh -o nounset com FAKE_RC=2.
@@ -993,7 +1152,10 @@ func TestGuardLineShellMatrix_UnsetoptInsuficiente(t *testing.T) {
 			base := os.Environ()
 			filtered := make([]string, 0, len(base)+2)
 			for _, e := range base {
-				if strings.HasPrefix(e, "PATH=") || strings.HasPrefix(e, "FAKE_RC=") {
+				if strings.HasPrefix(e, "PATH=") ||
+					strings.HasPrefix(e, "FAKE_RC=") ||
+					strings.HasPrefix(e, "BASH_ENV=") ||
+					strings.HasPrefix(e, "SHELLOPTS=") {
 					continue
 				}
 				filtered = append(filtered, e)
@@ -1021,6 +1183,180 @@ func TestGuardLineShellMatrix_UnsetoptInsuficiente(t *testing.T) {
 			} else {
 				t.Logf("forma unsetopt saiu com exit %d (≠ 2) sob zsh -o nounset (%s) — "+
 					"insuficiência confirmada; emulate -R sh é necessário", code, guard.name)
+			}
+		})
+	}
+}
+
+// d18ShellKind classifica o shell em "dash" ou "bash" seguindo os symlinks do shellPath.
+// Usado pelo contra-braço D18 para determinar o código de saída esperado sob -u:
+//   - "dash": sai com 2 (código de erro nounset do dash) antes de executar o guard.
+//   - "bash": sai com 127 (comando não encontrado) — qualquer shell que não seja dash.
+//
+// No Linux, /bin/sh geralmente é um symlink para /usr/bin/dash (ou /bin/dash) → "dash".
+// No macOS, /bin/sh é um binário Mach-O real que implementa bash → "bash" (EvalSymlinks
+// não avança além do próprio binário; o base name é "sh", não "dash").
+// Se EvalSymlinks falhar, usa o base name do shellPath como aproximação.
+func d18ShellKind(shellPath string) string {
+	resolved, err := filepath.EvalSymlinks(shellPath)
+	if err != nil {
+		resolved = shellPath
+	}
+	base := strings.ToLower(filepath.Base(resolved))
+	if base == "dash" || strings.HasPrefix(base, "dash") {
+		return "dash"
+	}
+	return "bash"
+}
+
+// TestGuardLineShellMatrix_D18ContraArm demonstra que a forma D18 legacy (emulate -R sh sem o
+// prefixo set +eu) falha com o guard nunca rodando sob shells POSIX com errexit ou nounset
+// herdados. Essa é a "prova de mordida" do D18: se a forma legada funcionasse nesses ambientes,
+// o fix D18 seria desnecessário e este braço seria falso-verde.
+//
+// Comportamento por shell (medido):
+//   - bash-e, bash-u, sh-e, sh-u-em-macOS (sh=binário próprio), dash-e: exit ≠ 2 (tipicamente 127)
+//     — shell aborta por "emulate" ou comando não encontrado; guard não roda.
+//   - dash-u, sh-u-em-linux (sh→dash via symlink): exit == 2 (fail-closed)
+//     — dash aborta com código 2 ao expandir $LASTEXITCODE indefinido sob nounset.
+//     stdin.out ausente é a única prova de que o guard não rodou, pois exit 2 coincide
+//     com o código de deny do stub (FAKE_RC=2).
+//
+// Reconciliação (REQ-2026-11-13 ML-2E): afirma que cada forma legada D18 sai com o código
+// esperado por shell (exit ≠ 2 ou exit == 2 dependendo de dash+nounset) E guard não rodou
+// (stdin.out ausente). A classificação por d18ShellKind(shellPath) determina qual expectativa
+// se aplica em tempo de execução, sem depender de GOOS.
+func TestGuardLineShellMatrix_D18ContraArm(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shells POSIX não disponíveis em Windows")
+	}
+
+	// Mapeamento guard-name → D18 legacy constant (guardforms).
+	type d18Entry struct {
+		name    string
+		legLine string
+	}
+	d18Matrix := []d18Entry{
+		{"git-branch", guardforms.LegacyD18GitBranchPSPOSIX},
+		{"credential", guardforms.LegacyD18CredentialPSPOSIX},
+		{"write-scope", guardforms.LegacyD18WriteScopePSPOSIX},
+		{"credential-global", guardforms.LegacyD18CredentialGlobalPSPOSIX},
+	}
+
+	// Shells POSIX com opções herdadas.
+	// dash-u é o caso fail-closed (exit 2 por nounset); demais saem com 127.
+	// dash-e e dash-u: pulados se dash não estiver disponível.
+	type d18Shell struct {
+		name  string
+		bin   string
+		flags []string
+	}
+	d18Shells := []d18Shell{
+		{"bash-e", "bash", []string{"-e"}},
+		{"bash-u", "bash", []string{"-u"}},
+		{"sh-e", "sh", []string{"-e"}},
+		{"sh-u", "sh", []string{"-u"}},
+		{"dash-e", "dash", []string{"-e"}},
+		{"dash-u", "dash", []string{"-u"}},
+	}
+
+	for _, guard := range d18Matrix {
+		guard := guard
+		t.Run(guard.name, func(t *testing.T) {
+			for _, sh := range d18Shells {
+				sh := sh
+				t.Run(sh.name, func(t *testing.T) {
+					shellPath, err := exec.LookPath(sh.bin)
+					if err != nil {
+						t.Skipf("%s não encontrado em PATH — braço D18 não aplicável neste ambiente", sh.bin)
+					}
+
+					// Classificar o shell pelo caminho real (resolve symlinks).
+					// d18ShellKind e exec.CommandContext usam o mesmo shellPath — sem divergência.
+					kind := d18ShellKind(shellPath)
+					hasDashU := false
+					for _, f := range sh.flags {
+						if f == "-u" {
+							hasDashU = true
+							break
+						}
+					}
+					// dash com -u aborta com exit 2 antes do guard (fail-closed por nounset).
+					// Demais combinações saem com 127 (emulate não encontrado).
+					wantExit2 := kind == "dash" && hasDashU
+
+					dir := t.TempDir()
+					makeFakeTrackfw(t, dir)
+
+					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+					defer cancel()
+
+					args := append(sh.flags, "-c", guard.legLine)
+					cmd := exec.CommandContext(ctx, shellPath, args...)
+
+					pathVal := dir + ":/usr/bin:/bin"
+					base := os.Environ()
+					filtered := make([]string, 0, len(base)+2)
+					for _, e := range base {
+						if strings.HasPrefix(e, "PATH=") ||
+							strings.HasPrefix(e, "FAKE_RC=") ||
+							strings.HasPrefix(e, "BASH_ENV=") ||
+							strings.HasPrefix(e, "SHELLOPTS=") {
+							continue
+						}
+						filtered = append(filtered, e)
+					}
+					filtered = append(filtered, "PATH="+pathVal, "FAKE_RC=2")
+					cmd.Env = filtered
+					cmd.Stdin = strings.NewReader(stdinPayload)
+
+					runErr := cmd.Run()
+					code := 0
+					if runErr != nil {
+						if exitErr, ok := runErr.(*exec.ExitError); ok {
+							code = exitErr.ExitCode()
+						}
+					}
+
+					if wantExit2 {
+						// dash -u: fail-closed — sai com 2 (código nounset do dash) antes do guard.
+						if code != 2 {
+							t.Errorf(
+								"D18 contra-braço (%s/%s, shell=%s, kind=%s): exit %d — "+
+									"esperado 2 (dash -u aborta com 2 em variável indefinida antes do guard)",
+								guard.name, sh.name, shellPath, kind, code,
+							)
+						} else {
+							t.Logf("D18 contra-braço (%s/%s, shell=%s): exit 2 — fail-closed dash-u confirmado",
+								guard.name, sh.name, shellPath)
+						}
+					} else {
+						// Demais: fail-open por 127 — guard nunca roda, mas sai ≠ 2.
+						if code == 2 {
+							t.Errorf(
+								"D18 contra-braço (%s/%s, shell=%s, kind=%s): forma legada saiu com exit 2 — "+
+									"esperado exit ≠ 2; verificar se a forma legada foi alterada em guardforms",
+								guard.name, sh.name, shellPath, kind,
+							)
+						} else {
+							t.Logf("D18 contra-braço (%s/%s, shell=%s): exit %d (≠ 2) — defeito D18 confirmado",
+								guard.name, sh.name, shellPath, code)
+						}
+					}
+
+					// Confirmar que o guard nunca rodou (stdin.out não deve existir).
+					// Para dash-u: distingue "shell abortou antes do guard" (exit 2, sem stdin.out)
+					// de "guard rodou e negou" (exit 2, com stdin.out) — FAKE_RC=2 coincide com o
+					// código nounset do dash, então stdin.out é a única prova invariante.
+					stdinOutPath := filepath.Join(dir, "stdin.out")
+					if _, statErr := os.Stat(stdinOutPath); statErr == nil {
+						t.Errorf(
+							"D18 contra-braço (%s/%s, shell=%s): stdin.out existe — guard rodou quando não deveria; "+
+								"a forma legada pode estar passando por outro mecanismo",
+							guard.name, sh.name, shellPath,
+						)
+					}
+				})
 			}
 		})
 	}
@@ -1630,5 +1966,1258 @@ func TestPSGuardedCall_OrcamentoBinarioDiferente(t *testing.T) {
 		t.Error("bin B: orçamento deve estar gasto após nova tentativa")
 	} else if culprit != t.Name()+"/chamadaB" {
 		t.Errorf("bin B: culprit esperado %q; got %q", t.Name()+"/chamadaB", culprit)
+	}
+}
+
+// execPSCommandOpts é a versão configurável de execPSCommand.
+// noProfile=true insere "-NoProfile" nos argumentos (comportamento padrão).
+// noProfile=false omite "-NoProfile", permitindo que o perfil do usuário seja carregado.
+// extraEnv: variáveis adicionais de ambiente a injetar (ex: XDG_CONFIG_HOME=…).
+func execPSCommandOpts(psBin, command, fakeDir string, fakeRC int, timeout time.Duration, noProfile bool, extraEnv []string) psExecResult {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	var args []string
+	if noProfile {
+		args = []string{"-NoProfile", "-NonInteractive", "-Command", command}
+	} else {
+		args = []string{"-NonInteractive", "-Command", command}
+	}
+	cmd := exec.CommandContext(ctx, psBin, args...)
+	cmd.WaitDelay = psWaitDelay
+
+	pathVal := buildPSPath(fakeDir)
+
+	// Se extraEnv já fornece PATH=..., não adicionamos o pathVal computado — evita
+	// dois PATH= no env. Em exec+Unix o comportamento com chaves duplicadas é indefinido;
+	// no macOS libc prevalece o primeiro, então dois PATH= levaria o filho ao PATH
+	// errado em vez do fornecido por extraEnv.
+	extraHasPath := false
+	for _, e := range extraEnv {
+		if strings.HasPrefix(strings.ToUpper(e), "PATH=") {
+			extraHasPath = true
+			break
+		}
+	}
+
+	base := os.Environ()
+	filtered := make([]string, 0, len(base)+2+len(extraEnv))
+	for _, e := range base {
+		upper := strings.ToUpper(e)
+		if strings.HasPrefix(upper, "PATH=") || strings.HasPrefix(upper, "FAKE_RC=") {
+			continue
+		}
+		filtered = append(filtered, e)
+	}
+	if !extraHasPath {
+		filtered = append(filtered, "PATH="+pathVal)
+	}
+	if fakeDir != "" {
+		filtered = append(filtered, fmt.Sprintf("FAKE_RC=%d", fakeRC))
+	}
+	filtered = append(filtered, extraEnv...)
+	cmd.Env = filtered
+
+	cmd.Stdin = strings.NewReader(stdinPayload)
+	var errBuf bytes.Buffer
+	cmd.Stderr = &errBuf
+
+	err := cmd.Run()
+
+	var r psExecResult
+	r.stderr = errBuf.String()
+	r.started = cmd.ProcessState != nil
+
+	switch {
+	case err == nil:
+		r.exitCode = 0
+	case errors.Is(err, exec.ErrWaitDelay):
+		r.runErr = err
+	default:
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			r.exitCode = exitErr.ExitCode()
+		} else {
+			r.runErr = err
+		}
+	}
+	r.timedOut = ctx.Err() == context.DeadlineExceeded
+	return r
+}
+
+// runGuardLinePSNoProfile executa a linha de guard via PowerShell SEM -NoProfile,
+// injetando as variáveis de ambiente extras (ex: XDG_CONFIG_HOME para controlar o perfil).
+// A assinatura e semântica de timeout seguem runGuardLinePS.
+func runGuardLinePSNoProfile(
+	t *testing.T,
+	psBin string,
+	line string,
+	fakeDir string,
+	fakeRC int,
+	extraEnv []string,
+) (exitCode int, stderr string, stdinCaptured string) {
+	t.Helper()
+
+	firstDur, retryDur, warmupErr := psWarmupOrRetry(psBin)
+	if warmupErr != nil {
+		t.Fatalf("aquecimento de %s falhou: %v", psBin, warmupErr)
+	}
+	warmup := firstDur
+	if retryDur > 0 {
+		warmup = retryDur
+	}
+
+	r, probeDur, fatal := psGuardedCall(psTimeouts, psBin, t.Name(), warmup,
+		func() (time.Duration, error) {
+			return psProbe(psBin, psCallDeadlineCeil)
+		},
+		func(d time.Duration) psExecResult {
+			psConcurrencySem <- struct{}{}
+			defer func() { <-psConcurrencySem }()
+			return execPSCommandOpts(psBin, line, fakeDir, fakeRC, d, false, extraEnv)
+		})
+
+	if probeDur > 0 {
+		t.Logf("sonda de %s: %.2fs", filepath.Base(psBin), probeDur.Seconds())
+	}
+	if fatal != "" {
+		t.Fatalf("%s", fatal)
+	}
+	if r.runErr != nil {
+		t.Fatalf("erro de execução em %s: %v", psBin, r.runErr)
+	}
+
+	var captured string
+	if fakeDir != "" {
+		data, readErr := os.ReadFile(filepath.Join(fakeDir, "stdin.out"))
+		if readErr == nil {
+			captured = strings.ReplaceAll(string(data), "\r\n", "\n")
+			captured = strings.TrimRight(captured, "\n")
+		}
+	}
+
+	return r.exitCode, r.stderr, captured
+}
+
+// TestGuardLineShellMatrix_PSConstantsStructural afirma que as 4 constantes PS/POSIX
+// partilham preamble e sufixo idênticos (derivados de git-branch como referência),
+// diferindo apenas no segmento de subcomando. Não requer pwsh — é um teste puramente
+// estático sobre o valor das constantes.
+//
+// Reconciliação (REQ-2026-11-13 ML-2D): afirma que todos os subcomandos partilham o
+// mesmo preamble e sufixo que git-branch, tornando desnecessário repetir a matriz
+// completa de estados PS para cada subcomando.
+func TestGuardLineShellMatrix_PSConstantsStructural(t *testing.T) {
+	// Mapeamento canônico guard.name → subcomando esperado na linha.
+	expectedSubcmds := map[string]string{
+		"git-branch":        "git-branch",
+		"credential":        "credential",
+		"write-scope":       "write-scope",
+		"credential-global": "credential --global",
+	}
+
+	const sepFw = "trackfw guard "
+
+	// Derivar preamble e sufixo de referência a partir da constante git-branch.
+	refLine := ""
+	for _, g := range guardShellMatrix {
+		if g.name == "git-branch" {
+			refLine = g.line
+			break
+		}
+	}
+	if refLine == "" {
+		t.Fatal("git-branch not found in guardShellMatrix")
+	}
+
+	// Preamble: tudo antes de "trackfw guard git-branch".
+	refSubcmd := expectedSubcmds["git-branch"]
+	refFull := sepFw + refSubcmd
+	idx := strings.Index(refLine, refFull)
+	if idx < 0 {
+		t.Fatalf("git-branch line does not contain %q:\n%q", refFull, refLine)
+	}
+	refPre := refLine[:idx]
+	refSuf := refLine[idx+len(refFull):]
+
+	// Verificar cada constante contra o template derivado de git-branch.
+	for _, g := range guardShellMatrix {
+		g := g
+		t.Run(g.name, func(t *testing.T) {
+			sub, ok := expectedSubcmds[g.name]
+			if !ok {
+				t.Fatalf("expectedSubcmds does not have entry for %q — update the map", g.name)
+			}
+			wantLine := refPre + sepFw + sub + refSuf
+			if g.line != wantLine {
+				t.Errorf("constant %q line mismatch:\n got: %q\nwant: %q", g.name, g.line, wantLine)
+			}
+		})
+	}
+}
+
+// TestGuardLineShellMatrix_PSInheritedState testa a forma L (ML-2I) sob estados PS
+// herdados: Continue, Stop, StrictMode Latest, ReadOnly-Stop, WhatIf+Stop e ConfirmLow+Stop,
+// sozinhos e combinados, via duas formas de herança:
+//
+//   - via -Command: o estado é injetado como prefixo na linha de comando.
+//   - via perfil: o estado é definido num perfil temporário em XDG_CONFIG_HOME.
+//
+// Estratégia de cobertura (ML-2D): a matriz completa roda apenas para git-branch;
+// os outros 3 subcomandos recebem apenas um smoke test (EAP=Stop via -Command,
+// allow e deny) pois TestGuardLineShellMatrix_PSConstantsStructural garante que
+// todos partilham o mesmo preamble e sufixo.
+//
+// Reconciliação (REQ-2026-11-13 ML-2C/ML-2D/ML-2I):
+//   - Braço -Command: afirma que a forma L sai com RC correto (0 = allow, 2 = deny ou
+//     ausente) mesmo quando EAP=Continue/Stop, ReadOnly-EAP, WhatIf=$true ou
+//     ConfirmPreference=Low estão ativos antes da linha — o preamble L neutraliza sem
+//     emitir ruído no stderr POSIX. Nota: estes braços rodam com -NonInteractive;
+//     o caso sem -NonInteractive sob Confirm Low/Medium é coberto por
+//     TestGuardLineShellMatrix_LContraArm_ConfirmLow.
+//   - Braço perfil: afirma que a forma L sobrevive ao mesmo estado imposto pelo perfil
+//     do usuário.
+//   - Smoke test: afirma que os outros 3 subcomandos sobrevivem a EAP=Stop via -Command.
+func TestGuardLineShellMatrix_PSInheritedState(t *testing.T) {
+	psBin, err := exec.LookPath("pwsh")
+	if err != nil {
+		t.Skip("pwsh não encontrado — braço PS de estado herdado não aplicável neste ambiente")
+	}
+	ensurePSWarmup(t, psBin)
+
+	// Condições via -Command: prefix prepended à linha de guard.
+	// Continue é a baseline; os outros estados são os que a forma K deve neutralizar.
+	type cmdCond struct {
+		name   string
+		prefix string
+	}
+	cmdConditions := []cmdCond{
+		{"continue-via-command", "$ErrorActionPreference='Continue'; "},
+		{"stop-via-command", "$ErrorActionPreference='Stop'; "},
+		{"strictmode-via-command", "Set-StrictMode -Version Latest; "},
+		{"stop-and-strictmode-via-command", "Set-StrictMode -Version Latest; $ErrorActionPreference='Stop'; "},
+		{"readonly-stop-via-command", "Set-Variable -Name ErrorActionPreference -Value Stop -Option ReadOnly; "},
+		{"whatif-stop-via-command", "$WhatIfPreference = $true; $ErrorActionPreference = 'Stop'; "},
+		{"confirm-low-stop-via-command", "$ConfirmPreference = 'Low'; $ErrorActionPreference = 'Stop'; "},
+	}
+
+	// Condições via perfil: conteúdo PS escrito em Microsoft.PowerShell_profile.ps1.
+	type profCond struct {
+		name    string
+		content string
+	}
+	profConditions := []profCond{
+		{"continue-via-profile", "$ErrorActionPreference = 'Continue'\n"},
+		{"stop-via-profile", "$ErrorActionPreference = 'Stop'\n"},
+		{"strictmode-via-profile", "Set-StrictMode -Version Latest\n"},
+		{"stop-and-strictmode-via-profile", "Set-StrictMode -Version Latest\n$ErrorActionPreference = 'Stop'\n"},
+		{"readonly-stop-via-profile", "Set-Variable -Name ErrorActionPreference -Value Stop -Option ReadOnly\n"},
+		{"whatif-stop-via-profile", "$WhatIfPreference = $true\n$ErrorActionPreference = 'Stop'\n"},
+		{"confirm-low-stop-via-profile", "$ConfirmPreference = 'Low'\n$ErrorActionPreference = 'Stop'\n"},
+	}
+
+	// Encontrar a constante git-branch para a matriz completa.
+	gitBranchLine := ""
+	for _, g := range guardShellMatrix {
+		if g.name == "git-branch" {
+			gitBranchLine = g.line
+			break
+		}
+	}
+	if gitBranchLine == "" {
+		t.Fatal("git-branch not found in guardShellMatrix")
+	}
+
+	// ── Matriz completa: somente git-branch ──────────────────────────────────────────
+	// Exercita todas as 7 condições × 2 meios (comando e perfil) × 4 casos.
+	// Todos os 4 casos (RC0, RC2, RC1, absent) rodam em paralelo dentro de cada
+	// condição: absent usa extraEnv PATH em vez de t.Setenv, o que habilita t.Parallel()
+	// nele e, por consequência, t.Parallel() em cond.name e pcond.name também.
+	t.Run("git-branch", func(t *testing.T) {
+
+		// ── Braço -Command ──────────────────────────────────────────────────────
+		for _, cond := range cmdConditions {
+			cond := cond
+			t.Run(cond.name, func(t *testing.T) {
+				// t.Parallel() é seguro: o corpo apenas define 'line' e lança 4 sub-testes
+				// paralelos. Nenhum dos sub-testes chama t.Setenv; absent usa PATH via
+				// extraEnv do filho — não modifica o ambiente do processo.
+				t.Parallel()
+				line := cond.prefix + gitBranchLine
+
+				t.Run("RC0-allow", func(t *testing.T) {
+					t.Parallel()
+					dir := t.TempDir()
+					makeFakeTrackfwForOS(t, dir)
+					code, _, _ := runGuardLinePS(t, psBin, line, dir, 0)
+					if code != 0 {
+						t.Errorf("git-branch/%s: RC0-allow: esperado exit 0, obteve %d", cond.name, code)
+					}
+					if _, sErr := os.Stat(filepath.Join(dir, "stdin.out")); os.IsNotExist(sErr) {
+						t.Errorf("git-branch/%s: RC0-allow: guard não rodou (stdin.out ausente)", cond.name)
+					}
+				})
+
+				t.Run("RC2-deny", func(t *testing.T) {
+					t.Parallel()
+					dir := t.TempDir()
+					makeFakeTrackfwForOS(t, dir)
+					code, _, _ := runGuardLinePS(t, psBin, line, dir, 2)
+					if code != 2 {
+						t.Errorf("git-branch/%s: RC2-deny: esperado exit 2, obteve %d", cond.name, code)
+					}
+					if _, sErr := os.Stat(filepath.Join(dir, "stdin.out")); os.IsNotExist(sErr) {
+						t.Errorf("git-branch/%s: RC2-deny: guard não rodou", cond.name)
+					}
+				})
+
+				t.Run("RC1-deny-normalizado", func(t *testing.T) {
+					t.Parallel()
+					dir := t.TempDir()
+					makeFakeTrackfwForOS(t, dir)
+					code, _, _ := runGuardLinePS(t, psBin, line, dir, 1)
+					if code != 2 {
+						t.Errorf("git-branch/%s: RC1-deny-normalizado: esperado exit 2, obteve %d", cond.name, code)
+					}
+				})
+
+				t.Run("absent", func(t *testing.T) {
+					// t.Parallel() é seguro: PATH é passado via extraEnv ao processo filho;
+					// não chamamos t.Setenv nem os.Setenv — o PATH do processo pai não é alterado.
+					// Guarda de vacuidade: escanear absentPath diretamente (não exec.LookPath, que
+					// veria o PATH do processo pai, não o PATH que o filho receberá).
+					t.Parallel()
+					absentPath := buildPSPath("")
+					for _, d := range filepath.SplitList(absentPath) {
+						if _, statErr := os.Stat(filepath.Join(d, "trackfw")); statErr == nil {
+							t.Fatalf("trackfw encontrado em %s — caso absent é vacuidade", filepath.Join(d, "trackfw"))
+						}
+						if runtime.GOOS == "windows" {
+							for _, ext := range []string{".exe", ".cmd"} {
+								if _, statErr := os.Stat(filepath.Join(d, "trackfw"+ext)); statErr == nil {
+									t.Fatalf("trackfw%s em absentPath — caso absent é vacuidade", ext)
+								}
+							}
+						}
+					}
+					code, _, _ := runGuardLinePSNoProfile(t, psBin, line, "", 0, []string{"PATH=" + absentPath})
+					if code != 2 {
+						t.Errorf("git-branch/%s: absent: esperado exit 2, obteve %d", cond.name, code)
+					}
+				})
+			})
+		}
+
+		// ── Braço perfil ────────────────────────────────────────────────────────────
+		// Apenas para pwsh no macOS/Linux: usa XDG_CONFIG_HOME para apontar para um
+		// diretório temporário isolado. Um marcador escrito pelo próprio perfil confirma
+		// que o perfil foi realmente carregado antes de avaliar os resultados.
+		if runtime.GOOS == "windows" {
+			t.Log("perfil via XDG_CONFIG_HOME pulado no Windows")
+			return
+		}
+
+		for _, pcond := range profConditions {
+			pcond := pcond
+			t.Run(pcond.name, func(t *testing.T) {
+				// t.Parallel() é seguro: o corpo cria seu próprio xdgDir (t.TempDir()),
+				// não usa t.Setenv; absent passa PATH via extraEnv ao processo filho.
+				// Os 7 pcond.name correm em paralelo — incluindo as verificações de
+				// carregamento de perfil (execPSCommandOpts), que antes eram serializadas.
+				t.Parallel()
+				xdgDir := t.TempDir()
+				profileDir := filepath.Join(xdgDir, "powershell")
+				if mkErr := os.MkdirAll(profileDir, 0755); mkErr != nil {
+					t.Fatalf("criando diretório de perfil: %v", mkErr)
+				}
+				markerPath := filepath.Join(xdgDir, "profile_loaded")
+				// Perfil: escreve marcador ANTES de definir o estado — WhatIf=$true suprimiria
+				// New-Item se o estado fosse definido primeiro; Confirm-Low+Stop e ReadOnly-Stop
+				// também exigem esta ordem fixa.
+				profileContent := `New-Item -Path "` + markerPath + `" -ItemType File -Force | Out-Null` + "\n" +
+					pcond.content
+				profileFile := filepath.Join(profileDir, "Microsoft.PowerShell_profile.ps1")
+				if wErr := os.WriteFile(profileFile, []byte(profileContent), 0644); wErr != nil {
+					t.Fatalf("escrevendo perfil: %v", wErr)
+				}
+				xdgEnv := []string{"XDG_CONFIG_HOME=" + xdgDir}
+
+				// Verificar se o perfil carrega (exit 0, marcador criado).
+				psConcurrencySem <- struct{}{}
+				checkR := execPSCommandOpts(psBin, "exit 0", "", 0, psCallDeadlineCeil, false, xdgEnv)
+				<-psConcurrencySem
+				if checkR.timedOut || checkR.runErr != nil {
+					t.Skipf("verificação de carregamento de perfil falhou: timedOut=%v runErr=%v — pulando braço de perfil", checkR.timedOut, checkR.runErr)
+				}
+				if _, mErr := os.Stat(markerPath); os.IsNotExist(mErr) {
+					t.Skipf("perfil não carregado (marcador ausente em %s) — XDG_CONFIG_HOME pode não ser suportado nesta versão do pwsh; pulando braço de perfil", markerPath)
+				}
+
+				// Remover marcador da verificação de carregamento. O perfil o cria
+				// antes do estado (primeira linha do perfil — ver profileContent acima),
+				// garantindo que New-Item execute antes que WhatIf, Confirm ou Stop
+				// possam suprimi-lo.
+				if rmErr := os.Remove(markerPath); rmErr != nil {
+					t.Fatalf("removendo marcador antes de sub-teste: %v", rmErr)
+				}
+
+				t.Run("RC0-allow", func(t *testing.T) {
+					t.Parallel()
+					dir := t.TempDir()
+					makeFakeTrackfwForOS(t, dir)
+					code, _, _ := runGuardLinePSNoProfile(t, psBin, gitBranchLine, dir, 0, xdgEnv)
+					if code != 0 {
+						t.Errorf("git-branch/%s: RC0-allow (perfil): esperado exit 0, obteve %d", pcond.name, code)
+					}
+					if _, sErr := os.Stat(filepath.Join(dir, "stdin.out")); os.IsNotExist(sErr) {
+						t.Errorf("git-branch/%s: RC0-allow (perfil): guard não rodou", pcond.name)
+					}
+				})
+
+				t.Run("RC2-deny", func(t *testing.T) {
+					t.Parallel()
+					dir := t.TempDir()
+					makeFakeTrackfwForOS(t, dir)
+					code, _, _ := runGuardLinePSNoProfile(t, psBin, gitBranchLine, dir, 2, xdgEnv)
+					if code != 2 {
+						t.Errorf("git-branch/%s: RC2-deny (perfil): esperado exit 2, obteve %d", pcond.name, code)
+					}
+					if _, sErr := os.Stat(filepath.Join(dir, "stdin.out")); os.IsNotExist(sErr) {
+						t.Errorf("git-branch/%s: RC2-deny (perfil): guard não rodou", pcond.name)
+					}
+				})
+
+				t.Run("RC1-deny-normalizado", func(t *testing.T) {
+					t.Parallel()
+					dir := t.TempDir()
+					makeFakeTrackfwForOS(t, dir)
+					code, _, _ := runGuardLinePSNoProfile(t, psBin, gitBranchLine, dir, 1, xdgEnv)
+					if code != 2 {
+						t.Errorf("git-branch/%s: RC1-deny-normalizado (perfil): esperado exit 2, obteve %d", pcond.name, code)
+					}
+				})
+
+				t.Run("absent", func(t *testing.T) {
+					// t.Parallel() é seguro (ver raciocínio do braço -Command): PATH
+					// é passado via extraEnv; não usamos t.Setenv.
+					// append(xdgEnv, ...) preserva XDG_CONFIG_HOME para que o perfil
+					// ainda carregue — a ausência de trackfw não depende do EAP do perfil.
+					t.Parallel()
+					absentPath := buildPSPath("")
+					for _, d := range filepath.SplitList(absentPath) {
+						if _, statErr := os.Stat(filepath.Join(d, "trackfw")); statErr == nil {
+							t.Fatalf("trackfw em %s — caso absent é vacuidade", filepath.Join(d, "trackfw"))
+						}
+						if runtime.GOOS == "windows" {
+							for _, ext := range []string{".exe", ".cmd"} {
+								if _, statErr := os.Stat(filepath.Join(d, "trackfw"+ext)); statErr == nil {
+									t.Fatalf("trackfw%s em absentPath — caso absent é vacuidade", ext)
+								}
+							}
+						}
+					}
+					code, _, _ := runGuardLinePSNoProfile(t, psBin, gitBranchLine, "", 0,
+						append(xdgEnv, "PATH="+absentPath))
+					if code != 2 {
+						t.Errorf("git-branch/%s: absent (perfil): esperado exit 2, obteve %d", pcond.name, code)
+					}
+				})
+			})
+		}
+	})
+
+	// ── Smoke test: outros 3 subcomandos (EAP=Stop via -Command: allow e deny) ──────
+	// TestGuardLineShellMatrix_PSConstantsStructural garante que credential, write-scope
+	// e credential-global têm o mesmo preamble e sufixo que git-branch. Portanto, basta
+	// exercitar um estado representativo (Stop via -Command) com RC0-allow e RC2-deny
+	// para confirmar que o guard roda e propaga o exit code corretamente.
+	// Os 3 smoke tests rodam em paralelo entre si (nenhum usa t.Setenv).
+	const stopPrefixSmoke = "$ErrorActionPreference='Stop'; "
+	for _, guard := range guardShellMatrix {
+		if guard.name == "git-branch" {
+			continue
+		}
+		guard := guard
+		t.Run(guard.name+"-smoke-stop", func(t *testing.T) {
+			t.Parallel()
+			smokeLine := stopPrefixSmoke + guard.line
+
+			t.Run("RC0-allow", func(t *testing.T) {
+				t.Parallel()
+				dir := t.TempDir()
+				makeFakeTrackfwForOS(t, dir)
+				code, _, _ := runGuardLinePS(t, psBin, smokeLine, dir, 0)
+				if code != 0 {
+					t.Errorf("%s smoke-stop: RC0-allow: esperado exit 0, obteve %d", guard.name, code)
+				}
+				if _, sErr := os.Stat(filepath.Join(dir, "stdin.out")); os.IsNotExist(sErr) {
+					t.Errorf("%s smoke-stop: RC0-allow: guard não rodou (stdin.out ausente)", guard.name)
+				}
+			})
+
+			t.Run("RC2-deny", func(t *testing.T) {
+				t.Parallel()
+				dir := t.TempDir()
+				makeFakeTrackfwForOS(t, dir)
+				code, _, _ := runGuardLinePS(t, psBin, smokeLine, dir, 2)
+				if code != 2 {
+					t.Errorf("%s smoke-stop: RC2-deny: esperado exit 2, obteve %d", guard.name, code)
+				}
+				if _, sErr := os.Stat(filepath.Join(dir, "stdin.out")); os.IsNotExist(sErr) {
+					t.Errorf("%s smoke-stop: RC2-deny: guard não rodou (stdin.out ausente)", guard.name)
+				}
+			})
+		})
+	}
+}
+
+// TestGuardLineShellMatrix_HContraArm_ReadOnlyStop demonstra que a forma H (nunca released,
+// substituída por ML-2C/forma K, e depois por ML-2I/forma L) falha sob PowerShell com EAP
+// configurado como ReadOnly=Stop — saindo com exit ≠ 0 e sem rodar o guard. Esta é a "prova
+// de mordida" do ML-2C: se a forma H passasse sob ReadOnly-Stop, o -Force em K/L seria
+// desnecessário.
+//
+// A forma H é construída a partir de peças da forma L (nunca como literal contíguo) para evitar
+// que o teste em si seja um veículo de propagação da forma defeituosa:
+//
+//	hForm = hPreamble + L[após os três primeiros segmentos de L (kSeg1+kSeg1b+kSeg2)]
+//
+// Reconciliação (REQ-2026-11-13 ML-2C/ML-2I): afirma que a forma H sai com exit ≠ 0 sob
+// ReadOnly-Stop (Set-Variable -Option ReadOnly com Value Stop), confirmando que -Force
+// em L é necessário para sobrescrever a variável somente-leitura.
+func TestGuardLineShellMatrix_HContraArm_ReadOnlyStop(t *testing.T) {
+	psBin, err := exec.LookPath("pwsh")
+	if err != nil {
+		t.Skip("pwsh não encontrado — contra-braço H ReadOnly-Stop não aplicável neste ambiente")
+	}
+	ensurePSWarmup(t, psBin)
+
+	// Prefixo ReadOnly-Stop: define EAP como Stop com opção ReadOnly (simula perfil restritivo).
+	const readOnlyStopPrefix = "Set-Variable -Name ErrorActionPreference -Value Stop -Option ReadOnly; "
+
+	// Segmentos do L que constituem o preamble (devem ser mantidos sincronizados com ml1dPrefix).
+	// kSeg1b é o segmento de ConfirmPreference adicionado pela forma L (ML-2I); coincide com
+	// ml1dConfirmSeg (definido no escopo do pacote). Duplicado aqui para explicitar a estrutura.
+	const kSeg1 = "set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; "
+	const kSeg1b = ml1dConfirmSeg // "set ConfirmPreference None -Force -WhatIf:0 -Confirm:0; "
+	const kSeg2 = "set +eu; "
+	// Preamble da forma H: ordena set +eu primeiro, sem -Force/-WhatIf:0/-Confirm:0.
+	const hPreamble = "set +eu; set ErrorActionPreference Continue; "
+
+	for _, guard := range guardShellMatrix {
+		guard := guard
+		t.Run(guard.name, func(t *testing.T) {
+			// Sanidade: confirmar que a forma L começa com os três segmentos esperados (kSeg1+kSeg1b+kSeg2).
+			if !strings.HasPrefix(guard.line, kSeg1+kSeg1b+kSeg2) {
+				t.Fatalf("forma L de %q não começa com kSeg1+kSeg1b+kSeg2 — forma L foi alterada?", guard.name)
+			}
+
+			// Construir forma H a partir das peças de L (H nunca foi released).
+			// H = hPreamble + resto após kSeg1+kSeg1b+kSeg2 (sem os três segmentos de cabeçalho).
+			hForm := hPreamble + guard.line[len(kSeg1)+len(kSeg1b)+len(kSeg2):]
+
+			// Verificar sanidade: H não deve conter -Force.
+			if strings.Contains(hForm, "-Force") {
+				t.Fatalf("forma H construída para %q ainda contém -Force — verificar derivação", guard.name)
+			}
+
+			// Executar a forma H sob ReadOnly-Stop via -Command.
+			lineUnderReadOnly := readOnlyStopPrefix + hForm
+
+			dir := t.TempDir()
+			makeFakeTrackfwForOS(t, dir)
+
+			r := execPSCommand(psBin, lineUnderReadOnly, dir, 2, psCallDeadlineCeil)
+			if r.timedOut {
+				t.Skipf("contra-braço H ReadOnly-Stop: timeout ao executar forma H sob ReadOnly-Stop — pulando")
+			}
+			if r.runErr != nil {
+				t.Fatalf("contra-braço H ReadOnly-Stop: erro de execução: %v", r.runErr)
+			}
+
+			// A forma H DEVE falhar sob ReadOnly-Stop (exit ≠ 0).
+			if r.exitCode == 0 {
+				t.Errorf(
+					"contra-braço H ReadOnly-Stop (%s): forma H saiu com exit 0 sob ReadOnly-Stop — "+
+						"esperado exit ≠ 0; o -Force em K pode ser desnecessário",
+					guard.name,
+				)
+			} else {
+				t.Logf("contra-braço H ReadOnly-Stop (%s): forma H saiu com exit %d (esperado ≠ 0) — defeito H confirmado", guard.name, r.exitCode)
+			}
+
+			// Confirmar que o guard nunca rodou (stdin.out não deve existir).
+			if _, statErr := os.Stat(filepath.Join(dir, "stdin.out")); statErr == nil {
+				t.Errorf(
+					"contra-braço H ReadOnly-Stop (%s): stdin.out existe — guard rodou quando não deveria",
+					guard.name,
+				)
+			}
+		})
+	}
+}
+
+// TestGuardLineShellMatrix_D18NovaContraArm_Stop demonstra que a forma ML-1A (REQ-2026-11-13 ML-1A,
+// substituída por ML-1C, ML-1C2 e depois ML-2C/forma K) falha sob PowerShell com EAP=Stop herdado —
+// saindo com exit ≠ 0 e sem rodar o guard. Esta é a "prova de mordida" do ML-2C: se a forma ML-1A
+// passasse sob Stop, o fix seria desnecessário e este braço seria falso-verde.
+//
+// A forma ML-1A é construída a partir de guardforms.LegacyD18*PSPOSIX (constante estável):
+//
+//	ml1aLine = setEuPrefix + guardforms.LegacyD18*PSPOSIX
+//
+// Reconciliação (REQ-2026-11-13 ML-1C/ML-2C): afirma que a forma ML-1A (`set +eu 2>${null-/dev/null}; …`)
+// sai com exit ≠ 0 sob EAP=Stop — `emulate -R sh 2>${null-/dev/null}` em ML-1A usa ${null-/dev/null}
+// como alvo de redirecionamento; sob Stop, a CommandNotFound do `emulate` vira exceção terminante que
+// propaga antes que `2>${null-/dev/null}` possa suprimi-la, saindo exit 1. ML-2C/forma K mantém
+// null=/dev/null e adiciona -Force/-WhatIf:0/-Confirm:0 no preamble — zero stderr em POSIX.
+func TestGuardLineShellMatrix_D18NovaContraArm_Stop(t *testing.T) {
+	psBin, err := exec.LookPath("pwsh")
+	if err != nil {
+		t.Skip("pwsh não encontrado — contra-braço ML-1A Stop não aplicável neste ambiente")
+	}
+	ensurePSWarmup(t, psBin)
+
+	// Mapeamento guard-name → LegacyD18 form (guardforms).
+	type d18Entry struct {
+		name    string
+		legLine string
+	}
+	d18Matrix := []d18Entry{
+		{"git-branch", guardforms.LegacyD18GitBranchPSPOSIX},
+		{"credential", guardforms.LegacyD18CredentialPSPOSIX},
+		{"write-scope", guardforms.LegacyD18WriteScopePSPOSIX},
+		{"credential-global", guardforms.LegacyD18CredentialGlobalPSPOSIX},
+	}
+	d18ByName := make(map[string]string, len(d18Matrix))
+	for _, e := range d18Matrix {
+		d18ByName[e.name] = e.legLine
+	}
+
+	for _, guard := range guardShellMatrix {
+		guard := guard
+		t.Run(guard.name, func(t *testing.T) {
+			// Sanidade: verificar que ml1dPrefix está presente — forma atual deve ser L.
+			if !strings.HasPrefix(guard.line, ml1dPrefix) {
+				t.Fatalf("constante %q não começa com ml1dPrefix %q — forma L (ML-2I) foi removida?",
+					guard.name, ml1dPrefix)
+			}
+
+			// Construir ML-1A a partir de LegacyD18 (constante estável com 2>${null-/dev/null}).
+			legD18, ok := d18ByName[guard.name]
+			if !ok {
+				t.Fatalf("d18ByName não tem entrada para %q — atualizar mapeamento", guard.name)
+			}
+			ml1aLine := setEuPrefix + legD18
+
+			// Verificar que a derivação produziu o prefixo esperado (guard de sanidade).
+			if !strings.HasPrefix(ml1aLine, setEuPrefix) {
+				t.Fatalf("derivação ML-1A inconsistente: ml1aLine não começa com setEuPrefix; got %q", ml1aLine[:min(len(ml1aLine), 60)])
+			}
+
+			// Executar a forma ML-1A sob EAP=Stop via -Command.
+			stopPrefix := "$ErrorActionPreference='Stop'; "
+			lineUnderStop := stopPrefix + ml1aLine
+
+			dir := t.TempDir()
+			makeFakeTrackfwForOS(t, dir)
+
+			r := execPSCommand(psBin, lineUnderStop, dir, 2, psCallDeadlineCeil)
+			if r.timedOut {
+				t.Skipf("contra-braço ML-1A Stop: timeout ao executar forma ML-1A sob Stop — pulando")
+			}
+			if r.runErr != nil {
+				t.Fatalf("contra-braço ML-1A Stop: erro de execução: %v", r.runErr)
+			}
+
+			// A forma ML-1A DEVE falhar sob EAP=Stop (exit ≠ 0).
+			if r.exitCode == 0 {
+				t.Errorf(
+					"contra-braço ML-1A Stop (%s): forma ML-1A saiu com exit 0 sob EAP=Stop — "+
+						"esperado exit ≠ 0; verificar se a forma ML-1A foi alterada ou se o Stop não está ativo",
+					guard.name,
+				)
+			} else {
+				t.Logf("contra-braço ML-1A Stop (%s): forma ML-1A saiu com exit %d sob EAP=Stop (esperado ≠ 0) — defeito ML-1A confirmado", guard.name, r.exitCode)
+			}
+
+			// Confirmar que o guard nunca rodou (stdin.out não deve existir).
+			stdinOutPath := filepath.Join(dir, "stdin.out")
+			if _, statErr := os.Stat(stdinOutPath); statErr == nil {
+				t.Errorf(
+					"contra-braço ML-1A Stop (%s): stdin.out existe — guard rodou quando não deveria; "+
+						"a forma ML-1A pode estar passando sob Stop por outro mecanismo",
+					guard.name,
+				)
+			}
+		})
+	}
+}
+
+// TestGuardLineShellMatrix_PreambleNoStderr afirma que a forma L (ML-2I) não produz ruído de
+// preamble no stderr em shells POSIX — o stderr é byte-idêntico ao que o guard fake escreve.
+// Isto é: zero linhas extras antes ou depois do conteúdo normal do guard.
+// O novo segmento de ConfirmPreference (ml1dConfirmSeg) é POSIX-inerte: `set ConfirmPreference
+// None ...` em shells POSIX define argumentos posicionais, exit 0, zero stderr.
+//
+// Contra-braço: a forma CAND_F (ML-1C, nunca released) falha esta asserção em shells POSIX
+// porque `Set-StrictMode -Off` sem redirecionamento emite uma linha de "command not found"
+// antes do output do guard. A forma está em candFCredentialPSPOSIX dentro do sub-teste.
+//
+// Reconciliação (REQ-2026-11-13 ML-2C/ML-2I): afirma que nenhuma das formas atuais emite linhas
+// adicionais de stderr por chamada POSIX (zero linhas de preamble, independente de allow/deny).
+func TestGuardLineShellMatrix_PreambleNoStderr(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shells POSIX não disponíveis em Windows")
+	}
+
+	// FRCs a testar: allow (0), deny canônico (2), deny não-canônico (1).
+	// O stub SEMPRE escreve "motivo-deny-fake" no stderr independente do FAKE_RC.
+	type frcCase struct {
+		name string
+		frc  int
+	}
+	frcCases := []frcCase{
+		{"allow", 0},
+		{"deny", 2},
+		{"frc1", 1},
+	}
+
+	// O stub trackfw escreve exatamente "motivo-deny-fake" (sem newline) no stderr.
+	// Stderr esperado = apenas o que o guard escreve; zero ruído de preamble.
+	const expectedStderr = "motivo-deny-fake"
+
+	// ── Braço L (forma atual, ML-2I) ─────────────────────────────────────────────────
+	for _, guard := range guardShellMatrix {
+		guard := guard
+		t.Run(guard.name, func(t *testing.T) {
+			for _, sh := range shellEntries {
+				sh := sh
+				t.Run(sh.name, func(t *testing.T) {
+					shellPath, lookErr := exec.LookPath(sh.bin)
+					if lookErr != nil {
+						t.Skipf("%s não encontrado em PATH — shell ausente neste ambiente", sh.bin)
+					}
+
+					var xenv []string
+					if sh.extraEnvFn != nil {
+						xenv = sh.extraEnvFn(t)
+					}
+
+					for _, fc := range frcCases {
+						fc := fc
+						// t.Parallel() é seguro: cada frcCase usa t.TempDir() próprio e não usa t.Setenv.
+						t.Run(fc.name, func(t *testing.T) {
+							t.Parallel()
+							dir := t.TempDir()
+							makeFakeTrackfw(t, dir)
+							_, stderr, _ := runGuardLine(t, shellPath, sh.flags, xenv, guard.line, dir, fc.frc)
+							if stderr != expectedStderr {
+								t.Errorf(
+									"preamble noise detectado (%s/%s/%s): got %q, want %q",
+									guard.name, sh.name, fc.name, stderr, expectedStderr,
+								)
+							}
+						})
+					}
+				})
+			}
+		})
+	}
+
+	// ── Contra-braço CAND_F ───────────────────────────────────────────────────
+	// A forma ML-1C (CAND_F) deve produzir stderr ≠ "motivo-deny-fake" em sh,
+	// pois `Set-StrictMode -Off` sem redirecionamento emite "command not found"
+	// antes do output do guard.
+	//
+	// CAND_F foi candidato em REQ-2026-11-13 ML-1C mas NUNCA foi released/commitado:
+	// `git log -S'Set-StrictMode -Off;'` vem vazio. A forma está aqui APENAS como
+	// contra-braço para provar que o teste distingue ruído de preamble de ausência de
+	// ruído; ela não consta no registry de guardforms (remoção em ML-1C3).
+	//
+	// candFCredentialPSPOSIX é a forma CAND_F (ML-1C, nunca released) para credential guard.
+	// Mantida SOMENTE como contra-braço; NÃO usar fora deste bloco.
+	const candFCredentialPSPOSIX = `set +eu; Set-StrictMode -Off; set ErrorActionPreference Continue; emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+
+	// Usa o credential guard com deny (frc=2) como caso representativo.
+	t.Run("cand_f-preamble-noise", func(t *testing.T) {
+		shPath, lookErr := exec.LookPath("sh")
+		if lookErr != nil {
+			t.Skip("sh não encontrado — contra-braço CAND_F não aplicável")
+		}
+
+		dir := t.TempDir()
+		makeFakeTrackfw(t, dir)
+		_, stderr, _ := runGuardLine(t, shPath, nil, nil, candFCredentialPSPOSIX, dir, 2)
+		// O mecanismo deve ser verificado: stderr deve conter a mensagem "command not found" de
+		// Set-StrictMode (ruído de preamble) E terminar com a saída do guard (motivo-deny-fake).
+		// Verificar só "stderr != motivo-deny-fake" não é suficiente; cobrir os dois componentes
+		// garante que o ruído veio do preamble e não de uma falha de execução (stub ausente, etc.).
+		if !strings.Contains(stderr, "Set-StrictMode") {
+			t.Errorf(
+				"contra-braço CAND_F: stderr=%q não contém \"Set-StrictMode\" — ruído de preamble não detectado (stub ausente?)",
+				stderr,
+			)
+		}
+		if !strings.HasSuffix(stderr, expectedStderr) {
+			t.Errorf(
+				"contra-braço CAND_F: stderr=%q não termina com %q — guard não executou ou saída corrompida",
+				stderr, expectedStderr,
+			)
+		}
+		if t.Failed() {
+			return
+		}
+		t.Logf("contra-braço CAND_F: stderr=%q — ruído de preamble confirmado, guard executou", stderr)
+	})
+}
+
+// execPSCommandInteractive executa psBin SEM -NonInteractive, permitindo que prompts de
+// confirmação do PowerShell possam consumir stdin. Usado exclusivamente para testar o
+// comportamento de forma L vs forma K sob $ConfirmPreference='Low'/'Medium' sem -NonInteractive.
+//
+// addNoProfile=true adiciona -NoProfile; addNoProfile=false omite ambos -NoProfile e -NonInteractive.
+// extraEnv: variáveis adicionais de ambiente a injetar (ex: XDG_CONFIG_HOME=…, PATH=…).
+//
+// AVISO: Se o PS exibir um prompt de confirmação e stdin for pipes.Reader, o prompt drena os bytes
+// disponíveis. O timeout via context.WithTimeout impede que o processo fique preso indefinidamente.
+func execPSCommandInteractive(psBin, command, fakeDir string, fakeRC int, timeout time.Duration, addNoProfile bool, extraEnv []string) psExecResult {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	var args []string
+	if addNoProfile {
+		args = []string{"-NoProfile", "-Command", command} // sem -NonInteractive
+	} else {
+		args = []string{"-Command", command} // sem -NoProfile nem -NonInteractive
+	}
+	cmd := exec.CommandContext(ctx, psBin, args...) //nolint:gosec
+	cmd.WaitDelay = psWaitDelay
+
+	pathVal := buildPSPath(fakeDir)
+
+	extraHasPath := false
+	for _, e := range extraEnv {
+		if strings.HasPrefix(strings.ToUpper(e), "PATH=") {
+			extraHasPath = true
+			break
+		}
+	}
+
+	base := os.Environ()
+	filtered := make([]string, 0, len(base)+2+len(extraEnv))
+	for _, e := range base {
+		upper := strings.ToUpper(e)
+		if strings.HasPrefix(upper, "PATH=") || strings.HasPrefix(upper, "FAKE_RC=") {
+			continue
+		}
+		filtered = append(filtered, e)
+	}
+	if !extraHasPath {
+		filtered = append(filtered, "PATH="+pathVal)
+	}
+	if fakeDir != "" {
+		filtered = append(filtered, fmt.Sprintf("FAKE_RC=%d", fakeRC))
+	}
+	filtered = append(filtered, extraEnv...)
+	cmd.Env = filtered
+
+	cmd.Stdin = strings.NewReader(stdinPayload)
+	var errBuf bytes.Buffer
+	cmd.Stderr = &errBuf
+
+	err := cmd.Run()
+
+	var r psExecResult
+	r.stderr = errBuf.String()
+	r.started = cmd.ProcessState != nil
+
+	switch {
+	case err == nil:
+		r.exitCode = 0
+	case errors.Is(err, exec.ErrWaitDelay):
+		r.runErr = err
+	default:
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			r.exitCode = exitErr.ExitCode()
+		} else {
+			r.runErr = err
+		}
+	}
+	r.timedOut = ctx.Err() == context.DeadlineExceeded
+	return r
+}
+
+// TestGuardLineShellMatrix_LContraArm_ConfirmLow testa a forma L (ML-2I) sob
+// $ConfirmPreference='Low' e 'Medium' WITHOUT -NonInteractive, via duas formas de herança:
+//
+//   - via -Command: o estado é injetado como prefixo na linha de comando.
+//   - via perfil: o estado é definido num perfil temporário em XDG_CONFIG_HOME
+//     (somente em não-Windows — no Windows o perfil via XDG_CONFIG_HOME não funciona).
+//
+// O teste cobre apenas git-branch (a matriz estrutural garante que os outros 3 partilham
+// o mesmo preamble). Os FRCs RC0 e RC2 são exercitados para ambas as condições.
+//
+// Contra-braço: a forma K (ML-2C, sem o segmento set ConfirmPreference None) sob
+// Confirm Low sem -NonInteractive entrega menos bytes do payload ao guard que o payload
+// enviado — o prompt de confirmação drena stdin antes do guard rodar.
+//
+// Reconciliação (REQ-2026-11-13 ML-2I):
+//   - Braços form-L/via-command/{low,medium} × RC0/RC2: afirmam que a forma L entrega o payload
+//     completo (len(stdinCapturado) == len(stdinPayload)) e sai com RC correto mesmo sem
+//     -NonInteractive sob Confirm Low/Medium, confirmando que ml1dConfirmSeg previne o drain
+//     de stdin.
+//   - Braços form-L/via-profile/{low,medium} × RC0/RC2: idem via herança por perfil.
+//   - Contra-braço form-K/confirm-low: afirma que a forma K sem ConfirmPreference None entrega
+//     menos bytes que stdinPayload sob Confirm Low sem -NonInteractive — prova que o braço
+//     morde e que o segmento adicionado por ML-2I é necessário.
+func TestGuardLineShellMatrix_LContraArm_ConfirmLow(t *testing.T) {
+	psBin, err := exec.LookPath("pwsh")
+	if err != nil {
+		t.Skip("pwsh não encontrado — contra-braço ConfirmLow/Medium sem -NonInteractive não aplicável")
+	}
+	ensurePSWarmup(t, psBin)
+
+	// Encontrar a constante git-branch para o braço principal.
+	gitBranchLine := ""
+	for _, g := range guardShellMatrix {
+		if g.name == "git-branch" {
+			gitBranchLine = g.line
+			break
+		}
+	}
+	if gitBranchLine == "" {
+		t.Fatal("git-branch not found in guardShellMatrix")
+	}
+
+	// Deadline por chamada: usar o teto fixo para não depender do warmup
+	// (estas chamadas podem ser mais lentas por causa do prompt drenado em K).
+	const perCallTimeout = psCallDeadlineCeil
+
+	// stdinPayloadNorm é o payload normalizado como o stub POSIX o grava (sem newline final).
+	stdinPayloadNorm := strings.TrimRight(stdinPayload, "\r\n")
+
+	// helper: executa gitBranchLine via PS sem -NonInteractive, com prefixo de estado,
+	// e retorna (exitCode, stdinCaptured). Lê stdin.out de fakeDir após a execução.
+	runInteractive := func(t *testing.T, line, fakeDir string, fakeRC int, extraEnv []string, addNoProfile bool) (exitCode int, captured string) {
+		t.Helper()
+		psConcurrencySem <- struct{}{}
+		r := execPSCommandInteractive(psBin, line, fakeDir, fakeRC, perCallTimeout, addNoProfile, extraEnv)
+		<-psConcurrencySem
+		if r.timedOut {
+			t.Skipf("timeout ao executar linha PS interativa — ambiente provavelmente sem PS real (pwsh mock ou CI não-interativo)")
+		}
+		if r.runErr != nil {
+			t.Fatalf("erro de execução: %v", r.runErr)
+		}
+		exitCode = r.exitCode
+		if fakeDir != "" {
+			data, readErr := os.ReadFile(filepath.Join(fakeDir, "stdin.out"))
+			if readErr == nil {
+				captured = strings.ReplaceAll(string(data), "\r\n", "\n")
+				captured = strings.TrimRight(captured, "\n")
+			}
+		}
+		return
+	}
+
+	// Confirm levels to test for form L.
+	confirmLevels := []struct {
+		name  string
+		level string
+	}{
+		{"low", "Low"},
+		{"medium", "Medium"},
+	}
+
+	frcCases := []struct {
+		name string
+		frc  int
+	}{
+		{"RC0-allow", 0},
+		{"RC2-deny", 2},
+	}
+
+	// ── Braços forma L via -Command ──────────────────────────────────────────────
+	for _, cl := range confirmLevels {
+		cl := cl
+		t.Run("form-L/via-command/"+cl.name, func(t *testing.T) {
+			t.Parallel()
+			prefix := "$ConfirmPreference = '" + cl.level + "'; "
+			line := prefix + gitBranchLine
+			for _, fc := range frcCases {
+				fc := fc
+				t.Run(fc.name, func(t *testing.T) {
+					t.Parallel()
+					dir := t.TempDir()
+					makeFakeTrackfwForOS(t, dir)
+					code, captured := runInteractive(t, line, dir, fc.frc, nil, true)
+					// Payload delivery assertion: guard deve ter recebido o payload completo.
+					if captured != stdinPayloadNorm {
+						t.Errorf(
+							"form-L confirm-%s %s: stdin não entregue completamente: got %d bytes (%q), want %d bytes (%q)",
+							cl.name, fc.name, len(captured), captured, len(stdinPayloadNorm), stdinPayloadNorm,
+						)
+					}
+					// Exit code assertion.
+					if fc.frc == 0 && code != 0 {
+						t.Errorf("form-L confirm-%s %s: esperado exit 0, obteve %d", cl.name, fc.name, code)
+					}
+					if fc.frc == 2 && code != 2 {
+						t.Errorf("form-L confirm-%s %s: esperado exit 2, obteve %d", cl.name, fc.name, code)
+					}
+				})
+			}
+		})
+	}
+
+	// ── Braços forma L via perfil (não-Windows — XDG_CONFIG_HOME não funciona no Windows) ──
+	if runtime.GOOS == "windows" {
+		t.Log("braço via-profile pulado no Windows: XDG_CONFIG_HOME não é respeitado pelo PS no Windows")
+	} else {
+		for _, cl := range confirmLevels {
+			cl := cl
+			t.Run("form-L/via-profile/"+cl.name, func(t *testing.T) {
+				t.Parallel()
+				xdgDir := t.TempDir()
+				profileDir := filepath.Join(xdgDir, "powershell")
+				if mkErr := os.MkdirAll(profileDir, 0755); mkErr != nil {
+					t.Fatalf("criando diretório de perfil: %v", mkErr)
+				}
+				markerPath := filepath.Join(xdgDir, "profile_loaded")
+				// Perfil: escreve marcador antes de definir o estado — o marcador usa New-Item
+				// que tem ConfirmImpact=Low; com ConfirmPreference ainda não definido como Low,
+				// não abre prompt. Depois define ConfirmPreference.
+				profileContent := `New-Item -Path "` + markerPath + `" -ItemType File -Force | Out-Null` + "\n" +
+					"$ConfirmPreference = '" + cl.level + "'\n"
+				profileFile := filepath.Join(profileDir, "Microsoft.PowerShell_profile.ps1")
+				if wErr := os.WriteFile(profileFile, []byte(profileContent), 0644); wErr != nil {
+					t.Fatalf("escrevendo perfil: %v", wErr)
+				}
+				xdgEnv := []string{"XDG_CONFIG_HOME=" + xdgDir}
+
+				// Verificar se o perfil carrega (marcador criado).
+				psConcurrencySem <- struct{}{}
+				checkR := execPSCommandInteractive(psBin, "exit 0", "", 0, perCallTimeout, false, xdgEnv)
+				<-psConcurrencySem
+				if checkR.timedOut || checkR.runErr != nil {
+					t.Skipf("perfil via XDG não carregou: timedOut=%v, runErr=%v", checkR.timedOut, checkR.runErr)
+				}
+				if _, statErr := os.Stat(markerPath); os.IsNotExist(statErr) {
+					t.Skipf("marcador de perfil ausente: perfil não carregou via XDG_CONFIG_HOME neste ambiente")
+				}
+
+				for _, fc := range frcCases {
+					fc := fc
+					t.Run(fc.name, func(t *testing.T) {
+						t.Parallel()
+						dir := t.TempDir()
+						makeFakeTrackfwForOS(t, dir)
+						pathVal := buildPSPath(dir)
+						envWithPath := append([]string{"PATH=" + pathVal}, xdgEnv...)
+						code, captured := runInteractive(t, gitBranchLine, dir, fc.frc, envWithPath, false)
+						// Payload delivery assertion.
+						if captured != stdinPayloadNorm {
+							t.Errorf(
+								"form-L confirm-%s via-profile %s: stdin não entregue completamente: got %d bytes (%q), want %d bytes (%q)",
+								cl.name, fc.name, len(captured), captured, len(stdinPayloadNorm), stdinPayloadNorm,
+							)
+						}
+						if fc.frc == 0 && code != 0 {
+							t.Errorf("form-L confirm-%s via-profile %s: esperado exit 0, obteve %d", cl.name, fc.name, code)
+						}
+						if fc.frc == 2 && code != 2 {
+							t.Errorf("form-L confirm-%s via-profile %s: esperado exit 2, obteve %d", cl.name, fc.name, code)
+						}
+					})
+				}
+			})
+		}
+	}
+
+	// ── Contra-braço: forma K sob Confirm Low sem -NonInteractive ────────────────────────
+	// A forma K é construída removendo ml1dConfirmSeg de gitBranchLine em tempo de execução.
+	// Nenhuma ocorrência do literal "...Confirm:0; set +eu..." aparece no código-fonte
+	// (os dois segmentos estão separados), de modo que o grep de validação continua vazio.
+	t.Run("counter-arm/form-K/confirm-low", func(t *testing.T) {
+		// Verificar que ml1dConfirmSeg está em gitBranchLine; sem isso a remoção seria silenciosa.
+		if !strings.Contains(gitBranchLine, ml1dConfirmSeg) {
+			t.Fatalf("gitBranchLine não contém ml1dConfirmSeg %q — forma L foi alterada?", ml1dConfirmSeg)
+		}
+		// Remover ml1dConfirmSeg de gitBranchLine → forma K (nunca released após ML-2I).
+		kFormGitBranch := strings.Replace(gitBranchLine, ml1dConfirmSeg, "", 1)
+		if strings.Contains(kFormGitBranch, ml1dConfirmSeg) {
+			t.Fatalf("kFormGitBranch ainda contém ml1dConfirmSeg — múltiplas ocorrências?")
+		}
+
+		prefix := "$ConfirmPreference = 'Low'; "
+		line := prefix + kFormGitBranch
+		dir := t.TempDir()
+		makeFakeTrackfwForOS(t, dir)
+		// Executar diretamente sem psGuardedCall: se K travar, não queremos registrar pwsh
+		// no psTimeouts e fail-fast todos os outros testes PS do pacote.
+		psConcurrencySem <- struct{}{}
+		r := execPSCommandInteractive(psBin, line, dir, 2, perCallTimeout, true, nil)
+		<-psConcurrencySem
+		if r.timedOut {
+			t.Skipf("counter-arm K/confirm-low: timeout — ambiente pode não ter PS interativo; pulando")
+		}
+		if r.runErr != nil {
+			t.Fatalf("counter-arm K/confirm-low: erro de execução: %v", r.runErr)
+		}
+
+		var captured string
+		if data, readErr := os.ReadFile(filepath.Join(dir, "stdin.out")); readErr == nil {
+			captured = strings.ReplaceAll(string(data), "\r\n", "\n")
+			captured = strings.TrimRight(captured, "\n")
+		}
+
+		// A forma K sob Confirm Low sem -NonInteractive DEVE entregar menos bytes que stdinPayload
+		// ao guard (ou o guard não roda — stdin.out ausente → captured == "").
+		// Se captured == stdinPayloadNorm, o braço não mordeu — o segmento em ML-2I seria inútil.
+		if captured == stdinPayloadNorm {
+			t.Errorf(
+				"counter-arm K/confirm-low: forma K entregou o payload completo (%d bytes) sem -NonInteractive "+
+					"sob Confirm Low — braço não mordeu; ml1dConfirmSeg em ML-2I pode ser desnecessário",
+				len(captured),
+			)
+		} else {
+			t.Logf(
+				"counter-arm K/confirm-low: forma K entregou %d bytes (payload=%d, stdinPayload=%d) — braço morde, ML-2I justificado",
+				len(captured), len(stdinPayloadNorm), len(stdinPayload),
+			)
+		}
+	})
+}
+
+// TestD18ContraArm_ShAsDashSim simula o ambiente Linux onde /bin/sh é um symlink para dash.
+// Cria um "sh" como symlink para o dash local (em t.TempDir) e executa as formas legadas D18
+// com flags -u e -e, verificando:
+//   - sh-as-dash-u: exit == 2 (dash nounset) + guard não rodou (stdin.out ausente).
+//   - sh-as-dash-e: exit ≠ 2 (127) + guard não rodou (stdin.out ausente).
+//
+// Este teste prova que a lógica d18ShellKind + seleção de expectativa do
+// TestGuardLineShellMatrix_D18ContraArm funciona no caso Linux, onde o braço sh-u falhou
+// com "forma legada saiu com exit 2 — esperado exit ≠ 2" (REQ-2026-11-13 ML-2E).
+//
+// Reconciliação (REQ-2026-11-13 ML-2E):
+//   - sh-as-dash-u afirma: "dash -u aborta com exit 2 antes do guard rodar" (medição do arquiteto).
+//   - sh-as-dash-e afirma: "dash -e não causa nounset; sai com ≠ 2 por emulate/comando ausente".
+//   - Ambos afirmam: "guard não rodou" (stdin.out ausente — prova invariante).
+func TestD18ContraArm_ShAsDashSim(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shells POSIX não disponíveis em Windows")
+	}
+	dashPath, err := exec.LookPath("dash")
+	if err != nil {
+		t.Skip("dash não encontrado — simulação sh→dash não aplicável")
+	}
+
+	// Criar symlink sh → dash simulando /bin/sh→/bin/dash (Linux).
+	linkDir := t.TempDir()
+	shLink := filepath.Join(linkDir, "sh")
+	symlinkOrSkip(t, dashPath, shLink)
+
+	// d18ShellKind deve classificar shLink como "dash" — sem isso o resto do teste não tem sentido.
+	// Mesmo shellPath passado para d18ShellKind e exec.CommandContext: sem divergência.
+	kind := d18ShellKind(shLink)
+	if kind != "dash" {
+		t.Fatalf("d18ShellKind(%q) = %q; esperado \"dash\" — symlink não resolveu para dash", shLink, kind)
+	}
+
+	type simCase struct {
+		name      string
+		flags     []string
+		wantExit2 bool
+	}
+	cases := []simCase{
+		// sh-as-dash-u: d18ShellKind="dash" && flag="-u" → wantExit2=true.
+		// Afirma: "dash -u aborta com exit 2 (nounset em $LASTEXITCODE) antes do guard".
+		{"sh-as-dash-u", []string{"-u"}, true},
+		// sh-as-dash-e: d18ShellKind="dash" && flag="-e" → wantExit2=false.
+		// Afirma: "dash -e aborta com exit 127 (emulate não encontrado) antes do guard".
+		{"sh-as-dash-e", []string{"-e"}, false},
+	}
+
+	d18Matrix := []struct {
+		name    string
+		legLine string
+	}{
+		{"git-branch", guardforms.LegacyD18GitBranchPSPOSIX},
+		{"credential", guardforms.LegacyD18CredentialPSPOSIX},
+		{"write-scope", guardforms.LegacyD18WriteScopePSPOSIX},
+		{"credential-global", guardforms.LegacyD18CredentialGlobalPSPOSIX},
+	}
+
+	for _, sc := range cases {
+		sc := sc
+		t.Run(sc.name, func(t *testing.T) {
+			for _, guard := range d18Matrix {
+				guard := guard
+				t.Run(guard.name, func(t *testing.T) {
+					fakeDir := t.TempDir()
+					makeFakeTrackfw(t, fakeDir)
+
+					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+					defer cancel()
+
+					args := append(sc.flags, "-c", guard.legLine)
+					cmd := exec.CommandContext(ctx, shLink, args...)
+
+					pathVal := fakeDir + ":/usr/bin:/bin"
+					base := os.Environ()
+					filtered := make([]string, 0, len(base)+2)
+					for _, e := range base {
+						if strings.HasPrefix(e, "PATH=") ||
+							strings.HasPrefix(e, "FAKE_RC=") ||
+							strings.HasPrefix(e, "BASH_ENV=") ||
+							strings.HasPrefix(e, "SHELLOPTS=") {
+							continue
+						}
+						filtered = append(filtered, e)
+					}
+					filtered = append(filtered, "PATH="+pathVal, "FAKE_RC=2")
+					cmd.Env = filtered
+					cmd.Stdin = strings.NewReader(stdinPayload)
+
+					runErr := cmd.Run()
+					code := 0
+					if runErr != nil {
+						if exitErr, ok := runErr.(*exec.ExitError); ok {
+							code = exitErr.ExitCode()
+						}
+					}
+
+					// stdin.out ausente: prova invariante — guard nunca rodou.
+					// Para sh-as-dash-u: distingue "shell abortou antes do guard" (exit 2, sem stdin.out)
+					// de "guard rodou e negou" (exit 2, com stdin.out), pois FAKE_RC=2 coincide.
+					stdinOutPath := filepath.Join(fakeDir, "stdin.out")
+					if _, statErr := os.Stat(stdinOutPath); statErr == nil {
+						t.Errorf("sim(%s/%s): stdin.out existe — guard rodou quando não deveria", sc.name, guard.name)
+					}
+
+					if sc.wantExit2 {
+						if code != 2 {
+							t.Errorf(
+								"sim(%s/%s): exit %d — esperado 2 (dash -u aborta com 2 em variável indefinida)",
+								sc.name, guard.name, code,
+							)
+						} else {
+							t.Logf("sim(%s/%s): exit 2 — fail-closed dash-u confirmado", sc.name, guard.name)
+						}
+					} else {
+						if code == 2 {
+							t.Errorf(
+								"sim(%s/%s): exit 2 — esperado ≠ 2 (defeito D18 não detectado nesta combinação)",
+								sc.name, guard.name,
+							)
+						} else {
+							t.Logf("sim(%s/%s): exit %d (≠ 2) — defeito D18 confirmado", sc.name, guard.name, code)
+						}
+					}
+				})
+			}
+		})
 	}
 }

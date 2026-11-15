@@ -49,3 +49,4 @@
 - [Inglês primeiro](project_ingles_primeiro.md) — 2026-11-02: produto em inglês; status bilíngue; docs/ segue em PT; REQ de idioma em backlog
 - [ml_scope lê o roadmap commitado](project_ml_scope_le_roadmap_commitado.md) — commite o roadmap antes de rerodar o barrier; liste cada _test.go pelo caminho
 - [Comentário em Discussion é bloqueado](project_comentario_em_discussion_bloqueado.md) — sem aprovação explícita é negado; mostrar o texto ao KG e publicar após o "pode publicar"
+- [Ler o log antes de atribuir falha](feedback_ler_o_log_antes_de_atribuir_falha.md) — CI vermelho: abrir o log do job; `go` do #687 não era timeout, era dash -u; make quality antes do push

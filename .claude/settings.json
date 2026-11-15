@@ -13,7 +13,7 @@
       {
         "hooks": [
           {
-            "command": "emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
+            "command": "set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set ConfirmPreference None -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE",
             "type": "command"
           }
         ],
@@ -22,7 +22,7 @@
       {
         "hooks": [
           {
-            "command": "emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
+            "command": "set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set ConfirmPreference None -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE",
             "type": "command"
           }
         ],
@@ -31,7 +31,7 @@
       {
         "hooks": [
           {
-            "command": "emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
+            "command": "set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set ConfirmPreference None -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE",
             "type": "command"
           }
         ],
@@ -51,11 +51,11 @@
       {
         "hooks": [
           {
-            "command": "emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
+            "command": "set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set ConfirmPreference None -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE",
             "type": "command"
           },
           {
-            "command": "emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
+            "command": "set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set ConfirmPreference None -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE",
             "type": "command"
           }
         ],
@@ -64,7 +64,7 @@
       {
         "hooks": [
           {
-            "command": "emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
+            "command": "set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set ConfirmPreference None -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE",
             "type": "command"
           }
         ],
@@ -73,7 +73,7 @@
       {
         "hooks": [
           {
-            "command": "emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
+            "command": "set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set ConfirmPreference None -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE",
             "type": "command"
           }
         ],
@@ -82,7 +82,7 @@
       {
         "hooks": [
           {
-            "command": "emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard write-scope; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
+            "command": "set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set ConfirmPreference None -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard write-scope; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE",
             "type": "command"
           }
         ],

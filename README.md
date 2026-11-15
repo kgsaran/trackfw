@@ -267,19 +267,19 @@ the vendor, not of the OS:
 | Kiro | cmd.exe | cmd.exe form | vendor docs (2026-10-04) |
 | Amazon Q | cmd.exe | cmd.exe form | vendor source (2026-10-04) |
 
-The exact hook lines emitted by `trackfw init` and `trackfw update` since v10.1.0 (D12).
+The exact hook lines emitted by `trackfw init` and `trackfw update` (D18 ML-1C2, REQ-2026-11-13).
 Copy these verbatim or run `trackfw init`/`trackfw update` — do not reconstruct them:
 
 **PS/POSIX form** (Claude Code, Codex, Gemini, Cursor, Windsurf, Copilot — credential guard):
 
 ```
-emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE
+set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set ConfirmPreference None -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE
 ```
 
 **PS/POSIX form** (git-branch guard):
 
 ```
-emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE
+set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set ConfirmPreference None -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE
 ```
 
 **cmd.exe form** (Kiro, Amazon Q):
@@ -289,19 +289,58 @@ trackfw guard credential || exit 2
 trackfw guard git-branch || exit 2
 ```
 
-The D12 line (v10.1.0, issue #595) is **fail-closed** for both POSIX shells and PowerShell.
-The leading `emulate -R sh 2>${null-/dev/null}` instructs zsh to run as POSIX sh — without
-it, zsh's EQUALS/NOMATCH expansions abort the assignment `$LASTEXITCODE=2` with an error,
-leaving the seed unset and allowing all exits. The seed `$LASTEXITCODE=2` is a PowerShell
-assignment; in sh/bash the `=2: command not found` error is silently discarded. `LASTEXITCODE=$((2*!!$?))` normalizes any non-zero exit to 2 in sh/bash. The 4th segment
-`$LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}` provides the same normalization in
+The D18 line (REQ-2026-11-13 ML-2I, form L) is **fail-closed** for both POSIX shells and
+PowerShell, including shells started with inherited `errexit`/`nounset` options and environments
+where `$ErrorActionPreference='Stop'`, `$ErrorActionPreference` is ReadOnly, `$WhatIfPreference=$true`,
+`$ConfirmPreference='Low'`/`'Medium'` (with or without `-NonInteractive`), or
+`Set-StrictMode -Version Latest` is active.
+The six-segment preamble works as follows (order matters):
+
+- **`set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0`** — PS: `Set-Variable`
+  with `-Force` (overrides ReadOnly/Constant protection — without it, an inherited ReadOnly EAP
+  cannot be reset); `-WhatIf:0` and `-Confirm:0` disable WhatIf and Confirm mode for this call
+  (integer `0` = `$false` for switch params; `:0` is used rather than `$false` because `$false`
+  is an undefined variable reference under POSIX `nounset`, which would abort in POSIX shells
+  before segment 3 runs the `set +eu` builtin). Must come **first** so that segment 3 is not
+  suppressed by an active WhatIf preference. POSIX: `set` with positional parameters, exit 0 —
+  no option processing because the first argument (`ErrorActionPreference`) does not start with
+  `-` or `+`.
+- **`set ConfirmPreference None -Force -WhatIf:0 -Confirm:0`** — PS: resets `$ConfirmPreference`
+  to `None` so that segment 3 (`Set-Variable "+eu"`, ConfirmImpact=Medium) does not open an
+  interactive confirmation prompt when `$ConfirmPreference='Low'` or `'Medium'` is inherited.
+  Without this segment and without `-NonInteractive`, the prompt would drain stdin and the guard
+  would receive 0 bytes of the JSON payload (fail-open). `-Force` overrides ReadOnly protection
+  on `$ConfirmPreference`. POSIX: `set` with positional parameters, exit 0 — same mechanics as
+  segment 1 (`ConfirmPreference` does not start with `-` or `+`).
+- **`set +eu`** — POSIX: special builtin that disables `errexit` (+e) and `nounset` (+u); no
+  undefined-variable access, no redirect. Runs **after** segments 1 and 2 so that WhatIf and
+  ConfirmPreference are already neutralised. PS: `Set-Variable "+eu"` — sets a variable silently
+  (ConfirmPreference=None was set by segment 2; no prompt).
+- **`null=/dev/null`** — POSIX: variable assignment, defines `$null=/dev/null` so subsequent
+  `2>$null` redirects are silenced (zero extra stderr lines per call in POSIX). PS: attempts to
+  invoke command `null =/dev/null` → CommandNotFound, non-terminating since EAP=Continue was
+  forced above — accepted stderr noise.
+- **`Set-StrictMode -Off 2>$null`** — PS: disables StrictMode; `$null` is an automatic PS
+  variable (always defined, safe even under inherited StrictMode). POSIX: command-not-found,
+  stderr redirected to `$null` (=/dev/null from step 4) — zero extra POSIX stderr lines.
+
+After the preamble, `emulate -R sh 2>$null` instructs zsh to run as POSIX sh (without it,
+zsh's EQUALS/NOMATCH expansions abort `$LASTEXITCODE=2`). The seed `$LASTEXITCODE=2` is a
+PowerShell assignment; in sh/bash the `=2: command not found` error is redirected to `$null`
+(=/dev/null). `LASTEXITCODE=$((2*!!$?))` normalizes any non-zero exit to 2 in sh/bash. The
+PS segment `$LASTEXITCODE=2*!!$LASTEXITCODE 2>$null` provides the same normalization in
 PowerShell, and is inert (CommandNotFound, stderr suppressed) in sh/bash. For cmd.exe:
 `|| exit 2` is the native short-circuit.
 
-**Under PowerShell**, a `deny` exit also emits two `CommandNotFound` error blocks to stderr
-(one for `emulate`, one for the `$LASTEXITCODE=2*...` segment) alongside the guard's own
-deny reason. The deny reason is preserved — it is the last line of stderr. Measure 2026-10-29
-(CI run 40882950230, job `windows-full-suites`, `TestGuardLineShellMatrix`).
+**Measured stderr cost (form L):** **0 extra lines in POSIX shells** per hook call.
+PS stderr cost not re-measured for form L (measurement for form K: 6 lines in pwsh 7 under
+EAP=Continue). Measurement for form K: roadmap §ML-2A, 2026-11-15
+(`docs/roadmaps/wip/ROADMAP-2026-11-13-linha-de-hook-do-guard-sai-127-sob-errexit-herdado-e-libera-o-comando.md`).
+
+**Under PowerShell**, a `deny` exit emits three `CommandNotFound` error blocks to stderr
+(one for `null=/dev/null`, one for `emulate`, one for the `$LASTEXITCODE=2*...` segment)
+alongside the guard's own deny reason. The deny reason is preserved — it is the last line of
+stderr.
 
 **What was measured in the VM (Windows 11 ARM64, 2026-10-06):** PowerShell 5, cmd.exe,
 and Git Bash (non-login, explicit PATH to the branch binary) all block
