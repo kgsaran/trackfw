@@ -730,3 +730,159 @@ strip-prefix IDENTICAL: .gemini/settings.json
 ```
 
 Nenhuma linha de guard foi removida — apenas o prefixo foi adicionado.
+
+---
+
+## 17. ML-1D — forma H no PowerShell 5.1
+
+**Executado em:** 2026-11-15 · commit 2b21411c · VM `192.168.64.6` · Windows (ARM64, PS 5.1.26100.2161)
+
+### 17.1 Ambiente
+
+```
+trackfw.exe SHA256 (início): 7D6828C894274519E722CA9F4E945EEA5E74E063605D6BF8C9B756D1F623043A
+trackfw.exe SHA256 (fim):    7D6828C894274519E722CA9F4E945EEA5E74E063605D6BF8C9B756D1F623043A
+```
+
+**Estado de perfis antes da medição:** `C:\Users\Lab\Documents\WindowsPowerShell` não existia; `CurrentUserCurrentHost` e `CurrentUserAllHosts` ambos ausentes.
+
+**Formas medidas:**
+
+- **H** (forma atual, ML-1C2): `set +eu; set ErrorActionPreference Continue; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE`
+- **ML1A** (forma legada, `LegacyD18GitBranchPSPOSIX`): `set +eu 2>${null-/dev/null}; emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+
+**Mecanismo de falsificação:** fake `trackfw.cmd` com `FAKE_RC` e marcador de arquivo `MARKER_PATH`. PATH e MARKER_PATH injetados via `$env:` dentro do bloco codificado (EncodedCommand), pois o `EnvironmentVariables` do `ProcessStartInfo` do PS 5.1 silencia atribuições a chaves já existentes (como `PATH`) — apenas chaves novas propagam.
+
+### 17.2 Matriz — forma H (8 condições × 4 frc)
+
+| Condição | frc=0 (allow) | frc=2 (deny) | frc=1 (block→norm) | frc=absent |
+|---|---|---|---|---|
+| Continue_Command | rc=0 guard=✓ stderr=3 | rc=2 guard=✓ stderr=3 | rc=2 guard=✓ stderr=3 | rc=2 guard=✗ stderr=2 |
+| Stop_Command | rc=0 guard=✓ stderr=3 | rc=2 guard=✓ stderr=3 | rc=2 guard=✓ stderr=3 | rc=2 guard=✗ stderr=2 |
+| StrictMode_Command | rc=0 guard=✓ stderr=3 | rc=2 guard=✓ stderr=3 | rc=2 guard=✓ stderr=3 | rc=2 guard=✗ stderr=2 |
+| StrictModeStop_Command | rc=0 guard=✓ stderr=3 | rc=2 guard=✓ stderr=3 | rc=2 guard=✓ stderr=3 | rc=2 guard=✗ stderr=2 |
+| Continue_Profile (prof=✓) | rc=0 guard=✓ stderr=3 | rc=2 guard=✓ stderr=3 | rc=2 guard=✓ stderr=3 | rc=2 guard=✗ stderr=2 |
+| Stop_Profile (prof=✓) | rc=0 guard=✓ stderr=3 | rc=2 guard=✓ stderr=3 | rc=2 guard=✓ stderr=3 | rc=2 guard=✗ stderr=2 |
+| StrictMode_Profile (prof=✓) | rc=0 guard=✓ stderr=3 | rc=2 guard=✓ stderr=3 | rc=2 guard=✓ stderr=3 | rc=2 guard=✗ stderr=2 |
+| StrictModeStop_Profile (prof=✓) | rc=0 guard=✓ stderr=3 | rc=2 guard=✓ stderr=3 | rc=2 guard=✓ stderr=3 | rc=2 guard=✗ stderr=2 |
+
+Forma H: **uniforme em todas as 8 condições.** rc=0/2/2/2 sem desvio.
+
+### 17.3 Matriz — forma ML1A (legado, contra-braço)
+
+| Condição | frc=0 | frc=2 | frc=1 | frc=absent |
+|---|---|---|---|---|
+| Continue_Command | rc=0 g=✓ s=3 | rc=2 g=✓ s=3 | rc=2 g=✓ s=3 | rc=2 g=✗ s=2 |
+| **Stop_Command** | **rc=1** g=✗ s=2 | **rc=1** g=✗ s=2 | **rc=1** g=✗ s=2 | rc=1 g=✗ s=2 |
+| StrictMode_Command | rc=0 g=✓ s=3 | rc=2 g=✓ s=3 | **rc=1** g=✓ s=3 | **rc=1** g=✗ s=2 |
+| **StrictModeStop_Command** | **rc=1** g=✗ s=2 | **rc=1** g=✗ s=2 | **rc=1** g=✗ s=2 | rc=1 g=✗ s=2 |
+| Continue_Profile (prof=✓) | rc=0 g=✓ s=3 | rc=2 g=✓ s=3 | rc=2 g=✓ s=3 | rc=2 g=✗ s=2 |
+| **Stop_Profile** (prof=✓) | **rc=1** g=✗ s=2 | **rc=1** g=✗ s=2 | **rc=1** g=✗ s=2 | rc=1 g=✗ s=2 |
+| StrictMode_Profile (prof=✓) | rc=0 g=✓ s=3 | rc=2 g=✓ s=3 | **rc=1** g=✓ s=3 | **rc=1** g=✗ s=2 |
+| **StrictModeStop_Profile** (prof=✓) | **rc=1** g=✗ s=2 | **rc=1** g=✗ s=2 | **rc=1** g=✗ s=2 | rc=1 g=✗ s=2 |
+
+Negrito = célula fora do esperado (deny≠2 ou allow≠0 ou guard não rodou quando deveria).
+
+**Falhas ML1A sob Stop:** `${null-/dev/null}` é variável indefinida sob EAP=Stop — o preset `$LASTEXITCODE=2 2>${null-/dev/null}` falha antes do guard. O guard não roda; `exit $LASTEXITCODE` = exit 1 (LASTEXITCODE padrão do PS). Falha em 4 de 8 condições.
+
+**Falhas ML1A sob StrictMode (parciais):** normalization `$LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}` falha por StrictMode (variável indefinida no alvo do redirect). `1→2` não funciona; frc=1 fica em rc=1. Absent case: preset falha → rc=1 (fail-open) em vez de rc=2 (fail-closed).
+
+### 17.4 Linhas de stderr — delta H − ML1A
+
+Ambas as formas emitem 3 linhas de stderr (EAP=Continue) com guard rodando: `#< CLIXML` + `motivo-deny-fake` + XML com erros de PS. Delta por condição para frc=2 (deny):
+
+| Condição | H stderr | ML1A stderr | Δ (H − ML1A) |
+|---|---|---|---|
+| Continue | 3 | 3 | 0 |
+| Stop | 3 | 2 | +1 |
+| StrictMode | 3 | 3 | 0 |
+| StrictModeStop | 3 | 2 | +1 |
+
+(Idêntico para condições `_Profile`.)
+
+ML1A sob Stop e StrictModeStop emite 2 linhas porque o guard não roda (sem `motivo-deny-fake`). A forma H é +1 nesses casos. Máximo delta: **+1** linha. AC4 permite até +2.
+
+**Dump CLIXML de forma H (Continue_Command, frc=2):** 3 erros PS no XML — `null=/dev/null` (CommandNotFoundException), `emulate` (CommandNotFoundException), `LASTEXITCODE=$((2*!!$?))` (CommandNotFoundException). Nenhum deles é do guard; são da parte poliglota que o PS ignora via EAP=Continue.
+
+### 17.5 Perfis usados (condições _Profile)
+
+Quatro perfis foram escritos em `C:\Users\Lab\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1` em sequência:
+
+| Condição | SHA256 | Conteúdo |
+|---|---|---|
+| Continue_Profile | 8323D46A... | `[Console]::Out.WriteLine('PROFILE_LOADED'); $ErrorActionPreference = 'Continue'` |
+| Stop_Profile | A86902C5... | `[Console]::Out.WriteLine('PROFILE_LOADED'); $ErrorActionPreference = 'Stop'` |
+| StrictMode_Profile | 73D90EA8... | `[Console]::Out.WriteLine('PROFILE_LOADED'); Set-StrictMode -Version Latest` |
+| StrictModeStop_Profile | BF59BD40... | `[Console]::Out.WriteLine('PROFILE_LOADED'); $ErrorActionPreference = 'Stop'; Set-StrictMode -Version Latest` |
+
+`PROFILE_LOADED` confirmado em stdout para todas as células de perfil (`profile_loaded=True`).
+
+**Estado após medição:** todos os perfis removidos. `C:\Users\Lab\Documents\WindowsPowerShell` removido (dir recriado pela medição, esvaziado ao final). `FinalDirExists: False`.
+
+### 17.6 Resultado do teste Go
+
+```
+Worktree: C:\Users\Lab\wt-ml1d  commit: 2b21411c
+go test ./internal/generators/ -run TestGuardLineShellMatrix -v -timeout 8m
+--- PASS: TestGuardLineShellMatrix (17.91s)
+    --- PASS: .../git-branch/powershell/RC0-allow
+    --- PASS: .../git-branch/powershell/RC2-deny
+    --- PASS: .../git-branch/powershell/RC1-deny-normalizado
+    --- PASS: .../git-branch/powershell/absent
+    (idem para credential, write-scope, credential-global)
+    POSIX shells: SKIP (não disponíveis no Windows)
+    pwsh: SKIP (não encontrado em PATH)
+SUMMARY: PASS=1 SKIP=6 FAIL=0
+ok  github.com/kgsaran/trackfw/internal/generators  24.829s
+```
+
+Worktree removido; `gocache` e `gotmp` removidos.
+
+### 17.7 Veredito AC4 — cláusula a cláusula (PS 5.1)
+
+AC4: *"PowerShell 5.1 e 7 no Windows: deny 2 e allow 0 com o guard rodando, também sob `$ErrorActionPreference='Stop'` e `Set-StrictMode -Version Latest` herdados (via `-Command` e via perfil); stderr medido, com zero linha a mais que a forma atual nos shells POSIX e no máximo +2 linhas no PowerShell."*
+
+| Cláusula | Medição | Resultado |
+|---|---|---|
+| deny=2 com guard rodando — PS 5.1 | Forma H: frc=2 → rc=2, guard=✓ em TODAS as 8 condições | ✅ |
+| allow=0 com guard rodando — PS 5.1 | Forma H: frc=0 → rc=0, guard=✓ em TODAS as 8 condições | ✅ |
+| sob EAP=Stop herdado via -Command | Stop_Command: rc=0/2/2/2, guard=✓ para frc=0/2/1 | ✅ |
+| sob EAP=Stop herdado via perfil | Stop_Profile: rc=0/2/2/2, guard=✓ para frc=0/2/1, prof=✓ | ✅ |
+| sob StrictMode Latest herdado via -Command | StrictMode_Command: rc=0/2/2/2, guard=✓ para frc=0/2/1 | ✅ |
+| sob StrictMode Latest herdado via perfil | StrictMode_Profile: rc=0/2/2/2, guard=✓ para frc=0/2/1, prof=✓ | ✅ |
+| sob StrictMode+Stop via -Command | StrictModeStop_Command: rc=0/2/2/2, guard=✓ para frc=0/2/1 | ✅ |
+| sob StrictMode+Stop via perfil | StrictModeStop_Profile: rc=0/2/2/2, guard=✓ para frc=0/2/1, prof=✓ | ✅ |
+| stderr POSIX: zero linhas a mais | Medido via TestGuardLineShellMatrix_PreambleNoStderr no macOS (ML-1C2) | ✅ |
+| stderr PS: máx +2 linhas vs forma anterior | Máximo observado: +1 (sob Stop e StrictModeStop). Forma anterior ganha linha ausente por falhar antes do guard. | ✅ |
+| PS 7 Windows | **Não medido.** `pwsh` ausente na VM, e a branch ainda não rodou CI (`gh run list --branch` vazio em 2026-11-15; correção do arquiteto). Fica para o CI de Windows do PR | ⬜ |
+
+**Veredito PS 5.1: AC4 ATENDIDO.**
+
+### 17.8 O que foi criado e removido na VM
+
+Criado:
+- `C:\Users\Lab\AppData\Local\Temp\ml1d\` (dir raiz da medição)
+- `C:\Users\Lab\AppData\Local\Temp\ml1d\fake\trackfw.cmd` (fake guard)
+- `C:\Users\Lab\AppData\Local\Temp\ml1d\markers\` (arquivos marcadores, limpados por RunChild)
+- `C:\Users\Lab\AppData\Local\Temp\ml1d\ml1d_matrix.ps1`, `ml1d_gotest.ps1` (scripts de medição)
+- `C:\Users\Lab\AppData\Local\Temp\ml1d\ml1d_pathtest.ps1`, `ml1d_debug.ps1`, `ml1d_debug2.ps1` (scripts de debug da raiz-causa)
+- `C:\Users\Lab\AppData\Local\Temp\ml1d\gocache\`, `gotmp\` (cache Go, Go test)
+- `C:\Users\Lab\Documents\WindowsPowerShell\` (dir de perfil, criado para medição)
+- `C:\Users\Lab\wt-ml1d` (worktree para Go test, commit 2b21411c)
+- `C:\Users\Lab\trackfw` (não modificado — apenas `git fetch origin ...`)
+
+Removido (tudo):
+- `C:\Users\Lab\AppData\Local\Temp\ml1d\` e todos os conteúdos (Remove-Item -Recurse ao final)
+- `C:\Users\Lab\Documents\WindowsPowerShell\` (esvaziado e removido pelo script)
+- `C:\Users\Lab\wt-ml1d` (removido via `git worktree remove`)
+
+**Nenhum comando foi negado** pelo classificador de permissões nesta sessão.
+
+### 17.9 Git status no Mac (pós-medição)
+
+```
+branch: fix/linha-de-hook-do-guard-sai-127-sob-errexit-herdado
+nothing to commit, working tree clean
+```
+
+(Este arquivo `docs/portabilidade/2026-11-13-guard-errexit-windows.md` foi modificado pela adição desta seção.)

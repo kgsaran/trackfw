@@ -238,12 +238,24 @@ configs do repositório, README, `docs/cli-parity.md`, pin de `scripts/check-val
   perfil no PowerShell 5.1 fica para o ML-1D.
 
 ### ML-1D — Forma final no PowerShell 5.1 da VM
-**Status:** ⬜ Pending
+**Status:** ✅ Done
 **Squad:** artemis-tf
 **Files affected:** `docs/portabilidade/2026-11-13-guard-errexit-windows.md` (nova seção)
 
 **Acceptance criteria:**
-- [ ] AC4 da REQ com a forma do ML-1C: PS 5.1 na VM e PS 7 no CI de Windows do PR
+- [x] AC4 da REQ com a forma do ML-1C no PS 5.1 da VM
+- [ ] PS 7 no CI de Windows do PR (a branch ainda não rodou CI)
+
+**Auditoria (Zeus, 2026-11-15):** aprovado no PS 5.1; PS 7 pendente do CI.
+- Forma H, 8 condições (Continue, `Stop`, `StrictMode`, os dois; via `-Command` e via perfil) × frc 0/2/1/ausente:
+  0/2/2/2 em todas, com o guard rodando quando presente. A forma do ML-1A sai 1 sem o guard sob `Stop`.
+- `TestGuardLineShellMatrix` na VM (worktree em 2b21411c): PASS, 0 FAIL; os braços PowerShell passam.
+- Ressalva de medida: no PS 5.1 o stderr veio serializado em CLIXML (3 "linhas" que agregam vários registros de
+  erro), então a contagem não é comparável à do ML-1B (16). O +2 do AC4 está medido no `pwsh` 7 (6 contra 4); no
+  5.1 o registro extra é o mesmo `null=/dev/null` não reconhecido.
+- Corrigi no relatório a linha que dava o PS 7 no Windows como "CI verde": nenhum CI rodou nesta branch.
+- Sem negação do classificador. `trackfw.exe` da VM inalterado (SHA256), perfil e worktree removidos (não havia
+  perfil antes).
 
 ## Wave 2 — Red team e qualidade (AC8)
 > Dependencies: Wave 1 completa.
