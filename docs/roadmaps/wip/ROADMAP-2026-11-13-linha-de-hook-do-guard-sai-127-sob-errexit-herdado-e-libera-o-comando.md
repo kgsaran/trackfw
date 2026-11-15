@@ -244,7 +244,8 @@ configs do repositório, README, `docs/cli-parity.md`, pin de `scripts/check-val
 
 **Acceptance criteria:**
 - [x] AC4 da REQ com a forma do ML-1C no PS 5.1 da VM
-- [ ] PS 7 no CI de Windows do PR (a branch ainda não rodou CI)
+- [x] PS 7 no CI de Windows do PR — `windows-full-suites` verde em fb929c5c: `PSInheritedState` 46 PASS, 0 SKIP (só via `-Command`;
+  o braço de perfil retorna cedo no Windows); as 5 falhas são, por nome, as 5 de `windows-known-failures.json`
 
 **Auditoria (Zeus, 2026-11-15):** aprovado no PS 5.1; PS 7 pendente do CI.
 - Forma H, 8 condições (Continue, `Stop`, `StrictMode`, os dois; via `-Command` e via perfil) × frc 0/2/1/ausente:
@@ -269,7 +270,7 @@ configs do repositório, README, `docs/cli-parity.md`, pin de `scripts/check-val
 **Actions:** reimplementar a matriz a partir da leitura, sem conferir o diff, e tentar liberar um comando negado.
 
 **Acceptance criteria:**
-- [ ] Parecer com cada tentativa e o rc medido; achado de mesma causa vira ML nesta REQ
+- [x] Parecer com cada tentativa e o rc medido; achado de mesma causa vira ML nesta REQ (sobre a forma H; a forma K passa pelo ML-2H)
 
 **Auditoria (Zeus, 2026-11-15):** red team aprova com ressalva; qualidade bloqueia. Os achados viram o ML-2C.
 - hades A1 (confirmado por mim no `pwsh` 7.6.9): perfil com `ErrorActionPreference` ReadOnly=`Stop` → forma H sai 1
@@ -352,7 +353,7 @@ forma legada **bloqueia tudo** ali (fail-closed), não libera. `bash -u`, `sh -u
 - [x] o contra-braço afirma "guard não rodou" em todos os shells, e o código de saída por shell resolvido:
   ≠ 2 em bash/zsh; = 2 em dash sob `-u` (fail-closed documentado)
 - [x] braço `dash-u` explícito; `sh-u` classifica pelo shell real por trás de `sh` (`d18ShellKind`, EvalSymlinks)
-- [ ] passa no macOS local e no job `go` do CI (ubuntu) — local ✅; CI conferido após o push
+- [x] passa no macOS local e no job `go` do CI (ubuntu) — `go` verde em fb929c5c
 
 **Auditoria (zeus):** diff só no arquivo de teste. `TestD18ContraArm_ShAsDashSim` simula `sh → /bin/dash` em
 t.TempDir e pula sem dash ou no Windows. Rodei os dois testes (todos PASS) e o pacote (83 s, relatado). `trackfw
@@ -369,6 +370,28 @@ Origem: `parity-other-gates` do CI reprovou em `scripts/check-symlink-privilege-
 **Acceptance criteria:**
 - [x] `os.Symlink` trocado por `symlinkOrSkip(t, dashPath, shLink)`; diff de 1+/3−, só no arquivo de teste
 - [x] `check-symlink-privilege-guard.sh` rc=0; `make parity-rest` rc=0 (33/33)
+
+### ML-2G — Forma K no PowerShell 5.1 da VM, via `-Command` e via `$PROFILE` real
+**Status:** 🔄 In progress
+**Squad:** artemis-tf
+
+Origem: o AC4 pede PS 5.1 e 7 no Windows, via `-Command` e via perfil. O ML-1D mediu a forma H na VM; a forma
+K (ML-2C) acrescenta `-Force -WhatIf:0 -Confirm:0` e nunca rodou no 5.1. O CI de Windows só roda `pwsh` 7 via
+`-Command`. A VM tem só o 5.1.26100 (sem `pwsh`); o perfil está ausente.
+
+**Acceptance criteria:**
+- [ ] 7 condições × (via `-Command`, via `$PROFILE` real) × (deny 2, allow 0, frc 1, ausente) no 5.1, com marcador de que o guard rodou
+- [ ] linhas de stderr da forma K contadas por célula no próprio 5.1
+- [ ] estado da VM restaurado: perfil ausente, nada apagado fora do diretório de medição, `C:\Users\Lab\bin\trackfw.exe` intacto
+
+### ML-2H — Red team e qualidade sobre o delta da forma K
+**Status:** 🔄 In progress
+**Squad:** hades-tf
+
+Origem: o parecer do ML-2A e o bloqueio da qualidade foram emitidos sobre a forma H. A forma K é superfície nova.
+
+**Acceptance criteria:**
+- [ ] parecer sobre K com cada tentativa e o rc medido; achado de mesma causa vira ML nesta REQ
 
 ### ML-2B — `make quality` com a máquina ociosa
 **Status:** ✅ Done
