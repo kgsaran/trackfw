@@ -337,6 +337,23 @@ pegou "pré-" em `validator_write_scope_wiring.go:99`.
 ` -Force -WhatIf:0 -Confirm:0` das constantes → readonly-stop e whatif-stop reprovam via-command e via-profile;
 restaurado (`cmp`). Semáforo de 4 chamadas pwsh concorrentes fica fora de `execPSCommand` para não travar a sonda.
 
+### ML-2E — Contra-braço D18 sob `sh -u` no Linux (dash)
+**Status:** 🔄 In progress
+**Squad:** artemis-tf
+
+Origem: o job `go` do CI (ubuntu) reprova `TestGuardLineShellMatrix_D18ContraArm/*/sh-u` desde o ML-1D (runs
+43722979009, 43735988160, 43743899371). Eu tinha atribuído a falha do job ao timeout, sem ler o log. Medição do
+arquiteto (2026-11-15, `/bin/dash` local): sob `dash -u` a forma legada sai **2 sem rodar o guard**, com allow e
+com deny. O `dash` aborta com 2 ao expandir `$LASTEXITCODE` indefinido. No Linux, `sh` é `dash`. Então a
+forma legada **bloqueia tudo** ali (fail-closed), não libera. `bash -u`, `sh -u` do macOS (bash) e `dash -e` dão
+127 sem rodar o guard. O braço afirmava "exit ≠ 2" para todo shell; a premissa só vale onde `sh` é bash.
+
+**Acceptance criteria:**
+- [ ] o contra-braço afirma "guard não rodou" em todos os shells, e o código de saída por shell resolvido:
+  ≠ 2 em bash/zsh; = 2 em dash sob `-u` (fail-closed documentado)
+- [ ] braço `dash-u` explícito; `sh-u` classifica pelo shell real por trás de `sh`
+- [ ] passa no macOS local e no job `go` do CI (ubuntu)
+
 ### ML-2B — `make quality` com a máquina ociosa
 **Status:** ⬜ Pending
 **Squad:** zeus-tf
