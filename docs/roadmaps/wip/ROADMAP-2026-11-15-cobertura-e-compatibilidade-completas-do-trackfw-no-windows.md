@@ -93,7 +93,7 @@ test -s docs/portabilidade/2026-11-15-inventario-windows.md
 > Dependencies: Wave 0 auditada
 
 ### ML-1A — `TestMLScope*` no Windows (41)
-**Status:** ⬜ Pending
+**Status:** 🔄 In progress
 **Squad:** artemis-tf
 **Files affected:** `internal/commands/barrier_ml_scope_test.go`
 **Actions:** remover o skip "windows path handling tested separately" das 41 ocorrências (`grep -c 't\.Skip("ml_scope'`
@@ -104,7 +104,7 @@ Windows por defeito de produto vira ML desta REQ com a causa medida; nunca volta
 - [ ] os 41 com `--- PASS` no `windows-full-suites` do PR (REQ-IMP-2), citando a linha do log
 
 ### ML-1B — `TestBarrierReentry_*` no Windows
-**Status:** ⬜ Pending
+**Status:** 🔄 In progress
 **Squad:** artemis-tf
 **Files affected:** `internal/commands/barrier_reentry_test.go`
 **Actions:** remover os skips falsos de T1, T2 e T3. Converter o skip incondicional de T7 em probe de capacidade.
