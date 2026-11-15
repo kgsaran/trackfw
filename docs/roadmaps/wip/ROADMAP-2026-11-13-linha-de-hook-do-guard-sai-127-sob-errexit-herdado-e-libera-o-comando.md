@@ -261,9 +261,10 @@ configs do repositório, README, `docs/cli-parity.md`, pin de `scripts/check-val
 > Dependencies: Wave 1 completa.
 
 ### ML-2A — Red team da forma nova
-**Status:** ⬜ Pending
+**Status:** 🔄 In progress
 **Squad:** hades-tf, hefesto-tf
-**Files affected:** `docs/seguranca/2026-11-13-wave2-redteam-guard-errexit-herdado.md`
+**Files affected:** `docs/seguranca/2026-11-13-wave2-redteam-guard-errexit-herdado.md` (hades-tf), `docs/qualidade/2026-11-15-revisao-linha-de-hook-forma-h.md` (hefesto-tf)
+**Status do PR:** draft #687
 
 **Actions:** reimplementar a matriz a partir da leitura, sem conferir o diff, e tentar liberar um comando negado.
 
