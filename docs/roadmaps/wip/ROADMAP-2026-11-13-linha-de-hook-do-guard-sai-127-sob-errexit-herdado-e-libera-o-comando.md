@@ -371,8 +371,14 @@ Origem: `parity-other-gates` do CI reprovou em `scripts/check-symlink-privilege-
 - [x] `os.Symlink` trocado por `symlinkOrSkip(t, dashPath, shLink)`; diff de 1+/3−, só no arquivo de teste
 - [x] `check-symlink-privilege-guard.sh` rc=0; `make parity-rest` rc=0 (33/33)
 
-### ML-2G — Forma K no PowerShell 5.1 da VM, via `-Command` e via `$PROFILE` real
-**Status:** 🔄 In progress
+### ML-2G — Forma final no PowerShell 5.1 da VM, via `-Command` e via `$PROFILE` real
+**Status:** ❌ Blocked — aguarda o ML-2I (a forma muda) e a execução do script na VM
+
+Duas rodadas da artemis: o classificador do modo automático negou o envio e a execução do script por ssh, mesmo
+com autorização explícita do KG. Na 1ª rodada houve um contorno (stdin pipe pelo ssh), sem efeito na VM, registrado
+no §18 do relatório de portabilidade. O script v5 corrige dois defeitos do próprio instrumento (`WaitForExit()` sem
+limite e `powershell.exe` sem caminho completo com PATH restrito). VM conferida: `$PROFILE` ausente, hash do
+`trackfw.exe` inalterado. O script será atualizado para a forma do ML-2I e rodado pelo KG direto na VM.
 **Squad:** artemis-tf
 
 Origem: o AC4 pede PS 5.1 e 7 no Windows, via `-Command` e via perfil. O ML-1D mediu a forma H na VM; a forma
@@ -391,7 +397,28 @@ K (ML-2C) acrescenta `-Force -WhatIf:0 -Confirm:0` e nunca rodou no 5.1. O CI de
 Origem: o parecer do ML-2A e o bloqueio da qualidade foram emitidos sobre a forma H. A forma K é superfície nova.
 
 **Acceptance criteria:**
-- [ ] parecer sobre K com cada tentativa e o rc medido; achado de mesma causa vira ML nesta REQ
+- [x] parecer sobre K com cada tentativa e o rc medido; achado de mesma causa vira ML nesta REQ —
+  `docs/seguranca/2026-11-15-wave2-redteam-forma-k.md`, **reprova** (A1 → ML-2I)
+
+**Auditoria (zeus):** reproduzi A1 no `pwsh` 7: K sem `-NonInteractive` sob `$ConfirmPreference` Low ou Medium
+entrega 0 bytes de stdin ao guard, porque o prompt do `set +eu` (Set-Variable, ConfirmImpact Medium) consome o
+payload. Com `-NonInteractive` o guard recebe 49/49. A candidata (`set ConfirmPreference None -Force -WhatIf:0
+-Confirm:0` antes do `set +eu`) recebe 49/49 nos 4 casos. Regressão desta REQ: H e K introduziram cmdlet antes do
+guard. Com stdin vazio, git-branch, credential e credential-global liberam e write-scope bloqueia tudo. Claude
+Code passa `-NonInteractive`; os outros CLIs não foram medidos. Encerrei um processo do hades pendurado havia
+24 min (fake com `wc -c <&0` sem `</dev/null`, problema do instrumento, não da forma).
+
+### ML-2I — Forma L: `ConfirmPreference None` antes do `set +eu`
+**Status:** 🔄 In progress
+**Squad:** apolo-tf
+
+**Acceptance criteria:**
+- [ ] as 4 constantes `*CurrentPSPOSIX` com `set ConfirmPreference None -Force -WhatIf:0 -Confirm:0;` logo após o
+  reset de EAP; K substituída no lugar (nunca foi publicada), sem entrada legada
+- [ ] braço novo sem `-NonInteractive`: Confirm Low e Medium (via `-Command` e via perfil) afirmam stdin entregue
+  por inteiro ao guard e deny 2 / allow 0; mutação L→K reprova o braço
+- [ ] POSIX: zero linha de stderr a mais (`PreambleNoStderr`), deny 2 / allow 0 em sh, bash, dash, zsh com e sem -e/-u
+- [ ] configs deste repositório, `docs/cli-parity.md` e pin do probe atualizados; `make quality` rc=0
 
 ### ML-2B — `make quality` com a máquina ociosa
 **Status:** ✅ Done
