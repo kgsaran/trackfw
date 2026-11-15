@@ -40,7 +40,7 @@ REQ para `Done`.
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model
-**Status:** 🔄 In progress
+**Status:** ✅ Done
 **Squad:** hades-tf
 **Files affected:** `docs/seguranca/2026-11-15-wave0-windows-threat-model.md` (novo)
 **Actions:**
@@ -56,7 +56,7 @@ REQ para `Done`.
 - [ ] nenhuma linha de implementação
 
 ### ML-0B — Inventário de Windows
-**Status:** 🔄 In progress
+**Status:** ✅ Done
 **Squad:** artemis-tf
 **Files affected:** `docs/portabilidade/2026-11-15-inventario-windows.md` (novo)
 **Actions:**
@@ -76,27 +76,142 @@ test -s docs/seguranca/2026-11-15-wave0-windows-threat-model.md
 test -s docs/portabilidade/2026-11-15-inventario-windows.md
 ```
 
-## Wave 1 — Justificativas falsas já conhecidas (definida após a auditoria da Wave 0)
+**Auditoria da Wave 0 (zeus, 2026-11-15):**
+- ML-0A aprovado. Conferi três afirmações:
+  - o `t.Log` + `return` do braço de perfil (guard_line_shell_test.go:2315 e ~2976);
+  - o `HomeFor` só trata Claude (agentconfig.go:128), o que é coerente com o D2 da ADR-2026-10-14: os CLIs
+    inferidos não mudam até serem medidos;
+  - o runner `windows-11-arm` é GA para repositórios públicos, e o repositório é PUBLIC.
+- ML-0B: a 1ª entrega reprovou nas contagens. Dizia 74 skips únicos e 43 `TestMLScope`. Medi 71 e 41, no log do
+  run 43766925360 e no código-fonte. Também afirmava que não havia runner arm64. O corretivo ML-0B2 refez os
+  totais a partir de uma lista nome→classe: (b) falso 49, (b) 3, (a) 3, (c) 16, total 71. Corrigiu o arm64 e
+  reconciliou cada REQ-IMP-1..9 do threat model com um ML.
+- Prova de que `sh` está no PATH do `windows-latest`: `TestBarrierFragment_TransportSingleLineReadContra` (que
+  chama `sh -c`) passa no log.
+
+## Wave 1 — Skips com justificativa falsa no pacote commands (2 MLs em paralelo; arquivos disjuntos)
 > Dependencies: Wave 0 auditada
 
-### ML-1A — `TestMLScope*` no Windows
+### ML-1A — `TestMLScope*` no Windows (41)
 **Status:** ⬜ Pending
 **Squad:** artemis-tf
-**Files affected:** `internal/commands/barrier_ml_scope_test.go` (confirmar na Wave 0)
+**Files affected:** `internal/commands/barrier_ml_scope_test.go`
+**Actions:** remover o skip "windows path handling tested separately" das 41 ocorrências (`grep -c 't\.Skip("ml_scope'`
+= 41). Trocar caminhos POSIX literais por `t.TempDir()`/`filepath.Join` onde houver. Um teste que reprove no
+Windows por defeito de produto vira ML desta REQ com a causa medida; nunca volta a ser skip.
 **Acceptance criteria:**
-- [ ] os 41 testes rodam no Windows, ou cada um tem prova (c)
-- [ ] `windows-full-suites` verde
+- [ ] `grep -c 'windows path handling tested separately'` = 0
+- [ ] os 41 com `--- PASS` no `windows-full-suites` do PR (REQ-IMP-2), citando a linha do log
 
 ### ML-1B — `TestBarrierReentry_*` no Windows
 **Status:** ⬜ Pending
 **Squad:** artemis-tf
-**Files affected:** `internal/commands/barrier_reentry_test.go` (confirmar na Wave 0)
+**Files affected:** `internal/commands/barrier_reentry_test.go`
+**Actions:** remover os skips falsos de T1, T2 e T3. Converter o skip incondicional de T7 em probe de capacidade.
+T7e fica como (c), com a prova escrita (EvalSymlinks normaliza o case no NTFS).
 **Acceptance criteria:**
-- [ ] T1/T2/T3/T7/T7e rodam no Windows, ou cada um entra em `windows-known-failures.json` com causa medida
-- [ ] `windows-full-suites` verde
+- [ ] T1/T2/T3/T7 com `--- PASS` no `windows-full-suites`, ou known-failure com o log de CI citado (REQ-IMP-2)
+- [ ] nenhuma entrada nova em `windows-known-failures.json` sem execução no Windows
 
-## Wave 2..N — MLs propostos pela Wave 0
-> Dependencies: Wave 1. Detalhados aqui após a auditoria do inventário.
+## Wave 2 — Skips falsos de shell e o braço de perfil que se esconde (2 MLs em paralelo; arquivos disjuntos)
+> Dependencies: Wave 1 (`windows-full-suites` verde)
+
+### ML-2A — Skips "shells POSIX não disponíveis" e o perfil do PowerShell no Windows
+**Status:** ⬜ Pending
+**Squad:** artemis-tf
+**Files affected:** `internal/generators/guard_line_shell_test.go`, `internal/generators/fail_closed_d11_behavior_test.go`,
+`internal/commands/netexec_test.go`, `internal/commands/doctor_test.go`
+**Actions:**
+1. Trocar o skip por plataforma por um probe de capacidade (`exec.LookPath` do shell). `sh` e `bash` rodam; `zsh`
+   e `dash` pulam pelo probe.
+2. Trocar os dois `t.Log` + `return` dos braços de perfil por braços que rodam no Windows. O perfil real fica em
+   `$env:USERPROFILE\Documents\{WindowsPowerShell,PowerShell}`, isolado com `USERPROFILE` apontando para
+   `t.TempDir()`. Medir antes se o PowerShell respeita essa troca. Se não respeitar, usar `t.Skip` com a prova (c).
+3. Cobrir PS 5.1 (`powershell.exe`) e `pwsh` 7, com a asserção `bytes recebidos == len(payload)` nos braços de
+   deny e allow (REQ-IMP-4).
+4. `TestD11FailClosed_PowerShell`: trocar o stub `#!/bin/sh` por `.cmd`.
+**Acceptance criteria:**
+- [ ] nenhum `t.Log(...); return` que encerre o teste por plataforma
+- [ ] braço de perfil do `PSInheritedState` e do `LContraArm_ConfirmLow` com `--- PASS` no Windows, em 5.1 e 7
+- [ ] mutação L→K reprova o braço de perfil no Windows (CI do PR)
+
+### ML-2B — Forma cmd.exe executada sob `cmd.exe` real (REQ-IMP-5/6)
+**Status:** ⬜ Pending
+**Squad:** artemis-tf
+**Files affected:** `internal/generators/guard_cmdexe_exec_test.go` (novo)
+**Actions:** executar a linha de hook que Kiro e Amazon Q recebem no Windows sob `cmd.exe /d /c`, com um fake
+`trackfw.cmd` que grava os bytes recebidos. Cobrir deny 2, allow 0 e ausente; afirmar os bytes recebidos. Pular
+fora do Windows.
+**Acceptance criteria:**
+- [ ] `--- PASS` no `windows-full-suites`; mutação da linha (sem `|| exit 2`) reprova
+
+## Wave 3 — Gate, smoke de canal, arm64 e aviso de `sh` (MLs em paralelo; arquivos disjuntos)
+> Dependencies: Wave 2
+
+### ML-3A — Registro e gate de skips de Windows (AC3, REQ-IMP-1)
+**Status:** ⬜ Pending
+**Squad:** apolo-tf
+**Files affected:** `.github/windows-skips.json` (novo), `scripts/check-windows-skips.go` ou teste Go em
+`internal/` (decidir no handoff), alvo no `Makefile`/`quality.yml`
+**Actions:**
+- O checker é AST, não grep. Ele marca toda função de teste com ramo por plataforma (`runtime.GOOS ==
+  "windows"`, `testGOOS`, helpers e build tag `!windows`) que pode sair sem asserção, seja por `t.Skip` ou por
+  `return`.
+- Cada função marcada exige uma entrada `{test, classification, reason, evidence}` no registro.
+- O registro é separado de `windows-known-failures.json`.
+**Acceptance criteria:**
+- [ ] o gate passa na árvore com os skips restantes registrados
+- [ ] braços de falsificação: um skip novo não registrado reprova; um `t.Log` + `return` novo reprova; uma
+  entrada sem `evidence` reprova
+
+### ML-3B — Smoke de npm e PyPI no `windows-latest` (AC5, REQ-IMP-3)
+**Status:** ⬜ Pending
+**Squad:** ares-tf
+**Files affected:** `.github/workflows/quality.yml`
+**Actions:** job que instala o pacote do PR pelos dois canais: tarball local do npm e wheel local do PyPI, nunca
+o registro público. No PowerShell e no cmd, roda:
+- `trackfw --version`;
+- `trackfw validate` num fixture mínimo;
+- `echo 'git branch some-branch' | trackfw guard git-branch` → 2;
+- o payload de Write para `write-scope` → 0.
+**Acceptance criteria:**
+- [ ] job verde em 2 rodadas; braço de falsificação documentado (stdin vazio inverte os dois rc)
+
+### ML-3C — arm64 executado (REQ-IMP-7)
+**Status:** ⬜ Pending
+**Squad:** ares-tf
+**Files affected:** `.github/workflows/quality.yml` (job separado do ML-3B; os dois MLs são sequenciais no mesmo
+arquivo: o 3C entra depois do 3B)
+**Actions:** job `windows-arm64` em `windows-11-arm`: build nativo, `--version` e os dois braços de stdin.
+**Acceptance criteria:**
+- [ ] job verde; incluído nos required checks declarados (`make check-required-checks`)
+
+### ML-3D — Aviso proativo de `sh` ausente (REQ-IMP-9) e artefatos de conveniência declarados (REQ-IMP-5)
+**Status:** ⬜ Pending
+**Squad:** apolo-tf
+**Files affected:** `internal/validator/` e `internal/commands/doctor*.go` (sítios exatos no handoff)
+**Actions:** quando faltar `sh` no PATH, `validate` e `doctor` avisam (warning, não erro). Os artefatos `.sh` de
+conveniência (attention, trackfw-validate, runner do lefthook, husky) passam a ser declarados como dependentes
+de Git Bash no Windows. Guard não entra nessa declaração.
+**Acceptance criteria:**
+- [ ] regra nova com default `warning`, nos dois sítios do `validator.go`, com pin em `check-validate-rule-pins.sh`
+- [ ] teste com PATH sem `sh` (aviso presente) e com `sh` (ausente)
+
+## Wave 4 — Medição na VM por CLI (depende do KG)
+> Dependencies: Wave 3. Cada CLI precisa estar instalado na VM.
+
+### ML-4A — Flags do PowerShell e HOME por CLI no Windows (AC6, REQ-IMP-8)
+**Status:** ⬜ Pending
+**Squad:** artemis-tf (medição), apolo-tf (correção, se houver)
+**Actions:** para Codex, Gemini, Cursor, Copilot, Windsurf, Kiro e Amazon Q, medir na VM:
+- se o hook roda o PowerShell com `-NonInteractive`/`-NoProfile`, usando um stub que registra `argv` e os bytes
+  de stdin;
+- qual HOME o CLI lê.
+
+Pela ADR-2026-10-14 D2, o `HomeFor` só muda para um CLI medido. Se um CLI não passar `-NonInteractive`, o A1 da
+forma K deixa de valer para ele, porque a forma L cobre esse caso. Registrar.
+**Acceptance criteria:**
+- [ ] tabela CLI × (`-NonInteractive`, `-NoProfile`, HOME) medida; CLI não instalado fica declarado como não medido
 
 ## Wave final — Red team, `make quality` e CI de Windows
 > Dependencies: todas as anteriores
