@@ -1180,14 +1180,44 @@ func TestGuardLineShellMatrix_UnsetoptInsuficiente(t *testing.T) {
 	}
 }
 
-// TestGuardLineShellMatrix_D18ContraArm demonstra que a forma D18 legacy (emulate -R sh sem o
-// prefixo set +eu) falha sob shells POSIX com errexit ou nounset herdado — saindo com exit ≠ 2.
-// Essa é a "prova de mordida" do D18: se a forma legada funcionasse nesses ambientes, o fix D18
-// seria desnecessário e este braço seria falso-verde.
+// d18ShellKind classifica o shell em "dash" ou "bash" seguindo os symlinks do shellPath.
+// Usado pelo contra-braço D18 para determinar o código de saída esperado sob -u:
+//   - "dash": sai com 2 (código de erro nounset do dash) antes de executar o guard.
+//   - "bash": sai com 127 (comando não encontrado) — qualquer shell que não seja dash.
 //
-// Reconciliação (REQ-2026-11-13 ML-1A): afirma que cada uma das quatro formas legadas D18
-// (guardforms.LegacyD18*PSPOSIX) sai ≠ 2 sob bash -e, bash -u, sh -e, sh -u e dash -e,
-// confirmando que o prefixo `set +eu` é necessário para esses ambientes.
+// No Linux, /bin/sh geralmente é um symlink para /usr/bin/dash (ou /bin/dash) → "dash".
+// No macOS, /bin/sh é um binário Mach-O real que implementa bash → "bash" (EvalSymlinks
+// não avança além do próprio binário; o base name é "sh", não "dash").
+// Se EvalSymlinks falhar, usa o base name do shellPath como aproximação.
+func d18ShellKind(shellPath string) string {
+	resolved, err := filepath.EvalSymlinks(shellPath)
+	if err != nil {
+		resolved = shellPath
+	}
+	base := strings.ToLower(filepath.Base(resolved))
+	if base == "dash" || strings.HasPrefix(base, "dash") {
+		return "dash"
+	}
+	return "bash"
+}
+
+// TestGuardLineShellMatrix_D18ContraArm demonstra que a forma D18 legacy (emulate -R sh sem o
+// prefixo set +eu) falha com o guard nunca rodando sob shells POSIX com errexit ou nounset
+// herdados. Essa é a "prova de mordida" do D18: se a forma legada funcionasse nesses ambientes,
+// o fix D18 seria desnecessário e este braço seria falso-verde.
+//
+// Comportamento por shell (medido):
+//   - bash-e, bash-u, sh-e, sh-u-em-macOS (sh=binário próprio), dash-e: exit ≠ 2 (tipicamente 127)
+//     — shell aborta por "emulate" ou comando não encontrado; guard não roda.
+//   - dash-u, sh-u-em-linux (sh→dash via symlink): exit == 2 (fail-closed)
+//     — dash aborta com código 2 ao expandir $LASTEXITCODE indefinido sob nounset.
+//     stdin.out ausente é a única prova de que o guard não rodou, pois exit 2 coincide
+//     com o código de deny do stub (FAKE_RC=2).
+//
+// Reconciliação (REQ-2026-11-13 ML-2E): afirma que cada forma legada D18 sai com o código
+// esperado por shell (exit ≠ 2 ou exit == 2 dependendo de dash+nounset) E guard não rodou
+// (stdin.out ausente). A classificação por d18ShellKind(shellPath) determina qual expectativa
+// se aplica em tempo de execução, sem depender de GOOS.
 func TestGuardLineShellMatrix_D18ContraArm(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shells POSIX não disponíveis em Windows")
@@ -1205,8 +1235,9 @@ func TestGuardLineShellMatrix_D18ContraArm(t *testing.T) {
 		{"credential-global", guardforms.LegacyD18CredentialGlobalPSPOSIX},
 	}
 
-	// Shells POSIX com opções herdadas que causavam saída 127 na forma legada.
-	// dash -e: pulado se dash não estiver disponível.
+	// Shells POSIX com opções herdadas.
+	// dash-u é o caso fail-closed (exit 2 por nounset); demais saem com 127.
+	// dash-e e dash-u: pulados se dash não estiver disponível.
 	type d18Shell struct {
 		name  string
 		bin   string
@@ -1218,6 +1249,7 @@ func TestGuardLineShellMatrix_D18ContraArm(t *testing.T) {
 		{"sh-e", "sh", []string{"-e"}},
 		{"sh-u", "sh", []string{"-u"}},
 		{"dash-e", "dash", []string{"-e"}},
+		{"dash-u", "dash", []string{"-u"}},
 	}
 
 	for _, guard := range d18Matrix {
@@ -1230,6 +1262,20 @@ func TestGuardLineShellMatrix_D18ContraArm(t *testing.T) {
 					if err != nil {
 						t.Skipf("%s não encontrado em PATH — braço D18 não aplicável neste ambiente", sh.bin)
 					}
+
+					// Classificar o shell pelo caminho real (resolve symlinks).
+					// d18ShellKind e exec.CommandContext usam o mesmo shellPath — sem divergência.
+					kind := d18ShellKind(shellPath)
+					hasDashU := false
+					for _, f := range sh.flags {
+						if f == "-u" {
+							hasDashU = true
+							break
+						}
+					}
+					// dash com -u aborta com exit 2 antes do guard (fail-closed por nounset).
+					// Demais combinações saem com 127 (emulate não encontrado).
+					wantExit2 := kind == "dash" && hasDashU
 
 					dir := t.TempDir()
 					makeFakeTrackfw(t, dir)
@@ -1264,26 +1310,42 @@ func TestGuardLineShellMatrix_D18ContraArm(t *testing.T) {
 						}
 					}
 
-					// A forma D18 legacy DEVE falhar (sair ≠ 2) sob o shell com opção herdada.
-					// Se sair com exit 2, o braço não detecta o defeito — é falso-verde.
-					if code == 2 {
-						t.Errorf(
-							"D18 contra-braço (%s/%s): forma legada saiu com exit 2 — "+
-								"esperado exit ≠ 2; verificar se a forma legada foi alterada em guardforms",
-							guard.name, sh.name,
-						)
+					if wantExit2 {
+						// dash -u: fail-closed — sai com 2 (código nounset do dash) antes do guard.
+						if code != 2 {
+							t.Errorf(
+								"D18 contra-braço (%s/%s, shell=%s, kind=%s): exit %d — "+
+									"esperado 2 (dash -u aborta com 2 em variável indefinida antes do guard)",
+								guard.name, sh.name, shellPath, kind, code,
+							)
+						} else {
+							t.Logf("D18 contra-braço (%s/%s, shell=%s): exit 2 — fail-closed dash-u confirmado",
+								guard.name, sh.name, shellPath)
+						}
 					} else {
-						t.Logf("D18 contra-braço (%s/%s): forma legada saiu com exit %d (≠ 2) — defeito D18 confirmado",
-							guard.name, sh.name, code)
+						// Demais: fail-open por 127 — guard nunca roda, mas sai ≠ 2.
+						if code == 2 {
+							t.Errorf(
+								"D18 contra-braço (%s/%s, shell=%s, kind=%s): forma legada saiu com exit 2 — "+
+									"esperado exit ≠ 2; verificar se a forma legada foi alterada em guardforms",
+								guard.name, sh.name, shellPath, kind,
+							)
+						} else {
+							t.Logf("D18 contra-braço (%s/%s, shell=%s): exit %d (≠ 2) — defeito D18 confirmado",
+								guard.name, sh.name, shellPath, code)
+						}
 					}
 
 					// Confirmar que o guard nunca rodou (stdin.out não deve existir).
+					// Para dash-u: distingue "shell abortou antes do guard" (exit 2, sem stdin.out)
+					// de "guard rodou e negou" (exit 2, com stdin.out) — FAKE_RC=2 coincide com o
+					// código nounset do dash, então stdin.out é a única prova invariante.
 					stdinOutPath := filepath.Join(dir, "stdin.out")
 					if _, statErr := os.Stat(stdinOutPath); statErr == nil {
 						t.Errorf(
-							"D18 contra-braço (%s/%s): stdin.out existe — guard rodou quando não deveria; "+
+							"D18 contra-braço (%s/%s, shell=%s): stdin.out existe — guard rodou quando não deveria; "+
 								"a forma legada pode estar passando por outro mecanismo",
-							guard.name, sh.name,
+							guard.name, sh.name, shellPath,
 						)
 					}
 				})
@@ -2691,4 +2753,137 @@ func TestGuardLineShellMatrix_PreambleNoStderr(t *testing.T) {
 		}
 		t.Logf("contra-braço CAND_F: stderr=%q — ruído de preamble confirmado, guard executou", stderr)
 	})
+}
+
+// TestD18ContraArm_ShAsDashSim simula o ambiente Linux onde /bin/sh é um symlink para dash.
+// Cria um "sh" como symlink para o dash local (em t.TempDir) e executa as formas legadas D18
+// com flags -u e -e, verificando:
+//   - sh-as-dash-u: exit == 2 (dash nounset) + guard não rodou (stdin.out ausente).
+//   - sh-as-dash-e: exit ≠ 2 (127) + guard não rodou (stdin.out ausente).
+//
+// Este teste prova que a lógica d18ShellKind + seleção de expectativa do
+// TestGuardLineShellMatrix_D18ContraArm funciona no caso Linux, onde o braço sh-u falhou
+// com "forma legada saiu com exit 2 — esperado exit ≠ 2" (REQ-2026-11-13 ML-2E).
+//
+// Reconciliação (REQ-2026-11-13 ML-2E):
+//   - sh-as-dash-u afirma: "dash -u aborta com exit 2 antes do guard rodar" (medição do arquiteto).
+//   - sh-as-dash-e afirma: "dash -e não causa nounset; sai com ≠ 2 por emulate/comando ausente".
+//   - Ambos afirmam: "guard não rodou" (stdin.out ausente — prova invariante).
+func TestD18ContraArm_ShAsDashSim(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shells POSIX não disponíveis em Windows")
+	}
+	dashPath, err := exec.LookPath("dash")
+	if err != nil {
+		t.Skip("dash não encontrado — simulação sh→dash não aplicável")
+	}
+
+	// Criar symlink sh → dash simulando /bin/sh→/bin/dash (Linux).
+	linkDir := t.TempDir()
+	shLink := filepath.Join(linkDir, "sh")
+	if err := os.Symlink(dashPath, shLink); err != nil {
+		t.Fatalf("criando symlink sh→dash: %v", err)
+	}
+
+	// d18ShellKind deve classificar shLink como "dash" — sem isso o resto do teste não tem sentido.
+	// Mesmo shellPath passado para d18ShellKind e exec.CommandContext: sem divergência.
+	kind := d18ShellKind(shLink)
+	if kind != "dash" {
+		t.Fatalf("d18ShellKind(%q) = %q; esperado \"dash\" — symlink não resolveu para dash", shLink, kind)
+	}
+
+	type simCase struct {
+		name      string
+		flags     []string
+		wantExit2 bool
+	}
+	cases := []simCase{
+		// sh-as-dash-u: d18ShellKind="dash" && flag="-u" → wantExit2=true.
+		// Afirma: "dash -u aborta com exit 2 (nounset em $LASTEXITCODE) antes do guard".
+		{"sh-as-dash-u", []string{"-u"}, true},
+		// sh-as-dash-e: d18ShellKind="dash" && flag="-e" → wantExit2=false.
+		// Afirma: "dash -e aborta com exit 127 (emulate não encontrado) antes do guard".
+		{"sh-as-dash-e", []string{"-e"}, false},
+	}
+
+	d18Matrix := []struct {
+		name    string
+		legLine string
+	}{
+		{"git-branch", guardforms.LegacyD18GitBranchPSPOSIX},
+		{"credential", guardforms.LegacyD18CredentialPSPOSIX},
+		{"write-scope", guardforms.LegacyD18WriteScopePSPOSIX},
+		{"credential-global", guardforms.LegacyD18CredentialGlobalPSPOSIX},
+	}
+
+	for _, sc := range cases {
+		sc := sc
+		t.Run(sc.name, func(t *testing.T) {
+			for _, guard := range d18Matrix {
+				guard := guard
+				t.Run(guard.name, func(t *testing.T) {
+					fakeDir := t.TempDir()
+					makeFakeTrackfw(t, fakeDir)
+
+					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+					defer cancel()
+
+					args := append(sc.flags, "-c", guard.legLine)
+					cmd := exec.CommandContext(ctx, shLink, args...)
+
+					pathVal := fakeDir + ":/usr/bin:/bin"
+					base := os.Environ()
+					filtered := make([]string, 0, len(base)+2)
+					for _, e := range base {
+						if strings.HasPrefix(e, "PATH=") ||
+							strings.HasPrefix(e, "FAKE_RC=") ||
+							strings.HasPrefix(e, "BASH_ENV=") ||
+							strings.HasPrefix(e, "SHELLOPTS=") {
+							continue
+						}
+						filtered = append(filtered, e)
+					}
+					filtered = append(filtered, "PATH="+pathVal, "FAKE_RC=2")
+					cmd.Env = filtered
+					cmd.Stdin = strings.NewReader(stdinPayload)
+
+					runErr := cmd.Run()
+					code := 0
+					if runErr != nil {
+						if exitErr, ok := runErr.(*exec.ExitError); ok {
+							code = exitErr.ExitCode()
+						}
+					}
+
+					// stdin.out ausente: prova invariante — guard nunca rodou.
+					// Para sh-as-dash-u: distingue "shell abortou antes do guard" (exit 2, sem stdin.out)
+					// de "guard rodou e negou" (exit 2, com stdin.out), pois FAKE_RC=2 coincide.
+					stdinOutPath := filepath.Join(fakeDir, "stdin.out")
+					if _, statErr := os.Stat(stdinOutPath); statErr == nil {
+						t.Errorf("sim(%s/%s): stdin.out existe — guard rodou quando não deveria", sc.name, guard.name)
+					}
+
+					if sc.wantExit2 {
+						if code != 2 {
+							t.Errorf(
+								"sim(%s/%s): exit %d — esperado 2 (dash -u aborta com 2 em variável indefinida)",
+								sc.name, guard.name, code,
+							)
+						} else {
+							t.Logf("sim(%s/%s): exit 2 — fail-closed dash-u confirmado", sc.name, guard.name)
+						}
+					} else {
+						if code == 2 {
+							t.Errorf(
+								"sim(%s/%s): exit 2 — esperado ≠ 2 (defeito D18 não detectado nesta combinação)",
+								sc.name, guard.name,
+							)
+						} else {
+							t.Logf("sim(%s/%s): exit %d (≠ 2) — defeito D18 confirmado", sc.name, guard.name, code)
+						}
+					}
+				})
+			}
+		})
+	}
 }

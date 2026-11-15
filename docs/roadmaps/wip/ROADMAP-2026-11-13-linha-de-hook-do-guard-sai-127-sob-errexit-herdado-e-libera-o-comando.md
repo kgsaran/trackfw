@@ -338,7 +338,7 @@ pegou "pré-" em `validator_write_scope_wiring.go:99`.
 restaurado (`cmp`). Semáforo de 4 chamadas pwsh concorrentes fica fora de `execPSCommand` para não travar a sonda.
 
 ### ML-2E — Contra-braço D18 sob `sh -u` no Linux (dash)
-**Status:** 🔄 In progress
+**Status:** ✅ Done
 **Squad:** artemis-tf
 
 Origem: o job `go` do CI (ubuntu) reprova `TestGuardLineShellMatrix_D18ContraArm/*/sh-u` desde o ML-1D (runs
@@ -349,10 +349,15 @@ forma legada **bloqueia tudo** ali (fail-closed), não libera. `bash -u`, `sh -u
 127 sem rodar o guard. O braço afirmava "exit ≠ 2" para todo shell; a premissa só vale onde `sh` é bash.
 
 **Acceptance criteria:**
-- [ ] o contra-braço afirma "guard não rodou" em todos os shells, e o código de saída por shell resolvido:
+- [x] o contra-braço afirma "guard não rodou" em todos os shells, e o código de saída por shell resolvido:
   ≠ 2 em bash/zsh; = 2 em dash sob `-u` (fail-closed documentado)
-- [ ] braço `dash-u` explícito; `sh-u` classifica pelo shell real por trás de `sh`
-- [ ] passa no macOS local e no job `go` do CI (ubuntu)
+- [x] braço `dash-u` explícito; `sh-u` classifica pelo shell real por trás de `sh` (`d18ShellKind`, EvalSymlinks)
+- [ ] passa no macOS local e no job `go` do CI (ubuntu) — local ✅; CI conferido após o push
+
+**Auditoria (zeus):** diff só no arquivo de teste. `TestD18ContraArm_ShAsDashSim` simula `sh → /bin/dash` em
+t.TempDir e pula sem dash ou no Windows. Rodei os dois testes (todos PASS) e o pacote (83 s, relatado). `trackfw
+validate` rc=0 na minha rodada; o relatório dizia rc=1. Residual aceito: shell derivado de dash com outro nome
+(busybox ash) é classificado como bash.
 
 ### ML-2B — `make quality` com a máquina ociosa
 **Status:** ⬜ Pending
