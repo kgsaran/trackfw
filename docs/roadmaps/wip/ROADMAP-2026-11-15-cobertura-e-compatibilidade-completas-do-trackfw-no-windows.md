@@ -52,8 +52,8 @@ REQ para `Done`.
 3. Alvos de falsificação nas duas direções, para cada superfície.
 4. Residual declarado.
 **Acceptance criteria:**
-- [ ] as quatro seções respondidas com evidência, não com uma linha de afirmação
-- [ ] nenhuma linha de implementação
+- [x] as quatro seções respondidas com evidência, não com uma linha de afirmação
+- [x] nenhuma linha de implementação
 
 ### ML-0B — Inventário de Windows
 **Status:** ✅ Done
@@ -67,8 +67,8 @@ REQ para `Done`.
 3. Canais de distribuição: o que já tem smoke no Windows e o que falta (npm, PyPI, `install.ps1`, arm64).
 4. Propor os MLs de implementação, agrupados por causa (Regra Dura de Causa Raiz).
 **Acceptance criteria:**
-- [ ] cada item com fonte (linha do log, arquivo:linha ou medição); contagem conferida contra o log
-- [ ] nenhuma linha de implementação
+- [x] cada item com fonte (linha do log, arquivo:linha ou medição); contagem conferida contra o log (após ML-0B2)
+- [x] nenhuma linha de implementação
 
 **Wave gates:**
 ```bash
@@ -213,7 +213,7 @@ forma K deixa de valer para ele, porque a forma L cobre esse caso. Registrar.
 **Acceptance criteria:**
 - [ ] tabela CLI × (`-NonInteractive`, `-NoProfile`, HOME) medida; CLI não instalado fica declarado como não medido
 
-## Wave final — Red team, `make quality` e CI de Windows
+## Wave 5 — Red team, `make quality` e CI de Windows
 > Dependencies: todas as anteriores
 
 ### ML-FA — Red team da entrega
