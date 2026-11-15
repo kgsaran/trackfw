@@ -40,7 +40,7 @@ REQ para `Done`.
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model
-**Status:** ⬜ Pending
+**Status:** 🔄 In progress
 **Squad:** hades-tf
 **Files affected:** `docs/seguranca/2026-11-15-wave0-windows-threat-model.md` (novo)
 **Actions:**
@@ -56,7 +56,7 @@ REQ para `Done`.
 - [ ] nenhuma linha de implementação
 
 ### ML-0B — Inventário de Windows
-**Status:** ⬜ Pending
+**Status:** 🔄 In progress
 **Squad:** artemis-tf
 **Files affected:** `docs/portabilidade/2026-11-15-inventario-windows.md` (novo)
 **Actions:**
