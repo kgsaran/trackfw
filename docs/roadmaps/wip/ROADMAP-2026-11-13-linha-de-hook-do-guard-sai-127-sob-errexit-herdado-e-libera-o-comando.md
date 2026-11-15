@@ -402,7 +402,9 @@ que está medido no `pwsh` 7. Ele só mostra que nenhuma condição herdada acre
 `-NonInteractive`; o A1 (prompt drenando stdin) está medido só no `pwsh` 7 (macOS e CI Windows).
 
 ### ML-2H — Red team e qualidade sobre o delta da forma K
-**Status:** 🔄 In progress
+**Status:** ✅ Done (reprova → ML-2I). Só o hades rodou; o hefesto não revisou K nem L. Decisão do arquiteto:
+o delta K→L é um segmento, com teste de contra-braço próprio e `make quality` verde, e não justifica uma rodada
+de qualidade dedicada.
 **Squad:** hades-tf
 
 Origem: o parecer do ML-2A e o bloqueio da qualidade foram emitidos sobre a forma H. A forma K é superfície nova.
