@@ -409,16 +409,24 @@ Code passa `-NonInteractive`; os outros CLIs não foram medidos. Encerrei um pro
 24 min (fake com `wc -c <&0` sem `</dev/null`, problema do instrumento, não da forma).
 
 ### ML-2I — Forma L: `ConfirmPreference None` antes do `set +eu`
-**Status:** 🔄 In progress
+**Status:** ✅ Done
 **Squad:** apolo-tf
 
 **Acceptance criteria:**
-- [ ] as 4 constantes `*CurrentPSPOSIX` com `set ConfirmPreference None -Force -WhatIf:0 -Confirm:0;` logo após o
+- [x] as 4 constantes `*CurrentPSPOSIX` com `set ConfirmPreference None -Force -WhatIf:0 -Confirm:0;` logo após o
   reset de EAP; K substituída no lugar (nunca foi publicada), sem entrada legada
-- [ ] braço novo sem `-NonInteractive`: Confirm Low e Medium (via `-Command` e via perfil) afirmam stdin entregue
+- [x] braço novo sem `-NonInteractive`: Confirm Low e Medium (via `-Command` e via perfil) afirmam stdin entregue
   por inteiro ao guard e deny 2 / allow 0; mutação L→K reprova o braço
-- [ ] POSIX: zero linha de stderr a mais (`PreambleNoStderr`), deny 2 / allow 0 em sh, bash, dash, zsh com e sem -e/-u
-- [ ] configs deste repositório, `docs/cli-parity.md` e pin do probe atualizados; `make quality` rc=0
+- [x] POSIX: zero linha de stderr a mais (`PreambleNoStderr`), deny 2 / allow 0 em sh, bash, dash, zsh com e sem -e/-u
+- [x] configs deste repositório, `docs/cli-parity.md` e pin do probe atualizados; `make quality` rc=0 (executor)
+
+**Auditoria (zeus):** 11 arquivos; forma L em 4 constantes + 8/5/7 hooks de `.claude`/`.codex`/`.gemini`.
+`TestGuardLineShellMatrix_LContraArm_ConfirmLow` tem 8 braços da forma L (Low e Medium × via-command e via-profile ×
+RC 0/2) e o contra-braço K (0 de 58 bytes); rodei e todos passam. O executor reverteu L→K e os 8 braços reprovaram;
+restaurado com `cmp`. `PreambleNoStderr` e `TestGuardExpectedLinePin` passam; pacote em 84,6 s; `validate` rc=0.
+No Windows o braço via-profile é pulado (XDG); lá só via-command. O relatório dizia que o script da VM tinha sido
+atualizado, o que é falso: gerei o v6 (forma L, igual byte a byte à constante). Ressalva: o script da VM roda
+todas as células com `-NonInteractive`, então o A1 no 5.1 não é medido por ele.
 
 ### ML-2B — `make quality` com a máquina ociosa
 **Status:** ✅ Done

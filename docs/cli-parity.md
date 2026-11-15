@@ -6858,11 +6858,11 @@ runtimes.
 um caminho para o `.sh` e passou a ser um comando inline idêntico em todos os shells (mesma string em
 todo CLI de agente), via subcomando Go `trackfw guard`:
 
-| Família de shell | Linha de hook emitida (REQ-2026-11-13 / D18 ML-1C2) |
+| Família de shell | Linha de hook emitida (REQ-2026-11-13 / D18 ML-2I) |
 |---|---|
-| PS/POSIX (Claude Code, Codex, Gemini CLI, Cursor, Copilot, Windsurf) | `set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE` |
+| PS/POSIX (Claude Code, Codex, Gemini CLI, Cursor, Copilot, Windsurf) | `set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set ConfirmPreference None -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE` |
 | cmd.exe (Kiro, Amazon Q) | `trackfw guard git-branch \|\| exit 2` |
-| Idem para credential-guard | `set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE` / `trackfw guard credential \|\| exit 2` |
+| Idem para credential-guard | `set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set ConfirmPreference None -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE` / `trackfw guard credential \|\| exit 2` |
 
 **REQ-2026-10-20 — correção de falha do hook sob zsh (ADR-2026-10-04, 2026-10-21):**
 A linha D11 (ML-6C) falhava silenciosamente sob zsh devido a duas opções ativas por padrão:
@@ -6884,21 +6884,27 @@ CommandNotFound no PS 5.1 (medido, achado A6) — duas linhas aparecem no stderr
 A linha D11 resolve o problema da D2 que era **fail-open** quando `trackfw` estava ausente do PATH:
 o hook saía com exit 0 e o agente prosseguia sem interrupção.
 
-Mecanismo da linha PS/POSIX — prefixo de cinco segmentos (forma K, REQ-2026-11-13 ML-2C):
+Mecanismo da linha PS/POSIX — prefixo de seis segmentos (forma L, REQ-2026-11-13 ML-2I):
 
 - `set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0` — PS: `Set-Variable`; `-Force`
   sobrescreve proteção ReadOnly/Constant (sem ele, um EAP ReadOnly herdado não pode ser redefinido);
   `-WhatIf:0` e `-Confirm:0` desativam os modos WhatIf e Confirm para esta chamada (inteiro `0` =
   `$false` para parâmetros switch; `:0` em vez de `$false` porque `$false` seria referência a
-  variável indefinida sob POSIX `nounset` — `nounset` só é desativado no segmento 2). Deve vir
-  **primeiro** para que o segmento 2 não seja suprimido por um `$WhatIfPreference` ativo. POSIX:
+  variável indefinida sob POSIX `nounset` — `nounset` só é desativado no segmento 3). Deve vir
+  **primeiro** para que o segmento 3 não seja suprimido por um `$WhatIfPreference` ativo. POSIX:
   `set` com argumentos posicionais, exit 0 — sem processamento de opções porque o primeiro argumento
   (`ErrorActionPreference`) não começa com `-` nem `+` (REQ-2026-11-13, D18 ML-2C).
+- `set ConfirmPreference None -Force -WhatIf:0 -Confirm:0` — PS: redefine `$ConfirmPreference`
+  para `None` para que o segmento 3 (`Set-Variable "+eu"`, ConfirmImpact=Medium) não abra um
+  prompt de confirmação interativo quando `$ConfirmPreference='Low'` ou `'Medium'` está herdado.
+  Sem este segmento e sem `-NonInteractive`, o prompt drenaria o stdin e o guard receberia 0 bytes
+  do payload JSON (fail-open). `-Force` sobrescreve proteção ReadOnly em `$ConfirmPreference`.
+  POSIX: `set` com argumentos posicionais, exit 0 — mesma mecânica do segmento 1
+  (REQ-2026-11-13, D18 ML-2I).
 - `set +eu` — POSIX: special builtin; desativa `errexit` (+e) e `nounset` (+u) sem redirecionamento.
-  Vem **depois** do segmento 1: se `$ConfirmPreference='Low'` estivesse ativo ao processar `set +eu`,
-  `Set-Variable "+eu"` (a interpretação PS) pediria confirmação — suprimida por `-Confirm:0` acima.
-  PS: `Set-Variable "+eu"` — cria variável em silêncio, sem erro em qualquer estado
-  (REQ-2026-11-13, D18 ML-2C).
+  Vem **depois** dos segmentos 1 e 2 para que WhatIf e ConfirmPreference já estejam neutralizados.
+  PS: `Set-Variable "+eu"` — cria variável em silêncio (ConfirmPreference=None foi definido no
+  segmento 2; nenhum prompt) (REQ-2026-11-13, D18 ML-2I).
 - `null=/dev/null` — POSIX: atribuição de variável; define `$null=/dev/null` para que os
   redirecionamentos `2>$null` seguintes sejam silenciados (zero linhas extras de stderr por chamada
   no shell POSIX). PS: tenta invocar comando `null =/dev/null` → CommandNotFound,
@@ -6909,9 +6915,9 @@ Mecanismo da linha PS/POSIX — prefixo de cinco segmentos (forma K, REQ-2026-11
   redirecionado para `$null` (=/dev/null do passo anterior) — zero linhas extras de stderr POSIX
   (REQ-2026-11-13, D18 ML-2C).
 
-**Custo medido de stderr (forma K):** **0 linhas extras em shells POSIX** por chamada; **6 linhas em
-`pwsh` 7** (EAP=Continue; **7** quando `$ConfirmPreference='Low'`) contra **4 linhas** da forma
-pré-K (REQ-2026-11-13 ML-1A). Medição: roadmap §ML-2A, 2026-11-15.
+**Custo medido de stderr (forma L):** **0 linhas extras em shells POSIX** por chamada.
+Custo PS não remensurado para forma L (medição forma K: 6 linhas em `pwsh` 7 sob EAP=Continue).
+Medição forma K: roadmap §ML-2A, 2026-11-15.
 
 - `emulate -R sh 2>$null` — restaura as opções padrão de sh no escopo do hook, desativando EQUALS, NOMATCH e demais opções zsh; em sh/bash/dash é CommandNotFound (stderr descartado pelo redirecionamento para `$null`); em PS 5.1/7 é CommandNotFound — uma linha no stderr por execução, `$LASTEXITCODE` não afetado (REQ-2026-10-20, ADR-2026-10-04 adendo 2026-10-21).
 - `$LASTEXITCODE=2` — semente de fallback: em PS 5.1 é atribuição da variável automática; em
@@ -7223,7 +7229,7 @@ adicionou Windsurf e Amazon Q à lista `credentialGuardHookFiles`:
 O validador coleta entradas de hook que contenham `trackfw guard git-branch` ou `trackfw guard
 credential` e verifica se a linha é **exatamente** a esperada para a família de shell daquele CLI
 (`guardExpectedLine` em `validator_guard_binary_probe.go`):
-- PS/POSIX (REQ-2026-11-13 / D18 ML-1C2) → `set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard <nome>; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE`
+- PS/POSIX (REQ-2026-11-13 / D18 ML-2I) → `set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set ConfirmPreference None -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard <nome>; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE`
 - cmd.exe (D11) → `trackfw guard <nome> || exit 2`
 
 A D2 revisada (`trackfw guard <nome>; exit $LASTEXITCODE` / `trackfw guard <nome>`), a D11
@@ -9916,7 +9922,7 @@ When a pattern such as `*.entry`, `.*`, or `*-entries` covers these paths, entri
 **Linha de hook emitida pelo gerador (PS/POSIX — Claude Code only, §Z, sem forma cmd.exe):**
 
 ```
-set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard write-scope; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE
+set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set ConfirmPreference None -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard write-scope; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE
 ```
 
 **Matcher:** `Write|Edit|NotebookEdit` — lista exata, `|` é separador, NÃO uma regex. NUNCA usar `Edit.*` (vira regex JavaScript que casa tudo começando com "Edit").

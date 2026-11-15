@@ -46,18 +46,26 @@ const stdinPayload = `{"tool_name":"Bash","tool_input":{"command":"git add -A"}}
 //	ml1aLine = setEuPrefix + guardforms.LegacyD18*PSPOSIX
 //
 // NÃO use setEuPrefix para verificar o prefixo da forma atual — a forma atual começa com
-// ml1dPrefix (cinco segmentos — forma K).
+// ml1dPrefix (seis segmentos — forma L, ML-2I).
 const setEuPrefix = "set +eu 2>${null-/dev/null}; "
 
-// ml1dPrefix é o preamble de cinco segmentos da forma K, adicionada pela REQ-2026-11-13
-// ML-2C. Coloca o reset de EAP com -Force/-WhatIf:0/-Confirm:0 ANTES do set +eu, para que
-// WhatIf não suprima o próprio set +eu. Define null=/dev/null antes de qualquer 2>$null,
+// ml1dConfirmSeg é o segmento de ConfirmPreference adicionado pela forma L (ML-2I).
+// Colocado entre o segmento EAP e o set +eu para que Set-Variable "+eu" (ConfirmImpact=Medium)
+// não abra um prompt de confirmação quando $ConfirmPreference='Low'/'Medium' está herdado
+// e o PowerShell não está rodando com -NonInteractive. Sem ele, o prompt drenaria o stdin
+// e o guard receberia 0 bytes do payload JSON (fail-open).
+const ml1dConfirmSeg = "set ConfirmPreference None -Force -WhatIf:0 -Confirm:0; "
+
+// ml1dPrefix é o preamble de seis segmentos da forma L, adicionada pela REQ-2026-11-13
+// ML-2I. Coloca o reset de EAP com -Force/-WhatIf:0/-Confirm:0 ANTES do ConfirmPreference,
+// que por sua vez vem ANTES do set +eu, para que nem WhatIf nem ConfirmPreference possam
+// suprimir o próprio set +eu. Define null=/dev/null antes de qualquer 2>$null,
 // garantindo zero linhas de preamble no stderr POSIX. Em PowerShell, $null é variável
 // automática (sempre definida).
 //
 // Uso: verificar que a forma atual começa com este prefixo; âncora de sanidade nos
 // contra-braços (os oldLine/legacyLine vêm de guardforms, não derivados de guard.line).
-const ml1dPrefix = "set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; "
+const ml1dPrefix = "set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; " + ml1dConfirmSeg + "set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; "
 
 // ml1dEmulateSegment é o segmento emulate da forma H (ML-1C2). Usa 2>$null para suprimir o
 // command-not-found de emulate em POSIX (onde $null já foi definido como /dev/null).
@@ -1006,9 +1014,9 @@ func TestGuardLineShellMatrix_DefeitoAntigo(t *testing.T) {
 		guard := guard
 		t.Run(guard.name, func(t *testing.T) {
 			// Sanidade: confirmar que a forma atual começa com ml1dPrefix seguido de ml1dEmulateSegment.
-			// Se qualquer um estiver ausente, a correção ML-2C (forma K) foi removida.
+			// Se qualquer um estiver ausente, a correção ML-2I (forma L) foi removida.
 			if !strings.HasPrefix(guard.line, ml1dPrefix) {
-				t.Fatalf("constante %q não começa com ml1dPrefix %q — fix D18 ML-2C (forma K) foi removido?",
+				t.Fatalf("constante %q não começa com ml1dPrefix %q — fix D18 ML-2I (forma L) foi removido?",
 					guard.name, ml1dPrefix)
 			}
 			afterML1D := strings.TrimPrefix(guard.line, ml1dPrefix)
@@ -1114,7 +1122,7 @@ func TestGuardLineShellMatrix_UnsetoptInsuficiente(t *testing.T) {
 			// Sanidade: verificar que a constante começa com ml1dPrefix + ml1dEmulateSegment.
 			// A regressão precisa de ambos para confirmar que apenas emulate não era suficiente.
 			if !strings.HasPrefix(guard.line, ml1dPrefix) {
-				t.Fatalf("constante %q não começa com ml1dPrefix — fix D18 ML-2C (forma K) foi removido?",
+				t.Fatalf("constante %q não começa com ml1dPrefix — fix D18 ML-2I (forma L) foi removido?",
 					guard.name)
 			}
 			afterML1D := strings.TrimPrefix(guard.line, ml1dPrefix)
@@ -2148,7 +2156,7 @@ func TestGuardLineShellMatrix_PSConstantsStructural(t *testing.T) {
 	}
 }
 
-// TestGuardLineShellMatrix_PSInheritedState testa a forma K (ML-2C) sob estados PS
+// TestGuardLineShellMatrix_PSInheritedState testa a forma L (ML-2I) sob estados PS
 // herdados: Continue, Stop, StrictMode Latest, ReadOnly-Stop, WhatIf+Stop e ConfirmLow+Stop,
 // sozinhos e combinados, via duas formas de herança:
 //
@@ -2160,12 +2168,14 @@ func TestGuardLineShellMatrix_PSConstantsStructural(t *testing.T) {
 // allow e deny) pois TestGuardLineShellMatrix_PSConstantsStructural garante que
 // todos partilham o mesmo preamble e sufixo.
 //
-// Reconciliação (REQ-2026-11-13 ML-2C/ML-2D):
-//   - Braço -Command: afirma que a forma K sai com RC correto (0 = allow, 2 = deny ou
+// Reconciliação (REQ-2026-11-13 ML-2C/ML-2D/ML-2I):
+//   - Braço -Command: afirma que a forma L sai com RC correto (0 = allow, 2 = deny ou
 //     ausente) mesmo quando EAP=Continue/Stop, ReadOnly-EAP, WhatIf=$true ou
-//     ConfirmPreference=Low estão ativos antes da linha — o preamble K neutraliza sem
-//     emitir ruído no stderr POSIX.
-//   - Braço perfil: afirma que a forma K sobrevive ao mesmo estado imposto pelo perfil
+//     ConfirmPreference=Low estão ativos antes da linha — o preamble L neutraliza sem
+//     emitir ruído no stderr POSIX. Nota: estes braços rodam com -NonInteractive;
+//     o caso sem -NonInteractive sob Confirm Low/Medium é coberto por
+//     TestGuardLineShellMatrix_LContraArm_ConfirmLow.
+//   - Braço perfil: afirma que a forma L sobrevive ao mesmo estado imposto pelo perfil
 //     do usuário.
 //   - Smoke test: afirma que os outros 3 subcomandos sobrevivem a EAP=Stop via -Command.
 func TestGuardLineShellMatrix_PSInheritedState(t *testing.T) {
@@ -2462,18 +2472,19 @@ func TestGuardLineShellMatrix_PSInheritedState(t *testing.T) {
 }
 
 // TestGuardLineShellMatrix_HContraArm_ReadOnlyStop demonstra que a forma H (nunca released,
-// substituída por ML-2C/forma K) falha sob PowerShell com EAP configurado como ReadOnly=Stop —
-// saindo com exit ≠ 0 e sem rodar o guard. Esta é a "prova de mordida" do ML-2C: se a forma
-// H passasse sob ReadOnly-Stop, o -Force em K seria desnecessário.
+// substituída por ML-2C/forma K, e depois por ML-2I/forma L) falha sob PowerShell com EAP
+// configurado como ReadOnly=Stop — saindo com exit ≠ 0 e sem rodar o guard. Esta é a "prova
+// de mordida" do ML-2C: se a forma H passasse sob ReadOnly-Stop, o -Force em K/L seria
+// desnecessário.
 //
-// A forma H é construída a partir de peças da forma K (nunca como literal contíguo) para evitar
+// A forma H é construída a partir de peças da forma L (nunca como literal contíguo) para evitar
 // que o teste em si seja um veículo de propagação da forma defeituosa:
 //
-//	hForm = hPreamble + K[após os dois primeiros segmentos de K]
+//	hForm = hPreamble + L[após os três primeiros segmentos de L (kSeg1+kSeg1b+kSeg2)]
 //
-// Reconciliação (REQ-2026-11-13 ML-2C): afirma que a forma H sai com exit ≠ 0 sob
+// Reconciliação (REQ-2026-11-13 ML-2C/ML-2I): afirma que a forma H sai com exit ≠ 0 sob
 // ReadOnly-Stop (Set-Variable -Option ReadOnly com Value Stop), confirmando que -Force
-// em K é necessário para sobrescrever a variável somente-leitura.
+// em L é necessário para sobrescrever a variável somente-leitura.
 func TestGuardLineShellMatrix_HContraArm_ReadOnlyStop(t *testing.T) {
 	psBin, err := exec.LookPath("pwsh")
 	if err != nil {
@@ -2484,8 +2495,11 @@ func TestGuardLineShellMatrix_HContraArm_ReadOnlyStop(t *testing.T) {
 	// Prefixo ReadOnly-Stop: define EAP como Stop com opção ReadOnly (simula perfil restritivo).
 	const readOnlyStopPrefix = "Set-Variable -Name ErrorActionPreference -Value Stop -Option ReadOnly; "
 
-	// Segmentos do K que constituem o preamble (devem ser mantidos sincronizados com ml1dPrefix).
+	// Segmentos do L que constituem o preamble (devem ser mantidos sincronizados com ml1dPrefix).
+	// kSeg1b é o segmento de ConfirmPreference adicionado pela forma L (ML-2I); coincide com
+	// ml1dConfirmSeg (definido no escopo do pacote). Duplicado aqui para explicitar a estrutura.
 	const kSeg1 = "set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; "
+	const kSeg1b = ml1dConfirmSeg // "set ConfirmPreference None -Force -WhatIf:0 -Confirm:0; "
 	const kSeg2 = "set +eu; "
 	// Preamble da forma H: ordena set +eu primeiro, sem -Force/-WhatIf:0/-Confirm:0.
 	const hPreamble = "set +eu; set ErrorActionPreference Continue; "
@@ -2493,13 +2507,14 @@ func TestGuardLineShellMatrix_HContraArm_ReadOnlyStop(t *testing.T) {
 	for _, guard := range guardShellMatrix {
 		guard := guard
 		t.Run(guard.name, func(t *testing.T) {
-			// Sanidade: confirmar que a forma K começa com os dois segmentos esperados.
-			if !strings.HasPrefix(guard.line, kSeg1+kSeg2) {
-				t.Fatalf("forma K de %q não começa com kSeg1+kSeg2 — forma K foi alterada?", guard.name)
+			// Sanidade: confirmar que a forma L começa com os três segmentos esperados (kSeg1+kSeg1b+kSeg2).
+			if !strings.HasPrefix(guard.line, kSeg1+kSeg1b+kSeg2) {
+				t.Fatalf("forma L de %q não começa com kSeg1+kSeg1b+kSeg2 — forma L foi alterada?", guard.name)
 			}
 
-			// Construir forma H a partir das peças de K (H nunca foi released).
-			hForm := hPreamble + guard.line[len(kSeg1)+len(kSeg2):]
+			// Construir forma H a partir das peças de L (H nunca foi released).
+			// H = hPreamble + resto após kSeg1+kSeg1b+kSeg2 (sem os três segmentos de cabeçalho).
+			hForm := hPreamble + guard.line[len(kSeg1)+len(kSeg1b)+len(kSeg2):]
 
 			// Verificar sanidade: H não deve conter -Force.
 			if strings.Contains(hForm, "-Force") {
@@ -2582,9 +2597,9 @@ func TestGuardLineShellMatrix_D18NovaContraArm_Stop(t *testing.T) {
 	for _, guard := range guardShellMatrix {
 		guard := guard
 		t.Run(guard.name, func(t *testing.T) {
-			// Sanidade: verificar que ml1dPrefix está presente — forma atual deve ser K.
+			// Sanidade: verificar que ml1dPrefix está presente — forma atual deve ser L.
 			if !strings.HasPrefix(guard.line, ml1dPrefix) {
-				t.Fatalf("constante %q não começa com ml1dPrefix %q — forma K (ML-2C) foi removida?",
+				t.Fatalf("constante %q não começa com ml1dPrefix %q — forma L (ML-2I) foi removida?",
 					guard.name, ml1dPrefix)
 			}
 
@@ -2639,15 +2654,17 @@ func TestGuardLineShellMatrix_D18NovaContraArm_Stop(t *testing.T) {
 	}
 }
 
-// TestGuardLineShellMatrix_PreambleNoStderr afirma que a forma K (ML-2C) não produz ruído de
+// TestGuardLineShellMatrix_PreambleNoStderr afirma que a forma L (ML-2I) não produz ruído de
 // preamble no stderr em shells POSIX — o stderr é byte-idêntico ao que o guard fake escreve.
 // Isto é: zero linhas extras antes ou depois do conteúdo normal do guard.
+// O novo segmento de ConfirmPreference (ml1dConfirmSeg) é POSIX-inerte: `set ConfirmPreference
+// None ...` em shells POSIX define argumentos posicionais, exit 0, zero stderr.
 //
 // Contra-braço: a forma CAND_F (ML-1C, nunca released) falha esta asserção em shells POSIX
 // porque `Set-StrictMode -Off` sem redirecionamento emite uma linha de "command not found"
 // antes do output do guard. A forma está em candFCredentialPSPOSIX dentro do sub-teste.
 //
-// Reconciliação (REQ-2026-11-13 ML-2C): afirma que nenhuma das formas atuais emite linhas
+// Reconciliação (REQ-2026-11-13 ML-2C/ML-2I): afirma que nenhuma das formas atuais emite linhas
 // adicionais de stderr por chamada POSIX (zero linhas de preamble, independente de allow/deny).
 func TestGuardLineShellMatrix_PreambleNoStderr(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -2670,7 +2687,7 @@ func TestGuardLineShellMatrix_PreambleNoStderr(t *testing.T) {
 	// Stderr esperado = apenas o que o guard escreve; zero ruído de preamble.
 	const expectedStderr = "motivo-deny-fake"
 
-	// ── Braço K (forma atual) ─────────────────────────────────────────────────
+	// ── Braço L (forma atual, ML-2I) ─────────────────────────────────────────────────
 	for _, guard := range guardShellMatrix {
 		guard := guard
 		t.Run(guard.name, func(t *testing.T) {
@@ -2752,6 +2769,325 @@ func TestGuardLineShellMatrix_PreambleNoStderr(t *testing.T) {
 			return
 		}
 		t.Logf("contra-braço CAND_F: stderr=%q — ruído de preamble confirmado, guard executou", stderr)
+	})
+}
+
+// execPSCommandInteractive executa psBin SEM -NonInteractive, permitindo que prompts de
+// confirmação do PowerShell possam consumir stdin. Usado exclusivamente para testar o
+// comportamento de forma L vs forma K sob $ConfirmPreference='Low'/'Medium' sem -NonInteractive.
+//
+// addNoProfile=true adiciona -NoProfile; addNoProfile=false omite ambos -NoProfile e -NonInteractive.
+// extraEnv: variáveis adicionais de ambiente a injetar (ex: XDG_CONFIG_HOME=…, PATH=…).
+//
+// AVISO: Se o PS exibir um prompt de confirmação e stdin for pipes.Reader, o prompt drena os bytes
+// disponíveis. O timeout via context.WithTimeout impede que o processo fique preso indefinidamente.
+func execPSCommandInteractive(psBin, command, fakeDir string, fakeRC int, timeout time.Duration, addNoProfile bool, extraEnv []string) psExecResult {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	var args []string
+	if addNoProfile {
+		args = []string{"-NoProfile", "-Command", command} // sem -NonInteractive
+	} else {
+		args = []string{"-Command", command} // sem -NoProfile nem -NonInteractive
+	}
+	cmd := exec.CommandContext(ctx, psBin, args...) //nolint:gosec
+	cmd.WaitDelay = psWaitDelay
+
+	pathVal := buildPSPath(fakeDir)
+
+	extraHasPath := false
+	for _, e := range extraEnv {
+		if strings.HasPrefix(strings.ToUpper(e), "PATH=") {
+			extraHasPath = true
+			break
+		}
+	}
+
+	base := os.Environ()
+	filtered := make([]string, 0, len(base)+2+len(extraEnv))
+	for _, e := range base {
+		upper := strings.ToUpper(e)
+		if strings.HasPrefix(upper, "PATH=") || strings.HasPrefix(upper, "FAKE_RC=") {
+			continue
+		}
+		filtered = append(filtered, e)
+	}
+	if !extraHasPath {
+		filtered = append(filtered, "PATH="+pathVal)
+	}
+	if fakeDir != "" {
+		filtered = append(filtered, fmt.Sprintf("FAKE_RC=%d", fakeRC))
+	}
+	filtered = append(filtered, extraEnv...)
+	cmd.Env = filtered
+
+	cmd.Stdin = strings.NewReader(stdinPayload)
+	var errBuf bytes.Buffer
+	cmd.Stderr = &errBuf
+
+	err := cmd.Run()
+
+	var r psExecResult
+	r.stderr = errBuf.String()
+	r.started = cmd.ProcessState != nil
+
+	switch {
+	case err == nil:
+		r.exitCode = 0
+	case errors.Is(err, exec.ErrWaitDelay):
+		r.runErr = err
+	default:
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			r.exitCode = exitErr.ExitCode()
+		} else {
+			r.runErr = err
+		}
+	}
+	r.timedOut = ctx.Err() == context.DeadlineExceeded
+	return r
+}
+
+// TestGuardLineShellMatrix_LContraArm_ConfirmLow testa a forma L (ML-2I) sob
+// $ConfirmPreference='Low' e 'Medium' WITHOUT -NonInteractive, via duas formas de herança:
+//
+//   - via -Command: o estado é injetado como prefixo na linha de comando.
+//   - via perfil: o estado é definido num perfil temporário em XDG_CONFIG_HOME
+//     (somente em não-Windows — no Windows o perfil via XDG_CONFIG_HOME não funciona).
+//
+// O teste cobre apenas git-branch (a matriz estrutural garante que os outros 3 partilham
+// o mesmo preamble). Os FRCs RC0 e RC2 são exercitados para ambas as condições.
+//
+// Contra-braço: a forma K (ML-2C, sem o segmento set ConfirmPreference None) sob
+// Confirm Low sem -NonInteractive entrega menos bytes do payload ao guard que o payload
+// enviado — o prompt de confirmação drena stdin antes do guard rodar.
+//
+// Reconciliação (REQ-2026-11-13 ML-2I):
+//   - Braços form-L/via-command/{low,medium} × RC0/RC2: afirmam que a forma L entrega o payload
+//     completo (len(stdinCapturado) == len(stdinPayload)) e sai com RC correto mesmo sem
+//     -NonInteractive sob Confirm Low/Medium, confirmando que ml1dConfirmSeg previne o drain
+//     de stdin.
+//   - Braços form-L/via-profile/{low,medium} × RC0/RC2: idem via herança por perfil.
+//   - Contra-braço form-K/confirm-low: afirma que a forma K sem ConfirmPreference None entrega
+//     menos bytes que stdinPayload sob Confirm Low sem -NonInteractive — prova que o braço
+//     morde e que o segmento adicionado por ML-2I é necessário.
+func TestGuardLineShellMatrix_LContraArm_ConfirmLow(t *testing.T) {
+	psBin, err := exec.LookPath("pwsh")
+	if err != nil {
+		t.Skip("pwsh não encontrado — contra-braço ConfirmLow/Medium sem -NonInteractive não aplicável")
+	}
+	ensurePSWarmup(t, psBin)
+
+	// Encontrar a constante git-branch para o braço principal.
+	gitBranchLine := ""
+	for _, g := range guardShellMatrix {
+		if g.name == "git-branch" {
+			gitBranchLine = g.line
+			break
+		}
+	}
+	if gitBranchLine == "" {
+		t.Fatal("git-branch not found in guardShellMatrix")
+	}
+
+	// Deadline por chamada: usar o teto fixo para não depender do warmup
+	// (estas chamadas podem ser mais lentas por causa do prompt drenado em K).
+	const perCallTimeout = psCallDeadlineCeil
+
+	// stdinPayloadNorm é o payload normalizado como o stub POSIX o grava (sem newline final).
+	stdinPayloadNorm := strings.TrimRight(stdinPayload, "\r\n")
+
+	// helper: executa gitBranchLine via PS sem -NonInteractive, com prefixo de estado,
+	// e retorna (exitCode, stdinCaptured). Lê stdin.out de fakeDir após a execução.
+	runInteractive := func(t *testing.T, line, fakeDir string, fakeRC int, extraEnv []string, addNoProfile bool) (exitCode int, captured string) {
+		t.Helper()
+		psConcurrencySem <- struct{}{}
+		r := execPSCommandInteractive(psBin, line, fakeDir, fakeRC, perCallTimeout, addNoProfile, extraEnv)
+		<-psConcurrencySem
+		if r.timedOut {
+			t.Skipf("timeout ao executar linha PS interativa — ambiente provavelmente sem PS real (pwsh mock ou CI não-interativo)")
+		}
+		if r.runErr != nil {
+			t.Fatalf("erro de execução: %v", r.runErr)
+		}
+		exitCode = r.exitCode
+		if fakeDir != "" {
+			data, readErr := os.ReadFile(filepath.Join(fakeDir, "stdin.out"))
+			if readErr == nil {
+				captured = strings.ReplaceAll(string(data), "\r\n", "\n")
+				captured = strings.TrimRight(captured, "\n")
+			}
+		}
+		return
+	}
+
+	// Confirm levels to test for form L.
+	confirmLevels := []struct {
+		name  string
+		level string
+	}{
+		{"low", "Low"},
+		{"medium", "Medium"},
+	}
+
+	frcCases := []struct {
+		name string
+		frc  int
+	}{
+		{"RC0-allow", 0},
+		{"RC2-deny", 2},
+	}
+
+	// ── Braços forma L via -Command ──────────────────────────────────────────────
+	for _, cl := range confirmLevels {
+		cl := cl
+		t.Run("form-L/via-command/"+cl.name, func(t *testing.T) {
+			t.Parallel()
+			prefix := "$ConfirmPreference = '" + cl.level + "'; "
+			line := prefix + gitBranchLine
+			for _, fc := range frcCases {
+				fc := fc
+				t.Run(fc.name, func(t *testing.T) {
+					t.Parallel()
+					dir := t.TempDir()
+					makeFakeTrackfwForOS(t, dir)
+					code, captured := runInteractive(t, line, dir, fc.frc, nil, true)
+					// Payload delivery assertion: guard deve ter recebido o payload completo.
+					if captured != stdinPayloadNorm {
+						t.Errorf(
+							"form-L confirm-%s %s: stdin não entregue completamente: got %d bytes (%q), want %d bytes (%q)",
+							cl.name, fc.name, len(captured), captured, len(stdinPayloadNorm), stdinPayloadNorm,
+						)
+					}
+					// Exit code assertion.
+					if fc.frc == 0 && code != 0 {
+						t.Errorf("form-L confirm-%s %s: esperado exit 0, obteve %d", cl.name, fc.name, code)
+					}
+					if fc.frc == 2 && code != 2 {
+						t.Errorf("form-L confirm-%s %s: esperado exit 2, obteve %d", cl.name, fc.name, code)
+					}
+				})
+			}
+		})
+	}
+
+	// ── Braços forma L via perfil (não-Windows — XDG_CONFIG_HOME não funciona no Windows) ──
+	if runtime.GOOS == "windows" {
+		t.Log("braço via-profile pulado no Windows: XDG_CONFIG_HOME não é respeitado pelo PS no Windows")
+	} else {
+		for _, cl := range confirmLevels {
+			cl := cl
+			t.Run("form-L/via-profile/"+cl.name, func(t *testing.T) {
+				t.Parallel()
+				xdgDir := t.TempDir()
+				profileDir := filepath.Join(xdgDir, "powershell")
+				if mkErr := os.MkdirAll(profileDir, 0755); mkErr != nil {
+					t.Fatalf("criando diretório de perfil: %v", mkErr)
+				}
+				markerPath := filepath.Join(xdgDir, "profile_loaded")
+				// Perfil: escreve marcador antes de definir o estado — o marcador usa New-Item
+				// que tem ConfirmImpact=Low; com ConfirmPreference ainda não definido como Low,
+				// não abre prompt. Depois define ConfirmPreference.
+				profileContent := `New-Item -Path "` + markerPath + `" -ItemType File -Force | Out-Null` + "\n" +
+					"$ConfirmPreference = '" + cl.level + "'\n"
+				profileFile := filepath.Join(profileDir, "Microsoft.PowerShell_profile.ps1")
+				if wErr := os.WriteFile(profileFile, []byte(profileContent), 0644); wErr != nil {
+					t.Fatalf("escrevendo perfil: %v", wErr)
+				}
+				xdgEnv := []string{"XDG_CONFIG_HOME=" + xdgDir}
+
+				// Verificar se o perfil carrega (marcador criado).
+				psConcurrencySem <- struct{}{}
+				checkR := execPSCommandInteractive(psBin, "exit 0", "", 0, perCallTimeout, false, xdgEnv)
+				<-psConcurrencySem
+				if checkR.timedOut || checkR.runErr != nil {
+					t.Skipf("perfil via XDG não carregou: timedOut=%v, runErr=%v", checkR.timedOut, checkR.runErr)
+				}
+				if _, statErr := os.Stat(markerPath); os.IsNotExist(statErr) {
+					t.Skipf("marcador de perfil ausente: perfil não carregou via XDG_CONFIG_HOME neste ambiente")
+				}
+
+				for _, fc := range frcCases {
+					fc := fc
+					t.Run(fc.name, func(t *testing.T) {
+						t.Parallel()
+						dir := t.TempDir()
+						makeFakeTrackfwForOS(t, dir)
+						pathVal := buildPSPath(dir)
+						envWithPath := append([]string{"PATH=" + pathVal}, xdgEnv...)
+						code, captured := runInteractive(t, gitBranchLine, dir, fc.frc, envWithPath, false)
+						// Payload delivery assertion.
+						if captured != stdinPayloadNorm {
+							t.Errorf(
+								"form-L confirm-%s via-profile %s: stdin não entregue completamente: got %d bytes (%q), want %d bytes (%q)",
+								cl.name, fc.name, len(captured), captured, len(stdinPayloadNorm), stdinPayloadNorm,
+							)
+						}
+						if fc.frc == 0 && code != 0 {
+							t.Errorf("form-L confirm-%s via-profile %s: esperado exit 0, obteve %d", cl.name, fc.name, code)
+						}
+						if fc.frc == 2 && code != 2 {
+							t.Errorf("form-L confirm-%s via-profile %s: esperado exit 2, obteve %d", cl.name, fc.name, code)
+						}
+					})
+				}
+			})
+		}
+	}
+
+	// ── Contra-braço: forma K sob Confirm Low sem -NonInteractive ────────────────────────
+	// A forma K é construída removendo ml1dConfirmSeg de gitBranchLine em tempo de execução.
+	// Nenhuma ocorrência do literal "...Confirm:0; set +eu..." aparece no código-fonte
+	// (os dois segmentos estão separados), de modo que o grep de validação continua vazio.
+	t.Run("counter-arm/form-K/confirm-low", func(t *testing.T) {
+		// Verificar que ml1dConfirmSeg está em gitBranchLine; sem isso a remoção seria silenciosa.
+		if !strings.Contains(gitBranchLine, ml1dConfirmSeg) {
+			t.Fatalf("gitBranchLine não contém ml1dConfirmSeg %q — forma L foi alterada?", ml1dConfirmSeg)
+		}
+		// Remover ml1dConfirmSeg de gitBranchLine → forma K (nunca released após ML-2I).
+		kFormGitBranch := strings.Replace(gitBranchLine, ml1dConfirmSeg, "", 1)
+		if strings.Contains(kFormGitBranch, ml1dConfirmSeg) {
+			t.Fatalf("kFormGitBranch ainda contém ml1dConfirmSeg — múltiplas ocorrências?")
+		}
+
+		prefix := "$ConfirmPreference = 'Low'; "
+		line := prefix + kFormGitBranch
+		dir := t.TempDir()
+		makeFakeTrackfwForOS(t, dir)
+		// Executar diretamente sem psGuardedCall: se K travar, não queremos registrar pwsh
+		// no psTimeouts e fail-fast todos os outros testes PS do pacote.
+		psConcurrencySem <- struct{}{}
+		r := execPSCommandInteractive(psBin, line, dir, 2, perCallTimeout, true, nil)
+		<-psConcurrencySem
+		if r.timedOut {
+			t.Skipf("counter-arm K/confirm-low: timeout — ambiente pode não ter PS interativo; pulando")
+		}
+		if r.runErr != nil {
+			t.Fatalf("counter-arm K/confirm-low: erro de execução: %v", r.runErr)
+		}
+
+		var captured string
+		if data, readErr := os.ReadFile(filepath.Join(dir, "stdin.out")); readErr == nil {
+			captured = strings.ReplaceAll(string(data), "\r\n", "\n")
+			captured = strings.TrimRight(captured, "\n")
+		}
+
+		// A forma K sob Confirm Low sem -NonInteractive DEVE entregar menos bytes que stdinPayload
+		// ao guard (ou o guard não roda — stdin.out ausente → captured == "").
+		// Se captured == stdinPayloadNorm, o braço não mordeu — o segmento em ML-2I seria inútil.
+		if captured == stdinPayloadNorm {
+			t.Errorf(
+				"counter-arm K/confirm-low: forma K entregou o payload completo (%d bytes) sem -NonInteractive "+
+					"sob Confirm Low — braço não mordeu; ml1dConfirmSeg em ML-2I pode ser desnecessário",
+				len(captured),
+			)
+		} else {
+			t.Logf(
+				"counter-arm K/confirm-low: forma K entregou %d bytes (payload=%d, stdinPayload=%d) — braço morde, ML-2I justificado",
+				len(captured), len(stdinPayloadNorm), len(stdinPayload),
+			)
+		}
 	})
 }
 

@@ -273,13 +273,13 @@ Copy these verbatim or run `trackfw init`/`trackfw update` — do not reconstruc
 **PS/POSIX form** (Claude Code, Codex, Gemini, Cursor, Windsurf, Copilot — credential guard):
 
 ```
-set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE
+set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set ConfirmPreference None -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE
 ```
 
 **PS/POSIX form** (git-branch guard):
 
 ```
-set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE
+set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set ConfirmPreference None -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE
 ```
 
 **cmd.exe form** (Kiro, Amazon Q):
@@ -289,33 +289,40 @@ trackfw guard credential || exit 2
 trackfw guard git-branch || exit 2
 ```
 
-The D18 line (REQ-2026-11-13 ML-2C, form K) is **fail-closed** for both POSIX shells and
+The D18 line (REQ-2026-11-13 ML-2I, form L) is **fail-closed** for both POSIX shells and
 PowerShell, including shells started with inherited `errexit`/`nounset` options and environments
 where `$ErrorActionPreference='Stop'`, `$ErrorActionPreference` is ReadOnly, `$WhatIfPreference=$true`,
-`$ConfirmPreference='Low'`, or `Set-StrictMode -Version Latest` is active.
-The five-segment preamble works as follows (order matters):
+`$ConfirmPreference='Low'`/`'Medium'` (with or without `-NonInteractive`), or
+`Set-StrictMode -Version Latest` is active.
+The six-segment preamble works as follows (order matters):
 
 - **`set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0`** — PS: `Set-Variable`
   with `-Force` (overrides ReadOnly/Constant protection — without it, an inherited ReadOnly EAP
   cannot be reset); `-WhatIf:0` and `-Confirm:0` disable WhatIf and Confirm mode for this call
   (integer `0` = `$false` for switch params; `:0` is used rather than `$false` because `$false`
   is an undefined variable reference under POSIX `nounset`, which would abort in POSIX shells
-  before segment 2 runs the `set +eu` builtin). Must come **first** so that segment 2 is not
+  before segment 3 runs the `set +eu` builtin). Must come **first** so that segment 3 is not
   suppressed by an active WhatIf preference. POSIX: `set` with positional parameters, exit 0 —
   no option processing because the first argument (`ErrorActionPreference`) does not start with
   `-` or `+`.
+- **`set ConfirmPreference None -Force -WhatIf:0 -Confirm:0`** — PS: resets `$ConfirmPreference`
+  to `None` so that segment 3 (`Set-Variable "+eu"`, ConfirmImpact=Medium) does not open an
+  interactive confirmation prompt when `$ConfirmPreference='Low'` or `'Medium'` is inherited.
+  Without this segment and without `-NonInteractive`, the prompt would drain stdin and the guard
+  would receive 0 bytes of the JSON payload (fail-open). `-Force` overrides ReadOnly protection
+  on `$ConfirmPreference`. POSIX: `set` with positional parameters, exit 0 — same mechanics as
+  segment 1 (`ConfirmPreference` does not start with `-` or `+`).
 - **`set +eu`** — POSIX: special builtin that disables `errexit` (+e) and `nounset` (+u); no
-  undefined-variable access, no redirect. Runs **after** segment 1: if `$ConfirmPreference='Low'`
-  were active when segment 1 ran, `Set-Variable "+eu"` (the PS interpretation of `set +eu`)
-  would prompt for confirmation — that prompt is suppressed by the `-Confirm:0` flag above.
-  PS: `Set-Variable "+eu"` — sets a variable silently under any state.
+  undefined-variable access, no redirect. Runs **after** segments 1 and 2 so that WhatIf and
+  ConfirmPreference are already neutralised. PS: `Set-Variable "+eu"` — sets a variable silently
+  (ConfirmPreference=None was set by segment 2; no prompt).
 - **`null=/dev/null`** — POSIX: variable assignment, defines `$null=/dev/null` so subsequent
   `2>$null` redirects are silenced (zero extra stderr lines per call in POSIX). PS: attempts to
   invoke command `null =/dev/null` → CommandNotFound, non-terminating since EAP=Continue was
   forced above — accepted stderr noise.
 - **`Set-StrictMode -Off 2>$null`** — PS: disables StrictMode; `$null` is an automatic PS
   variable (always defined, safe even under inherited StrictMode). POSIX: command-not-found,
-  stderr redirected to `$null` (=/dev/null from step 3) — zero extra POSIX stderr lines.
+  stderr redirected to `$null` (=/dev/null from step 4) — zero extra POSIX stderr lines.
 
 After the preamble, `emulate -R sh 2>$null` instructs zsh to run as POSIX sh (without it,
 zsh's EQUALS/NOMATCH expansions abort `$LASTEXITCODE=2`). The seed `$LASTEXITCODE=2` is a
@@ -325,9 +332,9 @@ PS segment `$LASTEXITCODE=2*!!$LASTEXITCODE 2>$null` provides the same normaliza
 PowerShell, and is inert (CommandNotFound, stderr suppressed) in sh/bash. For cmd.exe:
 `|| exit 2` is the native short-circuit.
 
-**Measured stderr cost (form K):** **0 extra lines in POSIX shells** per hook call;
-**6 lines in pwsh 7** (EAP=Continue; **7** when `$ConfirmPreference='Low'`) vs **4 lines**
-for the pre-K form (REQ-2026-11-13 ML-1A). Measurement: roadmap §ML-2A, 2026-11-15
+**Measured stderr cost (form L):** **0 extra lines in POSIX shells** per hook call.
+PS stderr cost not re-measured for form L (measurement for form K: 6 lines in pwsh 7 under
+EAP=Continue). Measurement for form K: roadmap §ML-2A, 2026-11-15
 (`docs/roadmaps/wip/ROADMAP-2026-11-13-linha-de-hook-do-guard-sai-127-sob-errexit-herdado-e-libera-o-comando.md`).
 
 **Under PowerShell**, a `deny` exit emits three `CommandNotFound` error blocks to stderr

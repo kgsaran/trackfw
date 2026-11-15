@@ -86,12 +86,12 @@ const (
 	guardShellFamilyCmdExe
 )
 
-// guardExpectedLine retorna a linha exata de hook D18 ML-2C (REQ-2026-11-13) fail-closed
-// (forma K: com prefixo set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0 e
+// guardExpectedLine retorna a linha exata de hook D18 ML-2I (REQ-2026-11-13) fail-closed
+// (forma L: preamble com set ErrorActionPreference Continue, set ConfirmPreference None e
 // emulate -R sh) para a família de shell e nome de subcomando dados (ADR-2026-10-04 D18).
 // O subcmdName pode incluir flags (ex.: "credential --global").
 //
-// A construção desta função espelha as constantes em guardforms: preamble K + subcomando +
+// A construção desta função espelha as constantes em guardforms: preamble L + subcomando +
 // sufixo. Um teste em validator_guard_binary_probe_test.go confirma a paridade em tempo de
 // compilação (via go test), de modo que drift entre esta função e as constantes é detectado
 // imediatamente sem esperar o gate de integração.
