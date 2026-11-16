@@ -397,13 +397,8 @@ func runGuardLine(
 	args := append(shellFlags, "-c", line)
 	cmd := exec.CommandContext(ctx, shellBin, args...)
 
-	// Montar PATH.
-	var pathVal string
-	if fakeDir != "" {
-		pathVal = fakeDir + ":/usr/bin:/bin"
-	} else {
-		pathVal = "/usr/bin:/bin"
-	}
+	// Montar PATH (portável: separador e dirs do sistema variam por SO).
+	pathVal := buildShellPath(shellBin, fakeDir)
 
 	// Propagar env mínimo, sobrescrevendo PATH e adicionando FAKE_RC.
 	// BASH_ENV e SHELLOPTS são removidos do env herdado — o test os controla via extraEnv.
@@ -505,6 +500,25 @@ func buildPSPath(fakeDir string) string {
 			return fakeDir + ";" + sys32
 		}
 		return sys32
+	}
+	if fakeDir != "" {
+		return fakeDir + ":/usr/bin:/bin"
+	}
+	return "/usr/bin:/bin"
+}
+
+// buildShellPath monta o PATH para shells POSIX (sh, bash, zsh, dash…).
+// shellBin é o caminho completo do binário do shell (usado no Windows para incluir seu diretório).
+// fakeDir != "" → inclui o diretório do stub trackfw; fakeDir == "" → apenas dirs do sistema.
+// Windows: separador ";" e diretório do shell binary (Git Bash instala em Program Files/Git/usr/bin).
+// Outros SO: separador ":" e /usr/bin:/bin.
+func buildShellPath(shellBin, fakeDir string) string {
+	if runtime.GOOS == "windows" {
+		shellDir := filepath.Dir(shellBin)
+		if fakeDir != "" {
+			return fakeDir + ";" + shellDir
+		}
+		return shellDir
 	}
 	if fakeDir != "" {
 		return fakeDir + ":/usr/bin:/bin"
@@ -801,9 +815,8 @@ func TestGuardLineShellMatrix(t *testing.T) {
 			for _, sh := range shellEntries {
 				sh := sh
 				t.Run(sh.name, func(t *testing.T) {
-					if runtime.GOOS == "windows" {
-						t.Skip("shells POSIX não disponíveis em Windows — matriz Windows medida separadamente na VM")
-					}
+					// GOOS skip removido: sh/bash disponíveis no windows-latest via Git for Windows.
+					// zsh/dash ausentes pulam via LookPath abaixo. Classificação (b) [FALSO].
 
 					// Verificar se o binário do shell existe.
 					shellPath, err := exec.LookPath(sh.bin)
@@ -981,11 +994,9 @@ func TestGuardLineShellMatrix(t *testing.T) {
 // sob zsh, confirmando que o prefixo emulate é necessário.
 // Atualizado (REQ-2026-11-13 ML-1C2): oldLine vem de guardforms.LegacyD11Rev* (constante estável)
 // em vez de ser derivada de guard.line, pois a forma H usa 2>$null que requer null=/dev/null.
+// TestGuardLineShellMatrix_DefeitoAntigo: GOOS skip removido; zsh LookPath abaixo skip por probe.
+// zsh é improvável no windows-latest mas o probe é o mecanismo correto. Classificação (b).
 func TestGuardLineShellMatrix_DefeitoAntigo(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("shells POSIX não disponíveis em Windows")
-	}
-
 	zshPath, err := exec.LookPath("zsh")
 	if err != nil {
 		t.Skip("zsh não encontrado — braço do defeito não aplicável neste ambiente")
@@ -1042,7 +1053,7 @@ func TestGuardLineShellMatrix_DefeitoAntigo(t *testing.T) {
 			args := []string{"-c", oldLine}
 			cmd := exec.CommandContext(ctx, zshPath, args...)
 
-			pathVal := dir + ":/usr/bin:/bin"
+			pathVal := buildShellPath(zshPath, dir)
 			base := os.Environ()
 			filtered := make([]string, 0, len(base)+2)
 			for _, e := range base {
@@ -1089,14 +1100,12 @@ func TestGuardLineShellMatrix_DefeitoAntigo(t *testing.T) {
 //
 // Reconciliação (REQ-2026-10-20 ML-1B): afirma que a forma unsetopt falha sob zsh -o nounset
 // — confirmando que apenas `emulate -R sh` é suficiente para todas as opções zsh.
+// TestGuardLineShellMatrix_UnsetoptInsuficiente: GOOS skip removido; zsh LookPath abaixo skip por probe.
+// Classificação (b) — zsh improvável no windows-latest mas probe é o mecanismo correto.
 func TestGuardLineShellMatrix_UnsetoptInsuficiente(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("shells POSIX não disponíveis em Windows")
-	}
-
 	zshPath, err := exec.LookPath("zsh")
 	if err != nil {
-		t.Skip("zsh não encontrado — braço de regressão não aplicável neste ambiente")
+		t.Skipf("zsh não encontrado em PATH (%v) — braço de regressão não aplicável; skip (b): probe de capacidade", err)
 	}
 
 	// Mapeamento guard-name → D11Rev legacy body (mesma lógica de DefeitoAntigo).
@@ -1148,7 +1157,7 @@ func TestGuardLineShellMatrix_UnsetoptInsuficiente(t *testing.T) {
 			args := []string{"-o", "nounset", "-c", unsetoptLine}
 			cmd := exec.CommandContext(ctx, zshPath, args...)
 
-			pathVal := dir + ":/usr/bin:/bin"
+			pathVal := buildShellPath(zshPath, dir)
 			base := os.Environ()
 			filtered := make([]string, 0, len(base)+2)
 			for _, e := range base {
@@ -1226,11 +1235,9 @@ func d18ShellKind(shellPath string) string {
 // esperado por shell (exit ≠ 2 ou exit == 2 dependendo de dash+nounset) E guard não rodou
 // (stdin.out ausente). A classificação por d18ShellKind(shellPath) determina qual expectativa
 // se aplica em tempo de execução, sem depender de GOOS.
+// TestGuardLineShellMatrix_D18ContraArm: GOOS skip removido; each shell has LookPath probe inside.
+// Classificação (b) — sh/bash disponíveis no windows-latest; zsh/dash pulam via probe.
 func TestGuardLineShellMatrix_D18ContraArm(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("shells POSIX não disponíveis em Windows")
-	}
-
 	// Mapeamento guard-name → D18 legacy constant (guardforms).
 	type d18Entry struct {
 		name    string
@@ -1294,7 +1301,7 @@ func TestGuardLineShellMatrix_D18ContraArm(t *testing.T) {
 					args := append(sh.flags, "-c", guard.legLine)
 					cmd := exec.CommandContext(ctx, shellPath, args...)
 
-					pathVal := dir + ":/usr/bin:/bin"
+					pathVal := buildShellPath(shellPath, dir)
 					base := os.Environ()
 					filtered := make([]string, 0, len(base)+2)
 					for _, e := range base {
@@ -2309,11 +2316,119 @@ func TestGuardLineShellMatrix_PSInheritedState(t *testing.T) {
 		}
 
 		// ── Braço perfil ────────────────────────────────────────────────────────────
-		// Apenas para pwsh no macOS/Linux: usa XDG_CONFIG_HOME para apontar para um
-		// diretório temporário isolado. Um marcador escrito pelo próprio perfil confirma
-		// que o perfil foi realmente carregado antes de avaliar os resultados.
+		// No Windows o perfil PS está em %USERPROFILE%\Documents\PowerShell\ (pwsh 7)
+		// ou %USERPROFILE%\Documents\WindowsPowerShell\ (powershell.exe 5.1); isolar
+		// sobrescrevendo USERPROFILE+HOME para t.TempDir().
+		// No macOS/Linux usa XDG_CONFIG_HOME. Um marcador escrito pelo próprio perfil
+		// confirma carregamento; ausência do marcador → t.Skipf com prova (c).
 		if runtime.GOOS == "windows" {
-			t.Log("perfil via XDG_CONFIG_HOME pulado no Windows")
+			type winPSEntry struct {
+				name, bin, profileSubdir string
+			}
+			winEntries := []winPSEntry{
+				{"pwsh", "pwsh", filepath.Join("Documents", "PowerShell")},
+				{"powershell", "powershell", filepath.Join("Documents", "WindowsPowerShell")},
+			}
+			for _, wps := range winEntries {
+				wps := wps
+				t.Run("profile-windows/"+wps.name, func(t *testing.T) {
+					winBin, lookErr := exec.LookPath(wps.bin)
+					if lookErr != nil {
+						t.Skipf("%s não encontrado em PATH (%v) — skip (b): probe de capacidade", wps.bin, lookErr)
+					}
+					ensurePSWarmup(t, winBin)
+					for _, pcond := range profConditions {
+						pcond := pcond
+						t.Run(pcond.name, func(t *testing.T) {
+							t.Parallel()
+							userprofileDir := t.TempDir()
+							profileDir := filepath.Join(userprofileDir, wps.profileSubdir)
+							if mkErr := os.MkdirAll(profileDir, 0755); mkErr != nil {
+								t.Fatalf("criando diretório de perfil Windows: %v", mkErr)
+							}
+							markerPath := filepath.Join(userprofileDir, "profile_loaded")
+							profileContent := `New-Item -Path "` + markerPath + `" -ItemType File -Force | Out-Null` + "\n" +
+								pcond.content
+							profileFile := filepath.Join(profileDir, "Microsoft.PowerShell_profile.ps1")
+							if wErr := os.WriteFile(profileFile, []byte(profileContent), 0644); wErr != nil {
+								t.Fatalf("escrevendo perfil Windows: %v", wErr)
+							}
+							upEnv := []string{
+								"USERPROFILE=" + userprofileDir,
+								"HOME=" + userprofileDir,
+							}
+							// Sentinel: also capture the resolved $PROFILE path for concrete (c) proof.
+							resolvedProfileFile := filepath.Join(userprofileDir, "resolved_profile.txt")
+							// Use [IO.File]::WriteAllText — not Set-Content, which is suppressed by WhatIf.
+							sentinelCmd := `[IO.File]::WriteAllText('` + resolvedProfileFile + `', $PROFILE); exit 0`
+							psConcurrencySem <- struct{}{}
+							checkR := execPSCommandOpts(winBin, sentinelCmd, "", 0, psCallDeadlineCeil, false, upEnv)
+							<-psConcurrencySem
+							if checkR.timedOut || checkR.runErr != nil {
+								t.Skipf("verificação de carregamento de perfil falhou: timedOut=%v runErr=%v — pulando braço de perfil Windows", checkR.timedOut, checkR.runErr)
+							}
+							if _, mErr := os.Stat(markerPath); os.IsNotExist(mErr) {
+								// (c): USERPROFILE override not honoured; marker absent is the measurement.
+								// $PROFILE resolved to whatever resolvedProfileFile contains.
+								resolvedProfile := "(unreadable)"
+								if rp, rpErr := os.ReadFile(resolvedProfileFile); rpErr == nil {
+									resolvedProfile = string(rp)
+								}
+								t.Skipf("perfil não carregado via USERPROFILE override (marcador ausente) — (c): "+
+									"USERPROFILE=%s mas $PROFILE resolveu para %q em vez de %q; "+
+									"PS carrega perfil do USERPROFILE original do sistema",
+									userprofileDir, resolvedProfile, profileFile)
+							}
+							if rmErr := os.Remove(markerPath); rmErr != nil {
+								t.Fatalf("removendo marcador antes de sub-teste: %v", rmErr)
+							}
+
+							t.Run("RC0-allow", func(t *testing.T) {
+								t.Parallel()
+								dir := t.TempDir()
+								makeFakeTrackfwForOS(t, dir)
+								code, _, stdinCaptured := runGuardLinePSNoProfile(t, winBin, gitBranchLine, dir, 0, upEnv)
+								if code != 0 {
+									t.Errorf("git-branch/%s: RC0-allow (perfil Windows %s): esperado exit 0, obteve %d", pcond.name, wps.name, code)
+								}
+								if _, sErr := os.Stat(filepath.Join(dir, "stdin.out")); os.IsNotExist(sErr) {
+									t.Errorf("git-branch/%s: RC0-allow (perfil Windows %s): guard não rodou", pcond.name, wps.name)
+								}
+								// REQ-IMP-4: bytes recebidos pelo stub == bytes enviados (normalizado CRLF).
+								want := strings.TrimRight(stdinPayload, "\r\n")
+								if stdinCaptured != want {
+									t.Errorf("REQ-IMP-4 RC0-allow: stdin não preservado: got %q, want %q", stdinCaptured, want)
+								}
+							})
+
+							t.Run("RC2-deny", func(t *testing.T) {
+								t.Parallel()
+								dir := t.TempDir()
+								makeFakeTrackfwForOS(t, dir)
+								code, _, stdinCaptured := runGuardLinePSNoProfile(t, winBin, gitBranchLine, dir, 2, upEnv)
+								if code != 2 {
+									t.Errorf("git-branch/%s: RC2-deny (perfil Windows %s): esperado exit 2, obteve %d", pcond.name, wps.name, code)
+								}
+								// REQ-IMP-4: bytes recebidos pelo stub == bytes enviados (normalizado CRLF).
+								want := strings.TrimRight(stdinPayload, "\r\n")
+								if stdinCaptured != want {
+									t.Errorf("REQ-IMP-4 RC2-deny: stdin não preservado: got %q, want %q", stdinCaptured, want)
+								}
+							})
+
+							t.Run("RC1-deny-normalizado", func(t *testing.T) {
+								t.Parallel()
+								dir := t.TempDir()
+								makeFakeTrackfwForOS(t, dir)
+								code, _, _ := runGuardLinePSNoProfile(t, winBin, gitBranchLine, dir, 1, upEnv)
+								if code != 2 {
+									t.Errorf("git-branch/%s: RC1-deny-normalizado (perfil Windows %s): esperado exit 2, obteve %d", pcond.name, wps.name, code)
+								}
+							})
+						})
+					}
+				})
+			}
 			return
 		}
 
@@ -2365,12 +2480,17 @@ func TestGuardLineShellMatrix_PSInheritedState(t *testing.T) {
 					t.Parallel()
 					dir := t.TempDir()
 					makeFakeTrackfwForOS(t, dir)
-					code, _, _ := runGuardLinePSNoProfile(t, psBin, gitBranchLine, dir, 0, xdgEnv)
+					code, _, stdinCaptured := runGuardLinePSNoProfile(t, psBin, gitBranchLine, dir, 0, xdgEnv)
 					if code != 0 {
 						t.Errorf("git-branch/%s: RC0-allow (perfil): esperado exit 0, obteve %d", pcond.name, code)
 					}
 					if _, sErr := os.Stat(filepath.Join(dir, "stdin.out")); os.IsNotExist(sErr) {
 						t.Errorf("git-branch/%s: RC0-allow (perfil): guard não rodou", pcond.name)
+					}
+					// REQ-IMP-4: bytes recebidos pelo stub == bytes enviados (normalizado CRLF).
+					want := strings.TrimRight(stdinPayload, "\r\n")
+					if stdinCaptured != want {
+						t.Errorf("REQ-IMP-4 RC0-allow (perfil): stdin não preservado: got %q, want %q", stdinCaptured, want)
 					}
 				})
 
@@ -2378,12 +2498,17 @@ func TestGuardLineShellMatrix_PSInheritedState(t *testing.T) {
 					t.Parallel()
 					dir := t.TempDir()
 					makeFakeTrackfwForOS(t, dir)
-					code, _, _ := runGuardLinePSNoProfile(t, psBin, gitBranchLine, dir, 2, xdgEnv)
+					code, _, stdinCaptured := runGuardLinePSNoProfile(t, psBin, gitBranchLine, dir, 2, xdgEnv)
 					if code != 2 {
 						t.Errorf("git-branch/%s: RC2-deny (perfil): esperado exit 2, obteve %d", pcond.name, code)
 					}
 					if _, sErr := os.Stat(filepath.Join(dir, "stdin.out")); os.IsNotExist(sErr) {
 						t.Errorf("git-branch/%s: RC2-deny (perfil): guard não rodou", pcond.name)
+					}
+					// REQ-IMP-4: bytes recebidos pelo stub == bytes enviados (normalizado CRLF).
+					want := strings.TrimRight(stdinPayload, "\r\n")
+					if stdinCaptured != want {
+						t.Errorf("REQ-IMP-4 RC2-deny (perfil): stdin não preservado: got %q, want %q", stdinCaptured, want)
 					}
 				})
 
@@ -2666,11 +2791,9 @@ func TestGuardLineShellMatrix_D18NovaContraArm_Stop(t *testing.T) {
 //
 // Reconciliação (REQ-2026-11-13 ML-2C/ML-2I): afirma que nenhuma das formas atuais emite linhas
 // adicionais de stderr por chamada POSIX (zero linhas de preamble, independente de allow/deny).
+// TestGuardLineShellMatrix_PreambleNoStderr: GOOS skip removido; each shell has LookPath probe inside.
+// Classificação (b) — sh/bash disponíveis no windows-latest; outros shells pulam via probe.
 func TestGuardLineShellMatrix_PreambleNoStderr(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("shells POSIX não disponíveis em Windows")
-	}
-
 	// FRCs a testar: allow (0), deny canônico (2), deny não-canônico (1).
 	// O stub SEMPRE escreve "motivo-deny-fake" no stderr independente do FAKE_RC.
 	type frcCase struct {
@@ -2972,9 +3095,138 @@ func TestGuardLineShellMatrix_LContraArm_ConfirmLow(t *testing.T) {
 		})
 	}
 
-	// ── Braços forma L via perfil (não-Windows — XDG_CONFIG_HOME não funciona no Windows) ──
+	// ── Braços forma L via perfil ───────────────────────────────────────────────────
+	// No Windows: USERPROFILE+HOME → t.TempDir(); perfil em Documents\PowerShell\ ou
+	//             Documents\WindowsPowerShell\. Sentinela verifica carregamento.
+	// No macOS/Linux: XDG_CONFIG_HOME → t.TempDir(); perfil em powershell/.
 	if runtime.GOOS == "windows" {
-		t.Log("braço via-profile pulado no Windows: XDG_CONFIG_HOME não é respeitado pelo PS no Windows")
+		type winPSEntry struct {
+			name, bin, profileSubdir string
+		}
+		winLEntries := []winPSEntry{
+			{"pwsh", "pwsh", filepath.Join("Documents", "PowerShell")},
+			{"powershell", "powershell", filepath.Join("Documents", "WindowsPowerShell")},
+		}
+		for _, wps := range winLEntries {
+			wps := wps
+			t.Run("form-L/via-profile-windows/"+wps.name, func(t *testing.T) {
+				winBin, lookErr := exec.LookPath(wps.bin)
+				if lookErr != nil {
+					t.Skipf("%s não encontrado em PATH (%v) — skip (b): probe de capacidade", wps.bin, lookErr)
+				}
+				for _, cl := range confirmLevels {
+					cl := cl
+					t.Run(cl.name, func(t *testing.T) {
+						t.Parallel()
+						userprofileDir := t.TempDir()
+						profileDir := filepath.Join(userprofileDir, wps.profileSubdir)
+						if mkErr := os.MkdirAll(profileDir, 0755); mkErr != nil {
+							t.Fatalf("criando diretório de perfil Windows: %v", mkErr)
+						}
+						markerPath := filepath.Join(userprofileDir, "profile_loaded")
+						profileContent := `New-Item -Path "` + markerPath + `" -ItemType File -Force | Out-Null` + "\n" +
+							"$ConfirmPreference = '" + cl.level + "'\n"
+						profileFile := filepath.Join(profileDir, "Microsoft.PowerShell_profile.ps1")
+						if wErr := os.WriteFile(profileFile, []byte(profileContent), 0644); wErr != nil {
+							t.Fatalf("escrevendo perfil Windows: %v", wErr)
+						}
+						upEnv := []string{
+							"USERPROFILE=" + userprofileDir,
+							"HOME=" + userprofileDir,
+						}
+						// Sentinel: capture resolved $PROFILE for concrete (c) proof if marker absent.
+						resolvedProfileFile := filepath.Join(userprofileDir, "resolved_profile.txt")
+						sentinelCmd := `[IO.File]::WriteAllText('` + resolvedProfileFile + `', $PROFILE); exit 0`
+						psConcurrencySem <- struct{}{}
+						checkR := execPSCommandInteractive(winBin, sentinelCmd, "", 0, perCallTimeout, false, upEnv)
+						<-psConcurrencySem
+						if checkR.timedOut || checkR.runErr != nil {
+							t.Skipf("perfil via USERPROFILE não carregou: timedOut=%v, runErr=%v", checkR.timedOut, checkR.runErr)
+						}
+						if _, statErr := os.Stat(markerPath); os.IsNotExist(statErr) {
+							resolvedProfile := "(unreadable)"
+							if rp, rpErr := os.ReadFile(resolvedProfileFile); rpErr == nil {
+								resolvedProfile = string(rp)
+							}
+							// (c): USERPROFILE override not honoured; marker absent is the measurement.
+							t.Skipf("marcador de perfil ausente: (c) USERPROFILE=%s mas $PROFILE resolveu para %q em vez de %q — PS carrega perfil do USERPROFILE original do sistema",
+								userprofileDir, resolvedProfile, profileFile)
+						}
+
+						// runInteractiveWith chama execPSCommandInteractive com winBin (não com
+						// psBin capturado pelo closure externo). Necessário porque psBin é sempre
+						// pwsh, independente do wps.bin iterado (pode ser powershell.exe).
+						runInteractiveWith := func(t *testing.T, line, fakeDir string, fakeRC int, extraEnv []string) (exitCode int, captured string) {
+							t.Helper()
+							psConcurrencySem <- struct{}{}
+							r := execPSCommandInteractive(winBin, line, fakeDir, fakeRC, perCallTimeout, false, extraEnv)
+							<-psConcurrencySem
+							if r.timedOut {
+								t.Skipf("timeout ao executar linha PS interativa via %s — ambiente sem PS interativo", wps.bin)
+							}
+							if r.runErr != nil {
+								t.Fatalf("erro de execução em %s: %v", wps.bin, r.runErr)
+							}
+							exitCode = r.exitCode
+							if fakeDir != "" {
+								data, readErr := os.ReadFile(filepath.Join(fakeDir, "stdin.out"))
+								if readErr == nil {
+									captured = strings.ReplaceAll(string(data), "\r\n", "\n")
+									captured = strings.TrimRight(captured, "\n")
+								}
+							}
+							return
+						}
+
+						// Form L under profile: RC0 and RC2 must pass with full stdin delivery.
+						for _, fc := range frcCases {
+							fc := fc
+							t.Run("form-L/"+fc.name, func(t *testing.T) {
+								t.Parallel()
+								dir := t.TempDir()
+								makeFakeTrackfwForOS(t, dir)
+								pathVal := buildPSPath(dir)
+								envWithPath := append([]string{"PATH=" + pathVal}, upEnv...)
+								code, captured := runInteractiveWith(t, gitBranchLine, dir, fc.frc, envWithPath)
+								if captured != stdinPayloadNorm {
+									t.Errorf(
+										"form-L confirm-%s via-profile-windows/%s %s: stdin não entregue completamente: got %d bytes (%q), want %d bytes (%q)",
+										cl.name, wps.name, fc.name, len(captured), captured, len(stdinPayloadNorm), stdinPayloadNorm,
+									)
+								}
+								if fc.frc == 0 && code != 0 {
+									t.Errorf("form-L confirm-%s via-profile-windows/%s %s: esperado exit 0, obteve %d", cl.name, wps.name, fc.name, code)
+								}
+								if fc.frc == 2 && code != 2 {
+									t.Errorf("form-L confirm-%s via-profile-windows/%s %s: esperado exit 2, obteve %d", cl.name, wps.name, fc.name, code)
+								}
+							})
+						}
+
+						// Counter-arm K under same USERPROFILE profile (addNoProfile=false, no prefix).
+						// K = gitBranchLine sem ml1dConfirmSeg — ConfirmPreference vem só do perfil.
+						// Deve drenar stdin / entregar menos bytes que stdinPayloadNorm.
+						t.Run("form-K/via-profile-windows", func(t *testing.T) {
+							t.Parallel()
+							kFormGitBranch := strings.Replace(gitBranchLine, ml1dConfirmSeg, "", 1)
+							dir := t.TempDir()
+							makeFakeTrackfwForOS(t, dir)
+							pathVal := buildPSPath(dir)
+							envWithPath := append([]string{"PATH=" + pathVal}, upEnv...)
+							// frc=2: K pode não alcançar o guard; assertamos apenas stdin drain.
+							_, captured := runInteractiveWith(t, kFormGitBranch, dir, 2, envWithPath)
+							// A forma K sob Confirm herdado do perfil DEVE entregar menos bytes.
+							if captured == stdinPayloadNorm {
+								t.Errorf(
+									"counter-arm K/via-profile-windows confirm-%s/%s: forma K entregou o payload completo (%d bytes) sem ConfirmPreference None — braço não mordeu",
+									cl.name, wps.name, len(captured),
+								)
+							}
+						})
+					})
+				}
+			})
+		}
 	} else {
 		for _, cl := range confirmLevels {
 			cl := cl
@@ -3032,6 +3284,30 @@ func TestGuardLineShellMatrix_LContraArm_ConfirmLow(t *testing.T) {
 						}
 					})
 				}
+
+				// Counter-arm K under same XDG profile (addNoProfile=false, no prefix).
+				// Provides local evidence on macOS that K bites; validates Windows arm design.
+				// NOT t.Parallel(): K may drain stdin slowly under Confirm Low; running it
+				// sequentially (before the parallel frc sub-tests are released) avoids holding a
+				// psConcurrencySem slot during the high-contention parallel phase.
+				t.Run("form-K/via-profile", func(t *testing.T) {
+					kFormGitBranch := strings.Replace(gitBranchLine, ml1dConfirmSeg, "", 1)
+					dir := t.TempDir()
+					makeFakeTrackfwForOS(t, dir)
+					pathVal := buildPSPath(dir)
+					envWithPath := append([]string{"PATH=" + pathVal}, xdgEnv...)
+					// frc=2: K pode não alcançar o guard; assertamos apenas stdin drain.
+					_, captured := runInteractive(t, kFormGitBranch, dir, 2, envWithPath, false)
+					// A forma K sob Confirm herdado do perfil DEVE entregar menos bytes.
+					if captured == stdinPayloadNorm {
+						t.Errorf(
+							"counter-arm K/via-profile confirm-%s: forma K entregou o payload completo (%d bytes) sem ConfirmPreference None — braço não mordeu",
+							cl.name, len(captured),
+						)
+					} else {
+						t.Logf("counter-arm K/via-profile confirm-%s: forma K entregou %d bytes (payload=%d) — braço morde", cl.name, len(captured), len(stdinPayloadNorm))
+					}
+				})
 			})
 		}
 	}
@@ -3105,13 +3381,13 @@ func TestGuardLineShellMatrix_LContraArm_ConfirmLow(t *testing.T) {
 //   - sh-as-dash-u afirma: "dash -u aborta com exit 2 antes do guard rodar" (medição do arquiteto).
 //   - sh-as-dash-e afirma: "dash -e não causa nounset; sai com ≠ 2 por emulate/comando ausente".
 //   - Ambos afirmam: "guard não rodou" (stdin.out ausente — prova invariante).
+//
+// GOOS skip removido; dash LookPath abaixo skip por probe.
+// Classificação (b) — dash improvável no windows-latest mas probe é o mecanismo correto.
 func TestD18ContraArm_ShAsDashSim(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("shells POSIX não disponíveis em Windows")
-	}
 	dashPath, err := exec.LookPath("dash")
 	if err != nil {
-		t.Skip("dash não encontrado — simulação sh→dash não aplicável")
+		t.Skipf("dash não encontrado em PATH (%v) — simulação sh→dash não aplicável; skip (b): probe de capacidade", err)
 	}
 
 	// Criar symlink sh → dash simulando /bin/sh→/bin/dash (Linux).
@@ -3165,7 +3441,7 @@ func TestD18ContraArm_ShAsDashSim(t *testing.T) {
 					args := append(sc.flags, "-c", guard.legLine)
 					cmd := exec.CommandContext(ctx, shLink, args...)
 
-					pathVal := fakeDir + ":/usr/bin:/bin"
+					pathVal := buildShellPath(shLink, fakeDir)
 					base := os.Environ()
 					filtered := make([]string, 0, len(base)+2)
 					for _, e := range base {
