@@ -117,7 +117,7 @@ T7e fica como (c), com a prova escrita (EvalSymlinks normaliza o case no NTFS).
 > Dependencies: Wave 1 (`windows-full-suites` verde)
 
 ### ML-2A — Skips "shells POSIX não disponíveis" e o perfil do PowerShell no Windows
-**Status:** ⬜ Pending
+**Status:** 🔄 In progress
 **Squad:** artemis-tf
 **Files affected:** `internal/generators/guard_line_shell_test.go`, `internal/generators/fail_closed_d11_behavior_test.go`,
 `internal/commands/netexec_test.go`, `internal/commands/doctor_test.go`
@@ -136,7 +136,7 @@ T7e fica como (c), com a prova escrita (EvalSymlinks normaliza o case no NTFS).
 - [ ] mutação L→K reprova o braço de perfil no Windows (CI do PR)
 
 ### ML-2B — Forma cmd.exe executada sob `cmd.exe` real (REQ-IMP-5/6)
-**Status:** ⬜ Pending
+**Status:** 🔄 In progress
 **Squad:** artemis-tf
 **Files affected:** `internal/generators/guard_cmdexe_exec_test.go` (novo)
 **Actions:** executar a linha de hook que Kiro e Amazon Q recebem no Windows sob `cmd.exe /d /c`, com um fake
