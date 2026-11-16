@@ -2,7 +2,7 @@
 status: Open
 date: 2026-11-15
 author: "zeus-tf"
-adr: "ADR-2026-09-05-hook-de-windows-roda-no-windows-geracao-nativa-por-cli-de-agente-em-vez-de-exigir-git-bash"
+adr: "docs/adr/ADR-2026-09-05-hook-de-windows-roda-no-windows-geracao-nativa-por-cli-de-agente-em-vez-de-exigir-git-bash.md"
 roadmap: "docs/roadmaps/wip/ROADMAP-2026-11-15-cobertura-e-compatibilidade-completas-do-trackfw-no-windows.md"
 ---
 

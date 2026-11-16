@@ -93,25 +93,25 @@ test -s docs/portabilidade/2026-11-15-inventario-windows.md
 > Dependencies: Wave 0 auditada
 
 ### ML-1A — `TestMLScope*` no Windows (41)
-**Status:** 🔄 In progress
+**Status:** ✅ Done
 **Squad:** artemis-tf
 **Files affected:** `internal/commands/barrier_ml_scope_test.go`
 **Actions:** remover o skip "windows path handling tested separately" das 41 ocorrências (`grep -c 't\.Skip("ml_scope'`
 = 41). Trocar caminhos POSIX literais por `t.TempDir()`/`filepath.Join` onde houver. Um teste que reprove no
 Windows por defeito de produto vira ML desta REQ com a causa medida; nunca volta a ser skip.
 **Acceptance criteria:**
-- [ ] `grep -c 'windows path handling tested separately'` = 0
-- [ ] os 41 com `--- PASS` no `windows-full-suites` do PR (REQ-IMP-2), citando a linha do log
+- [x] `grep -c 'windows path handling tested separately'` = 0
+- [x] os 41 com `--- PASS` no `windows-full-suites` do PR (REQ-IMP-2), citando a linha do log — PR #688, job 133285325804, linhas 1537–1701: 56 `TestMLScope*` únicos com PASS, 0 SKIP, 0 FAIL; os nomes cujo skip saiu no diff estão todos no conjunto PASS (`comm -23` vazio)
 
 ### ML-1B — `TestBarrierReentry_*` no Windows
-**Status:** 🔄 In progress
+**Status:** ✅ Done
 **Squad:** artemis-tf
 **Files affected:** `internal/commands/barrier_reentry_test.go`
 **Actions:** remover os skips falsos de T1, T2 e T3. Converter o skip incondicional de T7 em probe de capacidade.
 T7e fica como (c), com a prova escrita (EvalSymlinks normaliza o case no NTFS).
 **Acceptance criteria:**
-- [ ] T1/T2/T3/T7 com `--- PASS` no `windows-full-suites`, ou known-failure com o log de CI citado (REQ-IMP-2)
-- [ ] nenhuma entrada nova em `windows-known-failures.json` sem execução no Windows
+- [x] T1/T2/T3/T7 com `--- PASS` no `windows-full-suites`, ou known-failure com o log de CI citado (REQ-IMP-2) — job 133285325804, linhas 1703, 1705, 1707, 1717–1719; T7e segue SKIP com prova (c)
+- [x] nenhuma entrada nova em `windows-known-failures.json` sem execução no Windows (diff vazio contra origin/main)
 
 ## Wave 2 — Skips falsos de shell e o braço de perfil que se esconde (2 MLs em paralelo; arquivos disjuntos)
 > Dependencies: Wave 1 (`windows-full-suites` verde)
