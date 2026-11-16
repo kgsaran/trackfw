@@ -231,6 +231,18 @@ de Git Bash no Windows. Guard não entra nessa declaração.
 - [ ] regra nova com default `warning`, nos dois sítios do `validator.go`, com pin em `check-validate-rule-pins.sh`
 - [ ] teste com PATH sem `sh` (aviso presente) e com `sh` (ausente)
 
+### ML-3D2 — Corretivo da revisão do hefesto (F2, F3, F4)
+**Status:** 🔄 In progress
+**Squad:** apolo-tf
+**Files affected:** os do ML-3D e, se preciso, `internal/validator/export_test.go`
+**Diagnóstico:** `docs/qualidade/2026-11-16-ml-3d-windows-sh-missing-review.md`. F2: o teste do doctor monta os findings
+no próprio teste e nunca chama `runDoctor`. F3: nenhum teste passa pelas duas linhas de fiação do `validator.go`. F4:
+a REQ-IMP-9 pede o aviso também sem artefato `.sh`, porque o barrier falha sem `sh`. É a mesma causa, por isso entra aqui.
+**Acceptance criteria:**
+- [ ] teste do doctor chama `runDoctor`; mutação do loop em `doctor.go` reprova
+- [ ] teste de fiação do `ValidateUnfiltered` e do caminho tagged; remover cada linha de fiação reprova
+- [ ] aviso também sem artefato, com a frase alinhada à `shMissingMsg` do barrier
+
 ## Wave 4 — Medição na VM por CLI (depende do KG)
 > Dependencies: Wave 3. Cada CLI precisa estar instalado na VM.
 
@@ -246,6 +258,8 @@ Pela ADR-2026-10-14 D2, o `HomeFor` só muda para um CLI medido. Se um CLI não 
 forma K deixa de valer para ele, porque a forma L cobre esse caso. Registrar.
 **Acceptance criteria:**
 - [ ] tabela CLI × (`-NonInteractive`, `-NoProfile`, HOME) medida; CLI não instalado fica declarado como não medido
+- [ ] hook do husky (`.husky/pre-commit`) executado na VM com `sh` fora do PATH interativo: se rodar pelo `sh` do Git for
+  Windows, `.husky/*` sai da lista da regra `windows_sh_missing` (parecer do hefesto F1, 2026-11-16)
 
 ## Wave 5 — Red team, `make quality` e CI de Windows
 > Dependencies: todas as anteriores
