@@ -7,3 +7,5 @@
 - [Windows VM: npm shim .ps1 blocked under Restricted when npm PATH first](project_npm_ps1_restricted_blocks.md) — shim blocks when npm is first in PATH; pip-first masks the issue
 - [Cursor stdin BOM: EF BB BF always present](project_cursor_stdin_bom.md) — [System.Text.Encoding]::UTF8 is BOM-variant; Go guard must strip BOM before json.Unmarshal
 - [Restricted + "; exit $LASTEXITCODE" = fail-open exit 0](project_restricted_exit_lastexitcode_failopen.md) — PSSecurityException doesn't update $LASTEXITCODE; suffix causes exit 0 not 1
+- [GitHub Actions pwsh trailing exit $LASTEXITCODE](feedback_github_pwsh_trailing_exit.md) — last native call rc propagates; always end pwsh steps with `exit 0` and cmd steps with `exit /b 0`
+- [YAML run-block: PowerShell here-string at column 0 terminates block](feedback_yaml_heredoc_column_zero.md) — never use @"..."@ in YAML run: | blocks; use single-line string concatenation instead

@@ -75,9 +75,6 @@ func setupValidateViolationFixtureDir(t *testing.T) string {
 // Retorna (projectDir, fakeHome).
 func setupUpdateFailFixtureDir(t *testing.T) (string, string) {
 	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("chmod 444 não bloqueia escrita no Windows")
-	}
 	if os.Geteuid() == 0 {
 		t.Skip("root ignora bits de permissão — chmod 444 não produz falha")
 	}

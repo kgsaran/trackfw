@@ -181,6 +181,23 @@ handoff: teste Go roda em `go test ./...` sem tocar `Makefile` nem `quality.yml`
 - [ ] braços de falsificação: um skip novo não registrado reprova; um `t.Log` + `return` novo reprova; uma
   entrada sem `evidence` reprova
 
+### ML-3A2 — Corretivo do gate: polaridade, guards mortos e skip de chmod 444
+**Status:** 🔄 In progress
+**Squad:** apolo-tf
+**Files affected:** `internal/winskips/winskips.go`, `internal/winskips/winskips_test.go`, `.github/windows-skips.json`,
+`internal/generators/scaffold_test.go`, `internal/discover/discover_test.go`, `internal/commands/json_exit_test.go`
+**Diagnóstico (auditoria do ML-3A):** o gate marcava também testes que só rodam no Windows (`!= "windows"` + Skip,
+`//go:build windows`): 32 das 57 entradas. Três guards `os.Getenv("GOOS") == "windows"` nunca disparam (GOOS não é
+variável de runtime) e estavam registrados como (a). O skip "chmod 444 não bloqueia escrita no Windows" é
+provavelmente falso (0444 em arquivo liga o atributo read-only).
+**Actions:** polaridade por lógica ternária sobre `runtime.GOOS`; build tag/sufixo que exclui windows marca, tag
+windows não marca; remover os 3 guards mortos e o skip de chmod 444; braços 6-8.
+**Acceptance criteria:**
+- [x] `TestGate_RealTree` e os 8 braços passam localmente; registro de 57 → 22 entradas, todas (c)
+- [ ] `TestJSONExit_UpdateJSON_TargetFailedSilentStderr` e os 3 testes de hardlink com `--- PASS` no `windows-full-suites`
+- [ ] nenhuma `evidence` com `PENDING` no registro antes da Wave 5 (resta `TestReadRegularFile_Socket_NaoTravaEAcusaTipoErrado`:
+  o arquivo é `!windows` por causa do FIFO; o braço de socket não foi medido no Windows)
+
 ### ML-3B — Smoke de npm e PyPI no `windows-latest` (AC5, REQ-IMP-3)
 **Status:** 🔄 In progress
 **Squad:** ares-tf
