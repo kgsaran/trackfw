@@ -162,12 +162,14 @@ se chama `sh.exe`; medir no CI o que o dash do Git for Windows faz com `-u`.
 
 ## Wave 3 — Gate, smoke de canal, arm64 e aviso de `sh` (MLs em paralelo; arquivos disjuntos)
 > Dependencies: Wave 2
+> Ordem (teto de 2 agentes): leva 1 = ML-3A ∥ ML-3B; leva 2 = ML-3C (mesmo arquivo do 3B) ∥ ML-3D. ML-3D é código de
+> produto: revisão do `hefesto-tf` antes do commit.
 
 ### ML-3A — Registro e gate de skips de Windows (AC3, REQ-IMP-1)
-**Status:** ⬜ Pending
+**Status:** 🔄 In progress
 **Squad:** apolo-tf
-**Files affected:** `.github/windows-skips.json` (novo), `scripts/check-windows-skips.go` ou teste Go em
-`internal/` (decidir no handoff), alvo no `Makefile`/`quality.yml`
+**Files affected:** `.github/windows-skips.json` (novo), `internal/winskips/winskips_test.go` (novo; decidido no
+handoff: teste Go roda em `go test ./...` sem tocar `Makefile` nem `quality.yml`, o que deixa o ML-3A disjunto do ML-3B)
 **Actions:**
 - O checker é AST, não grep. Ele marca toda função de teste com ramo por plataforma (`runtime.GOOS ==
   "windows"`, `testGOOS`, helpers e build tag `!windows`) que pode sair sem asserção, seja por `t.Skip` ou por
@@ -180,7 +182,7 @@ se chama `sh.exe`; medir no CI o que o dash do Git for Windows faz com `-u`.
   entrada sem `evidence` reprova
 
 ### ML-3B — Smoke de npm e PyPI no `windows-latest` (AC5, REQ-IMP-3)
-**Status:** ⬜ Pending
+**Status:** 🔄 In progress
 **Squad:** ares-tf
 **Files affected:** `.github/workflows/quality.yml`
 **Actions:** job que instala o pacote do PR pelos dois canais: tarball local do npm e wheel local do PyPI, nunca
