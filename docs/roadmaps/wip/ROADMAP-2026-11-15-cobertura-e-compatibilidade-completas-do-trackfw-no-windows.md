@@ -145,6 +145,21 @@ fora do Windows.
 **Acceptance criteria:**
 - [ ] `--- PASS` no `windows-full-suites`; mutação da linha (sem `|| exit 2`) reprova
 
+### ML-2C — Corretivo: `TestD18ContraArm_ShAsDashSim` no Windows engole erro de execução
+**Status:** 🔄 In progress
+**Squad:** artemis-tf
+**Files affected:** `internal/generators/guard_line_shell_test.go`
+**Diagnóstico (PR #688, job 133335668133):** o ML-2A removeu o skip por GOOS; o `windows-latest` tem `dash`, então o
+teste rodou. Os 4 casos `sh-as-dash-u` saíram com exit 0, sem `stdin.out`, e os 4 `sh-as-dash-e` passaram pelo mesmo
+exit 0. O teste converte um erro que não seja `*exec.ExitError` em `code = 0`. Hipótese: o symlink `sh` sem `.exe` não
+executa no Windows, e o erro some. É a mesma família do ML-2B (erro que não é ExitError precisa reprovar), só que no
+arquivo do ML-2A.
+**Actions:** erro que não seja ExitError → `t.Fatalf` em todo `cmd.Run()` dos 4 arquivos do ML-2A; no Windows, o link
+se chama `sh.exe`; medir no CI o que o dash do Git for Windows faz com `-u`.
+**Acceptance criteria:**
+- [ ] nenhum `cmd.Run()` nos arquivos do ML-2A converte erro que não seja ExitError em exit 0
+- [ ] `TestD18ContraArm_ShAsDashSim` com `--- PASS` no `windows-full-suites`, ou (c) com o rc medido no log
+
 ## Wave 3 — Gate, smoke de canal, arm64 e aviso de `sh` (MLs em paralelo; arquivos disjuntos)
 > Dependencies: Wave 2
 
