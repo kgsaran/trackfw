@@ -212,7 +212,7 @@ o registro público. No PowerShell e no cmd, roda:
 - [ ] job verde em 2 rodadas; braço de falsificação documentado (stdin vazio inverte os dois rc)
 
 ### ML-3C — arm64 executado (REQ-IMP-7)
-**Status:** ⬜ Pending
+**Status:** 🔄 In progress
 **Squad:** ares-tf
 **Files affected:** `.github/workflows/quality.yml` (job separado do ML-3B; os dois MLs são sequenciais no mesmo
 arquivo: o 3C entra depois do 3B)
@@ -221,7 +221,7 @@ arquivo: o 3C entra depois do 3B)
 - [ ] job verde; incluído nos required checks declarados (`make check-required-checks`)
 
 ### ML-3D — Aviso proativo de `sh` ausente (REQ-IMP-9) e artefatos de conveniência declarados (REQ-IMP-5)
-**Status:** ⬜ Pending
+**Status:** 🔄 In progress
 **Squad:** apolo-tf
 **Files affected:** `internal/validator/` e `internal/commands/doctor*.go` (sítios exatos no handoff)
 **Actions:** quando faltar `sh` no PATH, `validate` e `doctor` avisam (warning, não erro). Os artefatos `.sh` de
