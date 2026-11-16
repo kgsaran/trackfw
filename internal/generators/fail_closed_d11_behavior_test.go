@@ -57,6 +57,7 @@ func runWithShell(t *testing.T, shell, line, pathOverride string) int {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			return exitErr.ExitCode()
 		}
+		t.Fatalf("runWithShell: cmd.Run() falhou com erro que não é *exec.ExitError: %v", err)
 	}
 	return 0
 }
@@ -203,6 +204,8 @@ func TestD11FailClosed_PowerShell_TabelaRC(t *testing.T) {
 					if runErr := cmd.Run(); runErr != nil {
 						if exitErr, ok := runErr.(*exec.ExitError); ok {
 							got = exitErr.ExitCode()
+						} else {
+							t.Fatalf("%s/%s: cmd.Run() falhou com erro que não é *exec.ExitError: %v", ps.name, tc.name, runErr)
 						}
 					}
 

@@ -3,6 +3,7 @@
 > Ponto de entrada de conhecimento do projeto para agentes e pessoas.
 
 ## Índice
+- [windows-symlink-shell-exe-e-dll-path-em-teste-go-2026-11-16](windows-symlink-shell-exe-e-dll-path-em-teste-go-2026-11-16.md) — 🔴 **symlink de shell MSYS no Windows precisa de `.exe` (CreateProcess não adiciona extensão em caminho absoluto) e `buildShellPath` deve usar o executável real (não o symlink) para incluir o dir das DLLs; sem isso cmd.Run() retorna erro não-ExitError, silenciado como exit 0** (ML-2C, PR #688)
 - [d8-fail-closed-gate-mascara-reachability-2026-11-08](d8-fail-closed-gate-mascara-reachability-2026-11-08.md) — D8 HTML check reachável via `barrier`, D8 fence check irrechável via `barrier` (doc-level FenceMaskCheck dispara antes); residual E3 (CommonMark); testdata vs live usa 3-tick vs 4-tick causando divergência no corpus congelado
 - [wave0gatediagnosis-d3-mensagem-errada-2026-11-08](wave0gatediagnosis-d3-mensagem-errada-2026-11-08.md) — `Wave0GateDiagnosis` mapeia D3 para `Wave0GateMalformed`; validate emite "fence ausente" em vez de "cabeçalho duplicado"; novo ML necessário; `internal/validator/validator_roadmap_gates.go:119-123`
 - [guard-credencial-comentarios-de-teste-disparam-o-guard-2026-11-06](guard-credencial-comentarios-de-teste-disparam-o-guard-2026-11-06.md) — comentário de docstring com token completo dispara o guard tanto quanto código; ADR D3 se aplica a comentários; `TestFixturesSemTokenLiteral` detecta regressão (ML-1B)

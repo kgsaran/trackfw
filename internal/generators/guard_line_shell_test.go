@@ -429,6 +429,8 @@ func runGuardLine(
 	if runErr != nil {
 		if exitErr, ok := runErr.(*exec.ExitError); ok {
 			code = exitErr.ExitCode()
+		} else {
+			t.Fatalf("runGuardLine: cmd.Run() falhou com erro que não é *exec.ExitError: %v", runErr)
 		}
 	}
 
@@ -1074,6 +1076,8 @@ func TestGuardLineShellMatrix_DefeitoAntigo(t *testing.T) {
 			if runErr != nil {
 				if exitErr, ok := runErr.(*exec.ExitError); ok {
 					code = exitErr.ExitCode()
+				} else {
+					t.Fatalf("TestGuardLineShellMatrix_DefeitoAntigo: cmd.Run() falhou com erro que não é *exec.ExitError: %v", runErr)
 				}
 			}
 
@@ -1178,6 +1182,8 @@ func TestGuardLineShellMatrix_UnsetoptInsuficiente(t *testing.T) {
 			if runErr != nil {
 				if exitErr, ok := runErr.(*exec.ExitError); ok {
 					code = exitErr.ExitCode()
+				} else {
+					t.Fatalf("TestGuardLineShellMatrix_UnsetoptInsuficiente: cmd.Run() falhou com erro que não é *exec.ExitError: %v", runErr)
 				}
 			}
 
@@ -1322,6 +1328,8 @@ func TestGuardLineShellMatrix_D18ContraArm(t *testing.T) {
 					if runErr != nil {
 						if exitErr, ok := runErr.(*exec.ExitError); ok {
 							code = exitErr.ExitCode()
+						} else {
+							t.Fatalf("D18ContraArm(%s/%s): cmd.Run() falhou com erro que não é *exec.ExitError: %v", guard.name, sh.name, runErr)
 						}
 					}
 
@@ -3383,16 +3391,25 @@ func TestGuardLineShellMatrix_LContraArm_ConfirmLow(t *testing.T) {
 //   - Ambos afirmam: "guard não rodou" (stdin.out ausente — prova invariante).
 //
 // GOOS skip removido; dash LookPath abaixo skip por probe.
-// Classificação (b) — dash improvável no windows-latest mas probe é o mecanismo correto.
+// Classificação (b) — dash disponível via Git for Windows no windows-latest
+// (confirmado: job 133335668133, TestGuardLineShellMatrix_D18ContraArm/*/dash-u PASS).
+// No Windows o link recebe extensão .exe para que CreateProcess possa executá-lo.
+// buildShellPath usa dashPath (não shLink) para incluir o diretório das DLLs do dash.
 func TestD18ContraArm_ShAsDashSim(t *testing.T) {
 	dashPath, err := exec.LookPath("dash")
 	if err != nil {
 		t.Skipf("dash não encontrado em PATH (%v) — simulação sh→dash não aplicável; skip (b): probe de capacidade", err)
 	}
 
-	// Criar symlink sh → dash simulando /bin/sh→/bin/dash (Linux).
+	// Criar symlink sh[.exe] → dash simulando /bin/sh→/bin/dash (Linux).
+	// No Windows: o link precisa de extensão .exe para que CreateProcess o execute.
+	// d18ShellKind(shLink) chama EvalSymlinks, que resolve sh.exe→dash.exe → "dash" ✓.
 	linkDir := t.TempDir()
-	shLink := filepath.Join(linkDir, "sh")
+	shLinkName := "sh"
+	if runtime.GOOS == "windows" {
+		shLinkName = "sh.exe"
+	}
+	shLink := filepath.Join(linkDir, shLinkName)
 	symlinkOrSkip(t, dashPath, shLink)
 
 	// d18ShellKind deve classificar shLink como "dash" — sem isso o resto do teste não tem sentido.
@@ -3441,7 +3458,11 @@ func TestD18ContraArm_ShAsDashSim(t *testing.T) {
 					args := append(sc.flags, "-c", guard.legLine)
 					cmd := exec.CommandContext(ctx, shLink, args...)
 
-					pathVal := buildShellPath(shLink, fakeDir)
+					// buildShellPath usa dashPath (não shLink) para incluir o diretório do
+					// executável real do dash (e.g. Git/usr/bin no Windows), onde vivem as
+					// DLLs do MSYS. Usar shLink poria apenas o TempDir no PATH, e
+					// msys-2.0.dll não seria encontrada (STATUS_DLL_NOT_FOUND 0xC0000135).
+					pathVal := buildShellPath(dashPath, fakeDir)
 					base := os.Environ()
 					filtered := make([]string, 0, len(base)+2)
 					for _, e := range base {
@@ -3456,13 +3477,25 @@ func TestD18ContraArm_ShAsDashSim(t *testing.T) {
 					filtered = append(filtered, "PATH="+pathVal, "FAKE_RC=2")
 					cmd.Env = filtered
 					cmd.Stdin = strings.NewReader(stdinPayload)
+					var stderrBuf bytes.Buffer
+					cmd.Stderr = &stderrBuf
 
 					runErr := cmd.Run()
 					code := 0
 					if runErr != nil {
 						if exitErr, ok := runErr.(*exec.ExitError); ok {
 							code = exitErr.ExitCode()
+						} else {
+							t.Fatalf("sim(%s/%s): cmd.Run() falhou com erro que não é *exec.ExitError: %v", sc.name, guard.name, runErr)
 						}
+					}
+					// Registrar rc e stderr para diagnóstico no CI: mostra o que o dash do
+					// Git for Windows produz com -u e -e (só confirmável no windows-latest).
+					t.Logf("sim(%s/%s): rc=%d stderr=%q", sc.name, guard.name, code, stderrBuf.String())
+					// Código fora do intervalo 0–255 indica falha do loader (NTSTATUS),
+					// não exit code real do shell. O guard nunca rodou nesse caso.
+					if code < 0 || code > 255 {
+						t.Fatalf("sim(%s/%s): exit %d fora do intervalo 0–255 — loader/NTSTATUS error (shell nunca rodou)", sc.name, guard.name, code)
 					}
 
 					// stdin.out ausente: prova invariante — guard nunca rodou.
