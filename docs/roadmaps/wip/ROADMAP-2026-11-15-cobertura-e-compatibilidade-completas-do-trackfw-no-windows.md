@@ -117,7 +117,7 @@ T7e fica como (c), com a prova escrita (EvalSymlinks normaliza o case no NTFS).
 > Dependencies: Wave 1 (`windows-full-suites` verde)
 
 ### ML-2A — Skips "shells POSIX não disponíveis" e o perfil do PowerShell no Windows
-**Status:** 🔄 In progress
+**Status:** ✅ Done
 **Squad:** artemis-tf
 **Files affected:** `internal/generators/guard_line_shell_test.go`, `internal/generators/fail_closed_d11_behavior_test.go`,
 `internal/commands/netexec_test.go`, `internal/commands/doctor_test.go`
@@ -131,22 +131,22 @@ T7e fica como (c), com a prova escrita (EvalSymlinks normaliza o case no NTFS).
    deny e allow (REQ-IMP-4).
 4. `TestD11FailClosed_PowerShell`: trocar o stub `#!/bin/sh` por `.cmd`.
 **Acceptance criteria:**
-- [ ] nenhum `t.Log(...); return` que encerre o teste por plataforma
-- [ ] braço de perfil do `PSInheritedState` e do `LContraArm_ConfirmLow` com `--- PASS` no Windows, em 5.1 e 7
-- [ ] mutação L→K reprova o braço de perfil no Windows (CI do PR)
+- [x] nenhum `t.Log(...); return` que encerre o teste por plataforma
+- [x] braço de perfil do `PSInheritedState` e do `LContraArm_ConfirmLow` com `--- PASS` no Windows, em 5.1 e 7 — job 133540617504 do PR #688: 76 PASS e 0 SKIP nos braços `profile-windows`/`via-profile-windows`, em `pwsh` e `powershell`; o USERPROFILE isolado é respeitado
+- [x] mutação L→K reprova o braço de perfil no Windows (CI do PR) — contra-braço `form-K/via-profile-windows` com PASS (K entrega menos bytes) em low e medium, nos dois PowerShell
 
 ### ML-2B — Forma cmd.exe executada sob `cmd.exe` real (REQ-IMP-5/6)
-**Status:** 🔄 In progress
+**Status:** ✅ Done
 **Squad:** artemis-tf
 **Files affected:** `internal/generators/guard_cmdexe_exec_test.go` (novo)
 **Actions:** executar a linha de hook que Kiro e Amazon Q recebem no Windows sob `cmd.exe /d /c`, com um fake
 `trackfw.cmd` que grava os bytes recebidos. Cobrir deny 2, allow 0 e ausente; afirmar os bytes recebidos. Pular
 fora do Windows.
 **Acceptance criteria:**
-- [ ] `--- PASS` no `windows-full-suites`; mutação da linha (sem `|| exit 2`) reprova
+- [x] `--- PASS` no `windows-full-suites`; mutação da linha (sem `|| exit 2`) reprova — job 133540617504 do PR #688: 16 PASS em `TestGuardCmdExe_*`, incluindo `ContraArm` nas 3 formas
 
 ### ML-2C — Corretivo: `TestD18ContraArm_ShAsDashSim` no Windows engole erro de execução
-**Status:** 🔄 In progress
+**Status:** ✅ Done
 **Squad:** artemis-tf
 **Files affected:** `internal/generators/guard_line_shell_test.go`
 **Diagnóstico (PR #688, job 133335668133):** o ML-2A removeu o skip por GOOS; o `windows-latest` tem `dash`, então o
@@ -157,8 +157,8 @@ arquivo do ML-2A.
 **Actions:** erro que não seja ExitError → `t.Fatalf` em todo `cmd.Run()` dos 4 arquivos do ML-2A; no Windows, o link
 se chama `sh.exe`; medir no CI o que o dash do Git for Windows faz com `-u`.
 **Acceptance criteria:**
-- [ ] nenhum `cmd.Run()` nos arquivos do ML-2A converte erro que não seja ExitError em exit 0
-- [ ] `TestD18ContraArm_ShAsDashSim` com `--- PASS` no `windows-full-suites`, ou (c) com o rc medido no log
+- [x] nenhum `cmd.Run()` nos arquivos do ML-2A converte erro que não seja ExitError em exit 0 (7 sítios corrigidos)
+- [x] `TestD18ContraArm_ShAsDashSim` com `--- PASS` no `windows-full-suites`, ou (c) com o rc medido no log — job 133540617504 do PR #688: PASS nos 8 subtestes; dash -u sai 2 com `LASTEXITCODE: parameter not set`
 
 ## Wave 3 — Gate, smoke de canal, arm64 e aviso de `sh` (MLs em paralelo; arquivos disjuntos)
 > Dependencies: Wave 2
