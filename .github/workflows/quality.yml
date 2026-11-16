@@ -1376,6 +1376,426 @@ jobs:
         run: scripts/check-shim-byte-identity.sh
 
   # ---------------------------------------------------------------------------
+  # ML-3B (ROADMAP-2026-11-15-cobertura-e-compatibilidade-completas-do-trackfw-no-windows):
+  # Smoke test dos dois canais de distribuição (npm + PyPI) no Windows.
+  # Instala SOMENTE de artefatos locais do PR — nunca do registro público.
+  # Cada canal é testado em pwsh E em cmd.exe (6 asserções por célula:
+  # 4 positivas + 2 do braço de falsificação).
+  #
+  # Braco de falsificacao — medido localmente (macOS), esperado identico no Windows:
+  #   guard git-branch   stdin vazio ou so CRLF → rc=0  (nenhum subcomando; rc com payload JSON: 2)
+  #   guard write-scope  stdin vazio ou so CRLF → rc=2  (fail-closed: JSON ausente; rc com payload: 0)
+  # Medido com printf '' | e printf '\r\n' |: ambas as formas produzem os mesmos rcs.
+  # PS envia CRLF ("" |); cmd envia CRLF (echo.); < NUL daria stdin verdadeiramente vazio.
+  # Referencia: internal/guard/gitbranch.go Step 0b+1 (ExtractCommand → "" / "\r\n"
+  #              → no match → 0); internal/guard/writescope.go Step 2 (trimmed empty
+  #              → not JSON → return 2).
+  # CI do PR #688 é a prova definitiva no Windows.
+  #
+  # Nota: required-status-checks.txt nao e alterado aqui — ML-3C declara este job.
+  # Nota npm/pwsh: PATH prepend resolve trackfw.ps1 (wrapper PS nativo do npm);
+  #   npm/cmd usa trackfw.cmd (NPM_TRACKFW) com "call" obrigatorio.
+  # ---------------------------------------------------------------------------
+  windows-package-smoke:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependência build_wheel.py
+        run: python -m pip install --upgrade pip packaging
+
+      - name: Build Go binary windows/amd64
+        # vault/notes/go-build-no-exe-suffix-exec-lookpath-falha-no-windows-2026-10-16.md:
+        # o sufixo .exe é obrigatório; sem ele, exec.LookPath não encontra o binário no Windows.
+        shell: pwsh
+        run: go build -o bin/trackfw.exe ./cmd/trackfw
+
+      - name: Instalar canal npm (artefato local, --global --prefix isolado)
+        id: npm-setup
+        shell: pwsh
+        run: |
+          $npmGlobalDir = Join-Path $env:RUNNER_TEMP "npm-global"
+          $npmPackDir   = Join-Path $env:RUNNER_TEMP "npm-pack"
+          $npmCacheDir  = Join-Path $env:RUNNER_TEMP "npm-cache"
+          New-Item -ItemType Directory -Force -Path $npmGlobalDir | Out-Null
+          New-Item -ItemType Directory -Force -Path $npmPackDir   | Out-Null
+          New-Item -ItemType Directory -Force -Path $npmCacheDir  | Out-Null
+
+          # Bloquear qualquer acesso ao registro público npm durante todo o passo
+          $env:NPM_CONFIG_REGISTRY = 'http://127.0.0.1:9/'
+          $env:NPM_CONFIG_CACHE    = $npmCacheDir
+
+          # Lê versão do único sítio de versão no npm (npm/package.json)
+          $version = node -e "process.stdout.write(require('./npm/package.json').version)"
+          Write-Host "Versão: $version"
+
+          # 1. Pack o shim — mesmo mecanismo da release (npm pack ./npm)
+          npm pack --silent --pack-destination $npmPackDir ./npm
+          $shimTgz = Join-Path $npmPackDir "trackfw-$version.tgz"
+          if (-not (Test-Path $shimTgz)) {
+            Write-Host "Conteúdo de $npmPackDir :"
+            Get-ChildItem $npmPackDir | ForEach-Object { Write-Host "  $($_.Name)" }
+            Write-Error "shimTgz não encontrado: $shimTgz"; exit 1
+          }
+          Write-Host "Shim tarball: $shimTgz"
+
+          # 2. Criar pacote de plataforma @trackfw-bin/win32-x64 —
+          #    mesma estrutura que scripts/gen-platform-manifests.sh gera na release
+          #    (campos: name, version, description, os, cpu, files; sem "bin", AC13)
+          $platDir = Join-Path $env:RUNNER_TEMP "win32-x64-pkg"
+          New-Item -ItemType Directory -Force -Path "$platDir\bin" | Out-Null
+          Copy-Item -Path "bin\trackfw.exe" -Destination "$platDir\bin\trackfw.exe"
+          $pkgJson = '{"name":"@trackfw-bin/win32-x64","version":"' + $version + '","description":"trackfw binary for win32 x64","os":["win32"],"cpu":["x64"],"files":["bin/trackfw.exe"]}'
+          $pkgJson | Set-Content -Path "$platDir\package.json" -Encoding utf8
+
+          npm pack --silent --pack-destination $npmPackDir $platDir
+          $platTgz = Join-Path $npmPackDir "trackfw-bin-win32-x64-$version.tgz"
+          if (-not (Test-Path $platTgz)) {
+            Write-Host "Conteúdo de $npmPackDir :"
+            Get-ChildItem $npmPackDir | ForEach-Object { Write-Host "  $($_.Name)" }
+            Write-Error "platTgz não encontrado: $platTgz"; exit 1
+          }
+          Write-Host "Platform tarball: $platTgz"
+
+          # 3. Instalar globalmente com prefix isolado (nunca toca registro público;
+          #    NPM_CONFIG_REGISTRY acima garante ECONNREFUSED se algo tentar o registro)
+          npm install --global --prefix $npmGlobalDir --no-audit --no-fund `
+            $shimTgz $platTgz
+
+          # npm --global --prefix no Windows cria <prefix>\trackfw.cmd (e trackfw.ps1)
+          $npmCmd = Join-Path $npmGlobalDir "trackfw.cmd"
+          if (-not (Test-Path $npmCmd)) {
+            Write-Host "Conteúdo de $npmGlobalDir :"
+            Get-ChildItem $npmGlobalDir | ForEach-Object { Write-Host "  $($_.Name)" }
+            Write-Error "trackfw.cmd não encontrado em $npmGlobalDir"; exit 1
+          }
+          Write-Host "npm .cmd wrapper: $npmCmd"
+
+          $npmPlatExe = Join-Path $npmGlobalDir "node_modules\@trackfw-bin\win32-x64\bin\trackfw.exe"
+          "NPM_TRACKFW=$npmCmd"            >> $env:GITHUB_ENV
+          "NPM_GLOBAL_DIR=$npmGlobalDir"   >> $env:GITHUB_ENV
+          "NPM_PLATFORM_EXE=$npmPlatExe"  >> $env:GITHUB_ENV
+
+      - name: Instalar canal PyPI (wheel local, venv isolado)
+        id: pypi-setup
+        shell: pwsh
+        run: |
+          $version   = node -e "process.stdout.write(require('./npm/package.json').version)"
+          $wheelsDir = Join-Path $env:RUNNER_TEMP "wheels"
+          $venvDir   = Join-Path $env:RUNNER_TEMP "pypi-venv"
+          New-Item -ItemType Directory -Force -Path $wheelsDir | Out-Null
+
+          # Mesmo mecanismo da release (release.yml: build_wheel windows amd64 trackfw.exe win_amd64)
+          python pypi/scripts/build_wheel.py `
+            --binary   bin/trackfw.exe `
+            --version  $version `
+            --platform win_amd64 `
+            --output   $wheelsDir
+
+          $wheel = (Get-ChildItem $wheelsDir -Filter "*.whl" | Select-Object -First 1).FullName
+          if (-not $wheel) { Write-Error "wheel não encontrado em $wheelsDir"; exit 1 }
+          Write-Host "Wheel: $wheel"
+
+          python -m venv $venvDir
+          # --no-index: instala APENAS o wheel local, nunca vai ao PyPI
+          & "$venvDir\Scripts\pip.exe" install --no-index --quiet $wheel
+
+          $pypiExe = Join-Path $venvDir "Scripts\trackfw.exe"
+          if (-not (Test-Path $pypiExe)) {
+            Write-Error "trackfw.exe não encontrado em $venvDir\Scripts"; exit 1
+          }
+          Write-Host "PyPI channel exe: $pypiExe"
+          "PYPI_TRACKFW=$pypiExe" >> $env:GITHUB_ENV
+
+      - name: Verificar integridade dos binários instalados (hash == bin/trackfw.exe)
+        shell: pwsh
+        run: |
+          $built    = (Get-FileHash -Algorithm SHA256 "bin\trackfw.exe").Hash
+          $npmHash  = (Get-FileHash -Algorithm SHA256 $env:NPM_PLATFORM_EXE).Hash
+          $pypiHash = (Get-FileHash -Algorithm SHA256 $env:PYPI_TRACKFW).Hash
+          Write-Host "Built:  $built"
+          Write-Host "npm:    $npmHash"
+          Write-Host "PyPI:   $pypiHash"
+          if ($npmHash  -ne $built) { Write-Error "npm: hash diverge de bin/trackfw.exe";  exit 1 }
+          if ($pypiHash -ne $built) { Write-Error "PyPI: hash diverge de bin/trackfw.exe"; exit 1 }
+          Write-Host "PASS: ambos os canais instalaram o binário do PR"
+
+      - name: Criar fixture mínima para validate e guard
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP "fixture"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          "name: smoke-test" | Set-Content -Path "$dir\trackfw.yaml" -Encoding utf8
+          foreach ($sub in @(
+            "docs\req",
+            "docs\roadmaps\backlog",   "docs\roadmaps\wip",
+            "docs\roadmaps\done",      "docs\roadmaps\abandoned",
+            "docs\roadmaps\analyzing", "docs\roadmaps\blocked"
+          )) {
+            New-Item -ItemType Directory -Force -Path "$dir\$sub" | Out-Null
+          }
+          "FIXTURE_DIR=$dir" >> $env:GITHUB_ENV
+          Write-Host "Fixture: $dir"
+
+      # ─── Canal npm / PowerShell ──────────────────────────────────────────────
+      # trackfw.ps1 é o wrapper que PS resolve quando o prefix está no PATH.
+      # trackfw.cmd é mantido em NPM_TRACKFW para o cell cmd abaixo.
+      - name: "[npm / pwsh] smoke"
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $ErrorActionPreference = 'Continue'
+          $n = 0
+
+          # Prepend do prefix no PATH para que PS resolva trackfw.ps1 (o wrapper PS nativo)
+          $env:PATH = $env:NPM_GLOBAL_DIR + ";" + $env:PATH
+          $cmd = Get-Command trackfw -ErrorAction Stop
+          Write-Host "trackfw resolvido: $($cmd.Source) (CommandType=$($cmd.CommandType))"
+          if ($cmd.CommandType -ne 'ExternalScript' -or $cmd.Source -notlike '*.ps1') {
+            Write-Error "npm/pwsh: esperado ExternalScript *.ps1, resolveu $($cmd.CommandType) $($cmd.Source)"; exit 1
+          }
+
+          # Asserção 1 — trackfw --version → rc=0
+          # Afirma: o wrapper npm instalado no PATH do PowerShell responde ao CLI básico.
+          trackfw --version
+          if ($LASTEXITCODE -ne 0) { Write-Error "npm/pwsh: --version rc=$LASTEXITCODE (esperado 0)"; exit 1 }
+          Write-Host "PASS 1: npm/pwsh --version rc=0"; $n++
+
+          Push-Location $env:FIXTURE_DIR
+          try {
+            # Asserção 2 — trackfw validate → rc=0
+            # Afirma: fixture mínima é aceita pelo validate sem violações (canal npm via PS).
+            trackfw validate
+            if ($LASTEXITCODE -ne 0) { Write-Error "npm/pwsh: validate rc=$LASTEXITCODE (esperado 0)"; exit 1 }
+            Write-Host "PASS 2: npm/pwsh validate rc=0"; $n++
+
+            # Asserção 3 — guard git-branch com payload JSON → rc=2
+            # Afirma: guard git-branch bloqueia `git branch <nome>` via JSON no PowerShell (canal npm).
+            '{"tool_name":"Bash","tool_input":{"command":"git branch foo"}}' | trackfw guard git-branch
+            if ($LASTEXITCODE -ne 2) { Write-Error "npm/pwsh: guard git-branch rc=$LASTEXITCODE (esperado 2)"; exit 1 }
+            Write-Host "PASS 3: npm/pwsh guard git-branch rc=2"; $n++
+
+            # Asserção 4 — guard write-scope com Write dentro do projeto → rc=0
+            # Afirma: guard write-scope permite escrita em arquivo nao-frozen no PowerShell (canal npm).
+            $fwPath = ($env:FIXTURE_DIR + '\README.md') -replace '\\','/'
+            ('{"tool_name":"Write","tool_input":{"file_path":"' + $fwPath + '"}}') | trackfw guard write-scope
+            if ($LASTEXITCODE -ne 0) { Write-Error "npm/pwsh: guard write-scope rc=$LASTEXITCODE (esperado 0)"; exit 1 }
+            Write-Host "PASS 4: npm/pwsh guard write-scope rc=0"; $n++
+
+            # Falsificacao 5 — git-branch stdin CRLF → rc=0 (normal seria 2)
+            # Afirma: rc=2 do positive arm (npm/pwsh) vem do payload JSON, nao de outro fator.
+            "" | trackfw guard git-branch
+            if ($LASTEXITCODE -ne 0) { Write-Error "npm/pwsh falsify: git-branch CRLF rc=$LASTEXITCODE (esperado 0)"; exit 1 }
+            Write-Host "PASS 5: npm/pwsh falsify git-branch CRLF stdin rc=0"; $n++
+
+            # Falsificacao 6 — write-scope stdin CRLF → rc=2 (normal seria 0)
+            # Afirma: rc=0 do positive arm (npm/pwsh) vem do payload JSON, nao de allow-all acidental.
+            "" | trackfw guard write-scope
+            if ($LASTEXITCODE -ne 2) { Write-Error "npm/pwsh falsify: write-scope CRLF rc=$LASTEXITCODE (esperado 2)"; exit 1 }
+            Write-Host "PASS 6: npm/pwsh falsify write-scope CRLF stdin rc=2"; $n++
+          } finally {
+            Pop-Location
+          }
+
+          if ($n -ne 6) { Write-Error "npm/pwsh: apenas $n/6 assercoes executaram"; exit 1 }
+          Write-Host "ALL 6 PASSED npm/pwsh"
+          exit 0
+
+      # ─── Canal npm / cmd.exe ─────────────────────────────────────────────────
+      # Nota: "call" é obrigatório para invocar .cmd de dentro de .cmd/.bat —
+      # sem ele, o controle não retorna e as asserções seguintes não executam.
+      # A RHS de um pipe roda em processo filho, portanto não precisa de "call".
+      - name: "[npm / cmd] smoke"
+        shell: cmd
+        run: |
+          @echo off
+          setlocal enabledelayedexpansion
+          set N=0
+          set "FX=%FIXTURE_DIR:\=/%"
+
+          :: Assercao 1 -- trackfw --version -> rc=0
+          :: Afirma: o binario Go instalado pelo canal npm responde ao CLI basico no cmd.exe.
+          call "%NPM_TRACKFW%" --version
+          if errorlevel 1 (echo FAIL npm/cmd: --version rc not 0 & exit /b 1)
+          echo PASS 1: npm/cmd --version rc=0
+          set /a N+=1
+
+          cd /d "%FIXTURE_DIR%"
+
+          :: Assercao 2 -- trackfw validate -> rc=0
+          :: Afirma: fixture minima aceita pelo validate sem violacoes no cmd.exe.
+          call "%NPM_TRACKFW%" validate
+          if errorlevel 1 (echo FAIL npm/cmd: validate & exit /b 1)
+          echo PASS 2: npm/cmd validate rc=0
+          set /a N+=1
+
+          :: Assercao 3 -- guard git-branch -> rc=2
+          :: Afirma: guard git-branch bloqueia git branch via JSON no cmd.exe.
+          echo {"tool_name":"Bash","tool_input":{"command":"git branch foo"}} | "%NPM_TRACKFW%" guard git-branch
+          set GIT_RC=!ERRORLEVEL!
+          if not !GIT_RC!==2 (echo FAIL npm/cmd: guard git-branch rc=!GIT_RC! esperado 2 & exit /b 1)
+          echo PASS 3: npm/cmd guard git-branch rc=2
+          set /a N+=1
+
+          :: Assercao 4 -- guard write-scope -> rc=0
+          :: Afirma: guard write-scope permite escrita em arquivo nao-frozen no cmd.exe.
+          echo {"tool_name":"Write","tool_input":{"file_path":"%FX%/README.md"}} | "%NPM_TRACKFW%" guard write-scope
+          set WS_RC=!ERRORLEVEL!
+          if not !WS_RC!==0 (echo FAIL npm/cmd: guard write-scope rc=!WS_RC! esperado 0 & exit /b 1)
+          echo PASS 4: npm/cmd guard write-scope rc=0
+          set /a N+=1
+
+          :: Falsificacao 5 -- git-branch CRLF stdin -> rc=0
+          :: Afirma: rc=2 do positive arm vem do payload JSON, nao de outro fator.
+          echo. | "%NPM_TRACKFW%" guard git-branch
+          set GIT_F=!ERRORLEVEL!
+          if not !GIT_F!==0 (echo FAIL npm/cmd falsify: git-branch CRLF rc=!GIT_F! esperado 0 & exit /b 1)
+          echo PASS 5: npm/cmd falsify git-branch CRLF stdin rc=0
+          set /a N+=1
+
+          :: Falsificacao 6 -- write-scope CRLF stdin -> rc=2
+          :: Afirma: rc=0 do positive arm vem do payload JSON, nao de allow-all acidental.
+          echo. | "%NPM_TRACKFW%" guard write-scope
+          set WS_F=!ERRORLEVEL!
+          if not !WS_F!==2 (echo FAIL npm/cmd falsify: write-scope CRLF rc=!WS_F! esperado 2 & exit /b 1)
+          echo PASS 6: npm/cmd falsify write-scope CRLF stdin rc=2
+          set /a N+=1
+
+          if not !N!==6 (echo FAIL: apenas !N!/6 assercoes executaram & exit /b 1)
+          echo ALL 6 PASSED npm/cmd
+          exit /b 0
+
+      # ─── Canal PyPI / PowerShell ──────────────────────────────────────────────
+      - name: "[pypi / pwsh] smoke"
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $ErrorActionPreference = 'Continue'
+          $n = 0
+
+          # Asserção 1 — trackfw --version → rc=0
+          # Afirma: o binário Go instalado pelo canal PyPI responde ao CLI básico no PowerShell.
+          & $env:PYPI_TRACKFW --version
+          if ($LASTEXITCODE -ne 0) { Write-Error "pypi/pwsh: --version rc=$LASTEXITCODE (esperado 0)"; exit 1 }
+          Write-Host "PASS 1: pypi/pwsh --version rc=0"; $n++
+
+          Push-Location $env:FIXTURE_DIR
+          try {
+            # Asserção 2 — trackfw validate → rc=0
+            # Afirma: fixture mínima é aceita pelo validate sem violações (canal PyPI).
+            & $env:PYPI_TRACKFW validate
+            if ($LASTEXITCODE -ne 0) { Write-Error "pypi/pwsh: validate rc=$LASTEXITCODE (esperado 0)"; exit 1 }
+            Write-Host "PASS 2: pypi/pwsh validate rc=0"; $n++
+
+            # Asserção 3 — guard git-branch com payload JSON → rc=2
+            # Afirma: guard git-branch bloqueia `git branch <nome>` via JSON no PowerShell (canal PyPI).
+            '{"tool_name":"Bash","tool_input":{"command":"git branch foo"}}' | & $env:PYPI_TRACKFW guard git-branch
+            if ($LASTEXITCODE -ne 2) { Write-Error "pypi/pwsh: guard git-branch rc=$LASTEXITCODE (esperado 2)"; exit 1 }
+            Write-Host "PASS 3: pypi/pwsh guard git-branch rc=2"; $n++
+
+            # Asserção 4 — guard write-scope com Write dentro do projeto → rc=0
+            # Afirma: guard write-scope permite escrita em arquivo não-frozen no PowerShell (canal PyPI).
+            $fwPath = ($env:FIXTURE_DIR + '\README.md') -replace '\\','/'
+            ('{"tool_name":"Write","tool_input":{"file_path":"' + $fwPath + '"}}') | & $env:PYPI_TRACKFW guard write-scope
+            if ($LASTEXITCODE -ne 0) { Write-Error "pypi/pwsh: guard write-scope rc=$LASTEXITCODE (esperado 0)"; exit 1 }
+            Write-Host "PASS 4: pypi/pwsh guard write-scope rc=0"; $n++
+
+            # Falsificacao 5 — git-branch stdin CRLF → rc=0 (normal seria 2)
+            # Afirma: rc=2 do positive arm (canal PyPI) vem do payload JSON, nao de outro fator.
+            "" | & $env:PYPI_TRACKFW guard git-branch
+            if ($LASTEXITCODE -ne 0) { Write-Error "pypi/pwsh falsify: git-branch CRLF rc=$LASTEXITCODE (esperado 0)"; exit 1 }
+            Write-Host "PASS 5: pypi/pwsh falsify git-branch CRLF stdin rc=0"; $n++
+
+            # Falsificacao 6 — write-scope stdin CRLF → rc=2 (normal seria 0)
+            # Afirma: rc=0 do positive arm (canal PyPI) vem do payload JSON, nao de allow-all acidental.
+            "" | & $env:PYPI_TRACKFW guard write-scope
+            if ($LASTEXITCODE -ne 2) { Write-Error "pypi/pwsh falsify: write-scope CRLF rc=$LASTEXITCODE (esperado 2)"; exit 1 }
+            Write-Host "PASS 6: pypi/pwsh falsify write-scope CRLF stdin rc=2"; $n++
+          } finally {
+            Pop-Location
+          }
+
+          if ($n -ne 6) { Write-Error "pypi/pwsh: apenas $n/6 assercoes executaram"; exit 1 }
+          Write-Host "ALL 6 PASSED pypi/pwsh"
+          exit 0
+
+      # ─── Canal PyPI / cmd.exe ────────────────────────────────────────────────
+      # Nota: PyPI instala um .exe; não precisa de "call" (apenas .cmd/.bat precisam).
+      - name: "[pypi / cmd] smoke"
+        shell: cmd
+        run: |
+          @echo off
+          setlocal enabledelayedexpansion
+          set N=0
+          set "FX=%FIXTURE_DIR:\=/%"
+
+          :: Assercao 1 -- trackfw --version -> rc=0
+          :: Afirma: o binario Go instalado pelo canal PyPI responde ao CLI basico no cmd.exe.
+          "%PYPI_TRACKFW%" --version
+          if errorlevel 1 (echo FAIL pypi/cmd: --version rc not 0 & exit /b 1)
+          echo PASS 1: pypi/cmd --version rc=0
+          set /a N+=1
+
+          cd /d "%FIXTURE_DIR%"
+
+          :: Assercao 2 -- trackfw validate -> rc=0
+          :: Afirma: fixture minima aceita pelo validate sem violacoes no cmd.exe (canal PyPI).
+          "%PYPI_TRACKFW%" validate
+          if errorlevel 1 (echo FAIL pypi/cmd: validate & exit /b 1)
+          echo PASS 2: pypi/cmd validate rc=0
+          set /a N+=1
+
+          :: Assercao 3 -- guard git-branch -> rc=2
+          :: Afirma: guard git-branch bloqueia git branch via JSON no cmd.exe (canal PyPI).
+          echo {"tool_name":"Bash","tool_input":{"command":"git branch foo"}} | "%PYPI_TRACKFW%" guard git-branch
+          set GIT_RC=!ERRORLEVEL!
+          if not !GIT_RC!==2 (echo FAIL pypi/cmd: guard git-branch rc=!GIT_RC! esperado 2 & exit /b 1)
+          echo PASS 3: pypi/cmd guard git-branch rc=2
+          set /a N+=1
+
+          :: Assercao 4 -- guard write-scope -> rc=0
+          :: Afirma: guard write-scope permite escrita em arquivo nao-frozen no cmd.exe (canal PyPI).
+          echo {"tool_name":"Write","tool_input":{"file_path":"%FX%/README.md"}} | "%PYPI_TRACKFW%" guard write-scope
+          set WS_RC=!ERRORLEVEL!
+          if not !WS_RC!==0 (echo FAIL pypi/cmd: guard write-scope rc=!WS_RC! esperado 0 & exit /b 1)
+          echo PASS 4: pypi/cmd guard write-scope rc=0
+          set /a N+=1
+
+          :: Falsificacao 5 -- git-branch CRLF stdin -> rc=0
+          :: Afirma: rc=2 do positive arm (PyPI) vem do payload JSON, nao de outro fator.
+          echo. | "%PYPI_TRACKFW%" guard git-branch
+          set GIT_F=!ERRORLEVEL!
+          if not !GIT_F!==0 (echo FAIL pypi/cmd falsify: git-branch CRLF rc=!GIT_F! esperado 0 & exit /b 1)
+          echo PASS 5: pypi/cmd falsify git-branch CRLF stdin rc=0
+          set /a N+=1
+
+          :: Falsificacao 6 -- write-scope CRLF stdin -> rc=2
+          :: Afirma: rc=0 do positive arm (PyPI) vem do payload JSON, nao de allow-all acidental.
+          echo. | "%PYPI_TRACKFW%" guard write-scope
+          set WS_F=!ERRORLEVEL!
+          if not !WS_F!==2 (echo FAIL pypi/cmd falsify: write-scope CRLF rc=!WS_F! esperado 2 & exit /b 1)
+          echo PASS 6: pypi/cmd falsify write-scope CRLF stdin rc=2
+          set /a N+=1
+
+          if not !N!==6 (echo FAIL: apenas !N!/6 assercoes executaram & exit /b 1)
+          echo ALL 6 PASSED pypi/cmd
+          exit /b 0
+
+  # ---------------------------------------------------------------------------
   # ML-1A (ROADMAP-2026-10-28-documentacao-e-canais-refletem-o-produto-11-x):
   # gate do instalador PowerShell. Roda em windows-latest sob Windows PowerShell
   # 5.1 (shell: powershell) e PowerShell 7 (shell: pwsh). Falha se qualquer
