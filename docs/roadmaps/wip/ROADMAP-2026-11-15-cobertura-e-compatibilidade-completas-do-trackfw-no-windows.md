@@ -166,7 +166,7 @@ se chama `sh.exe`; medir no CI o que o dash do Git for Windows faz com `-u`.
 > produto: revisão do `hefesto-tf` antes do commit.
 
 ### ML-3A — Registro e gate de skips de Windows (AC3, REQ-IMP-1)
-**Status:** 🔄 In progress
+**Status:** ✅ Done
 **Squad:** apolo-tf
 **Files affected:** `.github/windows-skips.json` (novo), `internal/winskips/winskips_test.go` (novo; decidido no
 handoff: teste Go roda em `go test ./...` sem tocar `Makefile` nem `quality.yml`, o que deixa o ML-3A disjunto do ML-3B)
@@ -177,8 +177,8 @@ handoff: teste Go roda em `go test ./...` sem tocar `Makefile` nem `quality.yml`
 - Cada função marcada exige uma entrada `{test, classification, reason, evidence}` no registro.
 - O registro é separado de `windows-known-failures.json`.
 **Acceptance criteria:**
-- [ ] o gate passa na árvore com os skips restantes registrados
-- [ ] braços de falsificação: um skip novo não registrado reprova; um `t.Log` + `return` novo reprova; uma
+- [x] o gate passa na árvore com os skips restantes registrados — `TestGate_RealTree` PASS no macOS e no Windows (job 133673248259)
+- [x] braços de falsificação: um skip novo não registrado reprova; um `t.Log` + `return` novo reprova; uma
   entrada sem `evidence` reprova
 
 ### ML-3A2 — Corretivo do gate: polaridade, guards mortos e skip de chmod 444
@@ -194,12 +194,12 @@ provavelmente falso (0444 em arquivo liga o atributo read-only).
 windows não marca; remover os 3 guards mortos e o skip de chmod 444; braços 6-8.
 **Acceptance criteria:**
 - [x] `TestGate_RealTree` e os 8 braços passam localmente; registro de 57 → 22 entradas, todas (c)
-- [ ] `TestJSONExit_UpdateJSON_TargetFailedSilentStderr` e os 3 testes de hardlink com `--- PASS` no `windows-full-suites`
+- [x] `TestJSONExit_UpdateJSON_TargetFailedSilentStderr` e os 3 testes de hardlink com `--- PASS` no `windows-full-suites` — job 133673248259; o skip de chmod 444 era falso
 - [ ] nenhuma `evidence` com `PENDING` no registro antes da Wave 5 (resta `TestReadRegularFile_Socket_NaoTravaEAcusaTipoErrado`:
   o arquivo é `!windows` por causa do FIFO; o braço de socket não foi medido no Windows)
 
 ### ML-3B — Smoke de npm e PyPI no `windows-latest` (AC5, REQ-IMP-3)
-**Status:** 🔄 In progress
+**Status:** ✅ Done
 **Squad:** ares-tf
 **Files affected:** `.github/workflows/quality.yml`
 **Actions:** job que instala o pacote do PR pelos dois canais: tarball local do npm e wheel local do PyPI, nunca
@@ -209,7 +209,7 @@ o registro público. No PowerShell e no cmd, roda:
 - `echo 'git branch some-branch' | trackfw guard git-branch` → 2;
 - o payload de Write para `write-scope` → 0.
 **Acceptance criteria:**
-- [ ] job verde em 2 rodadas; braço de falsificação documentado (stdin vazio inverte os dois rc)
+- [x] job verde em 2 rodadas; braço de falsificação documentado (stdin vazio inverte os dois rc) — jobs 133591778685 e 133673248446: 4 células × 6 asserções PASS nas duas; contra-braço com stdin só CRLF
 
 ### ML-3C — arm64 executado (REQ-IMP-7)
 **Status:** 🔄 In progress
