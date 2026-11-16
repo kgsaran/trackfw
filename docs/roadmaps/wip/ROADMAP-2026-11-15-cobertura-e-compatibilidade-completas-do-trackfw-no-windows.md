@@ -221,27 +221,27 @@ arquivo: o 3C entra depois do 3B)
 - [x] job verde; incluído nos required checks declarados (`make check-required-checks`) — job 133682058388: GOHOSTARCH=arm64, PE 0xAA64, 6 asserções PASS; `--scope dw` verde. Proteção da `main` no GitHub: KG adiciona `windows-package-smoke` e `windows-arm64` depois do merge
 
 ### ML-3D — Aviso proativo de `sh` ausente (REQ-IMP-9) e artefatos de conveniência declarados (REQ-IMP-5)
-**Status:** 🔄 In progress
+**Status:** ✅ Done
 **Squad:** apolo-tf
 **Files affected:** `internal/validator/` e `internal/commands/doctor*.go` (sítios exatos no handoff)
 **Actions:** quando faltar `sh` no PATH, `validate` e `doctor` avisam (warning, não erro). Os artefatos `.sh` de
 conveniência (attention, trackfw-validate, runner do lefthook, husky) passam a ser declarados como dependentes
 de Git Bash no Windows. Guard não entra nessa declaração.
 **Acceptance criteria:**
-- [ ] regra nova com default `warning`, nos dois sítios do `validator.go`, com pin em `check-validate-rule-pins.sh`
-- [ ] teste com PATH sem `sh` (aviso presente) e com `sh` (ausente)
+- [x] regra nova com default `warning`, nos dois sítios do `validator.go`, com pin em `check-validate-rule-pins.sh` (`windows_sh_missing`; pins 32-33; a fiação é afirmada pelo teste Go do ML-3D2)
+- [x] teste com PATH sem `sh` (aviso presente) e com `sh` (ausente)
 
 ### ML-3D2 — Corretivo da revisão do hefesto (F2, F3, F4)
-**Status:** 🔄 In progress
+**Status:** ✅ Done
 **Squad:** apolo-tf
 **Files affected:** os do ML-3D e, se preciso, `internal/validator/export_test.go`
 **Diagnóstico:** `docs/qualidade/2026-11-16-ml-3d-windows-sh-missing-review.md`. F2: o teste do doctor monta os findings
 no próprio teste e nunca chama `runDoctor`. F3: nenhum teste passa pelas duas linhas de fiação do `validator.go`. F4:
 a REQ-IMP-9 pede o aviso também sem artefato `.sh`, porque o barrier falha sem `sh`. É a mesma causa, por isso entra aqui.
 **Acceptance criteria:**
-- [ ] teste do doctor chama `runDoctor`; mutação do loop em `doctor.go` reprova
-- [ ] teste de fiação do `ValidateUnfiltered` e do caminho tagged; remover cada linha de fiação reprova
-- [ ] aviso também sem artefato, com a frase alinhada à `shMissingMsg` do barrier
+- [x] teste do doctor chama `runDoctor`; mutação do loop em `doctor.go` reprova
+- [x] teste de fiação do `ValidateUnfiltered` e do caminho tagged; remover cada linha de fiação reprova (a do `ValidateUnfiltered` foi mutada também pelo arquiteto: reprova)
+- [x] aviso também sem artefato, com a frase alinhada à `shMissingMsg` do barrier
 
 ## Wave 4 — Medição na VM por CLI (depende do KG)
 > Dependencies: Wave 3. Cada CLI precisa estar instalado na VM.

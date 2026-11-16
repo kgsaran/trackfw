@@ -9880,6 +9880,61 @@ decides whether to move the project or accept the risk (ADR-2026-10-16-no-window
 Outside Windows: the rule always returns nil (no-op; POSIX mode bits provide equivalent
 protection).
 
+### `windows_sh_missing` — informative warning, never a violation
+
+<!-- trackfw-contract: gate=internal/validator/validator_windows_sh_missing_rule_test.go partial=TestWindowsShMissing_Warning_NamesArtifact proves one warning is emitted with the artifact path and the "sh not found in PATH" phrase when GOOS=windows, sh absent, and a .sh artifact is present; TestWindowsShMissing_ShPresent_Silent proves silence when sh is found in PATH; TestWindowsShMissing_NoArtifacts_BarrierWarning proves a barrier-gates warning is emitted even when no .sh artifacts exist (GOOS=windows, sh absent); TestWindowsShMissing_DarwinSilent proves the GOOS guard fires on darwin and linux regardless of sh presence; TestWindowsShMissing_GuardNeverCited proves guard scripts (credential, git-branch) are never listed even when present on disk; TestWindowsShMissing_AllArtifactsListed proves a single warning names all six present convenience artifacts; TestWindowsShMissing_PublicWrapperUsesSeams proves the public validateWindowsShMissing respects CurrentGOOS and ShLookPathFn seams; TestWindowsShMissing_FiacaoValidateUnfiltered/ValidateUnfiltered proves the ValidateUnfiltered wiring site routes the warning to the caller; TestWindowsShMissing_FiacaoValidateUnfiltered/validateUnfilteredTagged proves the validateUnfilteredTagged wiring site routes the warning via the --json path; TestDoctorWindowsShMissing_FindingsEmitted proves runDoctor emits artifact findings and the barrier finding via the full doctor code path; no script gate for the Windows-only runtime path (windows branch not exercised in macOS/Linux CI — the "fires" case is Go unit tests only) -->
+
+**REQ-IMP-9 (REQ-2026-11-15 ML-3D2).** On Windows, when `sh` is absent from PATH,
+`trackfw validate` **always** emits a **warning** (never a violation). The rule fires
+regardless of whether `.sh` convenience artifacts are present — `trackfw barrier`
+invokes `sh -c` directly (barrier.go:311,1462) and also fails without `sh`.
+
+The rule never fires on non-Windows hosts; on Windows CI (Git Bash provides `sh`) the
+rule is also silent. The "fires" case is verified exclusively by Go unit tests via the
+`CurrentGOOS` and `ShLookPathFn` package-level seams.
+
+**Excluded artifacts (guards):** `scripts/trackfw-credential-guard.sh` and
+`scripts/trackfw-git-branch-guard.sh` are **never** listed — they are delivered as
+`trackfw guard <name>` Go subcommands and execute natively on Windows without `sh`
+(REQ-IMP-5 / ADR-2026-10-14 AC4).
+
+**Covered artifacts:**
+- `scripts/trackfw-attention-signal.sh`
+- `scripts/trackfw-attention-cleanup.sh`
+- `scripts/trackfw-validate.sh`
+- `.lefthook/commit-msg/trackfw-req-check.sh`
+- `.husky/pre-commit`
+- `.husky/commit-msg`
+
+The rule id is `windows_sh_missing`, severity `warning`, routed through
+`applyRuleWarnOnly` / `applyRuleWarnOnlyTagged` — it is never demotable to a violation;
+silenced only by `rules.windows_sh_missing: off`.
+
+**Warning message format — with artifacts present:**
+
+```
+windows_sh_missing: sh not found in PATH — install a POSIX shell (e.g. Git Bash, WSL)
+to evaluate gates and run .sh convenience scripts; gates that use sh -c (trackfw barrier)
+will not execute; the following scripts present in this project require sh to execute:
+<comma-separated artifact list>
+```
+
+**Warning message format — no artifacts present (barrier-only):**
+
+```
+windows_sh_missing: sh not found in PATH — install a POSIX shell (e.g. Git Bash, WSL)
+to evaluate gates; gates that use sh -c (trackfw barrier) will not execute
+```
+
+Both messages begin with `"sh not found in PATH — install a POSIX shell (e.g. Git Bash, WSL)"`,
+aligned with barrier.go's `shMissingMsg`.
+
+`trackfw doctor` emits one `DoctorFinding` with `FindingKind = "windows-sh-missing"` per
+`.sh` artifact (with `Destination` = POSIX-slash relative path and `Remedy` =
+`"sh not found in PATH — install a POSIX shell (e.g. Git Bash, WSL) to execute this script"`),
+plus one barrier finding with `Destination = "PATH"` and `Remedy` =
+`"sh not found in PATH — install a POSIX shell (e.g. Git Bash, WSL) to evaluate gates; gates that use sh -c (trackfw barrier) will not execute"`.
+
 
 ## Native board attention — ML-1H (2026-10-20)
 <!-- trackfw-contract: gate=internal/commands/attention_test.go partial=Legacy corpus parity, registered command, bounded stdin, cwd config and contained writes/removes; real Windows agent runtime AC5-AC7 remains pending -->
