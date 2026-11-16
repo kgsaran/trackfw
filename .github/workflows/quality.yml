@@ -1796,6 +1796,152 @@ jobs:
           exit /b 0
 
   # ---------------------------------------------------------------------------
+  # ML-3C (ROADMAP-2026-11-15-cobertura-e-compatibilidade-completas-do-trackfw-no-windows):
+  # job nativo arm64 no windows-11-arm (GA para repositórios públicos desde
+  # 2025-08-07: https://github.blog/changelog/2025-08-07-arm64-hosted-runners-for-public-repositories-are-now-generally-available/).
+  #
+  # Objetivos: (1) provar que o binário Go compilado NATIVAMENTE no runner arm64
+  # é arm64 — verificado via GOHOSTARCH (toolchain nativo) + PE machine type 0xAA64
+  # (loader bytes reais, independente de metadata Go); (2) exercitar os mesmos dois
+  # braços de stdin do ML-3B nessa arquitetura.
+  #
+  # Decisão de setup-go: architecture: arm64 instrui o action a instalar o toolchain
+  # nativo. Sem isso, x64 emulation no runner poderia entregar um toolchain amd64 que
+  # compila amd64 sem erro — o job passaria mas nada seria testado em arm64.
+  # GOHOSTARCH confirma DEPOIS que o toolchain é de fato nativo (não cross-compile).
+  # Sem matrix, sem if:, sem continue-on-error — o check context é "windows-arm64".
+  # ---------------------------------------------------------------------------
+  windows-arm64:
+    runs-on: windows-11-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+          architecture: arm64
+
+      - name: Confirmar toolchain nativo arm64 (GOHOSTARCH)
+        # GOHOSTARCH é o arco do próprio toolchain — arm64 aqui prova que o runner
+        # NÃO está emulando x64. GOARCH poderia ser arm64 mesmo em cross-compile;
+        # GOHOSTARCH não pode.
+        shell: pwsh
+        run: |
+          $arch = go env GOHOSTARCH
+          Write-Host "GOHOSTARCH: $arch"
+          if ($arch -ne 'arm64') {
+            Write-Error "Toolchain nao e nativo arm64: GOHOSTARCH=$arch (emulacao x64 mascararia falhas)"
+            exit 1
+          }
+          Write-Host "PASS: GOHOSTARCH=arm64 (toolchain nativo, sem cross-compile)"
+          exit 0
+
+      - name: Build nativo arm64
+        # vault/notes/go-build-no-exe-suffix-exec-lookpath-falha-no-windows-2026-10-16.md:
+        # o sufixo .exe é obrigatório no Windows.
+        # Nao setar GOARCH: o toolchain nativo ja produz arm64; setar explicitamente
+        # seria cross-compile, que é exatamente o que queremos provar que NAO estamos fazendo.
+        shell: pwsh
+        run: go build -o bin/trackfw.exe ./cmd/trackfw
+
+      - name: Verificar PE machine type 0xAA64 (arm64)
+        # Lê os bytes reais do PE — independente de qualquer metadata Go.
+        # MZ (0x4D 0x5A) → PE offset em 0x3C → PE sig 0x00004550 → Machine em pe+4.
+        # 0xAA64 = ARM64 (IMAGE_FILE_MACHINE_ARM64). 0x8664 = AMD64 (nunca esperado aqui).
+        shell: pwsh
+        run: |
+          $exe = "bin\trackfw.exe"
+          $b = [IO.File]::ReadAllBytes($exe)
+          if ($b[0] -ne 0x4D -or $b[1] -ne 0x5A) {
+            Write-Error "Cabecalho MZ ausente: nao e um PE valido"; exit 1
+          }
+          $pe = [BitConverter]::ToInt32($b, 0x3C)
+          if ([BitConverter]::ToUInt32($b, $pe) -ne 0x00004550) {
+            Write-Error "Assinatura PE ausente no offset 0x$($pe.ToString('X'))"; exit 1
+          }
+          $m = [BitConverter]::ToUInt16($b, $pe + 4)
+          Write-Host "PE machine type: 0x$($m.ToString('X4'))"
+          if ($m -ne 0xAA64) {
+            Write-Error "Binario nao e ARM64: machine=0x$($m.ToString('X4')) (esperado 0xAA64)"; exit 1
+          }
+          Write-Host "PASS: PE machine type 0xAA64 (ARM64 confirmado)"
+          exit 0
+
+      - name: Criar fixture minima para validate e guard
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP "fixture"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          "name: smoke-test" | Set-Content -Path "$dir\trackfw.yaml" -Encoding utf8
+          foreach ($sub in @(
+            "docs\req",
+            "docs\roadmaps\backlog",   "docs\roadmaps\wip",
+            "docs\roadmaps\done",      "docs\roadmaps\abandoned",
+            "docs\roadmaps\analyzing", "docs\roadmaps\blocked"
+          )) {
+            New-Item -ItemType Directory -Force -Path "$dir\$sub" | Out-Null
+          }
+          "FIXTURE_DIR=$dir" >> $env:GITHUB_ENV
+          Write-Host "Fixture: $dir"
+          exit 0
+
+      - name: Smoke arm64 (pwsh -- 6 assercoes)
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $ErrorActionPreference = 'Continue'
+          $n = 0
+          $trackfw = Join-Path $env:GITHUB_WORKSPACE "bin\trackfw.exe"
+
+          # Assercao 1 -- trackfw --version -> rc=0
+          # Afirma: o binario arm64 nativo responde ao CLI basico no PowerShell.
+          & $trackfw --version
+          if ($LASTEXITCODE -ne 0) { Write-Error "arm64: --version rc=$LASTEXITCODE (esperado 0)"; exit 1 }
+          Write-Host "PASS 1: arm64 --version rc=0"; $n++
+
+          Push-Location $env:FIXTURE_DIR
+          try {
+            # Assercao 2 -- trackfw validate -> rc=0
+            # Afirma: fixture minima e aceita pelo validate no arm64.
+            & $trackfw validate
+            if ($LASTEXITCODE -ne 0) { Write-Error "arm64: validate rc=$LASTEXITCODE (esperado 0)"; exit 1 }
+            Write-Host "PASS 2: arm64 validate rc=0"; $n++
+
+            # Assercao 3 -- guard git-branch com payload JSON -> rc=2
+            # Afirma: guard git-branch bloqueia `git branch <nome>` via JSON no arm64.
+            '{"tool_name":"Bash","tool_input":{"command":"git branch foo"}}' | & $trackfw guard git-branch
+            if ($LASTEXITCODE -ne 2) { Write-Error "arm64: guard git-branch rc=$LASTEXITCODE (esperado 2)"; exit 1 }
+            Write-Host "PASS 3: arm64 guard git-branch rc=2"; $n++
+
+            # Assercao 4 -- guard write-scope com Write dentro do projeto -> rc=0
+            # Afirma: guard write-scope permite escrita em arquivo nao-frozen no arm64.
+            $fwPath = ($env:FIXTURE_DIR + '\README.md') -replace '\\','/'
+            ('{"tool_name":"Write","tool_input":{"file_path":"' + $fwPath + '"}}') | & $trackfw guard write-scope
+            if ($LASTEXITCODE -ne 0) { Write-Error "arm64: guard write-scope rc=$LASTEXITCODE (esperado 0)"; exit 1 }
+            Write-Host "PASS 4: arm64 guard write-scope rc=0"; $n++
+
+            # Falsificacao 5 -- git-branch CRLF stdin -> rc=0 (contra-braco)
+            # Afirma: rc=2 do positive arm vem do payload JSON, nao de outro fator.
+            "" | & $trackfw guard git-branch
+            if ($LASTEXITCODE -ne 0) { Write-Error "arm64 falsify: git-branch CRLF rc=$LASTEXITCODE (esperado 0)"; exit 1 }
+            Write-Host "PASS 5: arm64 falsify git-branch CRLF stdin rc=0"; $n++
+
+            # Falsificacao 6 -- write-scope CRLF stdin -> rc=2 (contra-braco)
+            # Afirma: rc=0 do positive arm vem do payload JSON, nao de allow-all acidental.
+            "" | & $trackfw guard write-scope
+            if ($LASTEXITCODE -ne 2) { Write-Error "arm64 falsify: write-scope CRLF rc=$LASTEXITCODE (esperado 2)"; exit 1 }
+            Write-Host "PASS 6: arm64 falsify write-scope CRLF stdin rc=2"; $n++
+          } finally {
+            Pop-Location
+          }
+
+          if ($n -ne 6) { Write-Error "arm64: apenas $n/6 assercoes executaram"; exit 1 }
+          Write-Host "ALL 6 PASSED arm64"
+          exit 0
+
+  # ---------------------------------------------------------------------------
   # ML-1A (ROADMAP-2026-10-28-documentacao-e-canais-refletem-o-produto-11-x):
   # gate do instalador PowerShell. Roda em windows-latest sob Windows PowerShell
   # 5.1 (shell: powershell) e PowerShell 7 (shell: pwsh). Falha se qualquer
