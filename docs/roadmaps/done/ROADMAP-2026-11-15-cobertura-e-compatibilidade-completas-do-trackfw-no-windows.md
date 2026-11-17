@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-11-15
 req: "docs/req/REQ-2026-11-15-cobertura-e-compatibilidade-completas-do-trackfw-no-windows.md"
 squad: "hades-tf, artemis-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, artemis-tf"
 
 # Roadmap: Cobertura e compatibilidade completas do trackfw no Windows
 
-> Created: 2026-11-15 | Status: wip
+> Created: 2026-11-15 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-11-15-cobertura-e-compatibilidade-completas-do-trackfw-no-windows.md
