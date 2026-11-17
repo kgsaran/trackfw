@@ -259,8 +259,23 @@ Pela ADR-2026-10-14 D2, o `HomeFor` só muda para um CLI medido. Se um CLI não 
 forma K deixa de valer para ele, porque a forma L cobre esse caso. Registrar.
 **Acceptance criteria:**
 - [ ] tabela CLI × (`-NonInteractive`, `-NoProfile`, HOME) medida; CLI não instalado fica declarado como não medido
-- [ ] hook do husky (`.husky/pre-commit`) executado na VM com `sh` fora do PATH interativo: se rodar pelo `sh` do Git for
-  Windows, `.husky/*` sai da lista da regra `windows_sh_missing` (parecer do hefesto F1, 2026-11-16)
+- [x] hook do husky (`.husky/pre-commit`) executado na VM com `sh` fora do PATH interativo: se rodar pelo `sh` do Git for
+  Windows, `.husky/*` sai da lista da regra `windows_sh_missing` (parecer do hefesto F1, 2026-11-16) — **medido em 2026-11-17: roda.**
+  O Git for Windows 2.55.0 (ARM64) põe `C:\Program Files\Git\usr\bin` no PATH do hook, e os filhos nativos herdam esse PATH.
+  O contra-braço `exit 1` bloqueou o commit. A medição complementar mostrou o mesmo mecanismo no lefthook `runner: sh`: um probe Go
+  com `exec.LookPath("sh")` acha o sh dentro do hook e não o acha fora. Evidência: `docs/portabilidade/2026-11-17-ml-4a-husky-sem-sh-no-path.md`.
+
+### ML-4A2 — Tirar da regra `windows_sh_missing` os artefatos que um hook do git executa
+**Status:** 🔄 In progress
+**Squad:** apolo-tf
+**Por que o escopo original não previa:** o ML-3D listou todo `.sh` gerado como dependente do PATH interativo, e a medição do ML-4A
+mostrou que, para um hook do git, isso é falso.
+**Actions:** remover `.husky/pre-commit`, `.husky/commit-msg` e `.lefthook/commit-msg/trackfw-req-check.sh` de `shConvenienceArtifacts`
+(`internal/validator/validator_windows_sh_missing_rule.go`); ajustar os testes e o `docs/cli-parity.md`.
+**Acceptance criteria:**
+- [ ] a lista tem apenas os 3 `scripts/trackfw-*.sh`
+- [ ] um teste afirma que um fixture só com `.husky/*` + `.lefthook/...` produz a variante barrier-only (sem lista de scripts)
+- [ ] `go test ./internal/validator/ ./internal/commands/ ./internal/pathguard/` verde; `bash scripts/check-validate-rule-pins.sh` verde
 
 ## Wave 5 — Red team, `make quality` e CI de Windows
 > Dependencies: todas as anteriores
