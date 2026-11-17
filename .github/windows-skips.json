@@ -84,12 +84,6 @@
     "evidence": "File header: //go:build !windows. Mechanism: POSIX named pipes (FIFOs) are created with mkfifo(2) / syscall.Mkfifo and exposed as special files in the filesystem. Windows named pipes use a completely different API (CreateNamedPipe with \\\\.\\pipe\\ prefix) and are not accessible as filesystem paths in the same way. syscall.Mkfifo is not available on Windows."
   },
   {
-    "test": "internal/validator/regularfile_fifo_unix_test.go:TestReadRegularFile_Socket_NaoTravaEAcusaTipoErrado",
-    "classification": "c",
-    "reason": "Build tag //go:build !windows; tests that reading a Unix domain socket does not block and reports the wrong type. The test uses a filesystem-visible socket (AF_UNIX bound to a path) which behaves differently on Windows.",
-    "evidence": "File header: //go:build !windows. Mechanism: the test binds a net.Listen(\"unix\", path) socket and then calls os.Open on the socket path; on POSIX this returns a file of type ModeSocket and the read does not block. On Windows, AF_UNIX support (added in build 17063) exposes sockets via a named-pipe proxy; os.Open on the socket path does not return ModeSocket and the behavior diverges from the test assertion. The file-based socket detection path is not equivalent on Windows. PENDING: direct Windows CI measurement not available in this ML."
-  },
-  {
     "test": "internal/validator/validator_credential_guard_integrity_fifo_unix_test.go:TestCredentialGuardScriptIntegrity_FIFO_NaoTrava",
     "classification": "c",
     "reason": "Build tag //go:build !windows; tests that reading the credential guard script from a FIFO (named pipe) does not block. Windows does not have POSIX FIFOs.",

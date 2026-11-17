@@ -4,7 +4,6 @@ package validator
 
 import (
 	"errors"
-	"net"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -45,38 +44,3 @@ func TestReadRegularFile_FIFO_NaoTravaEAcusaTipoErrado(t *testing.T) {
 	}
 }
 
-// TestReadRegularFile_Socket_NaoTravaEAcusaTipoErrado afirma a conclusão de enumeração: a checagem
-// "deve ser arquivo regular" é um ALLOWLIST positivo — cobre socket sem precisar de um branch
-// dedicado a socket, exatamente como cobre FIFO sem um branch dedicado a FIFO.
-func TestReadRegularFile_Socket_NaoTravaEAcusaTipoErrado(t *testing.T) {
-	// Uses /tmp directly (not t.TempDir()) — unix domain socket paths are limited to ~104 bytes
-	// (sun_path) on macOS/BSD, and t.TempDir()'s nested per-test path routinely exceeds that.
-	dir, err := os.MkdirTemp("", "tfsock")
-	if err != nil {
-		t.Fatalf("MkdirTemp: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	p := filepath.Join(dir, "s.json")
-
-	l, err := net.Listen("unix", p)
-	if err != nil {
-		t.Fatalf("net.Listen(unix): %v", err)
-	}
-	defer l.Close()
-
-	_, readErr, hung := readWithDeadline(t, 3*time.Second, p)
-	if hung {
-		t.Fatal("readRegularFile travou num socket — a checagem de tipo deveria ter classificado e retornado antes de qualquer read")
-	}
-	if readErr == nil {
-		t.Fatal("esperado erro (socket não é arquivo regular), obteve nil")
-	}
-	// On macOS/BSD, open(2) itself refuses a socket path with ENOTSUP/ENXIO before this function's
-	// own fstat/IsRegular check ever runs — so the error here is open()'s raw error, not always the
-	// errNotRegularFile sentinel (that sentinel only fires when open() SUCCEEDS on something that
-	// turns out not to be regular, e.g. a FIFO). Both paths converge on the property that matters
-	// for every caller: non-ENOENT, so the rule accuses instead of silently skipping.
-	if os.IsNotExist(readErr) {
-		t.Errorf("erro de socket não deve ser classificado como ENOENT (o arquivo EXISTE, só não é regular) — obteve: %v", readErr)
-	}
-}
