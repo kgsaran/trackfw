@@ -161,21 +161,16 @@ func TestWindowsShMissing_AllArtifactsListed(t *testing.T) {
 func TestWindowsShMissing_PublicWrapperUsesSeams(t *testing.T) {
 	origGOOS := CurrentGOOS
 	origFn := ShLookPathFn
-	origDir, dirErr := os.Getwd()
-	if dirErr != nil {
-		t.Fatalf("getwd: %v", dirErr)
-	}
 	t.Cleanup(func() {
 		CurrentGOOS = origGOOS
 		ShLookPathFn = origFn
-		_ = os.Chdir(origDir)
 	})
 
-	// Point the working directory at a fixture with an artifact.
+	// Create fixture first, then chdir — so TempDir RemoveAll is registered
+	// before the directory-restore cleanup; reverse execution order means we
+	// leave the directory before Windows can't-delete-open-dir errors fire.
 	root := makeShFixture(t, "scripts/trackfw-validate.sh")
-	if err := os.Chdir(root); err != nil {
-		t.Skipf("cannot chdir to fixture: %v", err)
-	}
+	chdir(t, root)
 
 	CurrentGOOS = "windows"
 	ShLookPathFn = shAbsent
