@@ -25,13 +25,13 @@ Este PR também carrega o fechamento pós-merge da REQ-2026-11-13 (D18, PR #687)
 REQ para `Done`.
 
 ## Acceptance Criteria
-- [ ] AC1 — inventário completo com classificação (a)/(b)/(c) por item (Wave 0)
-- [ ] AC2 — zero skip de Windows com justificativa falsa
-- [ ] AC3 — gate de CI contra skip de Windows sem classificação
-- [ ] AC4 — artefatos e hooks por CLI executam no Windows sem Git Bash, ou são declarados pelo validate/doctor
-- [ ] AC5 — smoke npm e PyPI no `windows-latest`
-- [ ] AC6 — guard via perfil e sem `-NonInteractive` no PS 5.1 e no `pwsh` 7 do Windows
-- [ ] AC7 — `windows-full-suites` e `make quality` verdes
+- [x] AC1 — inventário completo com classificação (a)/(b)/(c) por item (Wave 0) — Wave 0: ML-0A/0B/0B2, `docs/portabilidade/2026-11-15-inventario-windows.md`
+- [x] AC2 — zero skip de Windows com justificativa falsa — Waves 1–2 (ML-1A, 1B, 2A, 2B, 2C) e ML-3A2: registro só com (c)
+- [x] AC3 — gate de CI contra skip de Windows sem classificação — ML-3A + ML-3A2 + ML-FA3 (`windows-skips` gate; switch sem tag, alias e `continue` cobertos)
+- [x] AC4 — artefatos e hooks por CLI executam no Windows sem Git Bash, ou são declarados pelo validate/doctor — ML-3D/3D2 (`windows_sh_missing` no validate/doctor), ML-4A2 (hooks do git fora da regra), ML-4A4 (home do Codex)
+- [x] AC5 — smoke npm e PyPI no `windows-latest` — ML-3B (`windows-package-smoke`)
+- [x] AC6 — guard via perfil e sem `-NonInteractive` no PS 5.1 e no `pwsh` 7 do Windows — ML-2A (job 133540617504: braços de perfil PASS em `powershell` 5.1 e `pwsh` 7) e ML-4A (Codex real na VM: PS 5.1, `-NoProfile`, sem `-NonInteractive`)
+- [x] AC7 — `windows-full-suites` e `make quality` verdes — ML-FB: `make quality` rc=0 (2026-11-17); Quality run 44172607377 (HEAD `a53b920c`) todo verde, falhas do `windows-full-suites` = 5, todas na lista conhecida
 
 ## Status Legend
 ⬜ Pending · 🔄 In progress · ✅ Done · ❌ Blocked
@@ -338,7 +338,7 @@ em `integrations/manager.go`. As skills em `~/.agents/skills` não mudam.
   da raiz do projeto). Sem corretivo nesta REQ.
 
 ### ML-FA2 — Corretivo: regressão do ML-4A4 no CI de Windows e FIFO no `InertCodexGuardPath` (achado 1-A)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Done
 **Squad:** apolo-tf
 **Diagnóstico:** (1) o `windows-full-suites` do HEAD `385f5fe6` (job 134276469418) reprovou no ratchet com 4 falhas
 novas em `internal/generators/update_test.go`: `TestUpdateHarnessCredentialGuardCodexInstallsAbsolutePathWithInstallMissing`,
@@ -354,7 +354,7 @@ travar (unix: `O_NONBLOCK` + `fstat`; windows: o padrão de `internal/validator/
 `Inert*GuardPath` passam a usá-lo.
 **Negative scope:** não migrar `internal/validator/regularfile*.go` nem `internal/translog/regularfile.go` para o pacote novo.
 **Acceptance criteria:**
-- [ ] as 4 falhas acima com `--- PASS` no `windows-full-suites`, e nenhuma falha nova no ratchet
+- [x] as 4 falhas acima com `--- PASS` no `windows-full-suites`, e nenhuma falha nova no ratchet — job 134355412990
 - [x] teste de FIFO em `~/.codex/hooks.json` e `~/.claude/settings.json`: retorna em < 2 s, sem marcar guard inerte —
   `TestInertGuardPath_FIFODoesNotBlock/{codex,claude}` PASS; contra-braço `TestInertClaudeGuardPath_DifferentDirs_WithGuardMarker`.
   Os dois arquivos `!windows` novos entraram em `.github/windows-skips.json` (classe c, mesmo mecanismo do FIFO do validator)
@@ -377,10 +377,10 @@ fora de `{a, b, c}`; um braço e um contra-braço por forma.
 - [x] `go test ./internal/winskips/` rc=0
 
 ### ML-FB — `make quality` com a máquina ociosa e CI verde
-**Status:** ⬜ Pending
+**Status:** ✅ Done
 **Squad:** zeus-tf
 **Acceptance criteria:**
 - [x] `make quality` rc=0 — 2026-11-17, máquina sem outros agentes; 1ª rodada reprovou em
   `check-symlink-privilege-guard` (2 testes FIFO `!windows` do ML-FA2 sem exceção), corrigido com a mesma exceção
   `FIFO_BUILD_TAG_NOT_WINDOWS` dos FIFOs do validator; 2ª rodada rc=0, 365 cenários de falsificação OK
-- [ ] `windows-full-suites` verde, e as falhas, por nome, iguais à lista conhecida
+- [x] `windows-full-suites` verde, e as falhas, por nome, iguais à lista conhecida — job 134355412990: TestShip_Integration_GracefulDegradation_RealBinary, TestChecksum_StableAndMatchesSHA256Sum, TestStaleWIPReportsWIPWalkError, TestFolderStatus_DiretorioNaoLegivel_P2, TestFilenameUniqueness_DiretorioNaoLegivel_P2 — todas em `.github/windows-known-failures.json`

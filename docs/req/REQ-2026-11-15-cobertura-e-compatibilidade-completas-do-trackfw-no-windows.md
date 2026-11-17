@@ -61,13 +61,13 @@ O que se mediu em 2026-11-14 no run 43423202733 da `main`, job `windows-full-sui
 - Mudança de comportamento em macOS/Linux além do necessário para a asserção equivalente.
 
 ## Acceptance Criteria
-- [ ] AC1 — inventário da Wave 0: cada skip e cada known-failure de Windows, cada artefato gerado e cada hook por CLI, e cada canal de distribuição, com a classificação (a)/(b)/(c) e a evidência
-- [ ] AC2 — zero skip de Windows com justificativa falsa; `TestMLScope*` e `TestBarrierReentry_*` rodam no Windows ou têm prova (c)
-- [ ] AC3 — gate no CI reprova um skip novo de Windows sem classificação
-- [ ] AC4 — cada artefato gerado e cada hook por CLI executa no Windows sem Git Bash, ou o `validate`/`doctor` declara que não
-- [ ] AC5 — smoke de `npm install -g` e `pip install` no `windows-latest` executando `trackfw --version` e `trackfw validate`
-- [ ] AC6 — guard via perfil e sem `-NonInteractive` medido no PS 5.1 e no `pwsh` 7 do Windows
-- [ ] AC7 — `windows-full-suites` verde; `make quality` verde
+- [x] AC1 — inventário da Wave 0: cada skip e cada known-failure de Windows, cada artefato gerado e cada hook por CLI, e cada canal de distribuição, com a classificação (a)/(b)/(c) e a evidência — Wave 0: ML-0A/0B/0B2, `docs/portabilidade/2026-11-15-inventario-windows.md`
+- [x] AC2 — zero skip de Windows com justificativa falsa; `TestMLScope*` e `TestBarrierReentry_*` rodam no Windows ou têm prova (c) — Waves 1–2 (ML-1A, 1B, 2A, 2B, 2C) e ML-3A2: registro só com (c)
+- [x] AC3 — gate no CI reprova um skip novo de Windows sem classificação — ML-3A + ML-3A2 + ML-FA3 (gate `windows-skips`; switch sem tag, alias e `continue` cobertos)
+- [x] AC4 — cada artefato gerado e cada hook por CLI executa no Windows sem Git Bash, ou o `validate`/`doctor` declara que não — ML-3D/3D2 (`windows_sh_missing` no validate/doctor), ML-4A2 (hooks do git fora da regra), ML-4A4 (home do Codex)
+- [x] AC5 — smoke de `npm install -g` e `pip install` no `windows-latest` executando `trackfw --version` e `trackfw validate` — ML-3B (`windows-package-smoke`)
+- [x] AC6 — guard via perfil e sem `-NonInteractive` medido no PS 5.1 e no `pwsh` 7 do Windows — ML-2A (job 133540617504: braços de perfil PASS em `powershell` 5.1 e `pwsh` 7) e ML-4A (Codex real na VM: PS 5.1, `-NoProfile`, sem `-NonInteractive`)
+- [x] AC7 — `windows-full-suites` verde; `make quality` verde — ML-FB: `make quality` rc=0 (2026-11-17); Quality run 44172607377 (HEAD `a53b920c`) verde, falhas do `windows-full-suites` todas na lista conhecida
 
 ## Linked ADR
 ADR: docs/adr/ADR-2026-09-05-hook-de-windows-roda-no-windows-geracao-nativa-por-cli-de-agente-em-vez-de-exigir-git-bash.md
