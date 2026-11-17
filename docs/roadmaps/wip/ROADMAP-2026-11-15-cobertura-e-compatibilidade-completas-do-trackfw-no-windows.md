@@ -332,6 +332,10 @@ em `integrations/manager.go`. As skills em `~/.agents/skills` não mudam.
 - [x] parecer com cada tentativa e o rc medido — S1 (contenção do `CODEX_HOME`), S2 (escrita × auditoria) e S3
   (`windows_sh_missing`) resistentes; achados 1-A, 4-A1..4-A5 e 5-A
 - [x] índice do git limpo após o red team (`git diff --cached` vazio, conferido pelo arquiteto)
+- [x] **5-A aceito como residual pelo KG em 2026-11-17:** um módulo do PowerShell em `PSModulePath` (carregado
+  automaticamente mesmo com `-NoProfile`) pode sombrear `trackfw` na forma L e o guard do Codex sai com rc=0. Quem grava
+  nessa pasta já tem a mesma capacidade de editar `~/.codex/hooks.json` direto, que o `write-scope` não protege (fora
+  da raiz do projeto). Sem corretivo nesta REQ.
 
 ### ML-FA2 — Corretivo: regressão do ML-4A4 no CI de Windows e FIFO no `InertCodexGuardPath` (achado 1-A)
 **Status:** ⬜ Pending
