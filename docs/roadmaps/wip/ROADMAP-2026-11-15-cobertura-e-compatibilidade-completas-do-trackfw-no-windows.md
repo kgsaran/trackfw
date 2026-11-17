@@ -182,7 +182,7 @@ handoff: teste Go roda em `go test ./...` sem tocar `Makefile` nem `quality.yml`
   entrada sem `evidence` reprova
 
 ### ML-3A2 — Corretivo do gate: polaridade, guards mortos e skip de chmod 444
-**Status:** 🔄 In progress
+**Status:** ✅ Done
 **Squad:** apolo-tf
 **Files affected:** `internal/winskips/winskips.go`, `internal/winskips/winskips_test.go`, `.github/windows-skips.json`,
 `internal/generators/scaffold_test.go`, `internal/discover/discover_test.go`, `internal/commands/json_exit_test.go`
@@ -195,8 +195,10 @@ windows não marca; remover os 3 guards mortos e o skip de chmod 444; braços 6-
 **Acceptance criteria:**
 - [x] `TestGate_RealTree` e os 8 braços passam localmente; registro de 57 → 22 entradas, todas (c)
 - [x] `TestJSONExit_UpdateJSON_TargetFailedSilentStderr` e os 3 testes de hardlink com `--- PASS` no `windows-full-suites` — job 133673248259; o skip de chmod 444 era falso
-- [ ] nenhuma `evidence` com `PENDING` no registro antes da Wave 5 (resta `TestReadRegularFile_Socket_NaoTravaEAcusaTipoErrado`:
-  o arquivo é `!windows` por causa do FIFO; o braço de socket não foi medido no Windows)
+- [x] nenhuma `evidence` com `PENDING` no registro antes da Wave 5 — o teste de socket saiu do arquivo `!windows` e
+  passou no `windows-full-suites` (`--- PASS: TestReadRegularFile_Socket_NaoTravaEAcusaTipoErrado`, job 134276469418,
+  HEAD `385f5fe6`); o registro tem 0 PENDING. O gate ainda não **rejeita** PENDING mecanicamente — achado 4-A4 do
+  red team, corrigido no ML-FA3
 
 ### ML-3B — Smoke de npm e PyPI no `windows-latest` (AC5, REQ-IMP-3)
 **Status:** ✅ Done
@@ -264,6 +266,7 @@ forma K deixa de valer para ele, porque a forma L cobre esse caso. Registrar.
   |---|---|---|---|---|
   | Codex 0.169.0 | `powershell.exe` 5.1 (`-Command`), PATH herdado | **não** | **sim** | `CODEX_HOME` se definido (config na raiz); senão o perfil do SO por API (`FOLDERID_Profile`), ignorando `HOME` e `USERPROFILE` |
   | Gemini, Cursor, Copilot, Windsurf, Kiro, Amazon Q | — | não medido (não instalado na VM) | não medido | não medido |
+  | Antigravity | não se aplica — o trackfw não gera hook para o Antigravity (`internal/generators/hooks.go:16`); guard no Antigravity é a REQ-2026-11-17 (backlog) | — | — | — |
 
   Como o Codex não passa `-NonInteractive`, o A1 da forma K não vale para ele, e a forma L cobre o caso. O guard que o trackfw grava
   para o Codex roda no shell certo e **não** está inerte. A hipótese `cmd.exe /C` + `env_clear()`, tirada da leitura do fonte, foi
@@ -323,10 +326,47 @@ em `integrations/manager.go`. As skills em `~/.agents/skills` não mudam.
 > Dependencies: todas as anteriores
 
 ### ML-FA — Red team da entrega
-**Status:** ⬜ Pending
+**Status:** ✅ Done — veredito **REPROVA** (`docs/seguranca/2026-11-17-red-team-req-2026-11-15-windows.md`)
 **Squad:** hades-tf
 **Acceptance criteria:**
-- [ ] parecer com cada tentativa e o rc medido
+- [x] parecer com cada tentativa e o rc medido — S1 (contenção do `CODEX_HOME`), S2 (escrita × auditoria) e S3
+  (`windows_sh_missing`) resistentes; achados 1-A, 4-A1..4-A5 e 5-A
+- [x] índice do git limpo após o red team (`git diff --cached` vazio, conferido pelo arquiteto)
+
+### ML-FA2 — Corretivo: regressão do ML-4A4 no CI de Windows e FIFO no `InertCodexGuardPath` (achado 1-A)
+**Status:** ⬜ Pending
+**Squad:** apolo-tf
+**Diagnóstico:** (1) o `windows-full-suites` do HEAD `385f5fe6` (job 134276469418) reprovou no ratchet com 4 falhas
+novas em `internal/generators/update_test.go`: `TestUpdateHarnessCredentialGuardCodexInstallsAbsolutePathWithInstallMissing`,
+`...CodexIsIdempotent`, `...CodexDryRunDoesNotWrite`, `...CodexPreservesExistingContent`. Os testes só definem `HOME`;
+desde o ML-4A4 o home do Codex no Windows vem de `USERPROFILE` (medido no binário real do Codex). O produto está certo;
+os testes não isolam o perfil. No macOS não aparece porque `USERPROFILE` é ignorado. (2) `InertCodexGuardPath`
+(`internal/agentconfig/agentconfig.go:447`) e `InertClaudeGuardPath` (`:217`) leem com `os.ReadFile`: um FIFO em
+`~/.codex/hooks.json` trava `update harness --install-missing` (medido pelo hades: travado em 10 s). Mesma causa nas
+duas funções → mesmo ML.
+**Actions:** testes definem `USERPROFILE` (e `CODEX_HOME=""`) junto com `HOME`; varredura dos `_test.go` que alcançam o
+home do Codex com só `HOME`. Novo pacote folha `internal/fileutil` com leitura que recusa arquivo não regular sem
+travar (unix: `O_NONBLOCK` + `fstat`; windows: o padrão de `internal/validator/regularfile_windows.go`); as duas funções
+`Inert*GuardPath` passam a usá-lo.
+**Negative scope:** não migrar `internal/validator/regularfile*.go` nem `internal/translog/regularfile.go` para o pacote novo.
+**Acceptance criteria:**
+- [ ] as 4 falhas acima com `--- PASS` no `windows-full-suites`, e nenhuma falha nova no ratchet
+- [ ] teste de FIFO em `~/.codex/hooks.json` e `~/.claude/settings.json`: retorna em < 2 s, sem marcar guard inerte
+- [ ] `go build ./...`, `go vet ./...`, `go test ./internal/agentconfig/ ./internal/fileutil/ ./internal/generators/` rc=0
+
+### ML-FA3 — Corretivo: três formas de pular teste no Windows que o gate não vê e campos sem validação (4-A1..4-A5)
+**Status:** ⬜ Pending
+**Squad:** apolo-tf
+**Diagnóstico:** em `internal/winskips/winskips.go`, `switch` sem tag (`switch { case runtime.GOOS == "windows": t.Skip() }`)
+cai no `break` da linha ~488; `goos := runtime.GOOS; if goos == "windows"` não é reconhecido por `isGOOSSelector`;
+`continue` num ramo Windows não conta como saída em `branchHasExit`. O `Check` aceita `evidence` com placeholder
+(`PENDING`) e `classification` vazia. Zero ocorrências na árvore hoje; o gate existe para impedir as futuras.
+**Actions:** detectar as três formas; rejeitar `evidence` que case `^(PENDING|TODO|TBD|FIXME)$` e `classification`
+fora de `{a, b, c}`; um braço e um contra-braço por forma.
+**Acceptance criteria:**
+- [ ] 5 braços novos reprovam na versão atual e passam na corrigida; contra-braços passam nas duas
+- [ ] `TestGate_RealTree` passa sem mudar o registro `.github/windows-skips.json`
+- [ ] `go test ./internal/winskips/` rc=0
 
 ### ML-FB — `make quality` com a máquina ociosa e CI verde
 **Status:** ⬜ Pending
