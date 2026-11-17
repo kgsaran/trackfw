@@ -380,5 +380,7 @@ fora de `{a, b, c}`; um braço e um contra-braço por forma.
 **Status:** ⬜ Pending
 **Squad:** zeus-tf
 **Acceptance criteria:**
-- [ ] `make quality` rc=0
+- [x] `make quality` rc=0 — 2026-11-17, máquina sem outros agentes; 1ª rodada reprovou em
+  `check-symlink-privilege-guard` (2 testes FIFO `!windows` do ML-FA2 sem exceção), corrigido com a mesma exceção
+  `FIFO_BUILD_TAG_NOT_WINDOWS` dos FIFOs do validator; 2ª rodada rc=0, 365 cenários de falsificação OK
 - [ ] `windows-full-suites` verde, e as falhas, por nome, iguais à lista conhecida
