@@ -333,10 +333,10 @@ Chain: `ADR → REQ → ROADMAP` · States: `backlog / analyzing / wip / blocked
 3. **After finishing:** the orchestrating session (`trackfw_architect`) writes a new file in `docs/agents-working-context/<YYYYMMDDTHHMMSSZ>-<your-slug>-<topic>.md` with what changed. Subagents never write there; they state what started, what changed and what is pending in their final report.
 4. **Before PR:** `trackfw validate` must pass
 5. **ML lifecycle — mandatory:**
-   - Starting a ML: edit roadmap `**Status:** ⬜ Pendente` → `**Status:** 🔄 Em andamento` + commit.
-   - Completing a ML: edit roadmap → `**Status:** ✅ Concluído` + include in ML commit.
+   - Starting a ML: edit roadmap `**Status:** ⬜ Pending` → `**Status:** 🔄 In progress` + commit.
+   - Completing a ML: edit roadmap → `**Status:** ✅ Done` + include in ML commit.
    - Analyzing a roadmap: move from `backlog/` to `analyzing/`; to `wip/` only when coding starts.
-6. **Obrigatório: Inspecione e respeite todos os ADRs globais nos diretórios listados em adr_dirs (inclusive caminhos ~/...) antes de propor alterações de arquitetura.**
+6. **Mandatory: Inspect and respect all global ADRs in the directories listed in adr_dirs (including ~/... paths) before proposing architectural changes.**
 
 ### Attention Signal (when you need user input during a task)
 Write `docs/roadmaps/.trackfw-attention.json`:
