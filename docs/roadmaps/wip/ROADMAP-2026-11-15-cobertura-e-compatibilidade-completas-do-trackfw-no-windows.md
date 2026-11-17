@@ -247,7 +247,8 @@ a REQ-IMP-9 pede o aviso também sem artefato `.sh`, porque o barrier falha sem 
 > Dependencies: Wave 3. Cada CLI precisa estar instalado na VM.
 
 ### ML-4A — Flags do PowerShell e HOME por CLI no Windows (AC6, REQ-IMP-8)
-**Status:** ⬜ Pending
+**Status:** 🔄 In progress
+**Inventário da VM (2026-11-17, `where` + `dir` via SSH):** só o `claude` está instalado (npm global). Codex, Gemini, Cursor, Copilot, Windsurf, Kiro e Amazon Q **não estão instalados → não medidos**. Git for Windows presente em `C:\Program Files\Git`, com `sh` fora do PATH interativo, que é a condição pedida pela medição do husky.
 **Squad:** artemis-tf (medição), apolo-tf (correção, se houver)
 **Actions:** para Codex, Gemini, Cursor, Copilot, Windsurf, Kiro e Amazon Q, medir na VM:
 - se o hook roda o PowerShell com `-NonInteractive`/`-NoProfile`, usando um stub que registra `argv` e os bytes
