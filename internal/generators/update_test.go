@@ -1055,6 +1055,8 @@ func TestUpdateHarnessCredentialGuardClaudePreservesExistingContent(t *testing.T
 func TestUpdateHarnessCredentialGuardCodexMissingWithoutInstallMissing(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // ML-FA2: Windows reads USERPROFILE for Codex home (HomeFor(CLICodex) uses os.UserHomeDir)
+	t.Setenv("CODEX_HOME", "")   // ML-FA2: prevent real CODEX_HOME from leaking into test
 
 	report, err := UpdateHarness(UpdateOptions{Targets: []string{"codex-credential-guard"}})
 	if err != nil {
@@ -1071,6 +1073,8 @@ func TestUpdateHarnessCredentialGuardCodexMissingWithoutInstallMissing(t *testin
 func TestUpdateHarnessCredentialGuardCodexInstallsAbsolutePathWithInstallMissing(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // ML-FA2: Windows reads USERPROFILE for Codex home (HomeFor(CLICodex) uses os.UserHomeDir)
+	t.Setenv("CODEX_HOME", "")   // ML-FA2: prevent real CODEX_HOME from leaking into test
 
 	report, err := UpdateHarness(UpdateOptions{Targets: []string{"codex-credential-guard"}, InstallMissing: true})
 	if err != nil {
@@ -1125,6 +1129,8 @@ func TestUpdateHarnessCredentialGuardCodexInstallsAbsolutePathWithInstallMissing
 func TestUpdateHarnessCredentialGuardCodexIsIdempotent(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // ML-FA2: Windows reads USERPROFILE for Codex home (HomeFor(CLICodex) uses os.UserHomeDir)
+	t.Setenv("CODEX_HOME", "")   // ML-FA2: prevent real CODEX_HOME from leaking into test
 
 	if _, err := UpdateHarness(UpdateOptions{Targets: []string{"codex-credential-guard"}, InstallMissing: true}); err != nil {
 		t.Fatal(err)
@@ -1171,6 +1177,8 @@ func TestUpdateHarnessCredentialGuardCodexIsIdempotent(t *testing.T) {
 func TestUpdateHarnessCredentialGuardCodexDryRunDoesNotWrite(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // ML-FA2: Windows reads USERPROFILE for Codex home (HomeFor(CLICodex) uses os.UserHomeDir)
+	t.Setenv("CODEX_HOME", "")   // ML-FA2: prevent real CODEX_HOME from leaking into test
 
 	report, err := UpdateHarness(UpdateOptions{Targets: []string{"codex-credential-guard"}, InstallMissing: true, DryRun: true})
 	if err != nil {
@@ -1190,6 +1198,8 @@ func TestUpdateHarnessCredentialGuardCodexDryRunDoesNotWrite(t *testing.T) {
 func TestUpdateHarnessCredentialGuardCodexPreservesExistingContent(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // ML-FA2: Windows reads USERPROFILE for Codex home (HomeFor(CLICodex) uses os.UserHomeDir)
+	t.Setenv("CODEX_HOME", "")   // ML-FA2: prevent real CODEX_HOME from leaking into test
 
 	hooksPath := filepath.Join(home, ".codex", "hooks.json")
 	if err := os.MkdirAll(filepath.Dir(hooksPath), 0755); err != nil {

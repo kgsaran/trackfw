@@ -338,7 +338,7 @@ em `integrations/manager.go`. As skills em `~/.agents/skills` não mudam.
   da raiz do projeto). Sem corretivo nesta REQ.
 
 ### ML-FA2 — Corretivo: regressão do ML-4A4 no CI de Windows e FIFO no `InertCodexGuardPath` (achado 1-A)
-**Status:** ⬜ Pending
+**Status:** 🔄 Em andamento
 **Squad:** apolo-tf
 **Diagnóstico:** (1) o `windows-full-suites` do HEAD `385f5fe6` (job 134276469418) reprovou no ratchet com 4 falhas
 novas em `internal/generators/update_test.go`: `TestUpdateHarnessCredentialGuardCodexInstallsAbsolutePathWithInstallMissing`,
@@ -355,11 +355,13 @@ travar (unix: `O_NONBLOCK` + `fstat`; windows: o padrão de `internal/validator/
 **Negative scope:** não migrar `internal/validator/regularfile*.go` nem `internal/translog/regularfile.go` para o pacote novo.
 **Acceptance criteria:**
 - [ ] as 4 falhas acima com `--- PASS` no `windows-full-suites`, e nenhuma falha nova no ratchet
-- [ ] teste de FIFO em `~/.codex/hooks.json` e `~/.claude/settings.json`: retorna em < 2 s, sem marcar guard inerte
-- [ ] `go build ./...`, `go vet ./...`, `go test ./internal/agentconfig/ ./internal/fileutil/ ./internal/generators/` rc=0
+- [x] teste de FIFO em `~/.codex/hooks.json` e `~/.claude/settings.json`: retorna em < 2 s, sem marcar guard inerte —
+  `TestInertGuardPath_FIFODoesNotBlock/{codex,claude}` PASS; contra-braço `TestInertClaudeGuardPath_DifferentDirs_WithGuardMarker`.
+  Os dois arquivos `!windows` novos entraram em `.github/windows-skips.json` (classe c, mesmo mecanismo do FIFO do validator)
+- [x] `go build ./...`, `go vet ./...`, `go test ./internal/agentconfig/ ./internal/fileutil/ ./internal/generators/` rc=0
 
 ### ML-FA3 — Corretivo: três formas de pular teste no Windows que o gate não vê e campos sem validação (4-A1..4-A5)
-**Status:** ⬜ Pending
+**Status:** 🔄 Em andamento
 **Squad:** apolo-tf
 **Diagnóstico:** em `internal/winskips/winskips.go`, `switch` sem tag (`switch { case runtime.GOOS == "windows": t.Skip() }`)
 cai no `break` da linha ~488; `goos := runtime.GOOS; if goos == "windows"` não é reconhecido por `isGOOSSelector`;

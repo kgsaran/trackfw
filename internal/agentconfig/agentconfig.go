@@ -32,6 +32,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/kgsaran/trackfw/internal/fileutil"
 	"github.com/kgsaran/trackfw/internal/homedir"
 )
 
@@ -224,7 +225,7 @@ func InertClaudeGuardPath(claudeDir string) (path string, present bool) {
 		return "", false
 	}
 	p := filepath.Join(oldDir, "settings.json")
-	data, err := os.ReadFile(p)
+	data, err := fileutil.ReadRegularFile(p)
 	if err != nil {
 		return "", false
 	}
@@ -444,7 +445,7 @@ func InertCodexGuardPath(codexDir string) (path string, present bool) {
 		return "", false
 	}
 	p := filepath.Join(oldDir, "hooks.json")
-	data, err := os.ReadFile(p)
+	data, err := fileutil.ReadRegularFile(p)
 	if err != nil {
 		return "", false
 	}

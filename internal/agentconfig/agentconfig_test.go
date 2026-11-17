@@ -438,6 +438,41 @@ func TestInertCodexGuardPath_SameDirs_NoNotice(t *testing.T) {
 	}
 }
 
+// ─── InertClaudeGuardPath tests (ML-FA2) ─────────────────────────────────────
+
+// TestInertClaudeGuardPath_DifferentDirs_WithGuardMarker asserts the arm: when
+// HOME/.claude/settings.json exists and contains a trackfw guard marker, and
+// claudeDir points elsewhere, InertClaudeGuardPath returns the inert path and
+// present=true.
+//
+// Conclusion (ML-FA2): InertClaudeGuardPath detects the inert remainder correctly
+// after switching to fileutil.ReadRegularFile; this test FAILS if the function
+// returns present=false for a regular file containing the guard marker.
+func TestInertClaudeGuardPath_DifferentDirs_WithGuardMarker(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+
+	claudeSubdir := filepath.Join(homeDir, ".claude")
+	if err := os.MkdirAll(claudeSubdir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	oldSettings := filepath.Join(claudeSubdir, "settings.json")
+	if err := os.WriteFile(oldSettings, []byte(`{"hooks":{"PreToolUse":[{"type":"command","command":"trackfw guard credential --global"}]}}`+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// claudeDir points somewhere else (simulates CLAUDE_CONFIG_DIR=/other/dir).
+	otherDir := t.TempDir()
+	path, present := agentconfig.InertClaudeGuardPath(otherDir)
+	if !present {
+		t.Fatalf("InertClaudeGuardPath: want present=true (HOME/.claude/settings.json has guard), got false")
+	}
+	if path != oldSettings {
+		t.Errorf("InertClaudeGuardPath: got path %q, want %q", path, oldSettings)
+	}
+}
+
 // ─── CodexHooksDisplayPath tests (ML-4A4 R1) ─────────────────────────────────
 
 // TestCodexHooksDisplayPath_EmptyDir_FallsBack confirms the empty-dir fallback.

@@ -124,5 +124,17 @@
     "classification": "c",
     "reason": "NTFS forbids '\"' in filenames; the test creates a git ref file named 'main\"evil\"' to test injection protection — this filename is illegal on Windows.",
     "evidence": "runtime.GOOS == \"windows\" branch with t.Skip. Mechanism: NTFS forbids these characters in filename components: * ? : < > | \" \\ /. A git ref file containing '\"' cannot be created with os.WriteFile on Windows (ERROR_INVALID_NAME). The injection attack vector is not constructible on this platform."
+  },
+  {
+    "test": "internal/fileutil/fileutil_fifo_unix_test.go:TestReadRegularFile_FIFO_NaoTravaERetornaErro",
+    "classification": "c",
+    "reason": "Build tag //go:build !windows; tests that fileutil.ReadRegularFile on a POSIX named pipe (FIFO) with no writer does not block and returns ErrNotRegularFile. Windows does not have POSIX FIFOs.",
+    "evidence": "File header: //go:build !windows. Mechanism: POSIX named pipes (FIFOs) are created with mkfifo(2) / syscall.Mkfifo and exposed as special files in the filesystem. Windows named pipes use a completely different API (CreateNamedPipe with \\\\.\\pipe\\ prefix) and are not accessible as filesystem paths in the same way. syscall.Mkfifo is not available on Windows."
+  },
+  {
+    "test": "internal/agentconfig/agentconfig_fifo_unix_test.go:TestInertGuardPath_FIFODoesNotBlock",
+    "classification": "c",
+    "reason": "Build tag //go:build !windows; tests that InertCodexGuardPath and InertClaudeGuardPath do not block when ~/.codex/hooks.json or ~/.claude/settings.json is a FIFO. Windows does not have POSIX FIFOs.",
+    "evidence": "File header: //go:build !windows. Mechanism: POSIX named pipes (FIFOs) are created with mkfifo(2) / syscall.Mkfifo and exposed as special files in the filesystem. Windows named pipes use a completely different API (CreateNamedPipe with \\\\.\\pipe\\ prefix) and are not accessible as filesystem paths in the same way. syscall.Mkfifo is not available on Windows."
   }
 ]
