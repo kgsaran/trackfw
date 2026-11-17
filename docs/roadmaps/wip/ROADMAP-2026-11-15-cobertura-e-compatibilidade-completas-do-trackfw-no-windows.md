@@ -361,7 +361,7 @@ travar (unix: `O_NONBLOCK` + `fstat`; windows: o padrão de `internal/validator/
 - [x] `go build ./...`, `go vet ./...`, `go test ./internal/agentconfig/ ./internal/fileutil/ ./internal/generators/` rc=0
 
 ### ML-FA3 — Corretivo: três formas de pular teste no Windows que o gate não vê e campos sem validação (4-A1..4-A5)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Done
 **Squad:** apolo-tf
 **Diagnóstico:** em `internal/winskips/winskips.go`, `switch` sem tag (`switch { case runtime.GOOS == "windows": t.Skip() }`)
 cai no `break` da linha ~488; `goos := runtime.GOOS; if goos == "windows"` não é reconhecido por `isGOOSSelector`;
@@ -370,9 +370,11 @@ cai no `break` da linha ~488; `goos := runtime.GOOS; if goos == "windows"` não 
 **Actions:** detectar as três formas; rejeitar `evidence` que case `^(PENDING|TODO|TBD|FIXME)$` e `classification`
 fora de `{a, b, c}`; um braço e um contra-braço por forma.
 **Acceptance criteria:**
-- [ ] 5 braços novos reprovam na versão atual e passam na corrigida; contra-braços passam nas duas
-- [ ] `TestGate_RealTree` passa sem mudar o registro `.github/windows-skips.json`
-- [ ] `go test ./internal/winskips/` rc=0
+- [x] 5 braços novos reprovam na versão atual e passam na corrigida; contra-braços passam nas duas — conferido pelo
+  arquiteto rodando os testes novos contra o `winskips.go` do HEAD `684a7ebe`: exatamente Arm9..Arm13 reprovam
+- [x] `TestGate_RealTree` passa; o registro só mudou pelas 2 entradas FIFO do ML-FA2. Limite documentado no código:
+  `break` cujo alvo é laço interno ao ramo Windows seria falso positivo; `goto` não é contado
+- [x] `go test ./internal/winskips/` rc=0
 
 ### ML-FB — `make quality` com a máquina ociosa e CI verde
 **Status:** ⬜ Pending

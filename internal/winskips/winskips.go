@@ -4,6 +4,27 @@
 //
 // Key format: "relative/path/to/file.go:TestFuncName"
 // (forward slashes, relative to the module root)
+//
+// Recognised forms of Windows-conditional skip:
+//
+//	if runtime.GOOS == "windows" { t.Skip() }         (direct selector)
+//	goos := runtime.GOOS; if goos == "windows" { … }  (local alias — 4-A2)
+//	switch runtime.GOOS { case "windows": t.Skip() }  (tagged switch)
+//	switch { case runtime.GOOS == "windows": t.Skip() } (tagless switch — 4-A1)
+//	for { if runtime.GOOS == "windows" { continue } } (continue in loop — 4-A3)
+//
+// Limits of alias detection (4-A2): only direct assignments within the same
+// function body are tracked (`x := runtime.GOOS`, `x = runtime.GOOS`,
+// `var x = runtime.GOOS`). Shadowing, reassignment, and package-level
+// variables are not tracked. os.Getenv("GOOS") is intentionally NOT
+// recognised (ADR-2026-10-14 / ML-3A2 decision: that signal is dead).
+//
+// Limits of BranchStmt detection (4-A3): `continue` and `break` are counted
+// when they appear in a Windows branch and !skipOnly. `goto` is not counted
+// (would require CFG analysis). An unlabeled `break` whose target is an
+// inner for/switch/select nested inside the Windows branch is a known
+// false-positive risk; no such pattern exists in the tree as of 2026-11-17.
+// `fallthrough` is never counted.
 package winskips
 
 import (
@@ -15,6 +36,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -35,8 +57,10 @@ const (
 	ViolMissing ViolKind = "missing"
 	// ViolObsolete: registry entry has no matching function.
 	ViolObsolete ViolKind = "obsolete"
-	// ViolNoEvidence: entry has an empty evidence field.
+	// ViolNoEvidence: entry has an empty or placeholder evidence field.
 	ViolNoEvidence ViolKind = "no_evidence"
+	// ViolBadClassification: entry has an invalid classification (not "a", "b", or "c").
+	ViolBadClassification ViolKind = "bad_classification"
 )
 
 // Violation is one gate failure.
@@ -45,6 +69,11 @@ type Violation struct {
 	Key  string
 	Msg  string
 }
+
+// placeholderEvidence matches evidence values that are placeholder tokens.
+// Matching is case-insensitive (caller uppercases before matching) and anchored:
+// a string that merely CONTAINS one of these words as a substring is accepted.
+var placeholderEvidence = regexp.MustCompile(`^(PENDING|TODO|TBD|FIXME)$`)
 
 // LoadRegistry reads .github/windows-skips.json from moduleRoot.
 func LoadRegistry(moduleRoot string) ([]Entry, error) {
@@ -105,14 +134,33 @@ func Check(moduleRoot string, reg []Entry) ([]Violation, error) {
 		}
 	}
 
-	// 2. Every entry must have non-empty evidence.
+	// 2. Every entry must have non-empty, non-placeholder evidence.
 	for _, e := range reg {
-		if strings.TrimSpace(e.Evidence) == "" {
+		trimmed := strings.TrimSpace(e.Evidence)
+		if trimmed == "" {
 			v = append(v, Violation{ViolNoEvidence, e.Test, "registry entry has empty evidence"})
+			continue
+		}
+		// Reject placeholder tokens regardless of case. Anchored match so that
+		// "PENDING até job 134276469418" (a real evidence with PENDING as prefix)
+		// is NOT rejected.
+		if placeholderEvidence.MatchString(strings.ToUpper(trimmed)) {
+			v = append(v, Violation{ViolNoEvidence, e.Test, "registry entry has placeholder evidence: " + trimmed})
 		}
 	}
 
-	// 3. Every entry must correspond to a marked function (not obsolete).
+	// 3. Every entry must have a valid classification ("a", "b", or "c").
+	for _, e := range reg {
+		switch e.Classification {
+		case "a", "b", "c":
+			// valid
+		default:
+			v = append(v, Violation{ViolBadClassification, e.Test,
+				fmt.Sprintf("registry entry has invalid classification %q (must be a, b, or c)", e.Classification)})
+		}
+	}
+
+	// 4. Every entry must correspond to a marked function (not obsolete).
 	for _, e := range reg {
 		if !markedSet[e.Test] {
 			v = append(v, Violation{ViolObsolete, e.Test, "registry entry has no matching marked function"})
@@ -136,9 +184,9 @@ const selfPkg = "internal/winskips"
 // ── findMarked ────────────────────────────────────────────────────────────────
 
 // findMarked returns all keys for TestXxx functions that require a registry
-// entry. A test is marked when it has an exit (t.Skip*/return) that occurs
-// specifically when runtime.GOOS IS "windows". Keys use forward slashes and
-// are relative to moduleRoot.
+// entry. A test is marked when it has an exit (t.Skip*/return/continue) that
+// occurs specifically when runtime.GOOS IS "windows". Keys use forward slashes
+// and are relative to moduleRoot.
 func findMarked(moduleRoot string) ([]string, error) {
 	// Group test files by their containing directory.
 	dirFiles := make(map[string][]string)
@@ -214,7 +262,8 @@ func analyzeDir(moduleRoot, dir string, files []string) ([]string, error) {
 			if !hasTParam(fn) {
 				continue
 			}
-			if nodeHasPlatformExit(fn.Body, nil, true /*skipOnly*/) {
+			goosVars := collectGOOSVars(fn.Body)
+			if nodeHasPlatformExit(fn.Body, goosVars, nil, true /*skipOnly*/) {
 				skipHelpers[fn.Name.Name] = true
 			}
 		}
@@ -288,7 +337,8 @@ func analyzeDir(moduleRoot, dir string, files []string) ([]string, error) {
 				continue
 			}
 			name := fn.Name.Name
-			if nodeHasPlatformExit(fn.Body, skipHelpers, false) {
+			goosVars := collectGOOSVars(fn.Body)
+			if nodeHasPlatformExit(fn.Body, goosVars, skipHelpers, false) {
 				keys = append(keys, rel+":"+name)
 			}
 		}
@@ -310,58 +360,60 @@ const (
 )
 
 // hasGOOSComparison reports whether expr contains a runtime.GOOS comparison
-// to the string literal "windows" anywhere in the expression tree.
+// (or a local alias in goosVars) to the string literal "windows" anywhere in
+// the expression tree.
 // Used as a fast pre-filter: if false, the condition is unrelated to Windows
 // and should not be passed to evalOnWindows.
-func hasGOOSComparison(expr ast.Expr) bool {
+func hasGOOSComparison(expr ast.Expr, goosVars map[string]bool) bool {
 	switch e := expr.(type) {
 	case *ast.BinaryExpr:
 		switch e.Op {
 		case token.EQL, token.NEQ:
-			return (isGOOSSelector(e.X) && isWindowsLit(e.Y)) ||
-				(isGOOSSelector(e.Y) && isWindowsLit(e.X))
+			return (isGOOSExpr(e.X, goosVars) && isWindowsLit(e.Y)) ||
+				(isGOOSExpr(e.Y, goosVars) && isWindowsLit(e.X))
 		case token.LAND, token.LOR:
-			return hasGOOSComparison(e.X) || hasGOOSComparison(e.Y)
+			return hasGOOSComparison(e.X, goosVars) || hasGOOSComparison(e.Y, goosVars)
 		}
 	case *ast.UnaryExpr:
 		if e.Op == token.NOT {
-			return hasGOOSComparison(e.X)
+			return hasGOOSComparison(e.X, goosVars)
 		}
 	case *ast.ParenExpr:
-		return hasGOOSComparison(e.X)
+		return hasGOOSComparison(e.X, goosVars)
 	}
 	return false
 }
 
 // evalOnWindows evaluates whether expr is true when runtime.GOOS == "windows".
 // Uses Kleene K3 strong three-valued logic for compound expressions (&&, ||, !).
-// Only runtime.GOOS comparisons are evaluated; os.Getenv("GOOS") is not a
-// valid runtime signal (the env var is never set by go test) and is ignored.
-func evalOnWindows(expr ast.Expr) condResult {
+// Only runtime.GOOS comparisons (and local aliases in goosVars) are evaluated;
+// os.Getenv("GOOS") is not a valid runtime signal (the env var is never set by
+// go test) and is ignored.
+func evalOnWindows(expr ast.Expr, goosVars map[string]bool) condResult {
 	switch e := expr.(type) {
 	case *ast.BinaryExpr:
 		switch e.Op {
 		case token.EQL:
-			if (isGOOSSelector(e.X) && isWindowsLit(e.Y)) ||
-				(isGOOSSelector(e.Y) && isWindowsLit(e.X)) {
+			if (isGOOSExpr(e.X, goosVars) && isWindowsLit(e.Y)) ||
+				(isGOOSExpr(e.Y, goosVars) && isWindowsLit(e.X)) {
 				return condTrue
 			}
 		case token.NEQ:
-			if (isGOOSSelector(e.X) && isWindowsLit(e.Y)) ||
-				(isGOOSSelector(e.Y) && isWindowsLit(e.X)) {
+			if (isGOOSExpr(e.X, goosVars) && isWindowsLit(e.Y)) ||
+				(isGOOSExpr(e.Y, goosVars) && isWindowsLit(e.X)) {
 				return condFalse
 			}
 		case token.LAND:
-			return kleeneAnd(evalOnWindows(e.X), evalOnWindows(e.Y))
+			return kleeneAnd(evalOnWindows(e.X, goosVars), evalOnWindows(e.Y, goosVars))
 		case token.LOR:
-			return kleeneOr(evalOnWindows(e.X), evalOnWindows(e.Y))
+			return kleeneOr(evalOnWindows(e.X, goosVars), evalOnWindows(e.Y, goosVars))
 		}
 	case *ast.UnaryExpr:
 		if e.Op == token.NOT {
-			return kleeneNot(evalOnWindows(e.X))
+			return kleeneNot(evalOnWindows(e.X, goosVars))
 		}
 	case *ast.ParenExpr:
-		return evalOnWindows(e.X)
+		return evalOnWindows(e.X, goosVars)
 	}
 	return condUnknown
 }
@@ -444,9 +496,13 @@ func hasTParam(fn *ast.FuncDecl) bool {
 }
 
 // nodeHasPlatformExit reports whether body contains a GOOS platform branch
-// whose exit (t.Skip* or return) occurs specifically when GOOS IS "windows".
-// It descends into FuncLit nodes to find branches inside t.Run closures.
-// When skipOnly is true, only t.Skip* counts; return does not.
+// whose exit (t.Skip*, return, or loop control) occurs specifically when GOOS
+// IS "windows". It descends into FuncLit nodes to find branches inside t.Run
+// closures. When skipOnly is true, only t.Skip* counts; return and continue do
+// not.
+//
+// goosVars is the set of local variable names assigned from runtime.GOOS in
+// the enclosing function body (see collectGOOSVars). Pass nil if none.
 //
 // Polarity rules (Kleene three-valued logic on the condition):
 //   - condTrue  → exit in then-branch executes on Windows → marked.
@@ -454,9 +510,14 @@ func hasTParam(fn *ast.FuncDecl) bool {
 //     exit in else-branch executes on Windows → marked.
 //   - condUnknown → both branches may execute on Windows → both checked.
 //
-// Switch statements: case "windows" exits are always checked; the default
-// case is checked only when no case "windows" exists in the switch.
-func nodeHasPlatformExit(body ast.Node, skipHelpers map[string]bool, skipOnly bool) bool {
+// Switch statements:
+//   - Tagged switch (switch runtime.GOOS { … }): case "windows" exits are
+//     always checked; the default case is checked only when no case "windows"
+//     exists.
+//   - Tagless switch (switch { case runtime.GOOS == "windows": … }): each
+//     case expression is evaluated by evalOnWindows; a condTrue case is checked.
+//     Default is checked only if no case was condTrue.
+func nodeHasPlatformExit(body ast.Node, goosVars map[string]bool, skipHelpers map[string]bool, skipOnly bool) bool {
 	found := false
 	ast.Inspect(body, func(n ast.Node) bool {
 		if found || n == nil {
@@ -467,10 +528,10 @@ func nodeHasPlatformExit(body ast.Node, skipHelpers map[string]bool, skipOnly bo
 			// Only process conditions that actually involve a runtime.GOOS
 			// comparison to "windows". Conditions like `err != nil` evaluate to
 			// condUnknown but are not GOOS-related and must be ignored.
-			if !hasGOOSComparison(stmt.Cond) {
+			if !hasGOOSComparison(stmt.Cond, goosVars) {
 				break
 			}
-			r := evalOnWindows(stmt.Cond)
+			r := evalOnWindows(stmt.Cond, goosVars)
 			// Then-branch executes when condition is true.
 			// Check it unless condition is definitely false on Windows.
 			if r != condFalse && branchHasExit(stmt.Body, skipOnly) {
@@ -484,8 +545,76 @@ func nodeHasPlatformExit(body ast.Node, skipHelpers map[string]bool, skipOnly bo
 				return false
 			}
 		case *ast.SwitchStmt:
-			// switch runtime.GOOS { case "windows": ... }
-			if stmt.Tag == nil || !isGOOSSelector(stmt.Tag) {
+			if stmt.Tag == nil {
+				// Tagless switch: switch { case expr: … }
+				// Each case item is a full boolean expression.
+				// Recognised form: switch { case runtime.GOOS == "windows": t.Skip() }
+				//
+				// Walk cases top-to-bottom. A case whose expression evaluates to
+				// condTrue on Windows is the case that executes on Windows; check it
+				// for a qualifying exit. The default case is checked only when at
+				// least one non-default case had a GOOS comparison AND no condTrue
+				// case was found (same logic as the tagged-switch default).
+				//
+				// Guard: if NO case in the switch contains a GOOS comparison at all,
+				// the switch is completely unrelated to Windows — do not check the
+				// default. Without this guard, any tagless switch whose default
+				// contains `return` or `continue` would be a false positive.
+				hasCondTrueCase := false
+				hasAnyGOOSCase := false
+				for _, cl := range stmt.Body.List {
+					cc, ok := cl.(*ast.CaseClause)
+					if !ok {
+						continue
+					}
+					if len(cc.List) == 0 {
+						// default: handled below
+						continue
+					}
+					// Combine multiple expressions in one case clause with kleeneOr
+					// (e.g., `case a == "windows", b == "windows":`).
+					var combinedResult condResult = condFalse
+					hasWindowsExpr := false
+					for _, caseExpr := range cc.List {
+						if !hasGOOSComparison(caseExpr, goosVars) {
+							continue
+						}
+						hasWindowsExpr = true
+						combinedResult = kleeneOr(combinedResult, evalOnWindows(caseExpr, goosVars))
+					}
+					if !hasWindowsExpr {
+						continue
+					}
+					hasAnyGOOSCase = true
+					if combinedResult == condTrue {
+						hasCondTrueCase = true
+						block := &ast.BlockStmt{List: cc.Body}
+						if branchHasExit(block, skipOnly) {
+							found = true
+							return false
+						}
+					}
+				}
+				// Check default only if the switch is GOOS-related AND no case
+				// was condTrue on Windows.
+				if hasAnyGOOSCase && !hasCondTrueCase {
+					for _, cl := range stmt.Body.List {
+						cc, ok := cl.(*ast.CaseClause)
+						if !ok || len(cc.List) != 0 {
+							continue
+						}
+						block := &ast.BlockStmt{List: cc.Body}
+						if branchHasExit(block, skipOnly) {
+							found = true
+							return false
+						}
+					}
+				}
+				break
+			}
+			// Tagged switch: switch runtime.GOOS { case "windows": … }
+			// Also recognises switch goos { … } when goos is a local alias.
+			if !isGOOSExpr(stmt.Tag, goosVars) {
 				break
 			}
 			hasWindowsCase := false
@@ -557,7 +686,19 @@ func nodeHasHelperCall(body ast.Node, calls map[string]bool) bool {
 
 // branchHasExit reports whether a branch body (IfStmt.Body, Else, or a
 // CaseClause block) contains a qualifying exit WITHOUT crossing FuncLit
-// boundaries. When skipOnly is true, only t.Skip* counts; return does not.
+// boundaries. When skipOnly is true, only t.Skip* counts; return, continue and
+// break do not.
+//
+// Qualifying exits:
+//   - t.Skip, t.Skipf, t.SkipNow (always, independent of skipOnly)
+//   - return (when !skipOnly)
+//   - continue, break (when !skipOnly — these skip loop iterations or exit
+//     the nearest enclosing for/switch/select, effectively bypassing assertions)
+//
+// Known limit: an unlabeled break whose target is an inner loop or switch
+// nested inside the Windows branch is counted as an exit even though it only
+// exits the inner construct, not the test. No such pattern exists in the tree
+// as of 2026-11-17; a false positive from this would be surfaced by RealTree.
 func branchHasExit(node ast.Node, skipOnly bool) bool {
 	found := false
 	ast.Inspect(node, func(n ast.Node) bool {
@@ -575,6 +716,15 @@ func branchHasExit(node ast.Node, skipOnly bool) bool {
 			}
 		case *ast.ExprStmt:
 			if isSkipCall(stmt.X) {
+				found = true
+			}
+		case *ast.BranchStmt:
+			// continue skips the remaining loop body on Windows.
+			// break exits the nearest enclosing for/switch/select on Windows.
+			// fallthrough is never counted (it falls through to the next case,
+			// not out of the Windows branch).
+			// goto is not counted (would require CFG analysis).
+			if !skipOnly && (stmt.Tok == token.CONTINUE || stmt.Tok == token.BREAK) {
 				found = true
 			}
 		}
@@ -608,6 +758,71 @@ func isGOOSSelector(expr ast.Expr) bool {
 	}
 	ident, ok := sel.X.(*ast.Ident)
 	return ok && ident.Name == "runtime" && sel.Sel.Name == "GOOS"
+}
+
+// isGOOSExpr returns true if expr is runtime.GOOS or a local variable that
+// was assigned from runtime.GOOS (see collectGOOSVars).
+func isGOOSExpr(expr ast.Expr, goosVars map[string]bool) bool {
+	if isGOOSSelector(expr) {
+		return true
+	}
+	if goosVars != nil {
+		if ident, ok := expr.(*ast.Ident); ok {
+			return goosVars[ident.Name]
+		}
+	}
+	return false
+}
+
+// collectGOOSVars walks body and returns the set of local variable names that
+// are directly assigned from runtime.GOOS. Covers short-variable declarations
+// (`:=`), regular assignments (`=`), and var declarations (`var x = …`).
+//
+// Limits: matching is by name only, not by object identity. Shadowing and
+// reassignment are not tracked. Package-level variables and imports are not
+// covered. os.Getenv("GOOS") is intentionally excluded.
+func collectGOOSVars(body *ast.BlockStmt) map[string]bool {
+	vars := make(map[string]bool)
+	ast.Inspect(body, func(n ast.Node) bool {
+		if n == nil {
+			return false
+		}
+		switch stmt := n.(type) {
+		case *ast.AssignStmt:
+			// x := runtime.GOOS  or  x = runtime.GOOS
+			if stmt.Tok != token.DEFINE && stmt.Tok != token.ASSIGN {
+				break
+			}
+			for i, rhs := range stmt.Rhs {
+				if isGOOSSelector(rhs) && i < len(stmt.Lhs) {
+					if ident, ok := stmt.Lhs[i].(*ast.Ident); ok && ident.Name != "_" {
+						vars[ident.Name] = true
+					}
+				}
+			}
+		case *ast.DeclStmt:
+			// var x = runtime.GOOS
+			decl, ok := stmt.Decl.(*ast.GenDecl)
+			if !ok {
+				break
+			}
+			for _, spec := range decl.Specs {
+				vs, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for i, val := range vs.Values {
+					if isGOOSSelector(val) && i < len(vs.Names) {
+						if vs.Names[i].Name != "_" {
+							vars[vs.Names[i].Name] = true
+						}
+					}
+				}
+			}
+		}
+		return true
+	})
+	return vars
 }
 
 // isWindowsLit returns true if expr is the string literal "windows".

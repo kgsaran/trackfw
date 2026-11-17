@@ -110,7 +110,7 @@ func TestGate_RealTree(t *testing.T) {
 	}
 
 	// Separate by kind for a clear report.
-	var missing, obsolete, noEvid []string
+	var missing, obsolete, noEvid, badClass []string
 	for _, v := range vs {
 		switch v.Kind {
 		case ViolMissing:
@@ -119,11 +119,14 @@ func TestGate_RealTree(t *testing.T) {
 			obsolete = append(obsolete, v.Key)
 		case ViolNoEvidence:
 			noEvid = append(noEvid, v.Key)
+		case ViolBadClassification:
+			badClass = append(badClass, v.Key)
 		}
 	}
 	sort.Strings(missing)
 	sort.Strings(obsolete)
 	sort.Strings(noEvid)
+	sort.Strings(badClass)
 
 	msg := fmt.Sprintf("gate violations (%d total):", len(vs))
 	if len(missing) > 0 {
@@ -137,6 +140,10 @@ func TestGate_RealTree(t *testing.T) {
 	if len(noEvid) > 0 {
 		msg += fmt.Sprintf("\n  NO EVIDENCE (%d) — add evidence field:\n    %s",
 			len(noEvid), strings.Join(noEvid, "\n    "))
+	}
+	if len(badClass) > 0 {
+		msg += fmt.Sprintf("\n  BAD CLASSIFICATION (%d) — fix classification to a, b, or c:\n    %s",
+			len(badClass), strings.Join(badClass, "\n    "))
 	}
 	t.Fatal(msg)
 }
@@ -442,5 +449,359 @@ func TestGate_Arm8_LinuxFileIsMarked(t *testing.T) {
 	}
 	if !hasKey(vs, "TestArm8_LinuxOnly") {
 		t.Fatalf("ViolMissing should name TestArm8_LinuxOnly; keys: %v", violKeys(vs))
+	}
+}
+
+// ── Arm 9: tagless switch with Windows skip ───────────────────────────────────
+
+// TestGate_Arm9_TaglessSwitchWindowsSkip asserts that a tagless switch
+// (switch { case runtime.GOOS == "windows": t.Skip() }) is detected as a
+// Windows-conditional skip and produces ViolMissing when unregistered.
+// Reconciliation: this test asserts that achado 4-A1 from the red team
+// (tagless switch invisible to the gate) is closed — the gate must detect
+// the form `switch { case runtime.GOOS == "windows": t.Skip() }`.
+func TestGate_Arm9_TaglessSwitchWindowsSkip(t *testing.T) {
+	src := `package mypkg
+
+import (
+	"runtime"
+	"testing"
+)
+
+func TestArm9_TaglessSwitch(t *testing.T) {
+	switch {
+	case runtime.GOOS == "windows":
+		t.Skip("arm9: tagless switch Windows skip")
+	}
+}
+`
+	root := fixtureModRoot(t, "mypkg", src)
+	vs, err := Check(root, nil) // empty registry
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if !hasKind(vs, ViolMissing) {
+		t.Fatalf("expected ViolMissing for tagless switch Windows skip, got %v", violKinds(vs))
+	}
+	if !hasKey(vs, "TestArm9_TaglessSwitch") {
+		t.Fatalf("ViolMissing should name TestArm9_TaglessSwitch; keys: %v", violKeys(vs))
+	}
+}
+
+// TestGate_Arm9_ContraArm_TaglessSwitchNonWindows asserts that a tagless switch
+// whose case condition is definitely false on Windows (runtime.GOOS != "windows")
+// does NOT produce a ViolMissing — such a test runs on Windows.
+// Reconciliation: this test asserts that the fix for 4-A1 does not over-mark
+// non-Windows tagless switch cases as Windows skips.
+func TestGate_Arm9_ContraArm_TaglessSwitchNonWindows(t *testing.T) {
+	src := `package mypkg
+
+import (
+	"runtime"
+	"testing"
+)
+
+func TestArm9CA_TaglessSwitchNotWindows(t *testing.T) {
+	switch {
+	case runtime.GOOS != "windows":
+		t.Skip("arm9 counter: skips on non-Windows, runs on Windows")
+	}
+}
+`
+	root := fixtureModRoot(t, "mypkg", src)
+	vs, err := Check(root, nil) // empty registry
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	// Not marked: the skip fires when GOOS != windows (i.e., on non-Windows),
+	// so this test RUNS on Windows — it must not appear in the registry.
+	if hasKind(vs, ViolMissing) && hasKey(vs, "TestArm9CA_TaglessSwitchNotWindows") {
+		t.Fatalf("gate incorrectly marked a non-Windows tagless switch skip; keys: %v", violKeys(vs))
+	}
+}
+
+// ── Arm 10: local variable assigned from runtime.GOOS ────────────────────────
+
+// TestGate_Arm10_LocalVarGOOS asserts that `goos := runtime.GOOS; if goos == "windows" { t.Skip() }`
+// is detected as a Windows-conditional skip and produces ViolMissing when unregistered.
+// Reconciliation: this test asserts that achado 4-A2 from the red team
+// (local-variable alias for runtime.GOOS invisible to the gate) is closed.
+func TestGate_Arm10_LocalVarGOOS(t *testing.T) {
+	src := `package mypkg
+
+import (
+	"runtime"
+	"testing"
+)
+
+func TestArm10_LocalVarGOOS(t *testing.T) {
+	goos := runtime.GOOS
+	if goos == "windows" {
+		t.Skip("arm10: local var alias for runtime.GOOS")
+	}
+}
+`
+	root := fixtureModRoot(t, "mypkg", src)
+	vs, err := Check(root, nil) // empty registry
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if !hasKind(vs, ViolMissing) {
+		t.Fatalf("expected ViolMissing for local-var GOOS skip, got %v", violKinds(vs))
+	}
+	if !hasKey(vs, "TestArm10_LocalVarGOOS") {
+		t.Fatalf("ViolMissing should name TestArm10_LocalVarGOOS; keys: %v", violKeys(vs))
+	}
+}
+
+// TestGate_Arm10_ContraArm_LocalVarNonGOOS asserts that a local variable NOT
+// assigned from runtime.GOOS does not cause a ViolMissing even when compared
+// to "windows".
+// Reconciliation: this test asserts that the alias detection is scoped to
+// `runtime.GOOS` assignments only; os.Getenv("GOOS") is a dead signal (ML-3A2
+// decision) and must not be recognised as a Windows-skip.
+func TestGate_Arm10_ContraArm_LocalVarNonGOOS(t *testing.T) {
+	src := `package mypkg
+
+import (
+	"os"
+	"testing"
+)
+
+func TestArm10CA_LocalVarNotRuntime(t *testing.T) {
+	goos := os.Getenv("GOOS")
+	if goos == "windows" {
+		t.Skip("arm10 counter: goos from os.Getenv, not runtime.GOOS")
+	}
+}
+`
+	root := fixtureModRoot(t, "mypkg", src)
+	vs, err := Check(root, nil) // empty registry
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	// Not marked: goos comes from os.Getenv("GOOS"), not runtime.GOOS.
+	if hasKind(vs, ViolMissing) && hasKey(vs, "TestArm10CA_LocalVarNotRuntime") {
+		t.Fatalf("gate incorrectly marked a local var from os.Getenv; keys: %v", violKeys(vs))
+	}
+}
+
+// ── Arm 11: continue in Windows branch ───────────────────────────────────────
+
+// TestGate_Arm11_ContinueInWindowsBranch asserts that `continue` inside a
+// Windows branch of a loop is detected as a Windows-conditional skip and
+// produces ViolMissing when unregistered.
+// Reconciliation: this test asserts that achado 4-A3 from the red team
+// (continue in a Windows branch invisible to the gate) is closed.
+func TestGate_Arm11_ContinueInWindowsBranch(t *testing.T) {
+	src := `package mypkg
+
+import (
+	"runtime"
+	"testing"
+)
+
+func TestArm11_ContinueInWindowsBranch(t *testing.T) {
+	for i := 0; i < 1; i++ {
+		if runtime.GOOS == "windows" {
+			continue
+		}
+		if i < 0 {
+			t.Fatal("unreachable")
+		}
+	}
+}
+`
+	root := fixtureModRoot(t, "mypkg", src)
+	vs, err := Check(root, nil) // empty registry
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if !hasKind(vs, ViolMissing) {
+		t.Fatalf("expected ViolMissing for continue-in-Windows-branch, got %v", violKinds(vs))
+	}
+	if !hasKey(vs, "TestArm11_ContinueInWindowsBranch") {
+		t.Fatalf("ViolMissing should name TestArm11_ContinueInWindowsBranch; keys: %v", violKeys(vs))
+	}
+}
+
+// TestGate_Arm11_ContraArm_ContinueInNonWindowsBranch asserts that `continue`
+// inside a branch that is definitely false on Windows (runtime.GOOS != "windows")
+// does NOT produce a ViolMissing — such a loop iteration runs on Windows.
+// Reconciliation: this test asserts that the fix for 4-A3 uses polarity
+// correctly: continue in a non-Windows branch does not mark the test.
+func TestGate_Arm11_ContraArm_ContinueInNonWindowsBranch(t *testing.T) {
+	src := `package mypkg
+
+import (
+	"runtime"
+	"testing"
+)
+
+func TestArm11CA_ContinueInNonWindowsBranch(t *testing.T) {
+	for i := 0; i < 1; i++ {
+		if runtime.GOOS != "windows" {
+			continue
+		}
+	}
+}
+`
+	root := fixtureModRoot(t, "mypkg", src)
+	vs, err := Check(root, nil) // empty registry
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	// Not marked: the continue fires on non-Windows — the loop body runs on Windows.
+	if hasKind(vs, ViolMissing) && hasKey(vs, "TestArm11CA_ContinueInNonWindowsBranch") {
+		t.Fatalf("gate incorrectly marked a non-Windows continue; keys: %v", violKeys(vs))
+	}
+}
+
+// ── Arm 12: placeholder evidence ─────────────────────────────────────────────
+
+// TestGate_Arm12_PendingEvidence asserts that an entry with evidence "  pending  "
+// (whitespace and mixed-case) is rejected with ViolNoEvidence.
+// Reconciliation: this test asserts that achado 4-A4 from the red team
+// (placeholder evidence accepted by the gate) is closed — both trim and
+// case-insensitive match must work.
+func TestGate_Arm12_PendingEvidence(t *testing.T) {
+	src := `package mypkg
+
+import (
+	"runtime"
+	"testing"
+)
+
+func TestArm12_PendingEvidence(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("arm12: placeholder evidence")
+	}
+}
+`
+	root := fixtureModRoot(t, "mypkg", src)
+	reg := []Entry{{
+		Test:           "mypkg/fix_test.go:TestArm12_PendingEvidence",
+		Classification: "c",
+		Reason:         "some reason",
+		Evidence:       "  pending  ", // whitespace + mixed-case — must be rejected
+	}}
+	vs, err := Check(root, reg)
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if !hasKind(vs, ViolNoEvidence) {
+		t.Fatalf("expected ViolNoEvidence for placeholder evidence, got %v", violKinds(vs))
+	}
+	if !hasKey(vs, "TestArm12_PendingEvidence") {
+		t.Fatalf("ViolNoEvidence should name TestArm12_PendingEvidence; keys: %v", violKeys(vs))
+	}
+}
+
+// TestGate_Arm12_ContraArm_PendingSubstring asserts that an evidence field that
+// merely CONTAINS "PENDING" as a substring (not the whole field) is NOT rejected.
+// Reconciliation: this test asserts that the placeholder check uses anchored
+// matching (^...$), not substring matching — a real evidence string like
+// "PENDING até job 134276469418; agora PASS" must be accepted.
+func TestGate_Arm12_ContraArm_PendingSubstring(t *testing.T) {
+	src := `package mypkg
+
+import (
+	"runtime"
+	"testing"
+)
+
+func TestArm12CA_PendingSubstring(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("arm12 counter: evidence contains PENDING as substring")
+	}
+}
+`
+	root := fixtureModRoot(t, "mypkg", src)
+	reg := []Entry{{
+		Test:           "mypkg/fix_test.go:TestArm12CA_PendingSubstring",
+		Classification: "c",
+		Reason:         "some reason",
+		Evidence:       "PENDING até job 134276469418; agora PASS",
+	}}
+	vs, err := Check(root, reg)
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if len(vs) != 0 {
+		t.Fatalf("expected 0 violations for evidence with PENDING as substring, got %d: %v", len(vs), vs)
+	}
+}
+
+// ── Arm 13: empty classification ─────────────────────────────────────────────
+
+// TestGate_Arm13_EmptyClassification asserts that an entry with an empty
+// classification field produces ViolBadClassification.
+// Reconciliation: this test asserts that achado 4-A5 from the red team
+// (empty classification accepted by the gate) is closed — classification must
+// be one of "a", "b", or "c".
+func TestGate_Arm13_EmptyClassification(t *testing.T) {
+	src := `package mypkg
+
+import (
+	"runtime"
+	"testing"
+)
+
+func TestArm13_EmptyClassification(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("arm13: empty classification")
+	}
+}
+`
+	root := fixtureModRoot(t, "mypkg", src)
+	reg := []Entry{{
+		Test:           "mypkg/fix_test.go:TestArm13_EmptyClassification",
+		Classification: "", // ← deliberately empty
+		Reason:         "some reason",
+		Evidence:       "real evidence here",
+	}}
+	vs, err := Check(root, reg)
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if !hasKind(vs, ViolBadClassification) {
+		t.Fatalf("expected ViolBadClassification for empty classification, got %v", violKinds(vs))
+	}
+	if !hasKey(vs, "TestArm13_EmptyClassification") {
+		t.Fatalf("ViolBadClassification should name TestArm13_EmptyClassification; keys: %v", violKeys(vs))
+	}
+}
+
+// TestGate_Arm13_ContraArm_ValidClassification asserts that an entry with
+// classification "c" and real evidence produces zero violations.
+// Reconciliation: this test asserts that the classification validator does not
+// reject valid values — the fix for 4-A5 must not cause false positives.
+func TestGate_Arm13_ContraArm_ValidClassification(t *testing.T) {
+	src := `package mypkg
+
+import (
+	"runtime"
+	"testing"
+)
+
+func TestArm13CA_ValidClassification(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("arm13 counter: valid classification")
+	}
+}
+`
+	root := fixtureModRoot(t, "mypkg", src)
+	reg := []Entry{{
+		Test:           "mypkg/fix_test.go:TestArm13CA_ValidClassification",
+		Classification: "c",
+		Reason:         "POSIX-only: chmod semantics differ on NTFS",
+		Evidence:       "job 134276469418 PASS on windows-latest",
+	}}
+	vs, err := Check(root, reg)
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if len(vs) != 0 {
+		t.Fatalf("expected 0 violations for valid classification, got %d: %v", len(vs), vs)
 	}
 }
