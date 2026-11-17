@@ -154,6 +154,10 @@ func TestMain(m *testing.M) {
 	if err := os.Unsetenv("CLAUDE_CONFIG_DIR"); err != nil {
 		panic(err)
 	}
+	// ML-4A4: same isolation for CODEX_HOME — agentconfig.CodexConfigDir honours this env var.
+	if err := os.Unsetenv("CODEX_HOME"); err != nil {
+		panic(err)
+	}
 
 	// ML-7D: disable git maintenance auto-scheduling for every git child process
 	// in this test binary (including the compiled trackfw binary). GIT_CONFIG_PARAMETERS

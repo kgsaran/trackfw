@@ -1647,3 +1647,247 @@ func TestGuardGlobalHookD2InlineWarnings_Wiring_PlainETagged(t *testing.T) {
 		t.Errorf("esperado aviso de D2 global em warnings (Tagged), obteve: %v", warningsT)
 	}
 }
+
+// ---- ML-4A4 (ADR-2026-10-14 D2/D3): CODEX_HOME — audit reads from $CODEX_HOME/hooks.json ----
+
+// TestGuardGlobalHookResolvable_CodexCODEX_HOME_ReadsFromRoot asserts ML-4A4 conclusion
+// (D3: writer and auditor agree on the target path): when CODEX_HOME is set, the validator
+// reads hooks.json from $CODEX_HOME/hooks.json (the root), not from $HOME/.codex/hooks.json.
+//
+// Counter-arm: if the CODEX_HOME branch were removed from validateGuardGlobalHookResolvable
+// (reverting to filepath.Join(home, relPath) for Codex CLI), the function would look at
+// $HOME/.codex/hooks.json which does NOT exist in this fixture, silently skip the Codex
+// entry, and produce zero violations — causing this test to fail (expected violation,
+// got none).
+func TestGuardGlobalHookResolvable_CodexCODEX_HOME_ReadsFromRoot(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	home := globalGuardHome(t)
+	t.Cleanup(config.Reset)
+
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	defer os.Unsetenv("CODEX_HOME")
+
+	// Write hooks.json at $CODEX_HOME/hooks.json (root) pointing to a script that does NOT exist.
+	// $HOME/.codex/hooks.json is intentionally absent — if the validator reads from there, it
+	// silently skips (IsNotExist) and no violation fires.
+	globalScriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	if err := os.MkdirAll(codexHome, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(codexHome, "hooks.json"), []byte(globalClaudeSettingsWithCommand(globalScriptPath)), 0644); err != nil {
+		t.Fatalf("write $CODEX_HOME/hooks.json: %v", err)
+	}
+	// Script does NOT exist — this causes a violation when the hook is found.
+
+	msgs, err := validateCredentialGuardGlobalHookResolvable()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// The validator must have read $CODEX_HOME/hooks.json, found the reference, and emitted a
+	// violation because the script does not exist. If CODEX_HOME is ignored and the validator
+	// reads $HOME/.codex/hooks.json (absent), it silently skips — producing no violation —
+	// and this assertion fails, exposing the regression.
+	if !hasViolation(msgs, "does not exist") || !hasViolation(msgs, "global scope") {
+		t.Errorf("expected violation about missing script (audit must read $CODEX_HOME/hooks.json), got: %v", msgs)
+	}
+}
+
+// TestGuardGlobalHookResolvable_GitBranchCodexCODEX_HOME_ReadsFromRoot asserts ML-4A4 conclusion
+// (D3: writer and auditor agree) for the git-branch-guard audit loop: when CODEX_HOME is set,
+// validateGitBranchGuardGlobalHookResolvable reads from $CODEX_HOME/hooks.json, not $HOME/.codex/hooks.json.
+//
+// Counter-arm: if the CODEX_HOME branch were removed from validateGuardGlobalHookResolvable
+// (reverting to filepath.Join(home, relPath) for Codex CLI), $HOME/.codex/hooks.json would be
+// absent → silent skip → no violation → this test fails (expected violation, got none).
+func TestGuardGlobalHookResolvable_GitBranchCodexCODEX_HOME_ReadsFromRoot(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	home := globalGuardHome(t)
+	t.Cleanup(config.Reset)
+
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	defer os.Unsetenv("CODEX_HOME")
+
+	globalScriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+	if err := os.MkdirAll(codexHome, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(codexHome, "hooks.json"), []byte(globalClaudeSettingsWithCommand(globalScriptPath)), 0644); err != nil {
+		t.Fatalf("write $CODEX_HOME/hooks.json: %v", err)
+	}
+	// Script does NOT exist — validator must find the reference and emit a violation.
+
+	msgs, err := validateGitBranchGuardGlobalHookResolvable()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !hasViolation(msgs, "does not exist") || !hasViolation(msgs, "global scope") {
+		t.Errorf("expected violation (audit must read $CODEX_HOME/hooks.json for git-branch-guard), got: %v", msgs)
+	}
+}
+
+// ---- ML-4A4 R1: message names real CODEX_HOME path ----
+
+// TestGuardGlobalHookShLegacyWarnings_CodexCODEX_HOME_MessageNamesRealPath asserts ML-4A4 R1:
+// when CODEX_HOME is set to a directory outside $HOME, the Sh-loop warning message contains the
+// real resolved path ($CODEX_HOME/hooks.json), not the tilde-abbreviated ~/.codex/hooks.json.
+//
+// Counter-arm: without the R1 patch (msgPath = "~/" + relPath unconditionally), the message would
+// contain "~/.codex/hooks.json" and NOT contain the CODEX_HOME absolute path — causing this test
+// to fail and exposing the regression.
+func TestGuardGlobalHookShLegacyWarnings_CodexCODEX_HOME_MessageNamesRealPath(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	home := globalGuardHome(t)
+	t.Cleanup(config.Reset)
+
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	defer os.Unsetenv("CODEX_HOME")
+
+	// Write a script marker reference in $CODEX_HOME/hooks.json so the Sh loop emits a warning.
+	// $HOME/.codex/hooks.json is intentionally absent — the loop must use CODEX_HOME.
+	globalScriptPath := filepath.Join(home, ".trackfw", "scripts", credentialGuardScriptMarker)
+	hooksJSON := globalClaudeSettingsWithCommand(globalScriptPath)
+	if err := os.WriteFile(filepath.Join(codexHome, "hooks.json"), []byte(hooksJSON), 0644); err != nil {
+		t.Fatalf("write $CODEX_HOME/hooks.json: %v", err)
+	}
+
+	warnings, err := validateCredentialGuardGlobalHookResolvableLegacyWarnings()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The expected display path is the absolute CODEX_HOME/hooks.json — not ~/.codex/hooks.json.
+	wantPath := filepath.Join(codexHome, "hooks.json")
+	var found bool
+	for _, w := range warnings {
+		if contains(w, wantPath) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("R1: expected warning to name real path %q, got: %v", wantPath, warnings)
+	}
+	// Also assert the tilde form is NOT in any warning for Codex CLI.
+	for _, w := range warnings {
+		if contains(w, "Codex CLI") && contains(w, "~/.codex/hooks.json") {
+			t.Errorf("R1: warning names tilde form instead of real path: %q", w)
+		}
+	}
+}
+
+// ---- ML-4A4 R5: five audit loops respect CODEX_HOME in warning message ----
+
+// TestGuardGlobalHookLegacyWarnings_CodexCODEX_HOME_AllLoopsNameRealPath asserts ML-4A4 R5:
+// all five legacy-warning audit loops (Sh, D2, D11, D11Rev, D18) name the real CODEX_HOME path
+// in their warnings when CODEX_HOME is set to a directory outside $HOME.
+//
+// Counter-arm: mutating the Codex CLI branch of any loop to use "~/" + relPath unconditionally
+// (reverting the R1 patch) would make the warning contain "~/.codex/hooks.json" and NOT the
+// CODEX_HOME absolute path — causing that loop's sub-test to fail.
+func TestGuardGlobalHookLegacyWarnings_CodexCODEX_HOME_AllLoopsNameRealPath(t *testing.T) {
+	home := globalGuardHome(t)
+	t.Cleanup(config.Reset)
+
+	// guardD2LegacyLine / guardD11LegacyLine etc. are package-internal; use their string forms
+	// directly (PSPosix family for Codex CLI, subcmd "credential --global").
+	const subcmd = "credential --global"
+	d2Line := guardD2LegacyLine(subcmd, guardShellFamilyPSPosix)
+	d11Line := guardD11LegacyLine(subcmd, guardShellFamilyPSPosix)
+	d11RevLine := guardD11RevisedLegacyLine(subcmd, guardShellFamilyPSPosix)
+	d18Line := guardEmulateLegacyLine(subcmd, guardShellFamilyPSPosix)
+	scriptRef := filepath.Join(home, ".trackfw", "scripts", credentialGuardScriptMarker)
+
+	hooksJSONWithLine := func(line string) string {
+		return `{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {"command": ` + jsonStringLiteral(line) + `, "type": "command"}
+        ]
+      }
+    ]
+  }
+}`
+	}
+
+	cases := []struct {
+		name    string
+		content string
+		fn      func() ([]string, error)
+	}{
+		{
+			name:    "Sh",
+			content: globalClaudeSettingsWithCommand(scriptRef),
+			fn:      validateCredentialGuardGlobalHookResolvableLegacyWarnings,
+		},
+		{
+			name:    "D2",
+			content: hooksJSONWithLine(d2Line),
+			fn:      validateCredentialGuardGlobalHookD2InlineWarnings,
+		},
+		{
+			name:    "D11",
+			content: hooksJSONWithLine(d11Line),
+			fn:      validateCredentialGuardGlobalHookD11LegacyWarnings,
+		},
+		{
+			name:    "D11Rev",
+			content: hooksJSONWithLine(d11RevLine),
+			fn:      validateCredentialGuardGlobalHookD11RevisedLegacyWarnings,
+		},
+		{
+			name:    "D18",
+			content: hooksJSONWithLine(d18Line),
+			fn:      validateCredentialGuardGlobalHookD18LegacyWarnings,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			chdir(t, t.TempDir())
+			t.Cleanup(config.Reset)
+
+			codexHome := t.TempDir()
+			t.Setenv("CODEX_HOME", codexHome)
+			defer os.Unsetenv("CODEX_HOME")
+
+			// Write the legacy-line fixture only under $CODEX_HOME — not under $HOME/.codex.
+			if err := os.WriteFile(filepath.Join(codexHome, "hooks.json"), []byte(tc.content), 0644); err != nil {
+				t.Fatalf("write $CODEX_HOME/hooks.json: %v", err)
+			}
+
+			warnings, err := tc.fn()
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			wantPath := filepath.Join(codexHome, "hooks.json")
+			var found bool
+			for _, w := range warnings {
+				if contains(w, wantPath) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("R5/%s: expected warning to name real CODEX_HOME path %q, got: %v",
+					tc.name, wantPath, warnings)
+			}
+			// Tilde form must not appear for a Codex CLI warning when CODEX_HOME is active.
+			for _, w := range warnings {
+				if contains(w, "Codex CLI") && contains(w, "~/.codex/hooks.json") {
+					t.Errorf("R5/%s: warning names tilde form instead of real path: %q", tc.name, w)
+				}
+			}
+		})
+	}
+}

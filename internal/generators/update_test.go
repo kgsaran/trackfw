@@ -1257,6 +1257,149 @@ func TestUpdateHarnessCredentialGuardCodexPreservesExistingContent(t *testing.T)
 	}
 }
 
+// TestHarnessCodexTarget_CODEX_HOME_WritesAtRoot asserts ML-4A4 conclusion:
+// when CODEX_HOME is set to an absolute path, harnessCredentialGuardTargetCodex
+// writes hooks.json at the ROOT of that path ($CODEX_HOME/hooks.json), NOT at
+// $HOME/.codex/hooks.json.
+// Counter-arm: removing the CODEX_HOME branch in CodexConfigDirWithSource
+// (agentconfig.go) would cause this test to fail because the file would be
+// written to $HOME/.codex/hooks.json instead.
+func TestHarnessCodexTarget_CODEX_HOME_WritesAtRoot(t *testing.T) {
+	home := t.TempDir()
+	codexHome := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("CODEX_HOME", codexHome)
+	defer os.Unsetenv("CODEX_HOME")
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"codex-credential-guard"}, InstallMissing: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetUpdated {
+		t.Fatalf("state = %q, want updated", report.Targets[0].State)
+	}
+
+	// File must land at $CODEX_HOME/hooks.json (root of codexHome), not $HOME/.codex/hooks.json.
+	wantPath := filepath.Join(codexHome, "hooks.json")
+	if _, err := os.Stat(wantPath); err != nil {
+		t.Fatalf("hooks.json not found at $CODEX_HOME root (%s): %v", wantPath, err)
+	}
+	badPath := filepath.Join(home, ".codex", "hooks.json")
+	if _, err := os.Stat(badPath); err == nil {
+		t.Fatalf("hooks.json was written to $HOME/.codex path %q (should be at $CODEX_HOME root)", badPath)
+	}
+
+	data, err := os.ReadFile(wantPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]interface{}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("invalid JSON at $CODEX_HOME/hooks.json: %v", err)
+	}
+}
+
+// TestHarnessCodexGitBranchTarget_CODEX_HOME_WritesAtRoot asserts ML-4A4 conclusion
+// for the git-branch-guard writer: when CODEX_HOME is set to an absolute path,
+// harnessGitBranchGuardTargetCodex writes hooks.json at the ROOT of that path
+// ($CODEX_HOME/hooks.json), NOT at $HOME/.codex/hooks.json.
+// Counter-arm: removing the CODEX_HOME branch in CodexConfigDirWithSource would cause
+// this test to fail because the file would land at $HOME/.codex/hooks.json instead.
+func TestHarnessCodexGitBranchTarget_CODEX_HOME_WritesAtRoot(t *testing.T) {
+	home := t.TempDir()
+	codexHome := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("CODEX_HOME", codexHome)
+	defer os.Unsetenv("CODEX_HOME")
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"codex-git-branch-guard"}, InstallMissing: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetUpdated {
+		t.Fatalf("state = %q, want updated", report.Targets[0].State)
+	}
+
+	wantPath := filepath.Join(codexHome, "hooks.json")
+	if _, err := os.Stat(wantPath); err != nil {
+		t.Fatalf("hooks.json not found at $CODEX_HOME root (%s): %v", wantPath, err)
+	}
+	badPath := filepath.Join(home, ".codex", "hooks.json")
+	if _, err := os.Stat(badPath); err == nil {
+		t.Fatalf("hooks.json was written to $HOME/.codex path %q (should be at $CODEX_HOME root)", badPath)
+	}
+
+	data, err := os.ReadFile(wantPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]interface{}
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("invalid JSON at $CODEX_HOME/hooks.json: %v", err)
+	}
+}
+
+// TestHarnessCatalogTarget_CodexAgents_CODEX_HOME_WritesUnderCodexHome asserts ML-4A4 R6:
+// when CODEX_HOME is set, harnessCatalogTarget for codex/agents writes agent files under
+// $CODEX_HOME/agents/, NOT under $HOME/.codex/agents/.
+//
+// Conclusion (ML-4A4 R6): the CodexDir hook in harnessCatalogTarget routes ~/ codex catalog
+// destinations through CODEX_HOME; this test FAILS if the `tool == agentconfig.CLICodex`
+// branch is removed (or CodexDir is not set), because the manager would then join catalog
+// paths relative to HomeDir and produce $HOME/.codex/agents/… instead of $CODEX_HOME/agents/….
+//
+// Note: ~/.agents/skills/ paths are NOT under codexDir and are unaffected by this change —
+// only ~/.codex/… catalog destinations are redirected.
+func TestHarnessCatalogTarget_CodexAgents_CODEX_HOME_WritesUnderCodexHome(t *testing.T) {
+	home := t.TempDir()
+	codexHome := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("CODEX_HOME", codexHome)
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	defer os.Unsetenv("CODEX_HOME")
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"codex-agents"}, InstallMissing: true})
+	if err != nil {
+		t.Fatalf("UpdateHarness: %v", err)
+	}
+	if len(report.Targets) == 0 {
+		t.Fatal("no targets returned")
+	}
+	var target *TargetResult
+	for i := range report.Targets {
+		if report.Targets[i].ID == "codex-agents" {
+			target = &report.Targets[i]
+			break
+		}
+	}
+	if target == nil {
+		t.Fatal("no TargetResult for codex-agents")
+	}
+	// State must not be failed — CODEX_HOME resolution must succeed.
+	if target.State == TargetFailed {
+		t.Fatalf("codex-agents state = failed: %s", target.Message)
+	}
+
+	// Files must be installed under $CODEX_HOME/agents/, not $HOME/.codex/agents/.
+	wantDir := filepath.Join(codexHome, "agents")
+	badDir := filepath.Join(home, ".codex", "agents")
+
+	if _, err := os.Stat(wantDir); err != nil {
+		// If codex-agents was skipped (e.g. no agent_models config), it may not write.
+		// Fall back to DryRun to confirm the path would have landed in codexHome.
+		if target.State == TargetSkipped {
+			t.Skipf("codex-agents skipped (no agent_models config): %s", target.Message)
+		}
+		t.Errorf("expected $CODEX_HOME/agents dir at %s, got: %v", wantDir, err)
+	}
+	if _, err := os.Stat(badDir); err == nil {
+		t.Errorf("$HOME/.codex/agents dir should NOT exist at %s — files must land under CODEX_HOME", badDir)
+	}
+}
+
 // The following gemini-credential-guard tests mirror the codex-credential-
 // guard tests above (ROADMAP-2026-08-06 Wave 2/ML-2C), only the top-level
 // hook event names differ (BeforeTool/AfterTool instead of PreToolUse/

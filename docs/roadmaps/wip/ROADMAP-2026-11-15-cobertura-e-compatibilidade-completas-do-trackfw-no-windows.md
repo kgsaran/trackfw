@@ -288,7 +288,7 @@ mostrou que, para um hook do git, isso é falso.
 - [x] `go test ./internal/validator/ ./internal/commands/ ./internal/pathguard/` verde; `bash scripts/check-validate-rule-pins.sh` verde — auditado pelo zeus em 2026-11-17: `TestWindowsShMissing_GitHookArtifactsNotListed` PASS (braço e contra-braço), pins rc=0
 
 ### ML-4A4 — O home global do Codex segue o que o Codex lê (ADR-2026-10-14 D2)
-**Status:** 🔄 In progress
+**Status:** ✅ Done
 **Squad:** apolo-tf (implementação), hefesto-tf (revisão)
 **Por que o escopo original não previa:** a D2 manda mudar o `HomeFor` só para um CLI medido, e o Codex foi medido no ML-4A.
 **Defeito:** `~/.codex/hooks.json` (guard global) é montado com `homedir.Dir()`, que no Windows prefere `HOME`, e nenhuma resolução
@@ -298,11 +298,25 @@ consulta `CODEX_HOME`. O Codex lê `CODEX_HOME` (config na raiz, sem `.codex`) e
 em qualquer SO (relativo é erro, como no `CLAUDE_CONFIG_DIR`); senão, `HomeFor(CLICodex)` + `.codex`, com `HomeFor(CLICodex)` no
 Windows igual ao do Claude. Todos os sítios que montam `<home>/.codex/...` para a config global passam a usar a função nova, na
 escrita e na auditoria (doctor/validate).
+**Escopo ampliado na execução (mesma causa):** o aviso D5 de cópia inerte para o Codex; as mensagens com o caminho real; os agentes do Codex
+(`~/.codex/agents`) via `Manager.CodexDir`, ligado em `update`, `init` (2 sítios) e `agents/skills install|list`; e a contenção `destRoot`
+em `integrations/manager.go`. As skills em `~/.agents/skills` não mudam.
+**Resíduo aceito:** `USERPROFILE` sobrescrito à mão ≠ `FOLDERID_Profile`, o mesmo trade-off do Claude na ADR-2026-10-14.
+**Revisão:** hefesto APROVA COM NOTAS (`docs/qualidade/2026-11-17-ml-4a4-codex-config-dir-review.md`), com 7 mutações provadas. A NOTA-1
+(2 testes de D5 ausentes) vai para o ML-4A5.
 **Acceptance criteria:**
-- [ ] `grep -rn 'Join(home, ".codex"' internal --include='*.go' | grep -v _test` vazio
-- [ ] testes: `CODEX_HOME` absoluto → caminho na raiz; relativo → erro; Windows com `HOME` ≠ `USERPROFILE` → `USERPROFILE\.codex`; macOS/Linux sem `CODEX_HOME` → `$HOME/.codex` (sem mudança)
-- [ ] escrita e auditoria do guard global do Codex usam o mesmo caminho (um teste por sítio)
-- [ ] `go test ./internal/agentconfig/ ./internal/generators/ ./internal/commands/ ./internal/pathguard/` verde
+- [x] `grep -rn 'Join(home, ".codex"' internal --include='*.go' | grep -v _test | grep -v internal/agentconfig/` vazio (o critério foi corrigido pelo parecer do hefesto, NOTA-2: as 2 linhas dentro do agentconfig são o próprio resolvedor e a sonda D5)
+- [x] testes: `CODEX_HOME` absoluto → caminho na raiz; relativo → erro; Windows com `HOME` ≠ `USERPROFILE` → `USERPROFILE\.codex`; macOS/Linux sem `CODEX_HOME` → `$HOME/.codex` (sem mudança)
+- [x] escrita e auditoria do guard global do Codex usam o mesmo caminho (um teste por sítio)
+- [x] `go test ./internal/agentconfig/ ./internal/generators/ ./internal/commands/ ./internal/pathguard/` verde
+
+### ML-4A5 — Testes do aviso D5 do Codex (NOTA-1 do hefesto no ML-4A4)
+**Status:** 🔄 In progress
+**Squad:** apolo-tf
+**Acceptance criteria:**
+- [ ] `TestHarnessD5NoticeCodex_WindowsDivergence_RemoveItByHand`: o braço "remove it by hand" é afirmado positivamente
+- [ ] `TestHarnessD5NoticeCodex_GitBranch_CODEX_HOME_ConditionalMessage`: `codex-git-branch-guard` com aviso D5
+- [ ] contra-braço por mutação, declarado no relatório; `go test ./internal/generators/` verde
 
 ## Wave 5 — Red team, `make quality` e CI de Windows
 > Dependencies: todas as anteriores

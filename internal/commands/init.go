@@ -128,6 +128,12 @@ func preCheckAIToolDestinations(aiTools []string, cwd, scope, home string) error
 		ClaudeDir: func() (string, error) {
 			return agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver)
 		},
+		// ML-4A4 (R6): same pattern for Codex CLI — CODEX_HOME and Windows
+		// USERPROFILE divergence are honoured via agentconfig.CodexConfigDir so
+		// the pre-check inspects the same path that the writer uses.
+		CodexDir: func() (string, error) {
+			return agentconfig.CodexConfigDir(agentconfig.DefaultResolver)
+		},
 	}
 
 	// Manager.List calls Inspect → resolve → rejectSymlinks for every plan.
@@ -618,11 +624,16 @@ func installAITools(aiTools []string, cwd string, scope string) error {
 	// ML-1D (ADR-2026-10-14 D1/A1): Claude global agents/skills land at
 	// agentconfig.ClaudeConfigDir, not at HomeDir/.claude, so the writer
 	// and the auditor (validate) agree on the path Claude Code actually reads.
+	// ML-4A4 (R6): same pattern for Codex CLI — global Codex agents land at
+	// agentconfig.CodexConfigDir so the writer uses CODEX_HOME when set.
 	manager := integrations.Manager{
 		ProjectRoot: cwd,
 		HomeDir:     home,
 		ClaudeDir: func() (string, error) {
 			return agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver)
+		},
+		CodexDir: func() (string, error) {
+			return agentconfig.CodexConfigDir(agentconfig.DefaultResolver)
 		},
 	}
 	manager.OnSkip = func(_ string, reason string) {

@@ -19,7 +19,9 @@ import (
 // The single returned warning (D4 says one informative warning, never two):
 //   - names HOME and os.UserHomeDir() (USERPROFILE);
 //   - names Claude Code as measured (Passo 3a, Windows ARM64);
-//   - names the inferred CLIs (Codex, Gemini, Cursor, Copilot, Kiro) as continuing
+//   - names Codex as measured (ML-4A4, REQ-2026-11-15): reads CODEX_HOME when set,
+//     otherwise USERPROFILE/.codex on Windows;
+//   - names the inferred CLIs (Gemini, Cursor, Copilot, Kiro) as continuing
 //     under HOME until measured (D2, ADR-2026-10-14);
 //   - names Windsurf as not measured (A8): writes under HOME, audits under OS home;
 //   - includes the D5 inert-remainder notice inline when HOME/.claude/settings.json
@@ -53,7 +55,8 @@ func validateHomeDivergenceWindows() []string {
 			"HOME=%q differs from the OS home (USERPROFILE) %q — "+
 				"Claude Code reads the OS home (measured) unless CLAUDE_CONFIG_DIR is set; "+
 				"trackfw cannot determine the Claude config directory: %s. "+
-				"Inferred CLIs (Codex, Gemini, Cursor, Copilot, Kiro) stay under HOME until measured. "+
+				"Codex: measured — reads CODEX_HOME when set, otherwise USERPROFILE/.codex. "+
+				"Inferred CLIs (Gemini, Cursor, Copilot, Kiro) stay under HOME until measured. "+
 				"Windsurf: not measured — written under HOME, audited under the OS home.",
 			homeEnv, osHome, claudeDirErr,
 		)}
@@ -88,7 +91,8 @@ func validateHomeDivergenceWindows() []string {
 		"HOME=%q differs from the OS home (USERPROFILE) %q — "+
 			"%s; "+
 			"trackfw writes and audits the Claude guard at %q. "+
-			"Inferred CLIs (Codex, Gemini, Cursor, Copilot, Kiro) stay under HOME until measured. "+
+			"Codex: measured — reads CODEX_HOME when set, otherwise USERPROFILE/.codex. "+
+			"Inferred CLIs (Gemini, Cursor, Copilot, Kiro) stay under HOME until measured. "+
 			"Windsurf: not measured — written under HOME, audited under the OS home."+
 			"%s",
 		homeEnv, osHome, claudeReadsPhrase, newClaudeDir, d5,

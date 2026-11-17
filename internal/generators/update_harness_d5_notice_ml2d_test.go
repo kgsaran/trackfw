@@ -282,3 +282,122 @@ func TestHarnessD5Notice_RelativeCLAUDE_CONFIG_DIR_TargetFailed(t *testing.T) {
 		})
 	}
 }
+
+// ---- ML-4A4 R2: Codex D5 inert-copy notice ----
+
+// minimal Codex hooks.json with guard wiring (same schema as Claude settings.json — hookCmdSchemaNested)
+const trackfwGuardWiringCodexD5 = `{"hooks":{"PreToolUse":[{"matcher":"Bash|PowerShell","hooks":[{"type":"command","command":"trackfw guard credential --global"}]}]}}`
+
+// TestHarnessD5NoticeCodex_CODEX_HOME_ConditionalMessage asserts ML-4A4 R2 (arm):
+// when CODEX_HOME is set to a directory outside HOME and HOME/.codex/hooks.json
+// contains guard wiring, the harness TargetResult.Message is the conditional form —
+// it mentions "CODEX_HOME" and does NOT contain "remove it by hand".
+//
+// Conclusion (ML-4A4 R2): withD5NoticeCodex fires for the arm case and sets the
+// conditional message; this test FAILS without InertCodexGuardPath or withD5NoticeCodex.
+//
+// Counter-arm (caminhos iguais → sem aviso): see TestHarnessD5NoticeCodex_SamePaths_NoMessage.
+func TestHarnessD5NoticeCodex_CODEX_HOME_ConditionalMessage(t *testing.T) {
+	homeDir := t.TempDir()
+	codexHomeDir := t.TempDir() // outside HOME — CODEX_HOME points here
+
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+	t.Setenv("CODEX_HOME", codexHomeDir)
+	defer os.Unsetenv("CODEX_HOME")
+
+	// Pin platform to linux so HomeDivergencePaths() returns divergent=false.
+	restorePlatform := agentconfig.SetPlatformForTest("linux", func() (string, error) {
+		return homeDir, nil
+	})
+	defer restorePlatform()
+
+	// Create the OLD guard file at HOME/.codex/hooks.json so InertCodexGuardPath fires.
+	oldCodexDir := filepath.Join(homeDir, ".codex")
+	if err := os.MkdirAll(oldCodexDir, 0o755); err != nil {
+		t.Fatalf("mkdir HOME/.codex: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(oldCodexDir, "hooks.json"),
+		[]byte(trackfwGuardWiringCodexD5), 0o644); err != nil {
+		t.Fatalf("write old hooks.json: %v", err)
+	}
+
+	report, err := UpdateHarness(UpdateOptions{
+		Targets:        []string{"codex-credential-guard"},
+		InstallMissing: true,
+	})
+	if err != nil {
+		t.Fatalf("UpdateHarness: %v", err)
+	}
+
+	var result *TargetResult
+	for i := range report.Targets {
+		if report.Targets[i].ID == "codex-credential-guard" {
+			result = &report.Targets[i]
+			break
+		}
+	}
+	if result == nil {
+		t.Fatal("no TargetResult for codex-credential-guard")
+	}
+
+	// R2 arm: Message must be the conditional form — mentions "CODEX_HOME".
+	if !strings.Contains(result.Message, "CODEX_HOME") {
+		t.Errorf("R2 arm: Message missing %q — not the conditional form\nfull message: %q",
+			"CODEX_HOME", result.Message)
+	}
+	// R2 arm: Must NOT instruct the user to delete the file.
+	if strings.Contains(result.Message, "remove it by hand") {
+		t.Errorf("R2 arm: Message contains %q — conditional form must not instruct deletion\nfull message: %q",
+			"remove it by hand", result.Message)
+	}
+}
+
+// TestHarnessD5NoticeCodex_SamePaths_NoMessage asserts ML-4A4 R2 (counter-arm):
+// when codexDir == HOME/.codex (same path — no CODEX_HOME), the D5 notice is
+// NOT set because the file IS the active guard, not an inert copy.
+//
+// Conclusion (ML-4A4 R2): equal paths suppress the D5 notice; this test FAILS
+// if InertCodexGuardPath omits the same-path check (always fires D5 notice).
+func TestHarnessD5NoticeCodex_SamePaths_NoMessage(t *testing.T) {
+	homeDir := t.TempDir()
+
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+	t.Setenv("CODEX_HOME", "") // no CODEX_HOME — codexDir resolves to HOME/.codex
+
+	// Write the guard at HOME/.codex/hooks.json — this IS the active path, so no D5.
+	oldCodexDir := filepath.Join(homeDir, ".codex")
+	if err := os.MkdirAll(oldCodexDir, 0o755); err != nil {
+		t.Fatalf("mkdir HOME/.codex: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(oldCodexDir, "hooks.json"),
+		[]byte(trackfwGuardWiringCodexD5), 0o644); err != nil {
+		t.Fatalf("write hooks.json: %v", err)
+	}
+
+	report, err := UpdateHarness(UpdateOptions{
+		Targets:        []string{"codex-credential-guard"},
+		InstallMissing: true,
+	})
+	if err != nil {
+		t.Fatalf("UpdateHarness: %v", err)
+	}
+
+	var result *TargetResult
+	for i := range report.Targets {
+		if report.Targets[i].ID == "codex-credential-guard" {
+			result = &report.Targets[i]
+			break
+		}
+	}
+	if result == nil {
+		t.Fatal("no TargetResult for codex-credential-guard")
+	}
+
+	// R2 counter-arm: Message must NOT contain the D5 notice — paths are identical.
+	if strings.Contains(result.Message, "inert") {
+		t.Errorf("R2 counter-arm: Message contains D5 notice %q — should be empty when paths are equal\nfull message: %q",
+			"inert", result.Message)
+	}
+}

@@ -132,6 +132,9 @@ func TestMain(m *testing.M) {
 	// ML-1A: ClaudeConfigDir respects CLAUDE_CONFIG_DIR. Unset before any test
 	// runs so a developer's real Claude config is never read or written.
 	os.Unsetenv("CLAUDE_CONFIG_DIR")
+	// ML-4A4: same isolation for CODEX_HOME — a developer with CODEX_HOME set
+	// must not have their real Codex hooks.json overwritten by any test.
+	os.Unsetenv("CODEX_HOME")
 
 	// ML-1A (c): Re-inject Go cache vars so go-build subprocesses still use the
 	// real cache after HOME has been replaced.  Only set non-empty values; if

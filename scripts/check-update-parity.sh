@@ -110,7 +110,9 @@ run_update() {
   # ML-1A: set USERPROFILE alongside HOME so agentconfig.ClaudeConfigDir agrees with HOME
   # on POSIX (os.UserHomeDir() reads USERPROFILE on Windows; on POSIX it reads HOME via stdlib).
   # Clear CLAUDE_CONFIG_DIR so a developer's setting does not redirect writes during tests.
-  (cd "$project_dir" && HOME="$home_dir" USERPROFILE="$home_dir" CLAUDE_CONFIG_DIR= "$GO_BIN" update "$@") >"$out_file" 2>"$err_file"
+  # ML-4A4: same isolation for CODEX_HOME — a developer with CODEX_HOME set must not have
+  # their real Codex hooks.json written by these scenarios.
+  (cd "$project_dir" && HOME="$home_dir" USERPROFILE="$home_dir" CLAUDE_CONFIG_DIR= CODEX_HOME= "$GO_BIN" update "$@") >"$out_file" 2>"$err_file"
   UPDATE_EXIT=$?
   set -e
   UPDATE_STDOUT=$(cat "$out_file")

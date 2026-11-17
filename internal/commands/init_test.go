@@ -33,6 +33,12 @@ func initFixture(t *testing.T) (project, home string) {
 	if err := os.Setenv("USERPROFILE", home); err != nil {
 		t.Fatal(err)
 	}
+	// ML-4A4: isolate CODEX_HOME so global-Codex writes land in the temp dir,
+	// not the developer's real ~/.codex (memory note: codex-home-env-isolation).
+	oldCodexHome, hadCodexHome := os.LookupEnv("CODEX_HOME")
+	if err := os.Unsetenv("CODEX_HOME"); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Chdir(project); err != nil {
 		t.Fatal(err)
 	}
@@ -43,6 +49,11 @@ func initFixture(t *testing.T) (project, home string) {
 			_ = os.Setenv("USERPROFILE", oldUserProfile)
 		} else {
 			_ = os.Unsetenv("USERPROFILE")
+		}
+		if hadCodexHome {
+			_ = os.Setenv("CODEX_HOME", oldCodexHome)
+		} else {
+			_ = os.Unsetenv("CODEX_HOME")
 		}
 	})
 	return project, home
@@ -770,5 +781,77 @@ func TestInitScaffoldPreCheckAbortsOnSymlinkDocsDir(t *testing.T) {
 			continue
 		}
 		t.Errorf("unexpected project file after pre-check abort: %s", e.Name())
+	}
+}
+
+// TestInitGlobalCodexRespectsCodexHome asserts ML-4A4 R6 for the init path:
+// installAITools (site 621 in init.go) must set CodexDir so that a global Codex
+// agent install lands at $CODEX_HOME/agents/, not at $HOME/.codex/agents/.
+// Rule reconciliation: affirms that the CodexDir wiring at site 621 is what routes
+// the write; removing it makes the install land in $HOME/.codex/ instead
+// (counter-arm embedded in the test).
+func TestInitGlobalCodexRespectsCodexHome(t *testing.T) {
+	project, home := initFixture(t)
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+
+	cfg := generators.Config{
+		ProjectName: "test",
+		ProjectType: "governance",
+		Hooks:       "none",
+		CI:          "none",
+	}
+	if err := executeScaffoldAndInstall(cfg, []string{"codex"}, project, "global", home); err != nil {
+		t.Fatalf("executeScaffoldAndInstall failed: %v", err)
+	}
+
+	// Primary assertion: agent landed at CODEX_HOME/agents/, not HOME/.codex/agents/.
+	wantPath := filepath.Join(codexHome, "agents", "trackfw-backend.toml")
+	if _, err := os.Stat(wantPath); err != nil {
+		t.Fatalf("ML-4A4 R6: init global codex must write at CODEX_HOME/agents/, got error: %v", err)
+	}
+	absentPath := filepath.Join(home, ".codex", "agents", "trackfw-backend.toml")
+	if _, err := os.Stat(absentPath); err == nil {
+		t.Fatalf("ML-4A4 R6: init global codex must NOT write at HOME/.codex/agents/ when CODEX_HOME is set")
+	}
+}
+
+// TestInitPreCheckRejectsSymlinkInCodexHome asserts ML-4A4 R6 for the pre-check
+// path: preCheckAIToolDestinations (site 125 in init.go) must set CodexDir so that
+// a symlink at $CODEX_HOME triggers an abort before Scaffold writes any project
+// file. Rule reconciliation: without the CodexDir wiring, the pre-check inspects
+// $HOME/.codex (which is not a symlink here) and passes — leaving executeScaffoldAndInstall
+// free to write project files even though the target path is compromised.
+func TestInitPreCheckRejectsSymlinkInCodexHome(t *testing.T) {
+	project, home := initFixture(t)
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+
+	// Place the symlink at a path that does not yet exist so os.Symlink succeeds.
+	// parent is a real dir; codexHomeLink is the path CODEX_HOME will point at,
+	// and it does not exist on disk yet — matching the ~/.claude pattern used by
+	// TestExecuteScaffoldAndInstall_PreCheckFiresOnSymlinkClaudeDir.
+	parent := t.TempDir()
+	realTarget := t.TempDir()
+	codexHomeLink := filepath.Join(parent, "codex-home")
+	symlinkOrSkipCmd(t, realTarget, codexHomeLink)
+	t.Setenv("CODEX_HOME", codexHomeLink)
+
+	cfg := generators.Config{
+		ProjectName: "test",
+		ProjectType: "governance",
+		Hooks:       "none",
+		CI:          "none",
+	}
+	err := executeScaffoldAndInstall(cfg, []string{"codex"}, project, "global", home)
+	if err == nil {
+		t.Fatal("expected error: CODEX_HOME is a symlink, pre-check must abort")
+	}
+
+	// No project files must have been written.
+	entries, _ := os.ReadDir(project)
+	for _, e := range entries {
+		t.Errorf("project must be empty after pre-check abort, found: %s", e.Name())
 	}
 }
