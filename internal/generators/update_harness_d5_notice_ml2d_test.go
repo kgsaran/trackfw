@@ -401,3 +401,161 @@ func TestHarnessD5NoticeCodex_SamePaths_NoMessage(t *testing.T) {
 			"inert", result.Message)
 	}
 }
+
+// ---- ML-4A5: missing D5 Codex coverage (NOTA-1 from hefesto in ML-4A4) ----
+
+// TestHarnessD5NoticeCodex_WindowsDivergence_RemoveItByHand asserts ML-4A5 (arm):
+// on simulated Windows with HOME≠USERPROFILE and no CODEX_HOME, the harness
+// TargetResult.Message for codex-credential-guard is the UNCONDITIONAL form —
+// it contains "remove it by hand" and names the inert old path
+// (HOME/.codex/hooks.json).
+//
+// Conclusion (ML-4A5): when Windows HOME≠USERPROFILE divergence is present and
+// CODEX_HOME is not set, withD5NoticeCodex fires the else-branch ("remove it
+// by hand"); this test FAILS if the else-branch text is replaced by the
+// conditional form, because "remove it by hand" would be absent from the message.
+//
+// Counter-arm: mutate the else-branch Sprintf in withD5NoticeCodex to drop
+// "remove it by hand" → test FAILS.
+func TestHarnessD5NoticeCodex_WindowsDivergence_RemoveItByHand(t *testing.T) {
+	homeDir := t.TempDir()
+	userprofileDir := t.TempDir() // different from homeDir → Windows divergence
+
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", userprofileDir)
+	t.Setenv("CODEX_HOME", "")
+	defer os.Unsetenv("CODEX_HOME")
+
+	// Simulate Windows: HomeFor(CLICodex) returns USERPROFILE (via effectiveUserHomeDir),
+	// and HomeDivergencePaths() returns divergent=true because HOME≠USERPROFILE.
+	restorePlatform := agentconfig.SetPlatformForTest("windows", func() (string, error) {
+		return userprofileDir, nil
+	})
+	defer restorePlatform()
+
+	// Create the OLD guard file at HOME/.codex/hooks.json so InertCodexGuardPath fires.
+	// codexDir resolves to USERPROFILE/.codex — different from HOME/.codex — so the
+	// old file is inert and the else-branch ("remove it by hand") applies.
+	oldCodexDir := filepath.Join(homeDir, ".codex")
+	if err := os.MkdirAll(oldCodexDir, 0o755); err != nil {
+		t.Fatalf("mkdir HOME/.codex: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(oldCodexDir, "hooks.json"),
+		[]byte(trackfwGuardWiringCodexD5), 0o644); err != nil {
+		t.Fatalf("write old hooks.json: %v", err)
+	}
+
+	// Pre-create USERPROFILE/.codex so the harness can write the new guard there.
+	userprofileCodexDir := filepath.Join(userprofileDir, ".codex")
+	if err := os.MkdirAll(userprofileCodexDir, 0o755); err != nil {
+		t.Fatalf("mkdir USERPROFILE/.codex: %v", err)
+	}
+
+	report, err := UpdateHarness(UpdateOptions{
+		Targets:        []string{"codex-credential-guard"},
+		InstallMissing: true,
+	})
+	if err != nil {
+		t.Fatalf("UpdateHarness: %v", err)
+	}
+
+	var result *TargetResult
+	for i := range report.Targets {
+		if report.Targets[i].ID == "codex-credential-guard" {
+			result = &report.Targets[i]
+			break
+		}
+	}
+	if result == nil {
+		t.Fatal("no TargetResult for codex-credential-guard")
+	}
+
+	oldGuardPath := filepath.Join(homeDir, ".codex", "hooks.json")
+
+	// Unconditional form: message must contain "remove it by hand".
+	if !strings.Contains(result.Message, "remove it by hand") {
+		t.Errorf("Windows divergence: Message missing %q — must use unconditional form\nfull message: %q",
+			"remove it by hand", result.Message)
+	}
+	// Unconditional form: message must name the old inert path.
+	if !strings.Contains(result.Message, oldGuardPath) {
+		t.Errorf("Windows divergence: Message missing old inert path %q\nfull message: %q",
+			oldGuardPath, result.Message)
+	}
+	// Unconditional form: message must NOT use the conditional form.
+	if strings.Contains(result.Message, "CODEX_HOME") {
+		t.Errorf("Windows divergence: Message contains %q — conditional form must not fire when divergent\nfull message: %q",
+			"CODEX_HOME", result.Message)
+	}
+}
+
+// TestHarnessD5NoticeCodex_GitBranch_CODEX_HOME_ConditionalMessage asserts ML-4A5:
+// when CODEX_HOME is set to a directory outside HOME and HOME/.codex/hooks.json
+// contains guard wiring, the harness TargetResult.Message for codex-git-branch-guard
+// is the conditional form — it mentions "CODEX_HOME" and does NOT contain
+// "remove it by hand".
+//
+// Conclusion (ML-4A5): withD5NoticeCodex fires for harnessGitBranchGuardTargetCodex
+// (not only harnessCredentialGuardTargetCodex); this test FAILS if the
+// withD5NoticeCodex call is removed from the post-write return site in
+// harnessGitBranchGuardTargetCodex.
+//
+// Counter-arm: bypass withD5NoticeCodex at the post-write return in
+// harnessGitBranchGuardTargetCodex → test FAILS;
+// TestHarnessD5NoticeCodex_CODEX_HOME_ConditionalMessage (credential-guard) PASSES
+// — proving the new test closes a gap the old one did not.
+func TestHarnessD5NoticeCodex_GitBranch_CODEX_HOME_ConditionalMessage(t *testing.T) {
+	homeDir := t.TempDir()
+	codexHomeDir := t.TempDir() // outside HOME — CODEX_HOME points here
+
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir) // no Windows divergence
+	t.Setenv("CODEX_HOME", codexHomeDir)
+	defer os.Unsetenv("CODEX_HOME")
+
+	// Pin platform to linux so HomeDivergencePaths() returns divergent=false.
+	restorePlatform := agentconfig.SetPlatformForTest("linux", func() (string, error) {
+		return homeDir, nil
+	})
+	defer restorePlatform()
+
+	// Create the OLD guard file at HOME/.codex/hooks.json so InertCodexGuardPath fires.
+	oldCodexDir := filepath.Join(homeDir, ".codex")
+	if err := os.MkdirAll(oldCodexDir, 0o755); err != nil {
+		t.Fatalf("mkdir HOME/.codex: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(oldCodexDir, "hooks.json"),
+		[]byte(trackfwGuardWiringCodexD5), 0o644); err != nil {
+		t.Fatalf("write old hooks.json: %v", err)
+	}
+
+	report, err := UpdateHarness(UpdateOptions{
+		Targets:        []string{"codex-git-branch-guard"},
+		InstallMissing: true,
+	})
+	if err != nil {
+		t.Fatalf("UpdateHarness: %v", err)
+	}
+
+	var result *TargetResult
+	for i := range report.Targets {
+		if report.Targets[i].ID == "codex-git-branch-guard" {
+			result = &report.Targets[i]
+			break
+		}
+	}
+	if result == nil {
+		t.Fatal("no TargetResult for codex-git-branch-guard")
+	}
+
+	// Conditional form: message must mention "CODEX_HOME".
+	if !strings.Contains(result.Message, "CODEX_HOME") {
+		t.Errorf("GitBranch R2 arm: Message missing %q — not the conditional form\nfull message: %q",
+			"CODEX_HOME", result.Message)
+	}
+	// Conditional form: must NOT instruct the user to delete the file.
+	if strings.Contains(result.Message, "remove it by hand") {
+		t.Errorf("GitBranch R2 arm: Message contains %q — conditional form must not instruct deletion\nfull message: %q",
+			"remove it by hand", result.Message)
+	}
+}

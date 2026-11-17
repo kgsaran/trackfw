@@ -311,12 +311,13 @@ em `integrations/manager.go`. As skills em `~/.agents/skills` não mudam.
 - [x] `go test ./internal/agentconfig/ ./internal/generators/ ./internal/commands/ ./internal/pathguard/` verde
 
 ### ML-4A5 — Testes do aviso D5 do Codex (NOTA-1 do hefesto no ML-4A4)
-**Status:** 🔄 In progress
+**Status:** ✅ Done
 **Squad:** apolo-tf
 **Acceptance criteria:**
-- [ ] `TestHarnessD5NoticeCodex_WindowsDivergence_RemoveItByHand`: o braço "remove it by hand" é afirmado positivamente
-- [ ] `TestHarnessD5NoticeCodex_GitBranch_CODEX_HOME_ConditionalMessage`: `codex-git-branch-guard` com aviso D5
-- [ ] contra-braço por mutação, declarado no relatório; `go test ./internal/generators/` verde
+- [x] `TestHarnessD5NoticeCodex_WindowsDivergence_RemoveItByHand`: o braço "remove it by hand" é afirmado positivamente
+- [x] `TestHarnessD5NoticeCodex_GitBranch_CODEX_HOME_ConditionalMessage`: `codex-git-branch-guard` com aviso D5
+- [x] contra-braço por mutação, declarado no relatório; `go test ./internal/generators/` verde
+  Mutações: o texto do braço `else` foi trocado (reprova o 1º) e o `withD5NoticeCodex` foi tirado do retorno do git-branch (reprova o 2º e não o de credential). Resíduo: o caso misto CODEX_HOME + divergência no Windows não tem teste dedicado no Codex; a lógica é a mesma função já coberta.
 
 ## Wave 5 — Red team, `make quality` e CI de Windows
 > Dependencies: todas as anteriores
