@@ -6,6 +6,30 @@
 **VM:** Lab@192.168.64.6, C:\Users\Lab\ml4a\codex3\  
 **Branch:** feat/cobertura-e-compatibilidade-completas-do-trackfw-no-windows
 
+> ### 🔴 Correção do arquiteto (2026-11-17, medição no Codex real) — invalida H1, H2 e o veredito "INERTE" abaixo
+>
+> As conclusões abaixo vieram de braços que rodavam a linha do hook **dentro de `cmd.exe /C` escolhido pelo teste**,
+> com base numa leitura do código-fonte. O Codex 0.169.0 real **não** faz isso. Sondas gravadas como hooks
+> `PreToolUse` em `C:\Users\Lab\ml4a\codex3\copyA\.codex\hooks.json`, disparadas por
+> `codex exec --trust --dangerously-bypass-hook-trust --dangerously-bypass-approvals-and-sandbox "echo hello-ml4a3-copyA"`
+> (executado pelo KG na VM, 3 rodadas):
+>
+> | Sonda | Resultado | Conclusão |
+> |---|---|---|
+> | `echo shell=%CD% path=%PATH% > probe_a.txt` | arquivo com `shell=%CD%` / `path=%PATH%` **literais** | não é cmd.exe (cmd expandiria) |
+> | `$env:PATH > probe_ps.txt; (Get-Process -Id $PID).Path >> …` | rodou; processo `C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe` | o hook roda no Windows PowerShell 5.1 |
+> | `(Get-CimInstance Win32_Process …$PID).CommandLine` | `"…\powershell.exe" -NoProfile -Command "<command>"`; pai: `codex.exe exec …` | **`-NoProfile`: sim; `-NonInteractive`: não** |
+> | `$env:PATH` no hook | PATH interativo completo (incluindo o `codex3\bin` que o KG pôs antes) | **não há `env_clear()` do PATH** |
+> | `HOME`/`USERPROFILE` no hook | `HOME=` (vazio), `USERPROFILE=C:\Users\Lab` | — |
+>
+> Um hook com sintaxe de cmd (`set > f & cd >> f`) aparece como `PreToolUse Failed` na saída do Codex, e o arquivo dele
+> não é criado. Isso é coerente com PowerShell.
+>
+> **Veredito corrigido:** o Codex no Windows roda o hook com `powershell.exe -NoProfile -Command`, que é a família
+> para a qual `CredentialCurrentPSPOSIX` foi escrita (D18). **O guard não está inerte.** H1 e H2 continuam
+> verdadeiros como mecanismo do `cmd.exe`, mas não se aplicam ao Codex 0.169.0. Sem `-NonInteractive`, o A1 da
+> forma K não vale para o Codex. A forma L cobre esse caso, como o roadmap previa.
+
 ---
 
 ## Contexto

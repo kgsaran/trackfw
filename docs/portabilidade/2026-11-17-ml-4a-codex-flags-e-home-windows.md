@@ -162,6 +162,7 @@ item `error` no JSONL; sem o flag, o erro é silencioso. Correção: usar
 `codex-rs/hooks/src/engine/discovery.rs::load_hooks_json()` lê `<dot_codex_folder>/hooks.json`.
 `codex-rs/hooks/src/engine/command_runner.rs::build_command()` executa hooks via
 `cmd.exe /C "<command>"` com `CREATE_NO_WINDOW` e `env_clear()` no Windows.
+**🔴 Não confere com o binário medido:** o Codex 0.169.0 real roda hooks com `powershell.exe -NoProfile -Command` e PATH herdado. Ver `2026-11-17-ml-4a3-guard-do-trackfw-no-codex-windows.md`, seção de correção.
 `session/turn.rs:411` chama `run_pending_session_start_hooks()` no caminho de exec mode.
 
 **Sobre as 6 chamadas originais:**

@@ -61,8 +61,7 @@ Fonte: `codex-rs/utils/home-dir/src/lib.rs::find_codex_home()` → `dirs` 6.0.0 
 
 ## Shell de hooks (source code — Rust binary)
 
-Hooks em Windows são executados via `cmd.exe /C "<command>"` com `CREATE_NO_WINDOW` e
-`env_clear()`. Não usa PowerShell. Fonte: `codex-rs/hooks/src/engine/command_runner.rs:444-510`.
+🔴 **Corrigido por medição no Codex real (2026-11-17):** o hook roda via `powershell.exe -NoProfile -Command "<command>"` (PowerShell 5.1, pai `codex.exe`), **sem** `-NonInteractive`, e com o PATH interativo herdado. A leitura anterior do fonte (`cmd.exe /C` + `env_clear()`, `command_runner.rs:444-510`) **não** corresponde ao binário 0.169.0 medido. Evidência: `docs/portabilidade/2026-11-17-ml-4a3-guard-do-trackfw-no-codex-windows.md` (seção de correção). Lição: leitura de fonte não substitui sonda no binário. Uma sonda com sintaxe ambígua (`echo %CD% > f`) distingue cmd de PowerShell numa rodada só.
 
 ## Implicações para trackfw
 

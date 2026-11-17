@@ -247,7 +247,7 @@ a REQ-IMP-9 pede o aviso também sem artefato `.sh`, porque o barrier falha sem 
 > Dependencies: Wave 3. Cada CLI precisa estar instalado na VM.
 
 ### ML-4A — Flags do PowerShell e HOME por CLI no Windows (AC6, REQ-IMP-8)
-**Status:** 🔄 In progress
+**Status:** ✅ Done
 **Inventário da VM (2026-11-17, `where` + `dir` via SSH):** só o `claude` está instalado (npm global). Codex, Gemini, Cursor, Copilot, Windsurf, Kiro e Amazon Q **não estão instalados → não medidos**. Git for Windows presente em `C:\Program Files\Git`, com `sh` fora do PATH interativo, que é a condição pedida pela medição do husky.
 **Squad:** artemis-tf (medição), apolo-tf (correção, se houver)
 **Actions:** para Codex, Gemini, Cursor, Copilot, Windsurf, Kiro e Amazon Q, medir na VM:
@@ -258,7 +258,17 @@ a REQ-IMP-9 pede o aviso também sem artefato `.sh`, porque o barrier falha sem 
 Pela ADR-2026-10-14 D2, o `HomeFor` só muda para um CLI medido. Se um CLI não passar `-NonInteractive`, o A1 da
 forma K deixa de valer para ele, porque a forma L cobre esse caso. Registrar.
 **Acceptance criteria:**
-- [ ] tabela CLI × (`-NonInteractive`, `-NoProfile`, HOME) medida; CLI não instalado fica declarado como não medido
+- [x] tabela CLI × (`-NonInteractive`, `-NoProfile`, HOME) medida; CLI não instalado fica declarado como não medido — medida em 2026-11-17:
+
+  | CLI | shell do hook | `-NonInteractive` | `-NoProfile` | HOME da config global |
+  |---|---|---|---|---|
+  | Codex 0.169.0 | `powershell.exe` 5.1 (`-Command`), PATH herdado | **não** | **sim** | `CODEX_HOME` se definido (config na raiz); senão o perfil do SO por API (`FOLDERID_Profile`), ignorando `HOME` e `USERPROFILE` |
+  | Gemini, Cursor, Copilot, Windsurf, Kiro, Amazon Q | — | não medido (não instalado na VM) | não medido | não medido |
+
+  Como o Codex não passa `-NonInteractive`, o A1 da forma K não vale para ele, e a forma L cobre o caso. O guard que o trackfw grava
+  para o Codex roda no shell certo e **não** está inerte. A hipótese `cmd.exe /C` + `env_clear()`, tirada da leitura do fonte, foi
+  refutada por sonda no binário (`docs/portabilidade/2026-11-17-ml-4a3-guard-do-trackfw-no-codex-windows.md`, seção de correção).
+  Evidência do HOME: `docs/portabilidade/2026-11-17-ml-4a-codex-flags-e-home-windows.md`.
 - [x] hook do husky (`.husky/pre-commit`) executado na VM com `sh` fora do PATH interativo: se rodar pelo `sh` do Git for
   Windows, `.husky/*` sai da lista da regra `windows_sh_missing` (parecer do hefesto F1, 2026-11-16) — **medido em 2026-11-17: roda.**
   O Git for Windows 2.55.0 (ARM64) põe `C:\Program Files\Git\usr\bin` no PATH do hook, e os filhos nativos herdam esse PATH.
@@ -276,6 +286,23 @@ mostrou que, para um hook do git, isso é falso.
 - [x] a lista tem apenas os 3 `scripts/trackfw-*.sh`
 - [x] um teste afirma que um fixture só com `.husky/*` + `.lefthook/...` produz a variante barrier-only (sem lista de scripts)
 - [x] `go test ./internal/validator/ ./internal/commands/ ./internal/pathguard/` verde; `bash scripts/check-validate-rule-pins.sh` verde — auditado pelo zeus em 2026-11-17: `TestWindowsShMissing_GitHookArtifactsNotListed` PASS (braço e contra-braço), pins rc=0
+
+### ML-4A4 — O home global do Codex segue o que o Codex lê (ADR-2026-10-14 D2)
+**Status:** 🔄 In progress
+**Squad:** apolo-tf (implementação), hefesto-tf (revisão)
+**Por que o escopo original não previa:** a D2 manda mudar o `HomeFor` só para um CLI medido, e o Codex foi medido no ML-4A.
+**Defeito:** `~/.codex/hooks.json` (guard global) é montado com `homedir.Dir()`, que no Windows prefere `HOME`, e nenhuma resolução
+consulta `CODEX_HOME`. O Codex lê `CODEX_HOME` (config na raiz, sem `.codex`) e, sem ele, o perfil do SO. Assim, com `HOME` definido
+(Git Bash) ou com `CODEX_HOME` definido, o trackfw grava e audita o guard global num arquivo que o Codex não lê.
+**Actions:** espelhar `ClaudeConfigDirWithSource` (`internal/agentconfig/agentconfig.go`) para o Codex: `CODEX_HOME` absoluto vence,
+em qualquer SO (relativo é erro, como no `CLAUDE_CONFIG_DIR`); senão, `HomeFor(CLICodex)` + `.codex`, com `HomeFor(CLICodex)` no
+Windows igual ao do Claude. Todos os sítios que montam `<home>/.codex/...` para a config global passam a usar a função nova, na
+escrita e na auditoria (doctor/validate).
+**Acceptance criteria:**
+- [ ] `grep -rn 'Join(home, ".codex"' internal --include='*.go' | grep -v _test` vazio
+- [ ] testes: `CODEX_HOME` absoluto → caminho na raiz; relativo → erro; Windows com `HOME` ≠ `USERPROFILE` → `USERPROFILE\.codex`; macOS/Linux sem `CODEX_HOME` → `$HOME/.codex` (sem mudança)
+- [ ] escrita e auditoria do guard global do Codex usam o mesmo caminho (um teste por sítio)
+- [ ] `go test ./internal/agentconfig/ ./internal/generators/ ./internal/commands/ ./internal/pathguard/` verde
 
 ## Wave 5 — Red team, `make quality` e CI de Windows
 > Dependencies: todas as anteriores
