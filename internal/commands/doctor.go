@@ -13,6 +13,7 @@ import (
 	"github.com/kgsaran/trackfw/internal/generators"
 	"github.com/kgsaran/trackfw/internal/identity"
 	"github.com/kgsaran/trackfw/internal/integrations"
+	"github.com/kgsaran/trackfw/internal/validator"
 	"github.com/spf13/cobra"
 )
 
@@ -120,6 +121,23 @@ func runDoctor(remote bool) ([]integrations.DoctorFinding, error) {
 		return nil, fmt.Errorf("doctor: stray agent-memory scan: %w", err)
 	}
 	findings = append(findings, strayFindings...)
+	// REQ-IMP-9 (REQ-2026-11-15 ML-3D2): on Windows with sh absent, emit one barrier
+	// finding always (barrier gates using sh -c will not execute regardless of whether
+	// .sh artifacts are present), plus one finding per .sh artifact present on disk.
+	if validator.CheckWindowsShMissingBarrierForDoctor() {
+		for _, rel := range validator.CheckWindowsShMissingForDoctor(manager.ProjectRoot) {
+			findings = append(findings, integrations.DoctorFinding{
+				FindingKind: integrations.DoctorWindowsShMissing,
+				Destination: rel,
+				Remedy:      "sh not found in PATH — install a POSIX shell (e.g. Git Bash, WSL) to execute this script",
+			})
+		}
+		findings = append(findings, integrations.DoctorFinding{
+			FindingKind: integrations.DoctorWindowsShMissing,
+			Destination: "PATH",
+			Remedy:      "sh not found in PATH — install a POSIX shell (e.g. Git Bash, WSL) to evaluate gates; gates that use sh -c (trackfw barrier) will not execute",
+		})
+	}
 	// Remote modality (ADR-2026-09-02, ML-3A): opt-in only — never runs without --remote, so
 	// doctor's offline default is unchanged.
 	if remote {
@@ -296,6 +314,7 @@ func printDoctorReport(cmd *cobra.Command, findings []integrations.DoctorFinding
 	var requiredChecksMissing, enforceAdminsDisabled, hooksPathNeutralized, notEvaluated int
 	var workflowDuplicated int
 	var strayAgentMemory int
+	var windowsShMissing int
 	for _, finding := range findings {
 		switch finding.FindingKind {
 		case integrations.DoctorUnregisteredWrite:
@@ -322,10 +341,12 @@ func printDoctorReport(cmd *cobra.Command, findings []integrations.DoctorFinding
 			workflowDuplicated++
 		case integrations.DoctorStrayAgentMemory:
 			strayAgentMemory++
+		case integrations.DoctorWindowsShMissing:
+			windowsShMissing++
 		}
 	}
-	fmt.Fprintf(out, "trackfw doctor: %d finding(s) -- %d unregistered-write, %d hand-modified, %d unknown-content, %d scaffold-divergent, %d scaffold-missing, %d scaffold-wrong-mode, %d required-status-checks-missing, %d enforce-admins-disabled, %d hooks-path-neutralized, %d not-evaluated, %d scaffold-workflow-duplicated, %d stray-agent-memory\n\n",
-		len(findings), unregistered, handModified, unknownContent, scaffoldDivergent, scaffoldMissing, scaffoldWrongMode, requiredChecksMissing, enforceAdminsDisabled, hooksPathNeutralized, notEvaluated, workflowDuplicated, strayAgentMemory)
+	fmt.Fprintf(out, "trackfw doctor: %d finding(s) -- %d unregistered-write, %d hand-modified, %d unknown-content, %d scaffold-divergent, %d scaffold-missing, %d scaffold-wrong-mode, %d required-status-checks-missing, %d enforce-admins-disabled, %d hooks-path-neutralized, %d not-evaluated, %d scaffold-workflow-duplicated, %d stray-agent-memory, %d windows-sh-missing\n\n",
+		len(findings), unregistered, handModified, unknownContent, scaffoldDivergent, scaffoldMissing, scaffoldWrongMode, requiredChecksMissing, enforceAdminsDisabled, hooksPathNeutralized, notEvaluated, workflowDuplicated, strayAgentMemory, windowsShMissing)
 	// One blank line BETWEEN findings, none trailing after the last one — matches Node's
 	// `lines.join('\n').replace(/\n$/, '')` and Python's `"\n".join(lines).rstrip("\n")`
 	// (npm/src/commands/doctor.js, pypi/trackfw/commands/doctor.py). A naive per-finding

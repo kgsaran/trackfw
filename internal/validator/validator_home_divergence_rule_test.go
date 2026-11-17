@@ -250,6 +250,66 @@ func TestHomeDivergenceWindows_RelativeCCDError(t *testing.T) {
 	}
 }
 
+// TestHomeDivergenceWindows_CodexPhrase_NormalPath asserts R4: the Codex phrase
+// "reads CODEX_HOME when set, otherwise USERPROFILE/.codex" appears in the
+// normal warning path (when claudeDirErr == nil) on simulated Windows with
+// HOME≠USERPROFILE.
+//
+// Conclusion (ML-4A4 R4): the Codex phrase is pinned in both warning branches;
+// this test FAILS if the phrase is removed or reworded in
+// validateHomeDivergenceWindows.
+func TestHomeDivergenceWindows_CodexPhrase_NormalPath(t *testing.T) {
+	const homeEnv = `C:\Users\Lab\HOME`
+	const osHomeEnv = `C:\Users\Lab\USERPROFILE`
+
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	t.Setenv("CODEX_HOME", "")
+	restore := agentconfig.SetPlatformForTest("windows", func() (string, error) {
+		return osHomeEnv, nil
+	})
+	defer restore()
+	t.Setenv("HOME", homeEnv)
+
+	warnings := ValidateHomeDivergenceWindowsForTest()
+
+	if len(warnings) != 1 {
+		t.Fatalf("want exactly 1 warning, got %d: %v", len(warnings), warnings)
+	}
+	wantPhrase := "reads CODEX_HOME when set, otherwise USERPROFILE/.codex"
+	if !strings.Contains(warnings[0], wantPhrase) {
+		t.Errorf("warning missing Codex phrase %q\nfull warning: %s", wantPhrase, warnings[0])
+	}
+}
+
+// TestHomeDivergenceWindows_CodexPhrase_ErrorPath asserts R4: the Codex phrase
+// also appears in the error-path warning branch (when CLAUDE_CONFIG_DIR is
+// relative, causing claudeDirErr != nil).
+//
+// Conclusion (ML-4A4 R4): the Codex phrase appears in both warning branches;
+// this test FAILS if the phrase is only in the non-error branch.
+func TestHomeDivergenceWindows_CodexPhrase_ErrorPath(t *testing.T) {
+	const homeEnv = `C:\Users\Lab\HOME`
+	const osHomeEnv = `C:\Users\Lab\USERPROFILE`
+
+	restore := agentconfig.SetPlatformForTest("windows", func() (string, error) {
+		return osHomeEnv, nil
+	})
+	defer restore()
+	t.Setenv("HOME", homeEnv)
+	t.Setenv("CODEX_HOME", "")
+	t.Setenv("CLAUDE_CONFIG_DIR", "rel") // relative path → claudeDirErr != nil
+
+	warnings := ValidateHomeDivergenceWindowsForTest()
+
+	if len(warnings) != 1 {
+		t.Fatalf("want exactly 1 warning (error path), got %d: %v", len(warnings), warnings)
+	}
+	wantPhrase := "reads CODEX_HOME when set, otherwise USERPROFILE/.codex"
+	if !strings.Contains(warnings[0], wantPhrase) {
+		t.Errorf("error-path warning missing Codex phrase %q\nfull warning: %s", wantPhrase, warnings[0])
+	}
+}
+
 // TestHomeDivergenceWindows_ClaudeConfigDir_MessageCitesDir asserts conclusion (e):
 // when CLAUDE_CONFIG_DIR is set to an absolute path on Windows with HOME≠USERPROFILE,
 // the warning cites "CLAUDE_CONFIG_DIR=%q" with the resolved dir rather than

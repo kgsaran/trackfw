@@ -9775,8 +9775,9 @@ The single warning:
 
 - names `HOME` and `USERPROFILE` (the OS home);
 - names Claude Code as measured reading `USERPROFILE` (Passo 3a);
-- names inferred CLIs (Codex, Gemini, Cursor, Copilot, Kiro) as continuing under `HOME`
-  until measured (D2, ADR-2026-10-14);
+- names inferred CLIs (Gemini, Cursor, Copilot, Kiro) as continuing under `HOME`
+  until measured (D2, ADR-2026-10-14); Codex is now measured (ML-4A4) and uses
+  `CODEX_HOME` or `USERPROFILE` — it is **not** in this inferred list;
 - names Windsurf as not measured (A8): the harness writes to
   `homedir.Dir()/.codeium/windsurf/hooks.json` (HOME first, via
   `harnessCredentialGuardTargetWindsurf`) while the auditor reads from
@@ -9815,12 +9816,46 @@ when the variable is set, rather than the fixed phrase "the OS home (measured)".
 
 The old file is **never deleted** — it is the user's own configuration file.
 
+### Codex CLI directory resolution — `CodexConfigDir` (ADR-2026-10-14, REQ-2026-11-15, ML-4A4)
+
+<!-- trackfw-contract: gate=internal/agentconfig/agentconfig_test.go,internal/generators/update_test.go,internal/generators/update_harness_d5_notice_ml2d_test.go,internal/validator/validator_git_branch_guard_test.go,internal/validator/validator_home_divergence_rule_test.go,internal/commands/agents_skills_test.go,internal/commands/init_test.go partial=TestCodexConfigDir_CODEX_HOME_Honoured,TestCodexConfigDir_Default_JoinsHomeDotCodex,TestCodexConfigDir_Windows_UsesUserprofile prove the three-step resolution order and CODEX_HOME root-placement; TestCodexConfigDir_RelativeCODEX_HOME_ReturnsError proves R-1: relative paths rejected; TestOSCLIHomeResolver_WindowsBranch_Codex proves Windows uses USERPROFILE for Codex; TestCodexHooksDisplayPath_EmptyDir_FallsBack,TestCodexHooksDisplayPath_InHome_UsesRelative,TestCodexHooksDisplayPath_OutsideHome_UsesAbsolute (agentconfig_test.go) prove ML-4A4 R1: CodexHooksDisplayPath returns absolute path outside HOME, tilde form inside HOME; TestHarnessCodexTarget_CODEX_HOME_WritesAtRoot (update_test.go) proves D3 credential-guard write-side: harness writes to $CODEX_HOME/hooks.json root when CODEX_HOME is set; TestHarnessCodexGitBranchTarget_CODEX_HOME_WritesAtRoot (update_test.go) proves D3 git-branch-guard write-side: same guarantee for the git-branch writer; TestGuardGlobalHookResolvable_CodexCODEX_HOME_ReadsFromRoot (validator_git_branch_guard_test.go) proves D3 credential-guard audit-side: validator reads from $CODEX_HOME/hooks.json when CODEX_HOME is set; TestGuardGlobalHookResolvable_GitBranchCodexCODEX_HOME_ReadsFromRoot (validator_git_branch_guard_test.go) proves D3 git-branch-guard audit-side: same guarantee for the git-branch audit loop; TestGuardGlobalHookShLegacyWarnings_CodexCODEX_HOME_MessageNamesRealPath (validator_git_branch_guard_test.go) proves ML-4A4 R1 Sh loop: warning message names real CODEX_HOME path, not ~/.codex/hooks.json; TestGuardGlobalHookLegacyWarnings_CodexCODEX_HOME_AllLoopsNameRealPath (validator_git_branch_guard_test.go) proves ML-4A4 R5: all 5 audit loops (Sh/D2/D11/D11Rev/D18) name real CODEX_HOME path in warning message; TestInertCodexGuardPath_DifferentDirs_WithGuardMarker (agentconfig_test.go) proves ML-4A4 R2 arm: InertCodexGuardPath detects guard at HOME/.codex when codexDir differs; TestInertCodexGuardPath_SameDirs_NoNotice (agentconfig_test.go) proves ML-4A4 R2 counter-arm: equal paths suppress the D5 notice; TestHarnessD5NoticeCodex_CODEX_HOME_ConditionalMessage (update_harness_d5_notice_ml2d_test.go) proves ML-4A4 R2 integration arm: D5 message is conditional form (cites CODEX_HOME) when CODEX_HOME drives resolution without Windows divergence; TestHarnessD5NoticeCodex_SamePaths_NoMessage (update_harness_d5_notice_ml2d_test.go) proves ML-4A4 R2 integration counter-arm: no D5 notice when codexDir == HOME/.codex; TestHomeDivergenceWindows_CodexPhrase_NormalPath,TestHomeDivergenceWindows_CodexPhrase_ErrorPath (validator_home_divergence_rule_test.go) prove ML-4A4 R4: Codex phrase pinned in home_divergence_windows warning; TestHarnessCatalogTarget_CodexAgents_CODEX_HOME_WritesUnderCodexHome (update_test.go) proves ML-4A4 R6: codex-agents writes under $CODEX_HOME/agents/ when CODEX_HOME is set at the generators layer; skills at ~/.agents/skills/ are unaffected (source unverified — not changed, not tested here); TestInstallGlobalCodexRespectsCodexHome (agents_skills_test.go) proves ML-4A4 R6 at the commands layer: integrationsManager() CodexDir wiring makes `agents install --scope global --targets codex` write under $CODEX_HOME/agents/ and the auditor (list --global) reports the artifact as current+managed; TestInitGlobalCodexRespectsCodexHome (init_test.go) proves ML-4A4 R6 for the init path: installAITools (site 621) CodexDir wiring makes `trackfw init --ai-tools codex --scope global` write under $CODEX_HOME/agents/; TestInitPreCheckRejectsSymlinkInCodexHome (init_test.go) proves ML-4A4 R6 for the pre-check path: preCheckAIToolDestinations (site 125) CodexDir wiring makes a symlink at $CODEX_HOME abort executeScaffoldAndInstall before any project file is written; TestHarnessD5NoticeCodex_WindowsDivergence_RemoveItByHand (update_harness_d5_notice_ml2d_test.go) proves ML-4A5: on Windows with HOME≠USERPROFILE and no CODEX_HOME, withD5NoticeCodex fires the else-branch ("remove it by hand") and names the inert old path; TestHarnessD5NoticeCodex_GitBranch_CODEX_HOME_ConditionalMessage (update_harness_d5_notice_ml2d_test.go) proves ML-4A5: withD5NoticeCodex fires for harnessGitBranchGuardTargetCodex (not only harnessCredentialGuardTargetCodex) — D5 message is conditional form (cites CODEX_HOME) for the git-branch-guard target when CODEX_HOME drives resolution without Windows divergence -->
+
+`agentconfig.CodexConfigDir` (`internal/agentconfig/agentconfig.go`, ML-4A4 of REQ-2026-11-15)
+resolves the directory that Codex CLI reads its `hooks.json` from. Both the `update harness`
+writer (`internal/generators/update.go`, `harnessCredentialGuardTargetCodex`,
+`harnessGitBranchGuardTargetCodex`) and the `validate` auditor
+(`internal/validator/validator_git_branch_guard.go`) call the same function — enforcing D3
+(one resolver per CLI so writer and auditor always agree).
+
+**Resolution order:**
+
+1. **`CODEX_HOME`** — when set, non-empty, and **absolute** after `filepath.Clean`:
+   returns `filepath.Clean(CODEX_HOME)`. `hooks.json` lives at the **root** of this
+   directory (no `.codex/` subdir) — measured 2026-11-17 on Codex 0.169.0
+   (`docs/portabilidade/2026-11-17-ml-4a-codex-flags-e-home-windows.md`, seção HOME).
+   Cross-platform: applies on macOS, Linux, and Windows alike.
+   **R-1:** if the value is not absolute after `filepath.Clean`, `CodexConfigDirWithSource`
+   returns a named error → A7-finding in `validate`, `TargetFailed` in the `update harness`.
+
+2. **Windows OS home** — when `CODEX_HOME` is absent and `GOOS == "windows"`:
+   `os.UserHomeDir()` returns `USERPROFILE` (the env var that Windows sets from the same
+   `FOLDERID_Profile` that Codex reads via its OS API). `hooks.json` lives at
+   `<USERPROFILE>/.codex/hooks.json`.
+   Measured 2026-11-17 — Codex uses `SHGetKnownFolderPath/FOLDERID_Profile` (same as Claude).
+   **Residual:** if `USERPROFILE` is manually overridden to a path different from
+   `FOLDERID_Profile`, trackfw writes to the overridden path while Codex reads the OS API
+   path — the same gap that exists for Claude. Not measured in this ML.
+
+3. **`homedir.Dir()`** — on all other platforms: reads `HOME` first, falls back to
+   `os.UserHomeDir()`. `hooks.json` lives at `<homedir.Dir()>/.codex/hooks.json`.
+
 ### Residuals declared
 
 <!-- trackfw-contract: none reason=self-declared limits; not verifiable-behaviour claims -->
 
-- **Inferred CLIs** (Codex, Gemini, Cursor, Copilot, Kiro): home resolution unchanged
+- **Inferred CLIs** (Gemini, Cursor, Copilot, Kiro): home resolution unchanged
   (`homedir.Dir()`, HOME first) until each CLI is measured on Windows (D2, ADR-2026-10-14).
+  Codex is now measured (ML-4A4, above) and removed from this list.
 - **Windsurf**: not measured — harness writes under `homedir.Dir()` (HOME), auditor reads
   under `os.UserHomeDir()` (USERPROFILE); divergence is declared and named by
   `home_divergence_windows`, not resolved.
@@ -9879,6 +9914,68 @@ decides whether to move the project or accept the risk (ADR-2026-10-16-no-window
 
 Outside Windows: the rule always returns nil (no-op; POSIX mode bits provide equivalent
 protection).
+
+### `windows_sh_missing` — informative warning, never a violation
+
+<!-- trackfw-contract: gate=internal/validator/validator_windows_sh_missing_rule_test.go partial=TestWindowsShMissing_Warning_NamesArtifact proves one warning is emitted with the artifact path and the "sh not found in PATH" phrase when GOOS=windows, sh absent, and a .sh artifact is present; TestWindowsShMissing_ShPresent_Silent proves silence when sh is found in PATH; TestWindowsShMissing_NoArtifacts_BarrierWarning proves a barrier-gates warning is emitted even when no .sh artifacts exist (GOOS=windows, sh absent); TestWindowsShMissing_DarwinSilent proves the GOOS guard fires on darwin and linux regardless of sh presence; TestWindowsShMissing_GuardNeverCited proves guard scripts (credential, git-branch) are never listed even when present on disk; TestWindowsShMissing_AllArtifactsListed proves a single warning names all three present convenience artifacts (ML-4A2: git hook scripts excluded); TestWindowsShMissing_GitHookArtifactsNotListed proves that a fixture with only .husky/pre-commit, .husky/commit-msg and .lefthook/commit-msg/trackfw-req-check.sh produces the barrier-only variant and that none of those hook names appear in the message; counter-arm proves that adding scripts/trackfw-validate.sh makes the scripts list appear while hook names remain absent; TestWindowsShMissing_PublicWrapperUsesSeams proves the public validateWindowsShMissing respects CurrentGOOS and ShLookPathFn seams; TestWindowsShMissing_FiacaoValidateUnfiltered/ValidateUnfiltered proves the ValidateUnfiltered wiring site routes the warning to the caller; TestWindowsShMissing_FiacaoValidateUnfiltered/validateUnfilteredTagged proves the validateUnfilteredTagged wiring site routes the warning via the --json path; TestDoctorWindowsShMissing_FindingsEmitted proves runDoctor emits artifact findings and the barrier finding via the full doctor code path; no script gate for the Windows-only runtime path (windows branch not exercised in macOS/Linux CI — the "fires" case is Go unit tests only) -->
+
+**REQ-IMP-9 (REQ-2026-11-15 ML-3D2).** On Windows, when `sh` is absent from PATH,
+`trackfw validate` **always** emits a **warning** (never a violation). The rule fires
+regardless of whether `.sh` convenience artifacts are present — `trackfw barrier`
+invokes `sh -c` directly (barrier.go:311,1462) and also fails without `sh`.
+
+The rule never fires on non-Windows hosts; on Windows CI (Git Bash provides `sh`) the
+rule is also silent. The "fires" case is verified exclusively by Go unit tests via the
+`CurrentGOOS` and `ShLookPathFn` package-level seams.
+
+**Excluded artifacts (guards):** `scripts/trackfw-credential-guard.sh` and
+`scripts/trackfw-git-branch-guard.sh` are **never** listed — they are delivered as
+`trackfw guard <name>` Go subcommands and execute natively on Windows without `sh`
+(REQ-IMP-5 / ADR-2026-10-14 AC4).
+
+**Excluded artifacts (git hooks):** `.husky/pre-commit`, `.husky/commit-msg`, and
+`.lefthook/commit-msg/trackfw-req-check.sh` are **never** listed — they are executed
+by Git for Windows as git hooks. Git for Windows augments the PATH before spawning
+every hook, adding `usr\bin` (where `sh.exe` lives). All child processes of the hook
+— including the lefthook binary when `runner: sh` is configured — inherit this
+augmented PATH and can find `sh` even when it is absent from the user's interactive
+PATH. Measured on Git for Windows 2.55.0 ARM64 (2026-11-17,
+`docs/portabilidade/2026-11-17-ml-4a-husky-sem-sh-no-path.md`).
+This exclusion was added in ML-4A2 (REQ-2026-11-15).
+
+**Covered artifacts:**
+- `scripts/trackfw-attention-signal.sh`
+- `scripts/trackfw-attention-cleanup.sh`
+- `scripts/trackfw-validate.sh`
+
+The rule id is `windows_sh_missing`, severity `warning`, routed through
+`applyRuleWarnOnly` / `applyRuleWarnOnlyTagged` — it is never demotable to a violation;
+silenced only by `rules.windows_sh_missing: off`.
+
+**Warning message format — with artifacts present:**
+
+```
+windows_sh_missing: sh not found in PATH — install a POSIX shell (e.g. Git Bash, WSL)
+to evaluate gates and run .sh convenience scripts; gates that use sh -c (trackfw barrier)
+will not execute; the following scripts present in this project require sh to execute:
+<comma-separated artifact list>
+```
+
+**Warning message format — no artifacts present (barrier-only):**
+
+```
+windows_sh_missing: sh not found in PATH — install a POSIX shell (e.g. Git Bash, WSL)
+to evaluate gates; gates that use sh -c (trackfw barrier) will not execute
+```
+
+Both messages begin with `"sh not found in PATH — install a POSIX shell (e.g. Git Bash, WSL)"`,
+aligned with barrier.go's `shMissingMsg`.
+
+`trackfw doctor` emits one `DoctorFinding` with `FindingKind = "windows-sh-missing"` per
+`.sh` artifact (with `Destination` = POSIX-slash relative path and `Remedy` =
+`"sh not found in PATH — install a POSIX shell (e.g. Git Bash, WSL) to execute this script"`),
+plus one barrier finding with `Destination = "PATH"` and `Remedy` =
+`"sh not found in PATH — install a POSIX shell (e.g. Git Bash, WSL) to evaluate gates; gates that use sh -c (trackfw barrier) will not execute"`.
 
 
 ## Native board attention — ML-1H (2026-10-20)

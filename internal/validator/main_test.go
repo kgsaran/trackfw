@@ -97,6 +97,13 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
+	// ML-4A4 (ADR-2026-10-14 D2): same isolation for CODEX_HOME — agentconfig.CodexConfigDir
+	// honours this env var; without the unset, a set CODEX_HOME would redirect Codex guard
+	// tests to a real user directory instead of the isolated temp home.
+	if err := os.Unsetenv("CODEX_HOME"); err != nil {
+		panic(err)
+	}
+
 	// ML-7D: disable git maintenance auto-scheduling for every git child process
 	// in this test binary. GIT_CONFIG_PARAMETERS stacks with GIT_CONFIG_COUNT
 	// (independent mechanism) and is not stripped by cleanGitEnv() (which strips

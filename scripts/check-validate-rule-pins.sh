@@ -8,7 +8,7 @@
 # specific rule names, message substrings, exit codes.  Nothing here invokes
 # `node npm/bin/trackfw` or `python3 -m trackfw`.
 #
-# Pin inventory (38 pins across 7 blocks):
+# Pin inventory (40 pins across 8 blocks):
 #   Block 1 — ADR/REQ rule-set:         {adr_accepted_when_req_done, blocked_by_draft_adr}
 #   Block 2 — branch_has_wip_roadmap:    nomatch/diff message markers + --agent guidance
 #                                        + the ML-3A matcher: token overlap accepts (PIN6),
@@ -22,6 +22,8 @@
 #                                         ADR-prefixed .md with status → no warning (PIN29)
 #   Block 7 — adr_req_has_content:       template-only ADR/REQ → warning naming file (PIN30),
 #                                         filled ADR/REQ → no warning (PIN31)
+#   Block 8 — windows_sh_missing:        GOOS != windows → rule silent with .sh artifacts (PIN32),
+#                                         GOOS == windows + sh present → rule silent (PIN33)
 #
 # Falsification evidence is recorded after `make quality` run.
 set -euo pipefail
@@ -32,7 +34,7 @@ export TERM=dumb
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-validate-rule-pins.XXXXXX")
-trap 'rm -rf "$TMP_DIR" "${FENCE_TMP:-}"' EXIT
+trap 'rm -rf "$TMP_DIR" "${FENCE_TMP:-}" "${WSM_TMP:-}"' EXIT
 
 # Isolate $HOME — prevent real developer global guards from interfering.
 export GOPATH="${GOPATH:-$(go env GOPATH)}"
@@ -1258,7 +1260,85 @@ if found_filled_req:
 print("OK [validate-rule-pins/pin31b-req-filled-silent]")
 PY
 
-echo "validate-rule-pins: all 38 pins pass"
+# ---------------------------------------------------------------------------
+# BLOCK 8: windows_sh_missing pins (REQ-IMP-9, REQ-2026-11-15 ML-3D2)
+#
+# Pins:
+#   PIN32 — GOOS != windows (darwin CI): .sh artifacts present → no warning
+#            (GOOS guard fires first; sh in PATH is irrelevant)
+#   PIN33 — GOOS == windows (windows CI): .sh artifacts present, sh PRESENT in PATH
+#            (Git Bash provides sh in CI) → no warning (sh-found guard fires)
+#
+# Why no "warning fires" pin:
+#   The rule fires only when CurrentGOOS=="windows" AND sh absent from PATH.
+#   CurrentGOOS is a package-level var seam — not settable via CLI flag or env var.
+#   The binary in CI runs on darwin/linux (PIN32) or windows-latest with Git Bash
+#   (PIN33, sh always found). There is no way to inject "sh absent" into the binary
+#   from a shell script. The two wiring sites in validator.go
+#   (applyRuleWarnOnly/applyRuleWarnOnlyTagged) are proved by the Go unit test
+#   TestWindowsShMissing_FiacaoValidateUnfiltered — each sub-test maps to one site,
+#   and deleting either site makes the corresponding sub-test fail (ML-3D2 bite proof).
+# ---------------------------------------------------------------------------
+WSM_TMP=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-wsm-pins.XXXXXX")
+# WSM_TMP cleanup handled by the combined EXIT trap at the top of this script.
+
+# Fixture: minimal trackfw.yaml + all three .sh convenience artifacts on disk.
+# Git hook scripts (.husky/*, .lefthook/commit-msg/*) are excluded from
+# shConvenienceArtifacts since ML-4A2: Git for Windows augments the hook PATH
+# with usr\bin so sh is available to hooks regardless of the user's interactive PATH
+# (measured 2026-11-17, docs/portabilidade/2026-11-17-ml-4a-husky-sem-sh-no-path.md).
+mkdir -p \
+  "$WSM_TMP/wsm/docs/roadmaps/wip" \
+  "$WSM_TMP/wsm/scripts"
+
+cat >"$WSM_TMP/wsm/trackfw.yaml" <<'EOF'
+roadmap_dir: docs/roadmaps
+EOF
+
+for rel in \
+  "scripts/trackfw-attention-signal.sh" \
+  "scripts/trackfw-attention-cleanup.sh" \
+  "scripts/trackfw-validate.sh"; do
+  printf '#!/bin/sh\nexit 0\n' >"$WSM_TMP/wsm/$rel"
+done
+
+set +e
+(cd "$WSM_TMP/wsm" && "$GO_BIN" validate --json) >"$WSM_TMP/wsm.json" 2>"$WSM_TMP/wsm.stderr"
+WSM_RC=$?
+set -e
+
+python3 - "$WSM_TMP/wsm.json" "$WSM_RC" "$BIN_GOOS" <<'PY'
+import json, os, sys
+path, rc, bin_goos = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+WSM_RULE = "windows_sh_missing"
+
+with open(path, encoding="utf-8") as f:
+    payload = json.load(f)
+
+all_items = payload.get("violations", []) + payload.get("warnings", [])
+wsm_items = [item for item in all_items if item.get("rule") == WSM_RULE]
+
+if bin_goos != "windows":
+    # PIN32: darwin/linux binary — GOOS guard suppresses the rule regardless of sh in PATH.
+    if wsm_items:
+        raise SystemExit(
+            f"PIN32: bin_goos={bin_goos!r}: {WSM_RULE!r} must be silent on non-Windows "
+            f"binary (GOOS guard fires first), but got: {wsm_items!r}"
+        )
+    print(f"OK [validate-rule-pins/pin32-wsm-goos-guard-silent]  "
+          f"GOOS={bin_goos!r} → windows_sh_missing silent (GOOS guard)")
+else:
+    # PIN33: windows binary — sh is present in PATH (Git Bash in CI), rule is silent.
+    if wsm_items:
+        raise SystemExit(
+            f"PIN33: bin_goos=windows: {WSM_RULE!r} must be silent when sh is present "
+            f"in PATH (Git Bash provides sh on windows-latest CI), but got: {wsm_items!r}"
+        )
+    print(f"OK [validate-rule-pins/pin33-wsm-sh-present-silent]  "
+          f"GOOS=windows + sh in PATH → windows_sh_missing silent")
+PY
+
+echo "validate-rule-pins: all 40 pins pass"
 echo "  Block 1 (rule-set):          pin1"
 echo "  Block 2 (bhr-messages):      pin2-pin5 + pin2b/pin2c/pin2d (ML-3A matcher)"
 echo "  Block 3 (credential-guard):  pin6-pin20 + pin20b/pin20c (ML-4C Windows migration warning)"
@@ -1266,3 +1346,4 @@ echo "  Block 4 (git-branch-guard):  pin21-pin25"
 echo "  Block 5 (unterminated-fence): pin26-pin27"
 echo "  Block 6 (adr-without-prefix): pin28-pin29"
 echo "  Block 7 (adr-req-has-content): pin30-pin31"
+echo "  Block 8 (windows-sh-missing): pin32-pin33"

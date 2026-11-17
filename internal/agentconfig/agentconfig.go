@@ -32,6 +32,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/kgsaran/trackfw/internal/fileutil"
 	"github.com/kgsaran/trackfw/internal/homedir"
 )
 
@@ -126,7 +127,16 @@ type OSCLIHomeResolver struct{}
 // HomeFor returns the home directory for the given CLI.
 // See OSCLIHomeResolver documentation for per-CLI resolution rules.
 func (OSCLIHomeResolver) HomeFor(cli string) (string, error) {
-	if cli == CLIClaude && effectiveGOOS() == "windows" {
+	if effectiveGOOS() == "windows" && (cli == CLIClaude || cli == CLICodex) {
+		// Codex 0.169.0 on Windows resolves the home directory via the Windows
+		// profile API (SHGetKnownFolderPath/FOLDERID_Profile), which is what
+		// os.UserHomeDir() returns. This is the same mechanism as Claude Code —
+		// both ignore HOME and USERPROFILE env vars in favour of the OS API.
+		// Measured 2026-11-17: braços (a)/(b)/(d) in
+		// docs/portabilidade/2026-11-17-ml-4a-codex-flags-e-home-windows.md §HOME
+		// show that neither HOME nor USERPROFILE override the Codex profile path;
+		// os.UserHomeDir() matches the API result. Same trade-off accepted for
+		// Claude in ADR-2026-10-14 D1 now extended to Codex (D2).
 		return effectiveUserHomeDir()
 	}
 	return homedir.Dir()
@@ -215,7 +225,7 @@ func InertClaudeGuardPath(claudeDir string) (path string, present bool) {
 		return "", false
 	}
 	p := filepath.Join(oldDir, "settings.json")
-	data, err := os.ReadFile(p)
+	data, err := fileutil.ReadRegularFile(p)
 	if err != nil {
 		return "", false
 	}
@@ -307,4 +317,140 @@ func ClaudeConfigDirWithSource(r CLIHomeResolver) (dir, source string, err error
 func ClaudeConfigDir(r CLIHomeResolver) (string, error) {
 	dir, _, err := ClaudeConfigDirWithSource(r)
 	return dir, err
+}
+
+// Source constants returned by CodexConfigDirWithSource.
+//
+//   - CodexConfigDirSourceEnvVar: resolution came from the CODEX_HOME environment
+//     variable (set and non-empty after TrimSpace).
+//   - CodexConfigDirSourceOSHome: resolution fell through to the OS home
+//     (os.UserHomeDir / Windows profile API) on Windows.
+//   - CodexConfigDirSourceHome: resolution fell through to homedir.Dir()
+//     (HOME env var first) on non-Windows platforms.
+const (
+	CodexConfigDirSourceEnvVar = "CODEX_HOME"
+	CodexConfigDirSourceOSHome = "os-home"
+	CodexConfigDirSourceHome   = "home"
+)
+
+// CodexConfigDirWithSource returns the directory that contains Codex CLI's
+// hooks.json together with a string identifying the source of the resolution
+// (one of the CodexConfigDirSource* constants).
+//
+// CodexConfigDir is a thin wrapper over this function for callers that do not
+// need the source.
+//
+// Resolution order (ML-4A4, ADR-2026-10-14 D2, measured 2026-11-17 in
+// docs/portabilidade/2026-11-17-ml-4a-codex-flags-e-home-windows.md §HOME):
+//
+//  1. If CODEX_HOME is set and non-empty after TrimSpace:
+//     - R-1: if the value is not absolute after filepath.Clean, returns a named
+//       error — same A7-failure as CLAUDE_CONFIG_DIR (ML-2D). Spaces-only is
+//       treated as "not set" and falls through to step 2.
+//     - Otherwise: returns filepath.Clean(CODEX_HOME) and source
+//       CodexConfigDirSourceEnvVar. hooks.json lives at the ROOT of this
+//       directory (no .codex/ subdir) — measured: braço (c) in the evidence doc
+//       above shows homeC\config.toml at the root of CODEX_HOME, and
+//       codex-rs/utils/home-dir/src/lib.rs::find_codex_home() confirms the
+//       mechanism. Cross-platform.
+//
+//  2. Otherwise: filepath.Join(r.HomeFor(CLICodex), ".codex").
+//     On Windows (via OSCLIHomeResolver) this uses the OS profile API
+//     (source: CodexConfigDirSourceOSHome); on other platforms, HOME
+//     (source: CodexConfigDirSourceHome).
+func CodexConfigDirWithSource(r CLIHomeResolver) (dir, source string, err error) {
+	raw := os.Getenv("CODEX_HOME")
+	if strings.TrimSpace(raw) != "" {
+		cleaned := filepath.Clean(raw)
+		if !filepath.IsAbs(cleaned) {
+			return "", "", fmt.Errorf("CODEX_HOME %q is not an absolute path", raw)
+		}
+		return cleaned, CodexConfigDirSourceEnvVar, nil
+	}
+	home, err := r.HomeFor(CLICodex)
+	if err != nil {
+		return "", "", err
+	}
+	dir = filepath.Join(home, ".codex")
+	if effectiveGOOS() == "windows" {
+		return dir, CodexConfigDirSourceOSHome, nil
+	}
+	return dir, CodexConfigDirSourceHome, nil
+}
+
+// CodexConfigDir returns the directory that contains Codex CLI's hooks.json.
+// It is a wrapper over CodexConfigDirWithSource for callers that do not need
+// the resolution source.
+//
+// Callers join "hooks.json" to the result:
+//
+//	dir, err := agentconfig.CodexConfigDir(agentconfig.DefaultResolver)
+//	if err != nil { /* emit finding per A7 */ }
+//	path := filepath.Join(dir, "hooks.json")
+func CodexConfigDir(r CLIHomeResolver) (string, error) {
+	dir, _, err := CodexConfigDirWithSource(r)
+	return dir, err
+}
+
+// CodexHooksDisplayPath returns the human-readable display path for Codex
+// CLI's hooks.json. When the resolved path is under homedir.Dir(), it is
+// abbreviated with "~/" (e.g., "~/.codex/hooks.json" in the control case, or
+// a custom subpath when CODEX_HOME points inside the home directory).
+// When the resolved path is outside homedir.Dir() (e.g., CODEX_HOME=/some/dir
+// or USERPROFILE ≠ HOME on Windows), the absolute path is returned as-is.
+// Falls back to "~/.codex/hooks.json" when codexDir is empty (error path).
+//
+// ML-4A4 (R1): declared in agentconfig so both internal/generators (which uses
+// it in codexHooksDisplayPath) and internal/validator (which cannot import
+// generators due to circular dependency) can call the same function.
+func CodexHooksDisplayPath(codexDir string) string {
+	if codexDir == "" {
+		return "~/.codex/hooks.json"
+	}
+	p := filepath.Join(codexDir, "hooks.json")
+	home, err := homedir.Dir()
+	if err != nil {
+		return p
+	}
+	rel, err := filepath.Rel(home, p)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return p
+	}
+	return "~/" + filepath.ToSlash(rel)
+}
+
+// InertCodexGuardPath returns (path, true) when HOME/.codex/hooks.json
+// contains trackfw guard wiring but codexDir points elsewhere — indicating a
+// D5 inert remainder (ADR-2026-10-14 D5, ML-4A4 R2).
+//
+// Returns ("", false) when:
+//   - codexDir equals HOME/.codex (same location, no divergence);
+//   - HOME/.codex/hooks.json does not exist or cannot be read;
+//   - the file does not contain any trackfw guard wiring.
+//
+// The caller must NOT delete or modify the returned file — D5 is report-only.
+//
+// R-3 trade-off (ML-4A4, same as ADR-2026-10-14 for Claude): when CODEX_HOME
+// is set but there is no Windows HOME≠USERPROFILE divergence, the guard at
+// HOME/.codex is inert only for a Codex run that also sees CODEX_HOME. Without
+// that variable, HOME/.codex IS the active guard. The D5 message is conditional
+// — see withD5NoticeCodex in internal/generators/update.go.
+func InertCodexGuardPath(codexDir string) (path string, present bool) {
+	home, err := homedir.Dir()
+	if err != nil {
+		return "", false
+	}
+	oldDir := filepath.Join(home, ".codex")
+	if strings.EqualFold(normHomePath(codexDir), normHomePath(oldDir)) {
+		return "", false
+	}
+	p := filepath.Join(oldDir, "hooks.json")
+	data, err := fileutil.ReadRegularFile(p)
+	if err != nil {
+		return "", false
+	}
+	if containsTrackfwGuardMarker(data) {
+		return p, true
+	}
+	return "", false
 }

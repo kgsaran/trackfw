@@ -64,6 +64,17 @@ type Manager struct {
 	// plan to fail (A7: no silent nil on resolver failure).
 	ClaudeDir func() (string, error)
 
+	// CodexDir, when non-nil, is called for codex/global plans to resolve
+	// the destination root (ML-4A4 R6, ADR-2026-10-14 D2). The returned value
+	// is agentconfig.CodexConfigDir — on Windows it yields USERPROFILE/.codex;
+	// with CODEX_HOME set it yields that directory (no .codex/ subdir). If nil,
+	// HomeDir is used (zero-change for existing callers). A non-nil closure
+	// that returns an error causes the plan to fail (A7).
+	//
+	// Note: ~/.agents/skills/ paths are NOT under codexDir — skills remain at
+	// their catalog-declared path and are unaffected by this field.
+	CodexDir func() (string, error)
+
 	// OnSkip is called once per artifact skipped during Install when the
 	// artifact is outdated+owned and --force is not set. destination is the
 	// tilde-abbreviated path; reason is the full warning line ready to print
@@ -755,6 +766,23 @@ func (m Manager) resolve(plan PlannedArtifact) (string, string, error) {
 		claudeDirSet = true
 	}
 
+	// ML-4A4 (R6): same pattern for Codex CLI — codexDir is CODEX_HOME when set,
+	// otherwise the OS home's .codex/ subdirectory.
+	codexDirSet := false
+	codexDestRoot := root
+	if plan.Claim.Scope == "global" && plan.Claim.Target == "codex" && m.CodexDir != nil {
+		var cd string
+		cd, err = m.CodexDir()
+		if err != nil {
+			return "", "", fmt.Errorf("resolving Codex config dir: %w", err)
+		}
+		codexDestRoot, err = filepath.Abs(cd)
+		if err != nil {
+			return "", "", err
+		}
+		codexDirSet = true
+	}
+
 	destination := plan.Destination
 	switch {
 	case strings.HasPrefix(destination, "~/"):
@@ -778,8 +806,14 @@ func (m Manager) resolve(plan PlannedArtifact) (string, string, error) {
 		// Using claudeDirSet instead of the old `destRoot != root` fixes the edge
 		// case where CLAUDE_CONFIG_DIR=HOME makes destRoot==root while the prefix
 		// must still be stripped (ML-2B A1, ADR-2026-10-14).
+		//
+		// ML-4A4 (R6): same for Codex — catalog paths are "~/.codex/agents/…";
+		// when CodexDir was resolved, strip "~/.codex/" and join with codexDestRoot.
+		// Skills ("~/.agents/skills/…") are NOT under codexDir and are unaffected.
 		if claudeDirSet && strings.HasPrefix(destination, "~/.claude/") {
 			destination = filepath.Join(destRoot, strings.TrimPrefix(destination, "~/.claude/"))
+		} else if codexDirSet && strings.HasPrefix(destination, "~/.codex/") {
+			destination = filepath.Join(codexDestRoot, strings.TrimPrefix(destination, "~/.codex/"))
 		} else {
 			destination = filepath.Join(root, rest)
 		}
@@ -834,8 +868,18 @@ func (m Manager) resolve(plan PlannedArtifact) (string, string, error) {
 		destination = filepath.Join(root, destination)
 	}
 	// Use destRoot for destination containment and symlink checks.
-	// For claude/global plans with ClaudeDir set, destRoot is ClaudeDir;
-	// for all other plans, destRoot == root (HomeDir or ProjectRoot).
+	// For claude/global plans with ClaudeDir set, destRoot is ClaudeDir.
+	// For codex/global plans where the destination was re-rooted under codexDestRoot
+	// (i.e. the original destination had a "~/.codex/" prefix), destRoot is codexDestRoot.
+	// For all other plans, destRoot == root (HomeDir or ProjectRoot).
+	//
+	// Note: codexDirSet is true for ALL codex/global plans, but NOT all codex catalog
+	// destinations begin with "~/.codex/" — skills live at "~/.agents/skills/" and are
+	// NOT re-rooted. We therefore only update destRoot when the destination was actually
+	// moved to codexDestRoot (signalled by the original destination prefix "~/.codex/").
+	if codexDirSet && strings.HasPrefix(plan.Destination, "~/.codex/") {
+		destRoot = codexDestRoot
+	}
 	if !beneath(destRoot, destination) {
 		return "", "", fmt.Errorf("destination %q is outside %s root", plan.Destination, plan.Claim.Scope)
 	}
@@ -843,8 +887,8 @@ func (m Manager) resolve(plan PlannedArtifact) (string, string, error) {
 		return "", "", err
 	}
 	// Manifest stays at root (HomeDir): trackfw's own artifacts use homedir.Dir()
-	// (ADR-2026-10-14 D1, ML-1D). The destination root changes for Claude; the
-	// manifest root does not.
+	// (ADR-2026-10-14 D1, ML-1D). The destination root changes for Claude and Codex;
+	// the manifest root does not.
 	manifestFile := manifestPath(root)
 	if err := rejectSymlinks(root, manifestFile); err != nil {
 		return "", "", err

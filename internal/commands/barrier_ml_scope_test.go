@@ -75,13 +75,24 @@ package commands
 // | TestMLScopeFilesAffected_InlineComment_BetweenTokens           | Closed then unclosed comment on label: only token between spans returned; endsOpen stops continuation |
 // | TestMLScopeFilesAffected_InlineComment_ContinuationLine        | Inline <!-- --> on a list continuation line hides its token; token outside is returned (AC11b)         |
 
+//
+// # Windows coverage
+//
+// This file has no per-test OS guards. Prior to REQ-2026-11-15 every
+// integration test carried a runtime.GOOS == "windows" skip whose
+// justification text referred to a separate test that never existed
+// (see docs/portabilidade/2026-11-15-inventario-windows.md §2.1).
+// The ml_scope check calls exec.Command("git") directly; git is in PATH
+// on windows-latest via Git for Windows. Path normalization in product
+// code uses filepath.ToSlash throughout. All test fixtures resolve the
+// temp directory via filepath.EvalSymlinks before initialising the repo.
+
 import (
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -265,10 +276,6 @@ func writeMLScopeREQFixture(t *testing.T, dir, roadmapRel string) {
 // TestMLScope_DeclaredFilePasses asserts that a file explicitly listed in
 // **Files affected:** is allowed (in scope) and the ml_scope check passes.
 func TestMLScope_DeclaredFilePasses(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	dir := t.TempDir()
 	roadmapRel := "docs/roadmaps/wip/ROADMAP-ml-scope-fixture.md"
 	content := buildMLScopeRoadmap("2026-08-01", "`internal/commands/foo.go`")
@@ -315,10 +322,6 @@ func TestMLScope_DeclaredFilePasses(t *testing.T) {
 // TestMLScope_OutOfScopeFails asserts that a committed file NOT listed in any
 // **Files affected:** is reported in Failures with its exact repo-relative path.
 func TestMLScope_OutOfScopeFails(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	dir := t.TempDir()
 	roadmapRel := "docs/roadmaps/wip/ROADMAP-ml-scope-fixture.md"
 	// Declare only foo.go; the test will touch bar.go.
@@ -367,10 +370,6 @@ func TestMLScope_OutOfScopeFails(t *testing.T) {
 // but has NOT been committed also triggers the ml_scope failure when it is
 // not in any **Files affected:** declaration.
 func TestMLScope_UntrackedOutOfScopeFails(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	dir := t.TempDir()
 	roadmapRel := "docs/roadmaps/wip/ROADMAP-ml-scope-fixture.md"
 	content := buildMLScopeRoadmap("2026-08-01", "`internal/commands/foo.go`")
@@ -416,10 +415,6 @@ func TestMLScope_UntrackedOutOfScopeFails(t *testing.T) {
 // disk to add extra.go to **Files affected:** does NOT prevent ml_scope from
 // blocking, because the check reads the roadmap from the HEAD commit, not disk.
 func TestMLScope_DiskEditDoesNotAmplifyScope(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	dir := t.TempDir()
 	roadmapRel := "docs/roadmaps/wip/ROADMAP-ml-scope-fixture.md"
 	content := buildMLScopeRoadmap("2026-08-01", "`internal/commands/foo.go`")
@@ -475,10 +470,6 @@ func TestMLScope_DiskEditDoesNotAmplifyScope(t *testing.T) {
 // in the orchestration set) does not trigger an ml_scope failure, even when no
 // **Files affected:** line names it explicitly.
 func TestMLScope_OrchestrationSetPasses(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	dir := t.TempDir()
 	roadmapRel := "docs/roadmaps/wip/ROADMAP-ml-scope-fixture.md"
 	// Declare an unrelated file; the roadmap itself is NOT listed.
@@ -526,10 +517,6 @@ func TestMLScope_OrchestrationSetPasses(t *testing.T) {
 // (ending in "/") and a glob pattern (containing "*") each match the files
 // they are expected to cover.
 func TestMLScope_DirectoryAndGlobMatch(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	dir := t.TempDir()
 	roadmapRel := "docs/roadmaps/wip/ROADMAP-ml-scope-fixture.md"
 	// Declare a directory and a glob.
@@ -583,10 +570,6 @@ func TestMLScope_DirectoryAndGlobMatch(t *testing.T) {
 // before 2026-07-18 causes the ml_scope check to return "skipped" with an
 // explicit reason, not "blocked".
 func TestMLScope_PreCutoffSkipped(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	dir := t.TempDir()
 	roadmapRel := "docs/roadmaps/wip/ROADMAP-ml-scope-fixture.md"
 	// Date before the 2026-07-18 cutoff.
@@ -627,10 +610,6 @@ func TestMLScope_PreCutoffSkipped(t *testing.T) {
 // with no **Files affected:** line causes ml_scope to report "blocked" and names
 // the ML in Failures.
 func TestMLScope_WipMissingDeclarationFails(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	dir := t.TempDir()
 	roadmapRel := "docs/roadmaps/wip/ROADMAP-ml-scope-fixture.md"
 	// Empty string means: omit the **Files affected:** line entirely.
@@ -672,9 +651,9 @@ func TestMLScope_WipMissingDeclarationFails(t *testing.T) {
 // when the line is absent.
 func TestMLScopeFilesAffectedParsing(t *testing.T) {
 	cases := []struct {
-		name       string
-		lines      []string
-		wantPaths  []string
+		name        string
+		lines       []string
+		wantPaths   []string
 		wantHasDecl bool
 	}{
 		{
@@ -829,10 +808,6 @@ func TestMLScopeMatchPath(t *testing.T) {
 // Asserts: Decision 1 (ML-4C) — absent origin/main → status "blocked".
 // Contra-braço: PASSES on HEAD (code already returns "blocked" — test pins existing behaviour).
 func TestMLScope_NoOriginMain_Blocked(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	dir := t.TempDir()
 	roadmapRel := "docs/roadmaps/wip/ROADMAP-ml-scope-fixture.md"
 	// Post-cutoff date with a declared file so the only reason to block/skip is origin/main.
@@ -914,10 +889,6 @@ func TestMLScope_NoOriginMain_Blocked(t *testing.T) {
 // Contra-braço: FAILS on HEAD — old code includes only the current path in the
 // orchestration set, so done/ROADMAP-ml-scope-moved.md is flagged out of scope.
 func TestMLScope_RoadmapMovedStatePasses_Flat(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	dir := t.TempDir()
 	if phys, err := filepath.EvalSymlinks(dir); err == nil {
 		dir = phys
@@ -1030,10 +1001,6 @@ func TestMLScope_RoadmapMovedStatePasses_Flat(t *testing.T) {
 // orchestration set, so agentA/done/ROADMAP-ml-scope-byagent-moved.md is flagged
 // out of scope.
 func TestMLScope_RoadmapMovedStatePasses_ByAgent(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	dir := t.TempDir()
 	if phys, err := filepath.EvalSymlinks(dir); err == nil {
 		dir = phys
@@ -1504,10 +1471,6 @@ func TestMLScopeFilesAffectedHybridInlineAndList(t *testing.T) {
 // segment (**, **\/*, *\/**)  cause the ml_scope check to return "blocked" with
 // the rejection message from ADR D3.
 func TestMLScopeGlobBroadPatternBlocked(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	vectors := []string{"**", "**/*", "*/**", "**/**", "*", "**/", "/"}
 
 	// Build a single roadmap with all broad patterns in one Files affected line.
@@ -1569,10 +1532,6 @@ func TestMLScopeGlobBroadPatternBlocked(t *testing.T) {
 // TestMLScopeGlobPrefixedPatternAccepted asserts that patterns with a literal
 // prefix (site/**, **\/*.go) do NOT trigger the broad-pattern rejection.
 func TestMLScopeGlobPrefixedPatternAccepted(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	dir := t.TempDir()
 	const rdmRel = "docs/roadmaps/wip/ROADMAP-ml-scope-fixture.md"
 	content := buildMLScopeRoadmap("2026-08-01", "`site/**`, `**/*.go`")
@@ -1628,10 +1587,6 @@ func TestMLScopeGlobPrefixedPatternAccepted(t *testing.T) {
 // roadmaps are in the diff, the barrier of roadmap A accepts files declared by
 // roadmap B (union scope, ADR D2).
 func TestMLScope_UnionTwoRoadmapsFilesFromOtherRoadmapInScope(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	dir := t.TempDir()
 	dir = mlScopeSetupMinimalGitRepo(t, dir)
 	env := mlScopeGitEnv(dir)
@@ -1691,10 +1646,6 @@ func TestMLScope_UnionTwoRoadmapsFilesFromOtherRoadmapInScope(t *testing.T) {
 // member's **Files affected:** on disk (without committing) does NOT expand the
 // scope — the union logic reads the member from HEAD, not from disk.
 func TestMLScope_UnionIgnoresWorkingTreeRoadmapEdit(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	dir := t.TempDir()
 	dir = mlScopeSetupMinimalGitRepo(t, dir)
 	env := mlScopeGitEnv(dir)
@@ -1773,10 +1724,6 @@ func TestMLScope_UnionIgnoresWorkingTreeRoadmapEdit(t *testing.T) {
 // fixture que o coloca em diffFiles, a mensagem de rejeição de broad pattern aparece
 // exatamente uma vez.
 func TestMLScope_TargetRoadmapExcludedFromMemberLoop(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	// Target roadmap: Wave 0 ✅, Wave 1 🔄 (wave1-file.go), Wave 2 🔄 (**).
 	// Using ** in Wave 2 as the discriminator: with the guard, the rejection
 	// message appears once; without it, twice (Step 9 + Step 9.5 member path).
@@ -1869,10 +1816,6 @@ func TestMLScope_TargetRoadmapExcludedFromMemberLoop(t *testing.T) {
 // union member whose every ML is ⬜ Pendente (K undefined) contributes only
 // orchestration paths and no pattern scope.
 func TestMLScope_UnionStartedWavesOnly_AllPendingContributesNothing(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	dir := t.TempDir()
 	dir = mlScopeSetupMinimalGitRepo(t, dir)
 	env := mlScopeGitEnv(dir)
@@ -1931,10 +1874,6 @@ func TestMLScope_UnionStartedWavesOnly_AllPendingContributesNothing(t *testing.T
 // TestMLScope_UnionStartedWavesOnly_DoneWaveContributesPatterns asserts that a
 // member with Wave 0 ✅ and Wave 1 ⬜ sets K=0 and contributes only Wave 0 patterns.
 func TestMLScope_UnionStartedWavesOnly_DoneWaveContributesPatterns(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	dir := t.TempDir()
 	dir = mlScopeSetupMinimalGitRepo(t, dir)
 	env := mlScopeGitEnv(dir)
@@ -2018,10 +1957,6 @@ func TestMLScope_UnionStartedWavesOnly_DoneWaveContributesPatterns(t *testing.T)
 // member in the abandoned/ state contributes only orchestration paths (its own
 // roadmap path, REQ, ADR), not the patterns from its Files affected.
 func TestMLScope_UnionAbandonedContributesOrchestrationOnly(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	dir := t.TempDir()
 	dir = mlScopeSetupMinimalGitRepo(t, dir)
 	env := mlScopeGitEnv(dir)
@@ -2088,10 +2023,6 @@ func TestMLScope_UnionAbandonedContributesOrchestrationOnly(t *testing.T) {
 // exists only on disk (not in diffFiles) is not a union member, and its declared
 // files remain out of scope.
 func TestMLScope_UnionDoesNotIncludeUncommittedRoadmap(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	dir := t.TempDir()
 	dir = mlScopeSetupMinimalGitRepo(t, dir)
 	env := mlScopeGitEnv(dir)
@@ -2152,10 +2083,6 @@ func TestMLScope_UnionDoesNotIncludeUncommittedRoadmap(t *testing.T) {
 // was already in done/ at merge-base (origin/main) contributes only orchestration
 // when it is modified on the branch, not its pattern scope.
 func TestMLScope_UnionDoneAtMergeBaseOrchestrationOnly(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	dir := t.TempDir()
 	dir = mlScopeSetupMinimalGitRepo(t, dir)
 	env := mlScopeGitEnv(dir)
@@ -2216,10 +2143,6 @@ func TestMLScope_UnionDoneAtMergeBaseOrchestrationOnly(t *testing.T) {
 // moved from wip/ to done/ on the branch (i.e., done/ file was NOT at merge-base)
 // contributes its patterns to the union scope.
 func TestMLScope_UnionDoneMovedInBranchContributesPatterns(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	dir := t.TempDir()
 	dir = mlScopeSetupMinimalGitRepo(t, dir)
 	env := mlScopeGitEnv(dir)
@@ -2279,10 +2202,6 @@ func TestMLScope_UnionDoneMovedInBranchContributesPatterns(t *testing.T) {
 //     silently discarded (path traversal / outside req_dir);
 //   - req: "./docs/req/REQ-x.md" IS accepted (normalises to "docs/req/REQ-x.md").
 func TestMLScope_ReqOutsideReqDirDiscarded(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	// Case A: req: "go.mod" — must not grant go.mod as orchestration.
 	t.Run("req_outside_req_dir", func(t *testing.T) {
 		content := "---\nstatus: wip\ndate: 2026-08-01\nreq: \"go.mod\"\n---\n\n" +
@@ -2390,10 +2309,6 @@ func TestMLScope_ReqOutsideReqDirDiscarded(t *testing.T) {
 // TestMLScope_AdrOutsideADRDirsDiscarded asserts that an ADR path outside
 // adr_dirs (e.g., "go.mod") is discarded; a valid path under adr_dirs is accepted.
 func TestMLScope_AdrOutsideADRDirsDiscarded(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	// The REQ will reference adr: "go.mod".
 	makeContent := func(adrPath string) string {
 		return "---\nstatus: wip\ndate: 2026-08-01\nreq: \"docs/req/REQ-ml-scope-fixture.md\"\n---\n\n" +
@@ -2510,10 +2425,6 @@ func TestMLScope_AdrOutsideADRDirsDiscarded(t *testing.T) {
 // whose roadmap date is before 2026-07-18 contributes only orchestration paths,
 // not its pattern scope.
 func TestMLScope_UnionPreCutoffMemberOrchestrationOnly(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	dir := t.TempDir()
 	dir = mlScopeSetupMinimalGitRepo(t, dir)
 	env := mlScopeGitEnv(dir)
@@ -2573,10 +2484,6 @@ func TestMLScope_UnionPreCutoffMemberOrchestrationOnly(t *testing.T) {
 // whose roadmap frontmatter has no date: field is treated as post-cutoff and
 // contributes its pattern scope normally.
 func TestMLScope_UnionMissingDateTreatedAsPostCutoff(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	dir := t.TempDir()
 	dir = mlScopeSetupMinimalGitRepo(t, dir)
 	env := mlScopeGitEnv(dir)
@@ -2644,10 +2551,6 @@ func TestMLScope_UnionMissingDateTreatedAsPostCutoff(t *testing.T) {
 // Reconciliation: AC1 afirma que arquivos de waves iniciadas acima de N estão
 // em escopo e não reprovam o barrier da wave N.
 func TestMLScope_StartedWaveAboveN_PassesWhenFilesCommitted(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	// Roadmap: Wave 0 ✅, Wave 1 ✅ (wave1-file.go), Wave 2 🔄 (wave2-file.go).
 	targetContent := "---\nstatus: wip\ndate: 2026-08-01\nreq: \"docs/req/REQ-ml-scope-fixture.md\"\n---\n\n" +
 		"# Roadmap: AC1 Test\n\n## Acceptance Criteria\n- [x] test\n\n" +
@@ -2707,10 +2610,6 @@ func TestMLScope_StartedWaveAboveN_PassesWhenFilesCommitted(t *testing.T) {
 // Reconciliation: AC2 afirma que arquivos não declarados em nenhuma wave reprovam
 // mesmo quando há wave iniciada acima de N, e só esse arquivo aparece nas falhas.
 func TestMLScope_StartedWaveAboveN_UndeclaredFileStillFails(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	// Same roadmap as AC1: Wave 0 ✅, Wave 1 ✅ (wave1-file.go), Wave 2 🔄 (wave2-file.go).
 	targetContent := "---\nstatus: wip\ndate: 2026-08-01\nreq: \"docs/req/REQ-ml-scope-fixture.md\"\n---\n\n" +
 		"# Roadmap: AC2 Test\n\n## Acceptance Criteria\n- [x] test\n\n" +
@@ -2790,10 +2689,6 @@ func TestMLScope_StartedWaveAboveN_UndeclaredFileStillFails(t *testing.T) {
 // Reconciliation: AC3 afirma que arquivo de wave ⬜ entre N e wave iniciada
 // reprova, e que a wave iniciada acima dela (wave 3 🔄) não inclui a ⬜ abaixo.
 func TestMLScope_UnstartedWaveAmidStartedWavesAboveN_Fails(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	t.Run("simple", func(t *testing.T) {
 		// Wave 0 ✅, Wave 1 ✅, Wave 2 ⬜ (x.go). No wave above 2.
 		targetContent := "---\nstatus: wip\ndate: 2026-08-01\nreq: \"docs/req/REQ-ml-scope-fixture.md\"\n---\n\n" +
@@ -2923,10 +2818,6 @@ func TestMLScope_UnstartedWaveAmidStartedWavesAboveN_Fails(t *testing.T) {
 // Reconciliation: AC3b afirma que arquivo de wave ⬜ de um membro da união não
 // entra no escopo, mesmo quando há wave iniciada acima dela no mesmo membro.
 func TestMLScope_UnionMemberUnstartedWaveIsExcluded(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	dir := t.TempDir()
 	dir = mlScopeSetupMinimalGitRepo(t, dir)
 	env := mlScopeGitEnv(dir)
@@ -3034,10 +2925,6 @@ func TestMLScope_UnionMemberUnstartedWaveIsExcluded(t *testing.T) {
 // Reconciliation (Arm B): afirma que MLs em waves ≤ N sem declaração ainda geram
 // declFailure.
 func TestMLScope_StartedWaveAboveN_NoDeclFailureForMissingDeclaration(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	t.Run("ArmA_no_decl_failure_for_wave_above_N", func(t *testing.T) {
 		// Wave 0 ✅, Wave 1 ✅ (wave1-file.go), Wave 2 🔄 WITHOUT **Files affected:**.
 		// --wave 1 should pass: ML-2A missing declaration does not block wave 1.
@@ -3161,10 +3048,6 @@ func TestMLScope_StartedWaveAboveN_NoDeclFailureForMissingDeclaration(t *testing
 // rejeitados pelo mecanismo addPatterns, da mesma forma que em waves ≤ N. Este
 // teste também falha sob o recorte 0..N pois wave 2 nunca seria processada.
 func TestMLScope_BroadPatternInStartedWaveAboveN_Blocked(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	// Wave 0 ✅, Wave 1 🔄 (wave1-file.go), Wave 2 🔄 (**).
 	targetContent := "---\nstatus: wip\ndate: 2026-08-01\nreq: \"docs/req/REQ-ml-scope-fixture.md\"\n---\n\n" +
 		"# Roadmap: P3 Test\n\n## Acceptance Criteria\n- [x] test\n\n" +
@@ -3236,10 +3119,6 @@ func TestMLScope_BroadPatternInStartedWaveAboveN_Blocked(t *testing.T) {
 // escopo da wave N; o braço de controle afirma que quando o HEAD tem a wave
 // como 🔄 commitada, o arquivo da wave entra em escopo.
 func TestMLScope_DiskEditOfWaveStatusDoesNotAmplifyScope(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	// buildRoadmapP4 builds a roadmap where Wave 2 has the given status in HEAD.
 	// wave2Status: "⬜ Pendente" (not started) or "🔄 Em andamento" (started).
 	buildRoadmapP4 := func(wave2Status string) string {
@@ -3413,10 +3292,6 @@ func buildFractionalRoadmap(wave1bStatus, wave1bFilesAffected string) string {
 // Reconciliation: AC8 afirma que a wave fracionária ⬜ "1b" está acima de N=1 por
 // CompareWaveLabels e não entra no escopo; com comparação inteira ela entraria.
 func TestMLScope_FractionalWave_UnstartedOutOfScope(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	rdmContent := buildFractionalRoadmap("⬜ Pendente", "`side.go`")
 
 	dir := t.TempDir()
@@ -3468,10 +3343,6 @@ func TestMLScope_FractionalWave_UnstartedOutOfScope(t *testing.T) {
 // Reconciliation: AC8 afirma que ML sem declaração em wave fracionária ⬜ acima de N
 // não gera declFailure; com comparação inteira, geraria.
 func TestMLScope_FractionalWave_UnstartedNoDeclFailure(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	// Wave 1b ⬜ with NO **Files affected:** — would trigger declFailure under old code.
 	rdmContent := buildFractionalRoadmap("⬜ Pendente", "" /* no Files affected */)
 
@@ -3513,10 +3384,6 @@ func TestMLScope_FractionalWave_UnstartedNoDeclFailure(t *testing.T) {
 // Reconciliation: AC8 afirma que wave fracionária 🔄 acima de N=1 está no escopo
 // (CompareWaveLabels > 0 AND started); side.go deve ser aceito sem falha.
 func TestMLScope_FractionalWave_StartedInScope(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	rdmContent := buildFractionalRoadmap("🔄 Em andamento", "`side.go`")
 
 	dir := t.TempDir()
@@ -3558,10 +3425,6 @@ func TestMLScope_FractionalWave_StartedInScope(t *testing.T) {
 // Reconciliation: AC8 afirma que --wave 1b classifica wave "1" como ≤ N e exige
 // declaração; um ML sem declaração nessa wave gera declFailure.
 func TestMLScope_FractionalWave_LowerWaveHasDeclFailure(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	// Wave 1 has ML-1A WITHOUT **Files affected:** (will be ≤ N for --wave 1b).
 	// Wave 1b 🔄 has **Files affected:** wave1b.go.
 	var b strings.Builder
@@ -3684,10 +3547,6 @@ func buildBlockedStatusRoadmap(wave2Status string) string {
 // Reconciliation: AC10 afirma que ❌ Bloqueado acima de N inicia a wave; wave2.go
 // deve estar em escopo (matar M8b).
 func TestMLScope_BlockedStatusAboveN_InScope(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	rdmContent := buildBlockedStatusRoadmap("❌ Bloqueado")
 
 	dir := t.TempDir()
@@ -3732,10 +3591,6 @@ func TestMLScope_BlockedStatusAboveN_InScope(t *testing.T) {
 // Reconciliation: AC10 afirma que ❌ Cancelado e 🚫 Abandonado acima de N iniciam a
 // wave; wave2.go deve estar em escopo (matar M8c).
 func TestMLScope_TerminatedStatusAboveN_InScope(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	for _, status := range []string{"❌ Cancelado", "🚫 Abandonado"} {
 		status := status
 		t.Run(status, func(t *testing.T) {
@@ -3790,10 +3645,6 @@ func TestMLScope_TerminatedStatusAboveN_InScope(t *testing.T) {
 // Reconciliation: AC9 afirma que **Status:** dentro de comentário HTML não inicia
 // a wave; wave2.go deve estar fora de escopo.
 func TestMLScope_HTMLCommentedStatus_WaveNotStarted(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	// Wave 2 has "**Status:** 🔄 Em andamento" only inside <!-- -->; live status is missing.
 	rdmContent := buildHTMLCommentStatusRoadmap("🔄 Em andamento", "✅ Concluído")
 
@@ -3845,10 +3696,6 @@ func TestMLScope_HTMLCommentedStatus_WaveNotStarted(t *testing.T) {
 // Reconciliation: AC9 afirma que ✅ dentro de comentário HTML não satisfaz
 // mls_complete; o check deve ficar blocked.
 func TestMLScope_HTMLCommentedStatus_MLSCompleteBlocked(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("ml_scope uses git commands; windows path handling tested separately")
-	}
-
 	// Wave 1: ML-1A has its ✅ only inside a comment; live status is missing.
 	rdmContent := buildHTMLCommentStatusRoadmap("🔄 Em andamento", "comment")
 
@@ -3977,6 +3824,7 @@ func TestMLScopeFilesAffected_ContinuationInComment_Truncated(t *testing.T) {
 		t.Errorf("real.go must be in scope; patterns: %v", patterns)
 	}
 }
+
 // ── ML-3C ação 3 tests — AC11b (parseMLScopeFilesAffected, inline HTML comment stripping) ─────
 
 // TestMLScopeFilesAffected_InlineComment_HidesToken asserts that a backtick-quoted

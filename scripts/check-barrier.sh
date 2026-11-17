@@ -42,6 +42,7 @@ trap 'chmod -R u+w "$WORK" 2>/dev/null; rm -rf "$WORK"' EXIT
 export HOME="$WORK/home"
 export USERPROFILE="$WORK/home"
 export CLAUDE_CONFIG_DIR=
+export CODEX_HOME=  # ML-4A4: same isolation for CODEX_HOME
 mkdir -p "$HOME"
 
 # ---------------------------------------------------------------------------

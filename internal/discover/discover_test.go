@@ -1327,9 +1327,6 @@ func TestInstallGates_ValidateScript_SymlinkAtLeafRefused(t *testing.T) {
 // and os.WriteFile overwrites the shared inode's content — this test fails
 // with that pattern.
 func TestInstallGates_ValidateScript_HardlinkNotFollowed(t *testing.T) {
-	if os.Getenv("GOOS") == "windows" {
-		t.Skip("hardlink semantics differ on Windows")
-	}
 	outside := t.TempDir()
 	outsideFile := filepath.Join(outside, "shared.txt")
 	originalContent := "shared inode content — must not be overwritten\n"

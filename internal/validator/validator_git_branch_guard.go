@@ -209,6 +209,10 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker, subcmdMarker, sub
 	// per A7 (silence here is the very defect this REQ fixes).
 	claudeDir, claudeDirErr := agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver)
 
+	// ML-4A4 (ADR-2026-10-14 D2): same pattern for Codex CLI — CODEX_HOME and Windows
+	// USERPROFILE resolution. A7: resolution error → finding, never silent skip.
+	codexDir, codexDirErr := agentconfig.CodexConfigDir(agentconfig.DefaultResolver)
+
 	var msgs []string
 	// anySubcmdFormFound e hasPSPosixSubcmd rastreiam o uso da nova forma de subcomando Go.
 	var anySubcmdFormFound bool
@@ -216,7 +220,9 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker, subcmdMarker, sub
 	for _, gf := range globalGuardConfigFiles {
 		relPath := globalGuardConfigPath(gf, scriptMarker)
 		// ML-1A: Claude Code's settings.json lives in claudeDir (which honours CLAUDE_CONFIG_DIR
-		// and, on Windows, USERPROFILE instead of HOME). All other CLIs still use homedir.Dir().
+		// and, on Windows, USERPROFILE instead of HOME).
+		// ML-4A4: Codex CLI's hooks.json lives in codexDir (which honours CODEX_HOME and, on
+		// Windows, USERPROFILE instead of HOME). All other CLIs still use homedir.Dir().
 		var fullPath string
 		if gf.cli == "Claude Code" {
 			if claudeDirErr != nil {
@@ -230,8 +236,27 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker, subcmdMarker, sub
 				continue
 			}
 			fullPath = filepath.Join(claudeDir, "settings.json")
+		} else if gf.cli == "Codex CLI" {
+			if codexDirErr != nil {
+				// A7: resolution error → finding, never silent skip.
+				msgs = append(msgs, fmt.Sprintf(
+					"Codex CLI global config directory cannot be resolved (%s) — "+
+						"trackfw cannot tell whether %s is wired; ensure USERPROFILE or "+
+						"CODEX_HOME is set correctly",
+					codexDirErr, scriptMarker,
+				))
+				continue
+			}
+			fullPath = filepath.Join(codexDir, "hooks.json")
 		} else {
 			fullPath = filepath.Join(home, relPath)
+		}
+		// ML-4A4 R1: for Codex CLI, the display path is the real resolved path
+		// (which may differ from ~/.codex/hooks.json when CODEX_HOME is set).
+		// All other CLIs keep the "~/<relPath>" form (home-relative).
+		msgPath := "~/" + relPath
+		if gf.cli == "Codex CLI" {
+			msgPath = agentconfig.CodexHooksDisplayPath(codexDir)
 		}
 		content, readErr := readRegularFile(fullPath)
 		if readErr != nil {
@@ -251,10 +276,10 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker, subcmdMarker, sub
 			// error branch for the full measurement (hades-tf ML-1A barrier, chmod 000 and a
 			// directory in place of the file, reproduced live).
 			msgs = append(msgs, fmt.Sprintf(
-				"~/%s (%s, global scope) could not be read — trackfw cannot tell whether %s is "+
+				"%s (%s, global scope) could not be read — trackfw cannot tell whether %s is "+
 					"wired here, and %s cannot load any hook from a file it cannot read; fix the "+
 					"file, or run `trackfw update harness` to regenerate it",
-				relPath, gf.cli, scriptMarker, gf.cli,
+				msgPath, gf.cli, scriptMarker, gf.cli,
 			))
 			continue
 		}
@@ -276,18 +301,18 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker, subcmdMarker, sub
 			// validateGuardHookResolvable for the reasoning (D4 of ADR-2026-09-04).
 			if !wasValidUTF8 {
 				msgs = append(msgs, fmt.Sprintf(
-					"~/%s (%s, global scope) is not valid UTF-8 — trackfw cannot tell whether %s "+
+					"%s (%s, global scope) is not valid UTF-8 — trackfw cannot tell whether %s "+
 						"is wired here, and %s cannot load any hook from a file it cannot decode; "+
 						"fix the file's encoding, or run `trackfw update harness` to regenerate it",
-					relPath, gf.cli, scriptMarker, gf.cli,
+					msgPath, gf.cli, scriptMarker, gf.cli,
 				))
 				continue
 			}
 			msgs = append(msgs, fmt.Sprintf(
-				"~/%s (%s, global scope) is not valid JSON — trackfw cannot tell whether %s is "+
+				"%s (%s, global scope) is not valid JSON — trackfw cannot tell whether %s is "+
 					"wired here, and %s cannot load any hook from a file it cannot parse; fix the "+
 					"file, or run `trackfw update harness` to regenerate it",
-				relPath, gf.cli, scriptMarker, gf.cli,
+				msgPath, gf.cli, scriptMarker, gf.cli,
 			))
 			continue
 		}
@@ -324,8 +349,8 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker, subcmdMarker, sub
 			// entry is structurally valid.
 			if gf.requiresCommandType && !m.typeIsCommand {
 				msgs = append(msgs, fmt.Sprintf(
-					`~/%s (%s, global scope) references %s resolved to %q, but the hook entry is missing "type":"command" (or has an invalid type) — %s will silently never execute it; run `+"`trackfw update harness`"+` to regenerate it`,
-					relPath, gf.cli, scriptMarker, m.raw, gf.cli,
+					`%s (%s, global scope) references %s resolved to %q, but the hook entry is missing "type":"command" (or has an invalid type) — %s will silently never execute it; run `+"`trackfw update harness`"+` to regenerate it`,
+					msgPath, gf.cli, scriptMarker, m.raw, gf.cli,
 				))
 				continue
 			}
@@ -334,13 +359,13 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker, subcmdMarker, sub
 			switch {
 			case statErr != nil:
 				msgs = append(msgs, fmt.Sprintf(
-					"~/%s (%s, global scope) references %s resolved to %q, but the script does not exist — run `trackfw update harness` to regenerate it",
-					relPath, gf.cli, scriptMarker, m.raw,
+					"%s (%s, global scope) references %s resolved to %q, but the script does not exist — run `trackfw update harness` to regenerate it",
+					msgPath, gf.cli, scriptMarker, m.raw,
 				))
 			case CurrentGOOS != "windows" && info.Mode()&0111 == 0:
 				msgs = append(msgs, fmt.Sprintf(
-					"~/%s (%s, global scope) references %s resolved to %q, but the script is not executable — run `trackfw update harness` to regenerate it",
-					relPath, gf.cli, scriptMarker, m.raw,
+					"%s (%s, global scope) references %s resolved to %q, but the script is not executable — run `trackfw update harness` to regenerate it",
+					msgPath, gf.cli, scriptMarker, m.raw,
 				))
 			}
 		}
@@ -362,8 +387,8 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker, subcmdMarker, sub
 
 				if gf.requiresCommandType && !m.typeIsCommand {
 					msgs = append(msgs, fmt.Sprintf(
-						`~/%s (%s, global scope) references %q, but the hook entry is missing "type":"command" (or has an invalid type) — %s will silently never execute it; run `+"`trackfw update harness`"+` to regenerate it`,
-						relPath, gf.cli, m.raw, gf.cli,
+						`%s (%s, global scope) references %q, but the hook entry is missing "type":"command" (or has an invalid type) — %s will silently never execute it; run `+"`trackfw update harness`"+` to regenerate it`,
+						msgPath, gf.cli, m.raw, gf.cli,
 					))
 					continue
 				}
@@ -409,9 +434,9 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker, subcmdMarker, sub
 					}
 				} else {
 					msgs = append(msgs, fmt.Sprintf(
-						"~/%s (%s, global scope) has %q but the expected form for this CLI is %q — "+
+						"%s (%s, global scope) has %q but the expected form for this CLI is %q — "+
 							"run `trackfw update harness` to regenerate",
-						relPath, gf.cli, m.raw, expectedLine,
+						msgPath, gf.cli, m.raw, expectedLine,
 					))
 					anySubcmdFormFound = true
 					if gf.family == guardShellFamilyPSPosix {
@@ -443,6 +468,8 @@ func validateGuardGlobalHookShLegacyWarnings(scriptMarker string) ([]string, err
 
 	// ML-1A: same resolver as validateGuardGlobalHookResolvable — A7, ADR-2026-10-14 D3.
 	claudeDir, claudeDirErr := agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver)
+	// ML-4A4: same pattern for Codex CLI.
+	codexDir, codexDirErr := agentconfig.CodexConfigDir(agentconfig.DefaultResolver)
 
 	var warnings []string
 	for _, gf := range globalGuardConfigFiles {
@@ -458,8 +485,23 @@ func validateGuardGlobalHookShLegacyWarnings(scriptMarker string) ([]string, err
 				continue
 			}
 			fullPath = filepath.Join(claudeDir, "settings.json")
+		} else if gf.cli == "Codex CLI" {
+			if codexDirErr != nil {
+				warnings = append(warnings, fmt.Sprintf(
+					"Codex CLI global config directory cannot be resolved (%s) — "+
+						"trackfw cannot check for legacy hook forms",
+					codexDirErr,
+				))
+				continue
+			}
+			fullPath = filepath.Join(codexDir, "hooks.json")
 		} else {
 			fullPath = filepath.Join(home, relPath)
+		}
+		// ML-4A4 R1: real display path for Codex CLI.
+		msgPath := "~/" + relPath
+		if gf.cli == "Codex CLI" {
+			msgPath = agentconfig.CodexHooksDisplayPath(codexDir)
 		}
 		content, readErr := readRegularFile(fullPath)
 		if readErr != nil {
@@ -477,9 +519,9 @@ func validateGuardGlobalHookShLegacyWarnings(scriptMarker string) ([]string, err
 		for _, m := range commands {
 			_ = m
 			warnings = append(warnings, fmt.Sprintf(
-				"~/%s (%s, global scope) references %s — this script does not execute on Windows "+
+				"%s (%s, global scope) references %s — this script does not execute on Windows "+
 					"outside Git Bash; run `trackfw update harness` to migrate to the `trackfw guard` subcommand form",
-				relPath, gf.cli, scriptMarker,
+				msgPath, gf.cli, scriptMarker,
 			))
 			break // um aviso por arquivo é suficiente
 		}
@@ -503,6 +545,8 @@ func validateGuardGlobalHookD2InlineWarnings(scriptMarker, subcmdMarker, subcmdN
 
 	// ML-1A: same resolver as validateGuardGlobalHookResolvable — A7, ADR-2026-10-14 D3.
 	claudeDir, claudeDirErr := agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver)
+	// ML-4A4: same pattern for Codex CLI.
+	codexDir, codexDirErr := agentconfig.CodexConfigDir(agentconfig.DefaultResolver)
 
 	var warnings []string
 	for _, gf := range globalGuardConfigFiles {
@@ -518,8 +562,23 @@ func validateGuardGlobalHookD2InlineWarnings(scriptMarker, subcmdMarker, subcmdN
 				continue
 			}
 			fullPath = filepath.Join(claudeDir, "settings.json")
+		} else if gf.cli == "Codex CLI" {
+			if codexDirErr != nil {
+				warnings = append(warnings, fmt.Sprintf(
+					"Codex CLI global config directory cannot be resolved (%s) — "+
+						"trackfw cannot check for D2 inline forms",
+					codexDirErr,
+				))
+				continue
+			}
+			fullPath = filepath.Join(codexDir, "hooks.json")
 		} else {
 			fullPath = filepath.Join(home, relPath)
+		}
+		// ML-4A4 R1: real display path for Codex CLI.
+		msgPath := "~/" + relPath
+		if gf.cli == "Codex CLI" {
+			msgPath = agentconfig.CodexHooksDisplayPath(codexDir)
 		}
 		content, readErr := readRegularFile(fullPath)
 		if readErr != nil {
@@ -536,9 +595,9 @@ func validateGuardGlobalHookD2InlineWarnings(scriptMarker, subcmdMarker, subcmdN
 		for _, m := range subcmdCommands {
 			if m.raw == legacyD2Line && m.raw != expectedLine {
 				warnings = append(warnings, fmt.Sprintf(
-					"~/%s (%s, global scope) has %q — legacy line, fail-open without trackfw in PATH; "+
+					"%s (%s, global scope) has %q — legacy line, fail-open without trackfw in PATH; "+
 						"run `trackfw update harness` to migrate to the D11 fail-closed form",
-					relPath, gf.cli, m.raw,
+					msgPath, gf.cli, m.raw,
 				))
 				break // um aviso por arquivo é suficiente
 			}
@@ -570,6 +629,8 @@ func validateGuardGlobalHookD11LegacyWarnings(scriptMarker, subcmdMarker, subcmd
 
 	// ML-1A: same resolver as validateGuardGlobalHookResolvable — A7, ADR-2026-10-14 D3.
 	claudeDir, claudeDirErr := agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver)
+	// ML-4A4: same pattern for Codex CLI.
+	codexDir, codexDirErr := agentconfig.CodexConfigDir(agentconfig.DefaultResolver)
 
 	var warnings []string
 	for _, gf := range globalGuardConfigFiles {
@@ -585,8 +646,23 @@ func validateGuardGlobalHookD11LegacyWarnings(scriptMarker, subcmdMarker, subcmd
 				continue
 			}
 			fullPath = filepath.Join(claudeDir, "settings.json")
+		} else if gf.cli == "Codex CLI" {
+			if codexDirErr != nil {
+				warnings = append(warnings, fmt.Sprintf(
+					"Codex CLI global config directory cannot be resolved (%s) — "+
+						"trackfw cannot check for D11 legacy forms",
+					codexDirErr,
+				))
+				continue
+			}
+			fullPath = filepath.Join(codexDir, "hooks.json")
 		} else {
 			fullPath = filepath.Join(home, relPath)
+		}
+		// ML-4A4 R1: real display path for Codex CLI.
+		msgPath := "~/" + relPath
+		if gf.cli == "Codex CLI" {
+			msgPath = agentconfig.CodexHooksDisplayPath(codexDir)
 		}
 		content, readErr := readRegularFile(fullPath)
 		if readErr != nil {
@@ -604,17 +680,17 @@ func validateGuardGlobalHookD11LegacyWarnings(scriptMarker, subcmdMarker, subcmd
 		for _, m := range subcmdCommands {
 			if m.raw == legacyD11RevLine && m.raw != expectedLine {
 				warnings = append(warnings, fmt.Sprintf(
-					"~/%s (%s, global scope) has %q — D11 revised form pre-REQ-2026-10-20, aborts on zsh (EQUALS/NOMATCH); "+
+					"%s (%s, global scope) has %q — D11 revised form pre-REQ-2026-10-20, aborts on zsh (EQUALS/NOMATCH); "+
 						"run `trackfw update harness` to migrate to the REQ-2026-10-20 form with the `emulate -R sh` prefix",
-					relPath, gf.cli, m.raw,
+					msgPath, gf.cli, m.raw,
 				))
 				break // um aviso por arquivo é suficiente
 			}
 			if m.raw == legacyD11Line && m.raw != expectedLine {
 				warnings = append(warnings, fmt.Sprintf(
-					"~/%s (%s, global scope) has %q — D11 form pre-ML-6C, passes non-{0,2} outputs intact on PowerShell; "+
+					"%s (%s, global scope) has %q — D11 form pre-ML-6C, passes non-{0,2} outputs intact on PowerShell; "+
 						"run `trackfw update harness` to migrate to the revised D11 form",
-					relPath, gf.cli, m.raw,
+					msgPath, gf.cli, m.raw,
 				))
 				break // um aviso por arquivo é suficiente
 			}
@@ -646,6 +722,8 @@ func validateGuardGlobalHookD11RevisedLegacyWarnings(scriptMarker, subcmdMarker,
 
 	// REQ-2026-10-20: same resolver as validateGuardGlobalHookD11LegacyWarnings.
 	claudeDir, claudeDirErr := agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver)
+	// ML-4A4: same pattern for Codex CLI.
+	codexDir, codexDirErr := agentconfig.CodexConfigDir(agentconfig.DefaultResolver)
 
 	var warnings []string
 	for _, gf := range globalGuardConfigFiles {
@@ -656,8 +734,18 @@ func validateGuardGlobalHookD11RevisedLegacyWarnings(scriptMarker, subcmdMarker,
 				continue
 			}
 			fullPath = filepath.Join(claudeDir, "settings.json")
+		} else if gf.cli == "Codex CLI" {
+			if codexDirErr != nil {
+				continue
+			}
+			fullPath = filepath.Join(codexDir, "hooks.json")
 		} else {
 			fullPath = filepath.Join(home, relPath)
+		}
+		// ML-4A4 R1: real display path for Codex CLI.
+		msgPath := "~/" + relPath
+		if gf.cli == "Codex CLI" {
+			msgPath = agentconfig.CodexHooksDisplayPath(codexDir)
 		}
 		content, readErr := readRegularFile(fullPath)
 		if readErr != nil {
@@ -674,9 +762,9 @@ func validateGuardGlobalHookD11RevisedLegacyWarnings(scriptMarker, subcmdMarker,
 		for _, m := range subcmdCommands {
 			if m.raw == legacyD11RevLine && m.raw != expectedLine {
 				warnings = append(warnings, fmt.Sprintf(
-					"~/%s (%s, global scope) has %q — D11 revised form pre-REQ-2026-10-20, aborts on zsh (EQUALS/NOMATCH); "+
+					"%s (%s, global scope) has %q — D11 revised form pre-REQ-2026-10-20, aborts on zsh (EQUALS/NOMATCH); "+
 						"run `trackfw update harness` to migrate to the REQ-2026-10-20 form with the `emulate -R sh` prefix",
-					relPath, gf.cli, m.raw,
+					msgPath, gf.cli, m.raw,
 				))
 				break // um aviso por arquivo é suficiente
 			}
@@ -707,6 +795,8 @@ func validateGuardGlobalHookD18LegacyWarnings(scriptMarker, subcmdMarker, subcmd
 	}
 
 	claudeDir, claudeDirErr := agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver)
+	// ML-4A4: same pattern for Codex CLI.
+	codexDir, codexDirErr := agentconfig.CodexConfigDir(agentconfig.DefaultResolver)
 
 	var warnings []string
 	for _, gf := range globalGuardConfigFiles {
@@ -717,8 +807,18 @@ func validateGuardGlobalHookD18LegacyWarnings(scriptMarker, subcmdMarker, subcmd
 				continue
 			}
 			fullPath = filepath.Join(claudeDir, "settings.json")
+		} else if gf.cli == "Codex CLI" {
+			if codexDirErr != nil {
+				continue
+			}
+			fullPath = filepath.Join(codexDir, "hooks.json")
 		} else {
 			fullPath = filepath.Join(home, relPath)
+		}
+		// ML-4A4 R1: real display path for Codex CLI.
+		msgPath := "~/" + relPath
+		if gf.cli == "Codex CLI" {
+			msgPath = agentconfig.CodexHooksDisplayPath(codexDir)
 		}
 		content, readErr := readRegularFile(fullPath)
 		if readErr != nil {
@@ -735,10 +835,10 @@ func validateGuardGlobalHookD18LegacyWarnings(scriptMarker, subcmdMarker, subcmd
 		for _, m := range subcmdCommands {
 			if m.raw == legacyD18Line && m.raw != expectedLine {
 				warnings = append(warnings, fmt.Sprintf(
-					"~/%s (%s, global scope) has %q — D18 legacy form pre-REQ-2026-11-13, exits 127 under "+
+					"%s (%s, global scope) has %q — D18 legacy form pre-REQ-2026-11-13, exits 127 under "+
 						"inherited errexit/nounset in POSIX shells; "+
 						"run `trackfw update harness` to migrate to the form with the `set +eu` prefix",
-					relPath, gf.cli, m.raw,
+					msgPath, gf.cli, m.raw,
 				))
 				break // um aviso por arquivo é suficiente
 			}

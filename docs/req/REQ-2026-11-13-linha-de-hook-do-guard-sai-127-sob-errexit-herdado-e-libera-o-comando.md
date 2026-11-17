@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-11-13
 author: ""
 adr: "docs/adr/ADR-2026-10-04-o-guard-de-hook-e-um-subcomando-go-do-trackfw-e-a-linha-de-hook-e-a-mesma-string-em-todo-shell.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-11-13-linha-de-hook-do-guard-sai-127-sob-errexit-herdado-e-libera-o-comando.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-11-13-linha-de-hook-do-guard-sai-127-sob-errexit-herdado-e-libera-o-comando.md"
 ---
 
 # REQ: linha de hook do guard sai 127 sob errexit herdado e libera o comando
 
-> Date: 2026-11-13 | Status: Open
+> Date: 2026-11-13 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -45,15 +45,16 @@ em 0 s (`vault/notes/git-terminal-prompt-sem-terminal-falha-na-hora-2026-10-31.m
 - Não trata `GIT_TERMINAL_PROMPT` nem prompts de SSH ou credential helper gráfico.
 
 ## Acceptance Criteria
-- [ ] AC1 — inventário de toda forma de linha de hook gerada ou aceita como corrente, com o rc medido sob cada opção herdada (Wave 0)
-- [ ] AC2 — com guard que nega (2), a linha nova sai 2 sob `bash -e`, `bash -u`, `sh -e`, `sh -u`, `dash -e`, `zsh -e`, `zsh -u`, `BASH_ENV` com `set -e` e `set -u`, e sem opção nenhuma
-- [ ] AC3 — com guard que permite (0), a linha nova sai 0 nas mesmas condições
-- [ ] AC4 — PowerShell 5.1 e 7 no Windows: deny 2 e allow 0 com o guard rodando, também sob `$ErrorActionPreference='Stop'` e `Set-StrictMode -Version Latest` herdados (via `-Command` e via perfil); stderr medido, com **zero** linha a mais que a forma atual nos shells POSIX e no máximo **+2** linhas no PowerShell
+> Encerrada em 2026-11-15 pelo merge do PR #687. Evidência por AC no roadmap em `done/`. A forma entregue é a L (ML-2I); o AC4 está medido no PS 5.1 (VM, ML-2G) e no `pwsh` 7 (CI Windows e macOS).
+- [x] AC1 — inventário de toda forma de linha de hook gerada ou aceita como corrente, com o rc medido sob cada opção herdada (Wave 0)
+- [x] AC2 — com guard que nega (2), a linha nova sai 2 sob `bash -e`, `bash -u`, `sh -e`, `sh -u`, `dash -e`, `zsh -e`, `zsh -u`, `BASH_ENV` com `set -e` e `set -u`, e sem opção nenhuma
+- [x] AC3 — com guard que permite (0), a linha nova sai 0 nas mesmas condições
+- [x] AC4 — PowerShell 5.1 e 7 no Windows: deny 2 e allow 0 com o guard rodando, também sob `$ErrorActionPreference='Stop'` e `Set-StrictMode -Version Latest` herdados (via `-Command` e via perfil); stderr medido, com **zero** linha a mais que a forma atual nos shells POSIX e no máximo **+2** linhas no PowerShell
   - *Revisto em 2026-11-15 por decisão do KG.* O texto anterior pedia stderr no PowerShell não maior que o da forma atual. Nenhuma forma medida cobre `Stop` e `StrictMode` sem custo nos dois lados: a CAND_F mantinha o PowerShell e imprimia `Set-StrictMode: command not found` em toda chamada POSIX (macOS/Linux, a maioria); a forma H (`null=/dev/null` + `2>$null`) não imprime nada a mais no POSIX e custa 2 linhas no PowerShell, que já imprime de 4 a 16.
-- [ ] AC5 — `TestGuardLineShellMatrix` cobre as opções herdadas do AC2, e a forma atual reprova nele (contra-braço)
-- [ ] AC6 — a forma atual e a D11 revista viram geração legada no registro da D12 (igualdade exata, nunca `Contains`/`HasSuffix`): `validate` avisa e `trackfw update harness` migra as duas para a forma nova sem duplicar entrada
-- [ ] AC7 — configs de hook deste repositório migradas para a forma nova
-- [ ] AC8 — `make quality` verde
+- [x] AC5 — `TestGuardLineShellMatrix` cobre as opções herdadas do AC2, e a forma atual reprova nele (contra-braço)
+- [x] AC6 — a forma atual e a D11 revista viram geração legada no registro da D12 (igualdade exata, nunca `Contains`/`HasSuffix`): `validate` avisa e `trackfw update harness` migra as duas para a forma nova sem duplicar entrada
+- [x] AC7 — configs de hook deste repositório migradas para a forma nova
+- [x] AC8 — `make quality` verde
 
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->
@@ -64,4 +65,4 @@ ADR: docs/adr/ADR-2026-10-04-o-guard-de-hook-e-um-subcomando-go-do-trackfw-e-a-l
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-11-13-linha-de-hook-do-guard-sai-127-sob-errexit-herdado-e-libera-o-comando.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-11-13-linha-de-hook-do-guard-sai-127-sob-errexit-herdado-e-libera-o-comando.md

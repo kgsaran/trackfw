@@ -18,7 +18,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -133,6 +132,9 @@ func TestMain(m *testing.M) {
 	// ML-1A: ClaudeConfigDir respects CLAUDE_CONFIG_DIR. Unset before any test
 	// runs so a developer's real Claude config is never read or written.
 	os.Unsetenv("CLAUDE_CONFIG_DIR")
+	// ML-4A4: same isolation for CODEX_HOME — a developer with CODEX_HOME set
+	// must not have their real Codex hooks.json overwritten by any test.
+	os.Unsetenv("CODEX_HOME")
 
 	// ML-1A (c): Re-inject Go cache vars so go-build subprocesses still use the
 	// real cache after HOME has been replaced.  Only set non-empty values; if
@@ -471,7 +473,10 @@ func TestGitExec_AC2_WaitDelayOnly(t *testing.T) {
 
 // TestGitExec_AC2_Bite_NoWaitDelay demonstrates that exec.CommandContext alone (without
 // WaitDelay) does not return when a grandchild holds the stderr pipe open.
-// Skipped on Windows where the pipe behaviour differs.
+// GOOS skip removed (b): hasControllingTTY and killProcess have Windows implementations.
+// CI-only: whether a Windows grandchild inherits the stderr handle must be measured on
+// windows-latest; if the handle is not inherited the grandchild does not block the pipe
+// and the test may fail as "didn't bite".
 //
 // Conclusion: without WaitDelay, exec.CommandContext alone blocks beyond its own deadline;
 // the production WaitDelay provision is the required fix (ADR D2, D7/A2).
@@ -479,9 +484,9 @@ func TestGitExec_AC2_Bite_NoWaitDelay(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not found in PATH")
 	}
-	if runtime.GOOS == "windows" {
-		t.Skip("bite test skipped on Windows: pipe hang behaviour not confirmed there")
-	}
+	// Classification (b): no concrete evidence that pipe-hang is impossible on Windows;
+	// hasControllingTTY and killProcess already have Windows implementations.
+	// Run on all platforms; if hang is real on Windows CI will show timeout.
 
 	// Force WaitDelay-only path (no group kill) to isolate the WaitDelay effect.
 	origTTY := hasControllingTTY
@@ -688,13 +693,16 @@ func TestNetworkCmd_WaitDelay_ExitZeroWithHangingGrandchild(t *testing.T) {
 // when git exits 0 but a hook grandchild holds the stderr pipe past WaitDelay.
 // Without the fix, defaultGitExec would return a non-nil error despite git exiting 0.
 //
-// Skipped on Windows: pre-push hooks require a POSIX shell interpreter.
+// GOOS skip replaced by sh probe (b): Git for Windows provides sh on windows-latest.
 func TestGitExec_WaitDelay_ExitZeroWithHangingGrandchild(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not found in PATH")
 	}
-	if runtime.GOOS == "windows" {
-		t.Skip("pre-push hook test skipped on Windows: shell hooks not supported")
+	// Probe: hook script uses #!/bin/sh — skip only when sh is absent, not by GOOS.
+	// On windows-latest, Git for Windows provides sh in PATH.
+	// Inventory classification: (b) [FALSO] — "shell hooks not supported" is false for windows-latest.
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skipf("sh não encontrado em PATH (%v) — pre-push hook requer sh; skip (b): probe de capacidade", err)
 	}
 
 	repoDir, _, hooksDir := initRepoWithBareRemote(t)

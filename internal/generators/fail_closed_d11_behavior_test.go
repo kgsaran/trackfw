@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -43,7 +44,8 @@ func runWithShell(t *testing.T, shell, line, pathOverride string) int {
 		env := os.Environ()
 		filtered := make([]string, 0, len(env))
 		for _, e := range env {
-			if len(e) >= 5 && e[:5] == "PATH=" {
+			// Use case-insensitive prefix match: on Windows the env key may be "Path=" not "PATH=".
+			if strings.HasPrefix(strings.ToUpper(e), "PATH=") {
 				filtered = append(filtered, "PATH="+pathOverride)
 			} else {
 				filtered = append(filtered, e)
@@ -55,6 +57,7 @@ func runWithShell(t *testing.T, shell, line, pathOverride string) int {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			return exitErr.ExitCode()
 		}
+		t.Fatalf("runWithShell: cmd.Run() falhou com erro que não é *exec.ExitError: %v", err)
 	}
 	return 0
 }
@@ -66,6 +69,28 @@ func writeTrackfwStub(t *testing.T, dir string, exitCode int) {
 	content := fmt.Sprintf("#!/bin/sh\nexit %d\n", exitCode)
 	if err := os.WriteFile(stub, []byte(content), 0755); err != nil {
 		t.Fatalf("escrever stub trackfw (exitCode=%d): %v", exitCode, err)
+	}
+}
+
+// writeTrackfwStubCmd cria "trackfw.cmd" no diretório dado que sai com exitCode.
+// Necessário no Windows: PowerShell e cmd.exe executam .cmd sem passar pelo kernel shebang.
+func writeTrackfwStubCmd(t *testing.T, dir string, exitCode int) {
+	t.Helper()
+	stub := filepath.Join(dir, "trackfw.cmd")
+	content := fmt.Sprintf("@echo off\r\nexit /b %d\r\n", exitCode)
+	if err := os.WriteFile(stub, []byte(content), 0755); err != nil {
+		t.Fatalf("escrever stub trackfw.cmd (exitCode=%d): %v", exitCode, err)
+	}
+}
+
+// writeTrackfwStubForOS cria o stub trackfw adequado ao sistema operacional:
+// "trackfw.cmd" no Windows (PS/cmd.exe não executam shebang), "trackfw" (#!/bin/sh) em outros.
+func writeTrackfwStubForOS(t *testing.T, dir string, exitCode int) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		writeTrackfwStubCmd(t, dir, exitCode)
+	} else {
+		writeTrackfwStub(t, dir, exitCode)
 	}
 }
 
@@ -87,94 +112,107 @@ var d11BehaviorCases = []d11BehaviorCase{
 // TestD11FailClosed_POSIX_TabelaRC afirma que a linha D11 produz o código de saída esperado
 // para cada RC (0,1,2,3,absent) quando executada via sh e bash.
 // Reconciliação ML-6C: cobre os 5 cenários da tabela da ADR (seção D11 PS/POSIX revisado).
+// TestD11FailClosed_POSIX_TabelaRC: classification (a) — sh/bash available on windows-latest via
+// Git for Windows. GOOS skip removed; probe-based skip per shell remains.
 func TestD11FailClosed_POSIX_TabelaRC(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("linha D11 PS/POSIX não se aplica diretamente ao cmd.exe — skip em Windows")
-	}
-
 	line := d11LineFor("git-branch")
 
 	for _, shellName := range []string{"sh", "bash"} {
-		shellPath, err := exec.LookPath(shellName)
-		if err != nil {
-			t.Logf("%s não encontrado — pulando subtestes deste shell", shellName)
-			continue
-		}
+		shellName := shellName
+		t.Run(shellName, func(t *testing.T) {
+			shellPath, err := exec.LookPath(shellName)
+			if err != nil {
+				t.Skipf("%s não encontrado em PATH (%v) — skip (b): probe de capacidade", shellName, err)
+			}
 
-		for _, tc := range d11BehaviorCases {
-			tc := tc
-			t.Run(shellName+"/"+tc.name, func(t *testing.T) {
-				var pathOverride string
-				if tc.stubExit == -1 {
-					// Ausente: PATH aponta para diretório sem trackfw.
-					pathOverride = "/dev/null/nonexistent"
-				} else {
-					dir := t.TempDir()
-					writeTrackfwStub(t, dir, tc.stubExit)
-					pathOverride = dir
-				}
+			for _, tc := range d11BehaviorCases {
+				tc := tc
+				t.Run(tc.name, func(t *testing.T) {
+					var pathOverride string
+					if tc.stubExit == -1 {
+						// Ausente: PATH aponta para diretório vazio (sem trackfw).
+						// /dev/null/nonexistent é inválido no Windows; t.TempDir() é portável.
+						pathOverride = t.TempDir()
+					} else {
+						dir := t.TempDir()
+						writeTrackfwStub(t, dir, tc.stubExit)
+						pathOverride = dir + string(os.PathListSeparator) + "/usr/bin" + string(os.PathListSeparator) + "/bin"
+					}
 
-				got := runWithShell(t, shellPath, line, pathOverride)
-				if got != tc.want {
-					t.Errorf("%s/%s: esperado exit %d, obteve %d\nlinha: %s", shellName, tc.name, tc.want, got, line)
-				}
-			})
-		}
+					got := runWithShell(t, shellPath, line, pathOverride)
+					if got != tc.want {
+						t.Errorf("%s/%s: esperado exit %d, obteve %d\nlinha: %s", shellName, tc.name, tc.want, got, line)
+					}
+				})
+			}
+		})
 	}
 }
 
 // TestD11FailClosed_PowerShell_TabelaRC afirma que a linha D11 produz o código de saída esperado
-// quando executada via pwsh (PowerShell Core), cobrindo RC=0,1,2,3,absent.
-// O stub usa shebang #!/bin/sh — o macOS entrega a invocação ao kernel que respeita o shebang.
+// quando executada via pwsh (PowerShell Core) e powershell.exe (Windows PowerShell 5.1),
+// cobrindo RC=0,1,2,3,absent.
+// No macOS o stub usa shebang #!/bin/sh; no Windows usa .cmd (via writeTrackfwStubForOS).
+// Classification: (b) [FALSO] — stub #!/bin/sh não é obstáculo real: writeTrackfwStubForOS cria
+// .cmd no Windows. GOOS skip removido; probe LookPath por versão PS permanece.
 // Reconciliação ML-6C: o 4º segmento "$LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}" é
 // precisamente o trecho que normaliza RC não-zero para 2 em PS; sem ele RC=1 → exit 1, não 2.
 func TestD11FailClosed_PowerShell_TabelaRC(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("teste usa stub #!/bin/sh — não aplicável em cmd.exe/PS no Windows desta forma")
-	}
-
-	pwshPath, err := exec.LookPath("pwsh")
-	if err != nil {
-		t.Skip("pwsh não encontrado — cenário PowerShell não aplicável neste ambiente")
-	}
-
 	line := d11LineFor("git-branch")
 
-	for _, tc := range d11BehaviorCases {
-		tc := tc
-		t.Run("pwsh/"+tc.name, func(t *testing.T) {
-			var pathOverride string
-			if tc.stubExit == -1 {
-				pathOverride = "/dev/null/nonexistent"
-			} else {
-				dir := t.TempDir()
-				writeTrackfwStub(t, dir, tc.stubExit)
-				pathOverride = dir
+	type psEntry struct{ name, bin string }
+	entries := []psEntry{
+		{"pwsh", "pwsh"},
+		{"powershell", "powershell"},
+	}
+
+	for _, ps := range entries {
+		ps := ps
+		t.Run(ps.name, func(t *testing.T) {
+			psPath, err := exec.LookPath(ps.bin)
+			if err != nil {
+				t.Skipf("%s não encontrado em PATH (%v) — skip (b): probe de capacidade", ps.bin, err)
 			}
 
-			cmd := exec.Command(pwshPath, "-NoProfile", "-Command", line)
-			if pathOverride != "" {
-				env := os.Environ()
-				filtered := make([]string, 0, len(env))
-				for _, e := range env {
-					if len(e) >= 5 && e[:5] == "PATH=" {
-						filtered = append(filtered, "PATH="+pathOverride)
+			for _, tc := range d11BehaviorCases {
+				tc := tc
+				t.Run(tc.name, func(t *testing.T) {
+					var pathOverride string
+					if tc.stubExit == -1 {
+						// Ausente: PATH com dirs do sistema mas sem trackfw.
+						pathOverride = buildPSPath("")
 					} else {
-						filtered = append(filtered, e)
+						dir := t.TempDir()
+						writeTrackfwStubForOS(t, dir, tc.stubExit)
+						pathOverride = buildPSPath(dir)
 					}
-				}
-				cmd.Env = filtered
-			}
 
-			got := 0
-			if runErr := cmd.Run(); runErr != nil {
-				if exitErr, ok := runErr.(*exec.ExitError); ok {
-					got = exitErr.ExitCode()
-				}
-			}
+					cmd := exec.Command(psPath, "-NoProfile", "-Command", line)
+					env := os.Environ()
+					filtered := make([]string, 0, len(env))
+					for _, e := range env {
+						// Use case-insensitive prefix: Windows env key may be "Path=" not "PATH=".
+						if strings.HasPrefix(strings.ToUpper(e), "PATH=") {
+							filtered = append(filtered, "PATH="+pathOverride)
+						} else {
+							filtered = append(filtered, e)
+						}
+					}
+					cmd.Env = filtered
 
-			if got != tc.want {
-				t.Errorf("pwsh/%s: esperado exit %d, obteve %d\nlinha: %s", tc.name, tc.want, got, line)
+					got := 0
+					if runErr := cmd.Run(); runErr != nil {
+						if exitErr, ok := runErr.(*exec.ExitError); ok {
+							got = exitErr.ExitCode()
+						} else {
+							t.Fatalf("%s/%s: cmd.Run() falhou com erro que não é *exec.ExitError: %v", ps.name, tc.name, runErr)
+						}
+					}
+
+					if got != tc.want {
+						t.Errorf("%s/%s: esperado exit %d, obteve %d\nlinha: %s", ps.name, tc.name, tc.want, got, line)
+					}
+				})
 			}
 		})
 	}

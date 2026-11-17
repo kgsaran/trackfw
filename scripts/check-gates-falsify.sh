@@ -118,6 +118,7 @@ export GOMODCACHE="${GOMODCACHE:-$(go env GOMODCACHE)}"
 export HOME="$WORK/home"
 export USERPROFILE="$WORK/home"
 export CLAUDE_CONFIG_DIR=
+export CODEX_HOME=  # ML-4A4: same isolation for CODEX_HOME
 mkdir -p "$HOME"
 
 # ---------------------------------------------------------------------------
@@ -5736,7 +5737,7 @@ S68_MSG='content diverges from the template this version of trackfw generates'
 T68_HOME="$WORK/s68-fake-home"
 mkdir -p "$T68_HOME"
 
-(HOME="$T68_HOME" USERPROFILE="$T68_HOME" CLAUDE_CONFIG_DIR= "$ROOT_DIR/bin/trackfw" update harness) >"$WORK/s68-update-harness.log" 2>&1
+(HOME="$T68_HOME" USERPROFILE="$T68_HOME" CLAUDE_CONFIG_DIR= CODEX_HOME= "$ROOT_DIR/bin/trackfw" update harness) >"$WORK/s68-update-harness.log" 2>&1
 T68_GBG_SCRIPT="$T68_HOME/.trackfw/scripts/trackfw-git-branch-guard.sh"
 if [[ ! -s "$T68_GBG_SCRIPT" ]]; then
   echo "FAIL [falsify/git-branch-guard-global-script-integrity/setup]: 'trackfw update harness' não escreveu $T68_GBG_SCRIPT" >&2
@@ -5834,7 +5835,7 @@ assert_would_now_fail "git-branch-guard-global-script-integrity" \
 T68_DUP_HOME="$WORK/s68-dup-home-gbg"
 mkdir -p "$T68_DUP_HOME"
 set +e
-(HOME="$T68_DUP_HOME" USERPROFILE="$T68_DUP_HOME" CLAUDE_CONFIG_DIR= "$ROOT_DIR/bin/trackfw" update harness \
+(HOME="$T68_DUP_HOME" USERPROFILE="$T68_DUP_HOME" CLAUDE_CONFIG_DIR= CODEX_HOME= "$ROOT_DIR/bin/trackfw" update harness \
   --targets claude-git-branch-guard,codex-git-branch-guard,git-branch-guard-script --install-missing) \
   >"$WORK/s68-dup-update-harness-gbg.log" 2>&1
 s68dupgbg_setup_status=$?
@@ -5885,7 +5886,7 @@ fi
 T68_DUP_HOME_CG="$WORK/s68-dup-home-cg"
 mkdir -p "$T68_DUP_HOME_CG"
 set +e
-(HOME="$T68_DUP_HOME_CG" USERPROFILE="$T68_DUP_HOME_CG" CLAUDE_CONFIG_DIR= "$ROOT_DIR/bin/trackfw" update harness \
+(HOME="$T68_DUP_HOME_CG" USERPROFILE="$T68_DUP_HOME_CG" CLAUDE_CONFIG_DIR= CODEX_HOME= "$ROOT_DIR/bin/trackfw" update harness \
   --targets claude-credential-guard,codex-credential-guard,credential-guard-script --install-missing) \
   >"$WORK/s68-dup-update-harness-cg.log" 2>&1
 s68dupcg_setup_status=$?
@@ -5952,7 +5953,7 @@ T69_HOME="$WORK/s69-fake-home"
 mkdir -p "$T69_HOME"
 
 set +e
-(HOME="$T69_HOME" USERPROFILE="$T69_HOME" CLAUDE_CONFIG_DIR= "$ROOT_DIR/bin/trackfw" update harness \
+(HOME="$T69_HOME" USERPROFILE="$T69_HOME" CLAUDE_CONFIG_DIR= CODEX_HOME= "$ROOT_DIR/bin/trackfw" update harness \
   --targets kiro-git-branch-guard,kiro-credential-guard,git-branch-guard-script,credential-guard-script --install-missing) \
   >"$WORK/s69-update-harness.log" 2>&1
 s69setup_status=$?

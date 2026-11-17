@@ -526,8 +526,11 @@ func TestShellQuotePOSIX(t *testing.T) {
 // e remove o irmão "my" (contra-braço: remover a chamada a shellQuotePOSIX faz o teste
 // do irmão reprovar).
 func TestScanStrayAgentMemory_PathsWithSpaceAndQuote(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("sh -c not available on Windows")
+	// Probe: test executes remedy via "sh -c" — skip only if sh is absent, not by GOOS.
+	// On windows-latest, sh is provided by Git for Windows and is in PATH.
+	// Inventory classification: (b) [FALSO] — "sh not available" is false for windows-latest.
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skipf("sh não encontrado em PATH (%v) — remédio rm -rf requer sh; skip (b): probe de capacidade", err)
 	}
 
 	project, _ := integrationCommandFixture(t)
@@ -610,7 +613,11 @@ func TestScanStrayAgentMemory_PathsWithSpaceAndQuote(t *testing.T) {
 // 0 arquivos ("empty directory … remove with: rm -rf").
 func TestScanStrayAgentMemory_UnreadableSubdir(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("chmod 000 not effective on Windows")
+		// (c): On Windows, os.Chmod only controls the read-only attribute on regular files
+		// and has no effect on directories (documented at https://pkg.go.dev/os#Chmod).
+		// NTFS access denial requires icacls / SetFileSecurity; os.Chmod(0) leaves the
+		// directory fully traversable. The test cannot be realised without ACL manipulation.
+		t.Skip("chmod 000 not effective on Windows (c): os.Chmod on a directory has no effect — NTFS access denial requires ACL manipulation via icacls/SetFileSecurity")
 	}
 	if os.Geteuid() == 0 {
 		t.Skip("chmod 000 has no effect when running as root")

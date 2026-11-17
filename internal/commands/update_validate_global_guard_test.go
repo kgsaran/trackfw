@@ -88,6 +88,8 @@ func d15CleanEnv(fakeHome, binDir string) []string {
 			// skip duplicate PATH entries that e2eCleanEnv may produce
 		case "CLAUDE_CONFIG_DIR":
 			// strip leaked real CLAUDE_CONFIG_DIR; re-added below as isolated value
+		case "CODEX_HOME":
+			// ML-4A4: strip leaked CODEX_HOME so harness writes to isolated fakeHome/.codex
 		default:
 			result = append(result, kv)
 		}

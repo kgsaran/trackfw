@@ -1,0 +1,140 @@
+[
+  {
+    "test": "internal/commands/doctor_test.go:TestScanStrayAgentMemory_UnreadableSubdir",
+    "classification": "c",
+    "reason": "os.Chmod(dir, 0) on a directory is a no-op on Windows for access control; NTFS requires ACL manipulation via icacls/SetFileSecurity to deny directory traversal.",
+    "evidence": "runtime.GOOS == \"windows\" branch with t.Skip. Mechanism: os.Chmod on a Windows directory only toggles FILE_ATTRIBUTE_READONLY on the directory object itself; it does not modify the DACL and therefore does not block traversal or file creation inside. Access denial on NTFS requires SetFileSecurity or icacls."
+  },
+  {
+    "test": "internal/commands/json_exit_test.go:TestJSONExit_UpdateHarnessJSON_TargetFailedSilentStderr",
+    "classification": "c",
+    "reason": "os.Chmod(dir, 0555) on a directory sets the read-only attribute which Windows does not use to block file creation inside a directory; NTFS requires ACL manipulation.",
+    "evidence": "Via helper setupHarnessFailFixtureDir: runtime.GOOS == \"windows\" branch with t.Skip. Mechanism: on NTFS, chmod on a directory toggles FILE_ATTRIBUTE_READONLY which is advisory and does not prevent creation of files inside that directory. File-creation permission is controlled by the DACL, not the read-only attribute. icacls or SetFileSecurity must be used to deny CreateFile."
+  },
+  {
+    "test": "internal/commands/netexec_groupkill_unix_test.go:TestGitExec_AC2_GroupKill",
+    "classification": "c",
+    "reason": "Build tag //go:build !windows; uses Unix process group kill (syscall.Kill(-pgid, syscall.SIGKILL)); Windows has no process groups or SIGKILL in the POSIX sense.",
+    "evidence": "File header: //go:build !windows. Mechanism: POSIX process group kill (kill(-pgid, SIGKILL)) relies on Unix process group IDs set via setpgid/setsid. Windows has no POSIX process groups; TerminateProcess targets a single PID. The test exercises Unix-specific kill-group semantics unavailable on Windows."
+  },
+  {
+    "test": "internal/generators/credential_guard_test.go:TestCredentialGuardScript_GeneratedScript_WindowsPathRedirectDetectsJWTInFile",
+    "classification": "c",
+    "reason": "NTFS reserves ':' in filenames; the fixture creates a path like 'C:/Users/x/s.env' as a directory tree, which requires a directory named 'C:' — illegal on Windows.",
+    "evidence": "runtime.GOOS == \"windows\" branch with t.Skip. Mechanism: NTFS forbids the ':' character in file and directory name components (it is reserved for the drive-letter syntax, e.g. C:\\). os.MkdirAll on a path containing 'C:' as a component returns a system error on Windows, so the test fixture cannot be created."
+  },
+  {
+    "test": "internal/generators/git_branch_guard_test.go:TestGitBranchGuardAwk_C01C22_WithJQ",
+    "classification": "c",
+    "reason": "N09 subtest: Windows filepath.Base treats '\\' as a path separator, so a token like '\\\\...\\git' resolves to basename 'git' and is blocked; POSIX bash sees '\\\\' as literal so the token is not 'git' and allows. Deliberate divergence — Windows behavior is correct (C:\\...\\git.exe is a real git path). The return exits the bash-parity assertion only; the Windows assertion runs.",
+    "evidence": "Code comment at internal/generators/git_branch_guard_test.go (N09 subtest): 'filepath.Base treats backslash as a path separator... divergence is intentional and in the safe direction: on Windows C:\\...\\git.exe is a real git path, so blocking is correct.' runtime.GOOS == \"windows\" branch with return after Windows-specific assertion. Reference: PR #527 CI failure, ADR-2026-10-04."
+  },
+  {
+    "test": "internal/generators/git_branch_guard_test.go:TestGitBranchGuardAwk_C01C22_WithoutJQ",
+    "classification": "c",
+    "reason": "Same as WithJQ: N09 deliberate divergence — filepath.Base('\\\\...\\git') == 'git' on Windows (backslash separator); return skips bash parity assertion only after Windows assertion passes.",
+    "evidence": "Code comment at internal/generators/git_branch_guard_test.go (N09 without-jq subtest): 'N09 on Windows: same deliberate divergence as WithJQ — see comment there.' runtime.GOOS == \"windows\" branch with return after Windows assertion. Reference: ADR-2026-10-04."
+  },
+  {
+    "test": "internal/generators/guard_line_shell_test.go:TestGuardLineShellMatrix_PSInheritedState",
+    "classification": "c",
+    "reason": "Windows PS profile lives under USERPROFILE/Documents/PowerShell (not XDG_CONFIG_HOME); the Windows branch runs Windows-specific profile subtests and returns to skip the XDG profile path that only applies to Linux/macOS.",
+    "evidence": "runtime.GOOS == \"windows\" branch with bare return at end of Windows-specific subtests. Code at internal/generators/guard_line_shell_test.go (profile section): 'No Windows o perfil PS está em %USERPROFILE%\\Documents\\PowerShell\\'; return exits early to skip the XDG branch. Windows profile path uses USERPROFILE+Documents; freedesktop.org XDG spec is not implemented by Windows PowerShell."
+  },
+  {
+    "test": "internal/guard/credential_test.go:TestCredResolveArg_GitBashPath_POSIXUnchanged",
+    "classification": "c",
+    "reason": "Tests POSIX path semantics for /c/Users/... style Git-Bash paths; on Windows the semantics differ (Git-Bash translates /c/ to C:\\) and Windows-only tests exist for that path at lines 1502-1711.",
+    "evidence": "runtime.GOOS == \"windows\" branch with t.Skip. Mechanism: credResolveArg (internal/guard/credential.go:849) calls credNormalizeWindowsPath(clean, runtime.GOOS, toolName), which translates /c/... and /cygdrive/c/... to C:/... only when GOOS is windows. The asserted branch (no translation) does not exist on Windows by design. The Windows branch is asserted by TestRunCredential_GitBashArgSubcaseA_Windows, _SubcaseB_Windows, _GitBashUppercaseArg_Windows and _CygdriveArg_Windows in the same file."
+  },
+  {
+    "test": "internal/guard/credential_test.go:TestRunCredential_A1_CwdStarSiblingNoFalsePositive",
+    "classification": "c",
+    "reason": "NTFS does not allow '*' in directory or file names; the test fixture requires creating a directory with '*' in its name, which is illegal on Windows.",
+    "evidence": "runtime.GOOS == \"windows\" branch with t.Skip. Mechanism: NTFS forbids these characters in filenames: * ? : < > | \" \\ /. os.MkdirAll on a path component containing '*' returns ERROR_INVALID_NAME on Windows, so the fixture directory cannot be created."
+  },
+  {
+    "test": "internal/guard/credential_test.go:TestRunCredential_D1_ControlCharInFilename",
+    "classification": "c",
+    "reason": "NTFS forbids control characters (including newline) in filenames; the test requires creating a file with a newline in its name, which is legal on POSIX but not on Windows.",
+    "evidence": "runtime.GOOS == \"windows\" branch with t.Skip. Mechanism: NTFS forbids all code points below 0x20 in filename components (Windows NtCreateFile returns STATUS_OBJECT_NAME_INVALID). POSIX allows any byte except NUL and '/' in a filename component, so a newline character is legal on Linux/macOS but not on Windows."
+  },
+  {
+    "test": "internal/guard/gitbranch_test.go:TestMatchSubcommand_BackslashPrefixed_PosixNotGit",
+    "classification": "c",
+    "reason": "POSIX-only test: on POSIX '\\\\git' is decoded to '\\git' which is not 'git' so the guard allows; on Windows filepath.Base('\\\\git') returns 'git' which is blocked. Windows-only test for this case exists at TestMatchSubcommand_D10_WindowsQuotedPathWithSpaces_Blocks.",
+    "evidence": "runtime.GOOS == \"windows\" branch with t.Skip. Mechanism: filepath.Base on Windows treats backslash as a path separator (os.PathSeparator == '\\\\'). filepath.Base('\\\\git') evaluates to 'git' on Windows, triggering the guard block; on POSIX, backslash is a literal character so '\\\\git' != 'git' and the guard allows. The divergence is deliberate and safe (blocking on Windows is correct for a backslash-prefixed git path)."
+  },
+  {
+    "test": "internal/identity/identity_notwindows_test.go:TestSave_WritesAtomicallyWithPermissions",
+    "classification": "c",
+    "reason": "Build tag //go:build !windows; tests that the saved file has mode 0600 (Unix permission bits). Windows does not use POSIX permission bits (st_mode) for access control.",
+    "evidence": "File header: //go:build !windows. Mechanism: POSIX permission bits (chmod 0600) control read/write access via st_mode in the inode. Windows NTFS uses ACLs (DACL/SACL) instead; os.Chmod on Windows only toggles FILE_ATTRIBUTE_READONLY and does not set per-user access bits. The Windows-specific version of this test is in identity_windows_test.go."
+  },
+  {
+    "test": "internal/integrations/manager_collision_enotdir_test.go:TestDetectNameCollision_ENOTDIRIsPlatformDependent",
+    "classification": "c",
+    "reason": "Windows branch: ENOTDIR (error calling os.ReadDir on a plain file) collides with ERROR_PATH_NOT_FOUND which maps to fs.ErrNotExist on Windows. The test asserts this Windows-specific behavior then returns to skip the POSIX assertion branch. Measured in ML-1A/ML-1C.",
+    "evidence": "runtime.GOOS == \"windows\" branch with return after Windows-specific assertion. Mechanism: on Windows, NtQueryDirectoryFile on a path whose last component is a plain file returns STATUS_NOT_A_DIRECTORY which is mapped to ERROR_PATH_NOT_FOUND (0x3), and Go translates that to fs.ErrNotExist — indistinguishable from 'path absent'. On Linux/macOS, os.ReadDir on a plain file returns ENOTDIR which does NOT satisfy errors.Is(err, fs.ErrNotExist). Code comment: 'ENOTDIR expected to collide with ERROR_PATH_NOT_FOUND'. Verified in ML-1C measurement."
+  },
+  {
+    "test": "internal/validator/regularfile_fifo_unix_test.go:TestReadRegularFile_FIFO_NaoTravaEAcusaTipoErrado",
+    "classification": "c",
+    "reason": "Build tag //go:build !windows; tests that reading a POSIX named pipe (FIFO, mkfifo) does not block forever and reports the wrong type. Windows does not have POSIX FIFOs.",
+    "evidence": "File header: //go:build !windows. Mechanism: POSIX named pipes (FIFOs) are created with mkfifo(2) / syscall.Mkfifo and exposed as special files in the filesystem. Windows named pipes use a completely different API (CreateNamedPipe with \\\\.\\pipe\\ prefix) and are not accessible as filesystem paths in the same way. syscall.Mkfifo is not available on Windows."
+  },
+  {
+    "test": "internal/validator/validator_credential_guard_integrity_fifo_unix_test.go:TestCredentialGuardScriptIntegrity_FIFO_NaoTrava",
+    "classification": "c",
+    "reason": "Build tag //go:build !windows; tests that reading the credential guard script from a FIFO (named pipe) does not block. Windows does not have POSIX FIFOs.",
+    "evidence": "File header: //go:build !windows. Mechanism: POSIX named pipes (FIFOs) created via syscall.Mkfifo are filesystem-visible special files. The test replaces the credential guard script with a FIFO and verifies the reader does not block. syscall.Mkfifo is not implemented on Windows; the Windows named-pipe API (CreateNamedPipe) is entirely different and not used here."
+  },
+  {
+    "test": "internal/validator/validator_credential_guard_integrity_test.go:TestCredentialGuardScriptIntegrity_ScriptIlegivel_ViolationSemAbortar",
+    "classification": "c",
+    "reason": "POSIX permission bits (chmod 0000) do not block reads on Windows; os.Chmod on a file controls only the read-only attribute and does not make the file unreadable.",
+    "evidence": "runtime.GOOS == \"windows\" branch with t.Skip. Mechanism: os.Chmod(path, 0o000) on Windows calls SetFileAttributes with FILE_ATTRIBUTE_READONLY; it does not remove the existing discretionary ACE that grants the current user read access. To make a file unreadable on NTFS, SetFileSecurity / icacls must be used to deny read access in the DACL. Without ACL manipulation, os.Open still succeeds after chmod 0000."
+  },
+  {
+    "test": "internal/validator/validator_git_branch_guard_test.go:TestGitBranchGuardScriptIntegrity_ScriptIlegivel_ViolationSemAbortar",
+    "classification": "c",
+    "reason": "POSIX permission bits (chmod 0000) do not block reads on Windows; NTFS requires ACL manipulation for access denial.",
+    "evidence": "runtime.GOOS == \"windows\" branch with t.Skip. Mechanism: same as TestCredentialGuardScriptIntegrity_ScriptIlegivel_ViolationSemAbortar — os.Chmod(0o000) toggles FILE_ATTRIBUTE_READONLY only; existing DACL grants read to the current user. File remains readable until SetFileSecurity/icacls removes the read ACE."
+  },
+  {
+    "test": "internal/validator/validator_git_branch_guard_test.go:TestGuardGlobalScriptIntegrity_ScriptIlegivel_ViolationSemSilencio",
+    "classification": "c",
+    "reason": "POSIX permission bits (chmod 0000) do not block reads on Windows; NTFS requires ACL manipulation for access denial.",
+    "evidence": "runtime.GOOS == \"windows\" branch with t.Skip. Mechanism: os.Chmod(0o000) on Windows does not modify the DACL; the file remains readable via the existing ACE. NTFS access denial requires icacls or SetFileSecurity to explicitly deny or remove the read ACE for the current user/group."
+  },
+  {
+    "test": "internal/validator/validator_git_branch_guard_test.go:TestGuardHookResolvable_ProjectPermissionDenied_DisparaViolationSemCrash",
+    "classification": "c",
+    "reason": "POSIX permission bits (chmod 0000) do not block reads on Windows; NTFS requires ACL manipulation for access denial.",
+    "evidence": "runtime.GOOS == \"windows\" branch with t.Skip. Mechanism: os.Chmod(0o000) on a directory on Windows toggles FILE_ATTRIBUTE_READONLY on the directory object; it does not prevent traversal or file enumeration. NTFS ACL manipulation (SetFileSecurity on the directory with DACL denying FILE_LIST_DIRECTORY) is required to block directory access."
+  },
+  {
+    "test": "internal/validator/validator_literal_pathspecs_test.go:TestMdBasenamesInGitTree_LiteralPathspecDirName",
+    "classification": "c",
+    "reason": "NTFS reserves ':' in filenames; the test creates a directory named ':(exclude)rm' or ':(icase)rm' which is a legal Git pathspec prefix on POSIX but illegal on Windows (colon reserved for drive letters).",
+    "evidence": "runtime.GOOS == \"windows\" branch with t.Skip. Mechanism: NTFS forbids ':' in directory and file name components (reserved for drive-letter syntax). os.MkdirAll(\":(exclude)rm\", 0755) returns ERROR_INVALID_NAME on Windows. The test vector RN1 (pathspec with magic prefix) cannot be mounted on Windows."
+  },
+  {
+    "test": "internal/validator/validator_req_done_criteria_test.go:TestReqDoneOpenCriteria_DoubleQuoteBranchName",
+    "classification": "c",
+    "reason": "NTFS forbids '\"' in filenames; the test creates a git ref file named 'main\"evil\"' to test injection protection — this filename is illegal on Windows.",
+    "evidence": "runtime.GOOS == \"windows\" branch with t.Skip. Mechanism: NTFS forbids these characters in filename components: * ? : < > | \" \\ /. A git ref file containing '\"' cannot be created with os.WriteFile on Windows (ERROR_INVALID_NAME). The injection attack vector is not constructible on this platform."
+  },
+  {
+    "test": "internal/fileutil/fileutil_fifo_unix_test.go:TestReadRegularFile_FIFO_NaoTravaERetornaErro",
+    "classification": "c",
+    "reason": "Build tag //go:build !windows; tests that fileutil.ReadRegularFile on a POSIX named pipe (FIFO) with no writer does not block and returns ErrNotRegularFile. Windows does not have POSIX FIFOs.",
+    "evidence": "File header: //go:build !windows. Mechanism: POSIX named pipes (FIFOs) are created with mkfifo(2) / syscall.Mkfifo and exposed as special files in the filesystem. Windows named pipes use a completely different API (CreateNamedPipe with \\\\.\\pipe\\ prefix) and are not accessible as filesystem paths in the same way. syscall.Mkfifo is not available on Windows."
+  },
+  {
+    "test": "internal/agentconfig/agentconfig_fifo_unix_test.go:TestInertGuardPath_FIFODoesNotBlock",
+    "classification": "c",
+    "reason": "Build tag //go:build !windows; tests that InertCodexGuardPath and InertClaudeGuardPath do not block when ~/.codex/hooks.json or ~/.claude/settings.json is a FIFO. Windows does not have POSIX FIFOs.",
+    "evidence": "File header: //go:build !windows. Mechanism: POSIX named pipes (FIFOs) are created with mkfifo(2) / syscall.Mkfifo and exposed as special files in the filesystem. Windows named pipes use a completely different API (CreateNamedPipe with \\\\.\\pipe\\ prefix) and are not accessible as filesystem paths in the same way. syscall.Mkfifo is not available on Windows."
+  }
+]

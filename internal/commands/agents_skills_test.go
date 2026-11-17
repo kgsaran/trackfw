@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kgsaran/trackfw/internal/integrations"
 	"github.com/spf13/cobra"
 )
 
@@ -24,6 +25,9 @@ func integrationCommandFixture(t *testing.T) (string, string) {
 	// Isolate both so global-Claude writes land in the temp dir, not the real profile.
 	t.Setenv("USERPROFILE", home)
 	t.Setenv("CLAUDE_CONFIG_DIR", "") // clear any override from the outer environment
+	// ML-4A4: isolate CODEX_HOME so global-Codex writes land in the temp dir,
+	// not the developer's real ~/.codex (memory note: codex-home-env-isolation).
+	t.Setenv("CODEX_HOME", "")
 	if err := os.Chdir(project); err != nil {
 		t.Fatal(err)
 	}
@@ -447,5 +451,103 @@ func TestListWithoutScopeReportsGlobalDestinations(t *testing.T) {
 	path := filepath.Join(home, ".claude", "agents", "trackfw-backend.md")
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("install without --scope must have written under home: %v", err)
+	}
+}
+
+// TestInstallGlobalCodexRespectsCodexHome asserts ML-4A4 R6: when CODEX_HOME is
+// set, `agents install --targets codex --scope global` writes the agent at
+// $CODEX_HOME/agents/, not at $HOME/.codex/agents/. integrationsManager() must
+// have CodexDir wired; removing the CodexDir field (counter-arm below) makes the
+// install land in $HOME/.codex/ instead.
+// Rule reconciliation: affirms that ML-4A4 R6 is enforced at the commands layer
+// (not only at the generators/update layer already tested by
+// TestHarnessCatalogTarget_CodexAgents_CODEX_HOME_WritesUnderCodexHome).
+func TestInstallGlobalCodexRespectsCodexHome(t *testing.T) {
+	_, home := integrationCommandFixture(t)
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	// USERPROFILE must equal home so CodexConfigDir does not accidentally read
+	// USERPROFILE/.codex on Windows (integrationCommandFixture already sets it,
+	// but CODEX_HOME overrides both when set — explicit for documentation).
+
+	writeGreekIdentity(t, home)
+
+	cmd := newAgentsCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{"install", "--targets", "codex", "--items", "backend", "--scope", "global"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Primary assertion: file is under CODEX_HOME, not under HOME/.codex.
+	wantPath := filepath.Join(codexHome, "agents", "trackfw-backend.toml")
+	if _, err := os.Stat(wantPath); err != nil {
+		t.Fatalf("ML-4A4 R6: global codex agent must be written at CODEX_HOME/agents/, got error: %v", err)
+	}
+	absentPath := filepath.Join(home, ".codex", "agents", "trackfw-backend.toml")
+	if _, err := os.Stat(absentPath); err == nil {
+		t.Fatalf("ML-4A4 R6: global codex agent must NOT be written at HOME/.codex/agents/ when CODEX_HOME is set")
+	}
+
+	// Auditor parity: list --global must report the artifact as "current" and
+	// managed, proving the writer and auditor agree on the destination path.
+	list := newAgentsCmd()
+	var out bytes.Buffer
+	list.SetOut(&out)
+	list.SetArgs([]string{"list", "--targets", "codex", "--items", "backend", "--scope", "global", "--json"})
+	if err := list.Execute(); err != nil {
+		t.Fatalf("list after install failed: %v", err)
+	}
+	var listOutput lifecycleOutput
+	if err := json.Unmarshal(out.Bytes(), &listOutput); err != nil {
+		t.Fatalf("invalid list JSON: %v\n%s", err, out.String())
+	}
+	var found bool
+	for _, d := range listOutput.Deployments {
+		if d.Target == "codex" && d.Item == "backend" {
+			if d.State != "current" || !d.Managed {
+				t.Fatalf("list must report codex/backend as current+managed, got state=%q managed=%v", d.State, d.Managed)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("list output has no codex/backend deployment: %+v", listOutput.Deployments)
+	}
+
+	// Counter-arm: a Manager without CodexDir would write to HOME/.codex/agents/
+	// instead of CODEX_HOME/agents/. Build the equivalent plans directly and confirm
+	// the old path is used, proving the CodexDir wiring in integrationsManager() is
+	// what causes the correct behaviour above.
+	catalog, err := integrations.LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	plans, err := integrations.BuildPlans(catalog, integrations.PlanRequest{
+		Kind:    integrations.KindAgents,
+		Targets: []string{"codex"},
+		Scope:   "global",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// No CodexDir — mirrors the old (pre-ML-4A4-R6) behaviour.
+	unwiredManager := integrations.Manager{HomeDir: home, ProjectRoot: home}
+	for _, plan := range plans {
+		insp, inspErr := unwiredManager.Inspect(plan)
+		if inspErr != nil {
+			continue // path guard may refuse CODEX_HOME path; that is expected
+		}
+		if insp.State != integrations.StateNotInstalled {
+			continue
+		}
+		// The resolved Destination for a codex/global agent plan without CodexDir
+		// must be under HOME/.codex/, not under CODEX_HOME/.
+		if strings.HasPrefix(insp.Destination, codexHome) {
+			t.Fatalf("counter-arm: unwired Manager resolved %q under CODEX_HOME — wiring is not what drove the fix", insp.Destination)
+		}
+		if !strings.HasPrefix(insp.Destination, filepath.Join(home, ".codex")) {
+			t.Fatalf("counter-arm: unwired Manager resolved %q — expected prefix %s", insp.Destination, filepath.Join(home, ".codex"))
+		}
 	}
 }

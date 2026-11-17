@@ -43,3 +43,9 @@ Relacionado: [[o-instrumento-mente]] — medir depois de alterar o ambiente e ch
 na árvore, o red-team criou `docs/roadmaps/backlog/ROADMAP-2026-10-09-agent-feature.md` nela, e o meu `git add -A`
 o commitou. A proibição no handoff não basta: **antes de `git add -A`, leia o `git status --short` e confira cada
 arquivo novo contra a lista que o agente reportou** — arquivo `??` que ninguém declarou é sinal de vazamento.
+
+**Reincidência (2026-11-17, ML-FA da REQ-2026-11-15):** o hades isolou HOME/USERPROFILE/CODEX_HOME em `mktemp -d`,
+mas rodou `trackfw agents install --scope global` com o **cwd na raiz do repo** — o `install` chama
+`InjectRulesForTool(target, ProjectRoot)` mesmo com `--scope global` e reescreveu `CLAUDE.md`/`AGENTS.md` (PT→EN do
+gerador pós-#679). Um `pwsh -Command "... 2>null"` (escape perdido de `$null`) criou o arquivo `null` na raiz.
+**Isolar HOME não isola o projeto:** o handoff tem de exigir também `cd "$(mktemp -d)"` antes de rodar o binário.

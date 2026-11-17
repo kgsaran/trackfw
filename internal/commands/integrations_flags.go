@@ -444,11 +444,16 @@ func integrationsManager() (integrations.Manager, error) {
 	}
 	// ML-1D (ADR-2026-10-14 D1/A1): Claude global agents/skills land at
 	// agentconfig.ClaudeConfigDir so the writer and auditor agree.
+	// ML-4A4 (R6): same pattern for Codex CLI — CODEX_HOME and Windows
+	// USERPROFILE divergence are honoured via agentconfig.CodexConfigDir.
 	return integrations.Manager{
 		ProjectRoot: project,
 		HomeDir:     home,
 		ClaudeDir: func() (string, error) {
 			return agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver)
+		},
+		CodexDir: func() (string, error) {
+			return agentconfig.CodexConfigDir(agentconfig.DefaultResolver)
 		},
 	}, nil
 }

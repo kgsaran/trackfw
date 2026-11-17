@@ -628,6 +628,13 @@ func UpdateHarness(opts UpdateOptions) (UpdateReport, error) {
 		claudeDir = filepath.Clean(claudeDir)
 	}
 
+	// ML-4A4 (ADR-2026-10-14 D2): Codex CLI config dir may differ from home/.codex on Windows
+	// (USERPROFILE ≠ HOME in Git Bash) or when CODEX_HOME is set. Same pattern as Claude above.
+	codexDir, codexDirErr := agentconfig.CodexConfigDir(agentconfig.DefaultResolver)
+	if codexDirErr == nil {
+		codexDir = filepath.Clean(codexDir)
+	}
+
 	// NOTE: the script files are now first-class targets ("git-branch-guard-script",
 	// "credential-guard-script") positioned before the wiring targets in
 	// HarnessTargetIDs. The pre-loop unconditional writes that used to live here
@@ -688,11 +695,11 @@ func UpdateHarness(opts UpdateOptions) (UpdateReport, error) {
 			continue
 		}
 		if id == "codex-credential-guard" {
-			results = append(results, harnessCredentialGuardTargetCodex(home, opts))
+			results = append(results, harnessCredentialGuardTargetCodex(home, codexDir, codexDirErr, opts))
 			continue
 		}
 		if id == "codex-git-branch-guard" {
-			results = append(results, harnessGitBranchGuardTargetCodex(home, opts))
+			results = append(results, harnessGitBranchGuardTargetCodex(home, codexDir, codexDirErr, opts))
 			continue
 		}
 		if id == "gemini-credential-guard" {
@@ -735,7 +742,7 @@ func UpdateHarness(opts UpdateOptions) (UpdateReport, error) {
 		if !ok {
 			continue
 		}
-		results = append(results, harnessCatalogTarget(catalog, id, tool, kind, home, claudeDir, claudeDirErr, harnessAgentModels, opts))
+		results = append(results, harnessCatalogTarget(catalog, id, tool, kind, home, claudeDir, claudeDirErr, codexDir, codexDirErr, harnessAgentModels, opts))
 	}
 	return UpdateReport{Scope: "harness", DryRun: opts.DryRun, Targets: results}, nil
 }
@@ -810,6 +817,14 @@ func claudeSettingsDisplayPath(claudeDir string) string {
 	return "~/" + filepath.ToSlash(rel)
 }
 
+// codexHooksDisplayPath returns the display path for Codex CLI's hooks.json.
+// Delegates to agentconfig.CodexHooksDisplayPath so the validator package
+// (which cannot import generators) can call the same logic via agentconfig
+// without circular dependency (ML-4A4 R1).
+func codexHooksDisplayPath(codexDir string) string {
+	return agentconfig.CodexHooksDisplayPath(codexDir)
+}
+
 // withD5Notice appends the D5 inert-remainder notice to a TargetUpdated or
 // TargetSkipped result when HOME/.claude/settings.json exists and contains
 // trackfw guard wiring but claudeDir points elsewhere (ADR-2026-10-14 D5,
@@ -851,6 +866,49 @@ func withD5Notice(result TargetResult, claudeDir string) TargetResult {
 	} else {
 		result.Message = fmt.Sprintf(
 			"old guard under HOME is inert — Claude Code does not read %s; remove it by hand if you want",
+			inertPath,
+		)
+	}
+	return result
+}
+
+// withD5NoticeCodex appends the D5 inert-remainder notice to a TargetUpdated
+// or TargetSkipped result when HOME/.codex/hooks.json exists and contains
+// trackfw guard wiring but codexDir points elsewhere (ADR-2026-10-14 D5,
+// ML-4A4 R2).
+//
+// For TargetFailed / TargetMissing results the function is a no-op — the
+// D5 notice is informational only and must not obscure error/missing states.
+//
+// R-3 trade-off (ML-4A4): same conditional as withD5Notice for Claude
+// (ADR-2026-10-14). Accepted residual: a Codex run without CODEX_HOME reads
+// HOME/.codex — identical to the Claude/CLAUDE_CONFIG_DIR trade-off.
+//
+//   - Origin CODEX_HOME, no Windows divergence: inert only for a Codex run
+//     that also sees CODEX_HOME. Without the variable, HOME/.codex IS the
+//     active guard — warn without instructing the user to delete it.
+//   - Windows divergence (HOME≠USERPROFILE), regardless of CODEX_HOME: Codex
+//     reads USERPROFILE/.codex (or CODEX_HOME), so HOME/.codex is
+//     unconditionally inert. The "remove it by hand" message applies.
+func withD5NoticeCodex(result TargetResult, codexDir string) TargetResult {
+	if result.State != TargetUpdated && result.State != TargetSkipped {
+		return result
+	}
+	inertPath, present := agentconfig.InertCodexGuardPath(codexDir)
+	if !present {
+		return result
+	}
+	envDir := strings.TrimSpace(os.Getenv("CODEX_HOME"))
+	_, _, divergent := agentconfig.HomeDivergencePaths()
+	if envDir != "" && !divergent {
+		result.Message = fmt.Sprintf(
+			"guard under HOME at %s is inert only for a Codex that sees CODEX_HOME=%s; "+
+				"if Codex runs without CODEX_HOME, that file is the active one — do not remove it",
+			inertPath, filepath.Clean(envDir),
+		)
+	} else {
+		result.Message = fmt.Sprintf(
+			"old guard under HOME is inert — Codex does not read %s; remove it by hand if you want",
 			inertPath,
 		)
 	}
@@ -1187,14 +1245,21 @@ func mergeCredentialGuardClaudeHooks(root map[string]interface{}, matcher, scrip
 // investigation resolved with confidence, so per the ML's own instructions
 // (fall back to a warning only "se não conseguir resolver a contradição com
 // confiança total") no hedge is needed.
-func harnessCredentialGuardTargetCodex(home string, opts UpdateOptions) TargetResult {
+func harnessCredentialGuardTargetCodex(home, codexDir string, codexDirErr error, opts UpdateOptions) TargetResult {
 	const id = "codex-credential-guard"
-	const displayPath = "~/.codex/hooks.json"
+	// ML-4A4: displayPath is dynamic — shows the real resolved path.
+	// In the control case (no CODEX_HOME, HOME == USERPROFILE) this produces
+	// "~/.codex/hooks.json", identical to the previous hardcoded value.
+	displayPath := codexHooksDisplayPath(codexDir)
+	if codexDirErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: "~/.codex/hooks.json", Message: fmt.Sprintf("resolving Codex config dir: %s", codexDirErr)}
+	}
 
-	path := filepath.Join(home, ".codex", "hooks.json")
+	path := filepath.Join(codexDir, "hooks.json")
 	// Guard: reject writes through symlinks before any filesystem mutation
-	// (ADR-2026-09-18 / ML-1B).
-	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
+	// (ADR-2026-09-18 / ML-1B). Root is filepath.Dir(codexDir) — same depth
+	// as Claude's rejectHarnessSymlink(filepath.Dir(claudeDir), ...).
+	if result, guarded := rejectHarnessSymlink(filepath.Dir(codexDir), path, id, displayPath); guarded {
 		return result
 	}
 	// ML-2A: global configs now emit the inline command instead of an absolute .sh path.
@@ -1207,7 +1272,7 @@ func harnessCredentialGuardTargetCodex(home string, opts UpdateOptions) TargetRe
 			return TargetResult{ID: id, State: TargetMissing, Path: displayPath}
 		}
 		if opts.DryRun {
-			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+			return withD5NoticeCodex(TargetResult{ID: id, State: TargetUpdated, Path: displayPath}, codexDir)
 		}
 		root := make(map[string]interface{})
 		mergeCredentialGuardClaudeHooks(root, "Bash", guardCredentialGlobalCmdPSPOSIX)
@@ -1223,7 +1288,7 @@ func harnessCredentialGuardTargetCodex(home string, opts UpdateOptions) TargetRe
 		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 		}
-		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		return withD5NoticeCodex(TargetResult{ID: id, State: TargetUpdated, Path: displayPath}, codexDir)
 	case err != nil:
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
 	}
@@ -1272,16 +1337,16 @@ func harnessCredentialGuardTargetCodex(home string, opts UpdateOptions) TargetRe
 	}
 	desired := append(out, '\n')
 	if string(desired) == string(raw) {
-		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
+		return withD5NoticeCodex(TargetResult{ID: id, State: TargetSkipped, Path: displayPath}, codexDir)
 	}
 	if opts.DryRun {
-		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		return withD5NoticeCodex(TargetResult{ID: id, State: TargetUpdated, Path: displayPath}, codexDir)
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 	}
-	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	return withD5NoticeCodex(TargetResult{ID: id, State: TargetUpdated, Path: displayPath}, codexDir)
 }
 
 // mergeCredentialGuardGeminiHooks merges the credential-guard BeforeTool/
@@ -2159,14 +2224,18 @@ func harnessGitBranchGuardTargetClaude(home, claudeDir string, claudeDirErr erro
 // harnessGitBranchGuardTargetCodex wires the global-scope git-branch-guard
 // hook for Codex CLI into ~/.codex/hooks.json, mirroring
 // harnessCredentialGuardTargetCodex/harnessGitBranchGuardTargetClaude.
-func harnessGitBranchGuardTargetCodex(home string, opts UpdateOptions) TargetResult {
+func harnessGitBranchGuardTargetCodex(home, codexDir string, codexDirErr error, opts UpdateOptions) TargetResult {
 	const id = "codex-git-branch-guard"
-	const displayPath = "~/.codex/hooks.json"
+	// ML-4A4: displayPath is dynamic — same reasoning as harnessCredentialGuardTargetCodex.
+	displayPath := codexHooksDisplayPath(codexDir)
+	if codexDirErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: "~/.codex/hooks.json", Message: fmt.Sprintf("resolving Codex config dir: %s", codexDirErr)}
+	}
 
-	path := filepath.Join(home, ".codex", "hooks.json")
+	path := filepath.Join(codexDir, "hooks.json")
 	// Guard: reject writes through symlinks before any filesystem mutation
-	// (ADR-2026-09-18 / ML-1B).
-	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
+	// (ADR-2026-09-18 / ML-1B). Root is filepath.Dir(codexDir) — mirrors Claude.
+	if result, guarded := rejectHarnessSymlink(filepath.Dir(codexDir), path, id, displayPath); guarded {
 		return result
 	}
 	// ML-2A: global configs now emit the inline command instead of an absolute .sh path.
@@ -2179,7 +2248,7 @@ func harnessGitBranchGuardTargetCodex(home string, opts UpdateOptions) TargetRes
 			return TargetResult{ID: id, State: TargetMissing, Path: displayPath}
 		}
 		if opts.DryRun {
-			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+			return withD5NoticeCodex(TargetResult{ID: id, State: TargetUpdated, Path: displayPath}, codexDir)
 		}
 		root := make(map[string]interface{})
 		mergeCredentialGuardClaudeHooks(root, "Bash", guardGitBranchCmdPSPOSIX)
@@ -2195,7 +2264,7 @@ func harnessGitBranchGuardTargetCodex(home string, opts UpdateOptions) TargetRes
 		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 		}
-		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		return withD5NoticeCodex(TargetResult{ID: id, State: TargetUpdated, Path: displayPath}, codexDir)
 	case err != nil:
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
 	}
@@ -2239,16 +2308,16 @@ func harnessGitBranchGuardTargetCodex(home string, opts UpdateOptions) TargetRes
 	}
 	desired := append(out, '\n')
 	if string(desired) == string(raw) {
-		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
+		return withD5NoticeCodex(TargetResult{ID: id, State: TargetSkipped, Path: displayPath}, codexDir)
 	}
 	if opts.DryRun {
-		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		return withD5NoticeCodex(TargetResult{ID: id, State: TargetUpdated, Path: displayPath}, codexDir)
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 	}
-	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	return withD5NoticeCodex(TargetResult{ID: id, State: TargetUpdated, Path: displayPath}, codexDir)
 }
 
 // harnessGitBranchGuardTargetGemini wires the global-scope git-branch-guard
@@ -2711,7 +2780,7 @@ func harnessGitBranchGuardTargetKiro(home string, opts UpdateOptions) TargetResu
 // advisory is emitted once per harness run, not once per catalog target.
 // Pass nil when no agent_models advisory applies (non-catalog targets never
 // call this function).
-func harnessCatalogTarget(catalog *integrations.Catalog, id, tool string, kind integrations.ItemKind, home, claudeDir string, claudeDirErr error, agentModels map[string]string, opts UpdateOptions) TargetResult {
+func harnessCatalogTarget(catalog *integrations.Catalog, id, tool string, kind integrations.ItemKind, home, claudeDir string, claudeDirErr error, codexDir string, codexDirErr error, agentModels map[string]string, opts UpdateOptions) TargetResult {
 	displayPath, pathErr := integrations.GlobalGroupPath(catalog, tool, kind)
 	if pathErr != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: "", Message: pathErr.Error()}
@@ -2735,10 +2804,21 @@ func harnessCatalogTarget(catalog *integrations.Catalog, id, tool string, kind i
 	// global claude agents/skills are written at the path Claude Code actually
 	// reads. claudeDir comes from the caller (D3: one resolved value per harness
 	// run). Non-Claude tools are unaffected (D2: behaviour unchanged).
+	//
+	// ML-4A4 (R6): set CodexDir for the codex tool so global codex agents are
+	// written at the path Codex actually reads ($CODEX_HOME/agents/ when CODEX_HOME
+	// is set, otherwise $HOME/.codex/agents/). codexDir comes from the caller (same
+	// D3 pattern as Claude). Skills under ~/.agents/ are NOT part of the codex
+	// config dir — they are left unchanged (source unverified; see R6 comment in
+	// docs/cli-parity.md).
 	manager := integrations.Manager{ProjectRoot: home, HomeDir: home}
 	if tool == agentconfig.CLIClaude {
 		capturedDir, capturedErr := claudeDir, claudeDirErr
 		manager.ClaudeDir = func() (string, error) { return capturedDir, capturedErr }
+	}
+	if tool == agentconfig.CLICodex {
+		capturedDir, capturedErr := codexDir, codexDirErr
+		manager.CodexDir = func() (string, error) { return capturedDir, capturedErr }
 	}
 	anyInstalled := false
 	anyChanged := false
