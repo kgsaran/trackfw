@@ -1282,12 +1282,14 @@ PY
 WSM_TMP=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-wsm-pins.XXXXXX")
 # WSM_TMP cleanup handled by the combined EXIT trap at the top of this script.
 
-# Fixture: minimal trackfw.yaml + all six .sh convenience artifacts on disk.
+# Fixture: minimal trackfw.yaml + all three .sh convenience artifacts on disk.
+# Git hook scripts (.husky/*, .lefthook/commit-msg/*) are excluded from
+# shConvenienceArtifacts since ML-4A2: Git for Windows augments the hook PATH
+# with usr\bin so sh is available to hooks regardless of the user's interactive PATH
+# (measured 2026-11-17, docs/portabilidade/2026-11-17-ml-4a-husky-sem-sh-no-path.md).
 mkdir -p \
   "$WSM_TMP/wsm/docs/roadmaps/wip" \
-  "$WSM_TMP/wsm/scripts" \
-  "$WSM_TMP/wsm/.lefthook/commit-msg" \
-  "$WSM_TMP/wsm/.husky"
+  "$WSM_TMP/wsm/scripts"
 
 cat >"$WSM_TMP/wsm/trackfw.yaml" <<'EOF'
 roadmap_dir: docs/roadmaps
@@ -1296,10 +1298,7 @@ EOF
 for rel in \
   "scripts/trackfw-attention-signal.sh" \
   "scripts/trackfw-attention-cleanup.sh" \
-  "scripts/trackfw-validate.sh" \
-  ".lefthook/commit-msg/trackfw-req-check.sh" \
-  ".husky/pre-commit" \
-  ".husky/commit-msg"; do
+  "scripts/trackfw-validate.sh"; do
   printf '#!/bin/sh\nexit 0\n' >"$WSM_TMP/wsm/$rel"
 done
 

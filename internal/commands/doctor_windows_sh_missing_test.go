@@ -66,7 +66,9 @@ func TestDoctorWindowsShMissing_FindingsEmitted(t *testing.T) {
 	}
 
 	// Place .sh artifacts inside the project root (cwd = project after integrationCommandFixture).
-	for _, rel := range []string{"scripts/trackfw-validate.sh", ".husky/pre-commit"} {
+	// Use two scripts/ artifacts; .husky/pre-commit is excluded from shConvenienceArtifacts
+	// (ML-4A2: git hooks get sh from the git-augmented PATH).
+	for _, rel := range []string{"scripts/trackfw-validate.sh", "scripts/trackfw-attention-signal.sh"} {
 		full := filepath.Join(project, filepath.FromSlash(rel))
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 			t.Fatalf("mkdir %s: %v", filepath.Dir(full), err)
@@ -93,9 +95,10 @@ func TestDoctorWindowsShMissing_FindingsEmitted(t *testing.T) {
 	}
 
 	// At least one finding must name a .sh artifact as Destination.
+	// .husky/pre-commit is excluded from shConvenienceArtifacts (ML-4A2).
 	wantArtifacts := map[string]bool{
-		"scripts/trackfw-validate.sh": false,
-		".husky/pre-commit":           false,
+		"scripts/trackfw-validate.sh":          false,
+		"scripts/trackfw-attention-signal.sh":  false,
 	}
 	for _, f := range shFindings {
 		if _, ok := wantArtifacts[f.Destination]; ok {

@@ -9882,7 +9882,7 @@ protection).
 
 ### `windows_sh_missing` — informative warning, never a violation
 
-<!-- trackfw-contract: gate=internal/validator/validator_windows_sh_missing_rule_test.go partial=TestWindowsShMissing_Warning_NamesArtifact proves one warning is emitted with the artifact path and the "sh not found in PATH" phrase when GOOS=windows, sh absent, and a .sh artifact is present; TestWindowsShMissing_ShPresent_Silent proves silence when sh is found in PATH; TestWindowsShMissing_NoArtifacts_BarrierWarning proves a barrier-gates warning is emitted even when no .sh artifacts exist (GOOS=windows, sh absent); TestWindowsShMissing_DarwinSilent proves the GOOS guard fires on darwin and linux regardless of sh presence; TestWindowsShMissing_GuardNeverCited proves guard scripts (credential, git-branch) are never listed even when present on disk; TestWindowsShMissing_AllArtifactsListed proves a single warning names all six present convenience artifacts; TestWindowsShMissing_PublicWrapperUsesSeams proves the public validateWindowsShMissing respects CurrentGOOS and ShLookPathFn seams; TestWindowsShMissing_FiacaoValidateUnfiltered/ValidateUnfiltered proves the ValidateUnfiltered wiring site routes the warning to the caller; TestWindowsShMissing_FiacaoValidateUnfiltered/validateUnfilteredTagged proves the validateUnfilteredTagged wiring site routes the warning via the --json path; TestDoctorWindowsShMissing_FindingsEmitted proves runDoctor emits artifact findings and the barrier finding via the full doctor code path; no script gate for the Windows-only runtime path (windows branch not exercised in macOS/Linux CI — the "fires" case is Go unit tests only) -->
+<!-- trackfw-contract: gate=internal/validator/validator_windows_sh_missing_rule_test.go partial=TestWindowsShMissing_Warning_NamesArtifact proves one warning is emitted with the artifact path and the "sh not found in PATH" phrase when GOOS=windows, sh absent, and a .sh artifact is present; TestWindowsShMissing_ShPresent_Silent proves silence when sh is found in PATH; TestWindowsShMissing_NoArtifacts_BarrierWarning proves a barrier-gates warning is emitted even when no .sh artifacts exist (GOOS=windows, sh absent); TestWindowsShMissing_DarwinSilent proves the GOOS guard fires on darwin and linux regardless of sh presence; TestWindowsShMissing_GuardNeverCited proves guard scripts (credential, git-branch) are never listed even when present on disk; TestWindowsShMissing_AllArtifactsListed proves a single warning names all three present convenience artifacts (ML-4A2: git hook scripts excluded); TestWindowsShMissing_GitHookArtifactsNotListed proves that a fixture with only .husky/pre-commit, .husky/commit-msg and .lefthook/commit-msg/trackfw-req-check.sh produces the barrier-only variant and that none of those hook names appear in the message; counter-arm proves that adding scripts/trackfw-validate.sh makes the scripts list appear while hook names remain absent; TestWindowsShMissing_PublicWrapperUsesSeams proves the public validateWindowsShMissing respects CurrentGOOS and ShLookPathFn seams; TestWindowsShMissing_FiacaoValidateUnfiltered/ValidateUnfiltered proves the ValidateUnfiltered wiring site routes the warning to the caller; TestWindowsShMissing_FiacaoValidateUnfiltered/validateUnfilteredTagged proves the validateUnfilteredTagged wiring site routes the warning via the --json path; TestDoctorWindowsShMissing_FindingsEmitted proves runDoctor emits artifact findings and the barrier finding via the full doctor code path; no script gate for the Windows-only runtime path (windows branch not exercised in macOS/Linux CI — the "fires" case is Go unit tests only) -->
 
 **REQ-IMP-9 (REQ-2026-11-15 ML-3D2).** On Windows, when `sh` is absent from PATH,
 `trackfw validate` **always** emits a **warning** (never a violation). The rule fires
@@ -9898,13 +9898,20 @@ rule is also silent. The "fires" case is verified exclusively by Go unit tests v
 `trackfw guard <name>` Go subcommands and execute natively on Windows without `sh`
 (REQ-IMP-5 / ADR-2026-10-14 AC4).
 
+**Excluded artifacts (git hooks):** `.husky/pre-commit`, `.husky/commit-msg`, and
+`.lefthook/commit-msg/trackfw-req-check.sh` are **never** listed — they are executed
+by Git for Windows as git hooks. Git for Windows augments the PATH before spawning
+every hook, adding `usr\bin` (where `sh.exe` lives). All child processes of the hook
+— including the lefthook binary when `runner: sh` is configured — inherit this
+augmented PATH and can find `sh` even when it is absent from the user's interactive
+PATH. Measured on Git for Windows 2.55.0 ARM64 (2026-11-17,
+`docs/portabilidade/2026-11-17-ml-4a-husky-sem-sh-no-path.md`).
+This exclusion was added in ML-4A2 (REQ-2026-11-15).
+
 **Covered artifacts:**
 - `scripts/trackfw-attention-signal.sh`
 - `scripts/trackfw-attention-cleanup.sh`
 - `scripts/trackfw-validate.sh`
-- `.lefthook/commit-msg/trackfw-req-check.sh`
-- `.husky/pre-commit`
-- `.husky/commit-msg`
 
 The rule id is `windows_sh_missing`, severity `warning`, routed through
 `applyRuleWarnOnly` / `applyRuleWarnOnlyTagged` — it is never demotable to a violation;

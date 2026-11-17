@@ -21,17 +21,25 @@ import (
 )
 
 // shConvenienceArtifacts is the exhaustive list of .sh files that `trackfw init`
-// may generate and that require a POSIX shell to execute.
-// Guards (trackfw-credential-guard.sh, trackfw-git-branch-guard.sh) are NOT
-// listed: they are delivered as `trackfw guard <name>` Go subcommands and run
-// natively on Windows without sh.
+// may generate and that require the user to have a POSIX shell in their
+// interactive PATH to execute.
+//
+// Two classes of artifacts are explicitly excluded:
+//   - Guards (trackfw-credential-guard.sh, trackfw-git-branch-guard.sh): they
+//     are delivered as `trackfw guard <name>` Go subcommands and run natively
+//     on Windows without sh.
+//   - Git hook scripts (.husky/pre-commit, .husky/commit-msg,
+//     .lefthook/commit-msg/trackfw-req-check.sh): Git for Windows augments the
+//     PATH before spawning every hook, adding usr\bin (where sh.exe lives).
+//     All child processes of the hook — including the lefthook binary when
+//     runner: sh is configured — inherit this augmented PATH and can find sh
+//     even when it is absent from the user's interactive PATH.
+//     Measured on Git for Windows 2.55.0 ARM64 (2026-11-17,
+//     docs/portabilidade/2026-11-17-ml-4a-husky-sem-sh-no-path.md).
 var shConvenienceArtifacts = []string{
 	"scripts/trackfw-attention-signal.sh",
 	"scripts/trackfw-attention-cleanup.sh",
 	"scripts/trackfw-validate.sh",
-	".lefthook/commit-msg/trackfw-req-check.sh",
-	".husky/pre-commit",
-	".husky/commit-msg",
 }
 
 // ShLookPathFn is exec.LookPath; exported so that tests in other packages
