@@ -6,3 +6,4 @@
 - [Mensagem de log prova o que já rodou](feedback_mensagem_de_log_prova_o_que_ja_rodou.md) — ordenar quem emite cada string falsifica hipótese sobre passo anterior, sem reproduzir o ambiente
 - [Assinatura de saída antes de hipótese](feedback_assinatura_de_saida_antes_de_hipotese.md) — medir rc+stdout+stderr de cada mecanismo candidato elimina sem ter a plataforma; ausência de FAIL não é prova de execução
 - [Build old binary before editing](feedback_build_old_binary_before_editing.md) — build the buggy binary FIRST, then edit; proves old=FAIL/new=PASS without git stash
+- [PowerShell BOM trap](feedback_powershell_bom_trap.md) — PowerShell default = UTF-8 BOM; serde_json/Go reject it silently; use `UTF8Encoding($false)`; `exit 0` in .cmd kills outer batch (use `exit /b 0`)
