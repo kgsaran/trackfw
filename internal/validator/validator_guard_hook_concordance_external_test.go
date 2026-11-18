@@ -1130,14 +1130,16 @@ func TestGeminiCliLegacy_GeminiGuardNoAntigravity_Warns(t *testing.T) {
 	}
 
 	// gemini_cli_legacy must be a warning, never a violation.
+	// Message check uses the English substring (A7, ML-4C REQ-2026-11-17).
+	const geminiLegacyMarker = "Gemini CLI is legacy"
 	for _, v := range violations {
-		if strings.Contains(v, "Gemini CLI") && strings.Contains(v, "legado") {
+		if strings.Contains(v, geminiLegacyMarker) {
 			t.Errorf("gemini_cli_legacy must be a warning, not a violation; got: %q", v)
 		}
 	}
 	found := false
 	for _, w := range warnings {
-		if strings.Contains(w, "Gemini CLI") && strings.Contains(w, "legado") {
+		if strings.Contains(w, geminiLegacyMarker) {
 			found = true
 			break
 		}
@@ -1166,8 +1168,10 @@ func TestGeminiCliLegacy_BothPresent_Silent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ValidateForTest: %v", err)
 	}
+	// Message check uses the English substring (A7, ML-4C REQ-2026-11-17).
+	const geminiLegacyMarker2 = "Gemini CLI is legacy"
 	for _, w := range warnings {
-		if strings.Contains(w, "Gemini CLI") && strings.Contains(w, "legado") {
+		if strings.Contains(w, geminiLegacyMarker2) {
 			t.Errorf("gemini_cli_legacy must be silent when both guards present; got: %q", w)
 		}
 	}
@@ -1185,8 +1189,10 @@ func TestGeminiCliLegacy_NeitherPresent_Silent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ValidateForTest: %v", err)
 	}
+	// Message check uses the English substring (A7, ML-4C REQ-2026-11-17).
+	const geminiLegacyMarker3 = "Gemini CLI is legacy"
 	for _, w := range warnings {
-		if strings.Contains(w, "Gemini CLI") && strings.Contains(w, "legado") {
+		if strings.Contains(w, geminiLegacyMarker3) {
 			t.Errorf("gemini_cli_legacy must be silent when neither guard present; got: %q", w)
 		}
 	}
@@ -1213,8 +1219,10 @@ func TestGeminiCliLegacy_GeminiNoGuard_Silent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ValidateForTest: %v", err)
 	}
+	// Message check uses the English substring (A7, ML-4C REQ-2026-11-17).
+	const geminiLegacyMarker4 = "Gemini CLI is legacy"
 	for _, w := range warnings {
-		if strings.Contains(w, "Gemini CLI") && strings.Contains(w, "legado") {
+		if strings.Contains(w, geminiLegacyMarker4) {
 			t.Errorf("gemini_cli_legacy must be silent when Gemini has no guard; got: %q", w)
 		}
 	}
@@ -1245,14 +1253,16 @@ func TestGeminiCliLegacy_StrictMode_StillWarning(t *testing.T) {
 	}
 
 	// Must never be a violation even with rules.gemini_cli_legacy: error.
+	// Message check uses the English substring (A7, ML-4C REQ-2026-11-17).
+	const geminiLegacyMarker5 = "Gemini CLI is legacy"
 	for _, v := range violations {
-		if strings.Contains(v, "Gemini CLI") && strings.Contains(v, "legado") {
+		if strings.Contains(v, geminiLegacyMarker5) {
 			t.Errorf("gemini_cli_legacy must be a warning even with rules: error; got violation: %q", v)
 		}
 	}
 	found := false
 	for _, w := range warnings {
-		if strings.Contains(w, "Gemini CLI") && strings.Contains(w, "legado") {
+		if strings.Contains(w, geminiLegacyMarker5) {
 			found = true
 			break
 		}

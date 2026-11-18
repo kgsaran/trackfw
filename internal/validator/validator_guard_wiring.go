@@ -34,6 +34,7 @@ import (
 	"strings"
 
 	"github.com/kgsaran/trackfw/internal/guardforms"
+	"github.com/kgsaran/trackfw/internal/hookschema"
 )
 
 // wiringTuple is one guard hook entry: the event name, the matcher pattern, and the guard type.
@@ -326,6 +327,7 @@ func guardWiringParseTuples(content []byte, hf credentialGuardHookFile) ([]wirin
 func guardWiringExtractTuples(parsed map[string]any, schema hookCmdSchemaKind, family guardShellFamily) []wiringTuple {
 	// D6 (ADR-2026-11-18): Antigravity uses {groupName:{event:[...]}} at the top level — there is
 	// no "hooks" key. Handle this schema BEFORE the root["hooks"] lookup to avoid a silent nil.
+	// Traversal delegated to hookschema.WalkAntigravityEntries (A3, ML-4C REQ-2026-11-17).
 	if schema == hookCmdSchemaAntigravity {
 		var tuples []wiringTuple
 		seen := make(map[string]bool)
@@ -336,32 +338,11 @@ func guardWiringExtractTuples(parsed map[string]any, schema hookCmdSchemaKind, f
 				tuples = append(tuples, wiringTuple{event: event, matcher: matcher, guardType: guardType})
 			}
 		}
-		for groupName, groupRaw := range parsed {
-			groupObj, ok := groupRaw.(map[string]any)
-			if !ok {
-				continue
+		hookschema.WalkAntigravityEntries(parsed, func(_, event, matcher, cmd, _ string) {
+			if gt := guardWiringTypeFromCmd(cmd, family); gt != "" {
+				addTuple(event, matcher, gt)
 			}
-			for eventName, entriesRaw := range groupObj {
-				entries, ok := entriesRaw.([]any)
-				if !ok {
-					continue
-				}
-				for _, entryRaw := range entries {
-					entry, ok := entryRaw.(map[string]any)
-					if !ok {
-						continue
-					}
-					matcher, _ := entry["matcher"].(string)
-					cmds := guardWiringExtractCommandsFromEntry(entry, hookCmdSchemaAntigravity)
-					for _, cmd := range cmds {
-						if gt := guardWiringTypeFromCmd(cmd, family); gt != "" {
-							addTuple(eventName, matcher, gt)
-						}
-					}
-				}
-			}
-			_ = groupName // group name is not used for tuple identity
-		}
+		})
 		return tuples
 	}
 

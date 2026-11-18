@@ -224,7 +224,10 @@ func RunCredential(stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	isAntig, payloadCwd, layer1Str := credGetAntigravityInfo(data)
 	projectCwd := processCwd
-	if isAntig && payloadCwd != "" {
+	if isAntig && payloadCwd != "" && filepath.IsAbs(payloadCwd) {
+		// A4 (ML-4C REQ-2026-11-17): only use payloadCwd when it is absolute.
+		// A relative cwd (never sent by the production runtime but defensively guarded)
+		// would resolve against the process cwd (.agents/), producing an incorrect path.
 		projectCwd = payloadCwd
 	}
 	if _, err := os.Stat(filepath.Join(projectCwd, "trackfw.yaml")); err != nil {
@@ -593,6 +596,9 @@ func credRedirectTarget(match string) string {
 // The returned cleanedPath is the path after quote-stripping and trailing "},
 // removal — it is the exact string passed to os.Stat. Callers must sanitize it
 // via credSanitizePath before including it in any output (D1).
+//
+// Use credScanFilePath when path is already JSON-decoded (no shell-token quoting
+// residue) so that literal apostrophes/quotes in filenames are preserved.
 func credScanFile(path string) (typ, cleanedPath string) {
 	// tr -d "\"'" | sed -E 's/[},]+$//'
 	path = strings.Map(func(r rune) rune {
@@ -602,7 +608,17 @@ func credScanFile(path string) (typ, cleanedPath string) {
 		return r
 	}, path)
 	path = strings.TrimRight(path, "},")
+	return credScanFilePath(path)
+}
 
+// credScanFilePath is like credScanFile but does NOT strip quote characters
+// from path. Use when path is already JSON-decoded (e.g. AbsolutePath from a
+// parsed hook payload) — stripping quotes would corrupt file names that
+// legitimately contain apostrophes or double-quotes (A1, ML-4C REQ-2026-11-17).
+//
+// The returned cleanedPath equals the path argument when non-empty.
+// Callers must sanitize it via credSanitizePath before including it in output.
+func credScanFilePath(path string) (typ, cleanedPath string) {
 	if path == "" {
 		return "", ""
 	}
@@ -800,9 +816,21 @@ func credViewFileScan(toolName string, data []byte, shellCwd string) credFinding
 	if !found || absPath == "" {
 		return credFinding{}
 	}
-	resolved := credResolveArg(absPath, shellCwd, toolName)
-	if typ, cleanedPath := credScanFile(resolved); typ != "" {
-		return credFinding{typ: typ, path: cleanedPath}
+	// absPath is JSON-decoded: do NOT strip quote characters or trailing shell-residue
+	// characters (A1, ML-4C REQ-2026-11-17). Apply only: Windows drive-letter normalisation,
+	// filepath.Clean, and cwd-join for relative paths.
+	// strings.TrimRight("},") is intentionally absent — unlike the shell-token pipeline
+	// (credScanFile), absPath arrives pre-decoded and must be used literally.
+	cleanPath := credNormalizeWindowsPath(absPath, runtime.GOOS, toolName)
+	if cleanPath == "" {
+		return credFinding{}
+	}
+	cleanPath = filepath.Clean(cleanPath)
+	if !filepath.IsAbs(cleanPath) && shellCwd != "" {
+		cleanPath = filepath.Join(shellCwd, cleanPath)
+	}
+	if typ, scanPath := credScanFilePath(cleanPath); typ != "" {
+		return credFinding{typ: typ, path: scanPath}
 	}
 	return credFinding{}
 }

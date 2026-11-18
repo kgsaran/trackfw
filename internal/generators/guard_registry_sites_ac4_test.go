@@ -68,11 +68,13 @@ func ac4AntigravityGroupSeed(t *testing.T, path, matcher, legacy, canonical stri
 	})
 }
 
-// countAntigravityGroup counts entries under root["trackfw"]["PreToolUse"]
-// with the given matcher and command.
-func countAntigravityGroup(root map[string]interface{}, _, matcher, cmd string) int {
+// countAntigravityGroup counts entries under root["trackfw"][event]
+// with the given matcher and command. The event parameter is used (not ignored)
+// so that callers passing a non-PreToolUse event get the correct count (A6,
+// ML-4C REQ-2026-11-17).
+func countAntigravityGroup(root map[string]interface{}, event, matcher, cmd string) int {
 	group, _ := root["trackfw"].(map[string]interface{})
-	arr, _ := group["PreToolUse"].([]interface{})
+	arr, _ := group[event].([]interface{})
 	n := 0
 	for _, item := range arr {
 		obj, _ := item.(map[string]interface{})
@@ -189,8 +191,11 @@ func TestAC4_RegistrySites(t *testing.T) {
 	}
 
 	// ── count alias for Antigravity group format ─────────────────────────────
-	antigravityGroupCount := func(root map[string]interface{}, _, matcher, cmd string) int {
-		return countAntigravityGroup(root, "", matcher, cmd)
+	// Pass the actual event name so countAntigravityGroup looks in the correct
+	// event slot (A6 fix: event parameter was previously ignored, hardcoded to
+	// "PreToolUse"; now it uses the event value from the row).
+	antigravityGroupCount := func(root map[string]interface{}, event, matcher, cmd string) int {
+		return countAntigravityGroup(root, event, matcher, cmd)
 	}
 
 	// ── run factory helpers ───────────────────────────────────────────────────

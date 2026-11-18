@@ -194,5 +194,14 @@ sem BOM.
   `credential_guard.mode: block` explícito no `trackfw.yaml` do projeto de teste (o default de projeto pode ser warn):
   segredo fake bloqueado, comando inócuo liberado, `git push` para branch protegida bloqueado
 - ML-4B — revisão de qualidade (hefesto-tf)
+- ML-4B — revisão do hefesto ✅ — APROVA COM NOTAS (`docs/qualidade/2026-11-18-ml-4b-antigravity-review.md`); A1 bloqueante
+- ML-4C — corretivo A1–A7 ✅ — `view_file` usa `AbsolutePath` literal (apóstrofo no nome dava falso negativo; o teste
+  reprova sem a correção); `cwd` do payload só se absoluto; walker único `internal/hookschema`; mensagem do
+  `gemini_cli_legacy` em inglês; `make quality` rc=0
+  - **Files affected:** `internal/guard/credential.go`, `internal/guard/antigravity_test.go`, `internal/hookschema/`,
+    `internal/auditsurface/auditsurface.go`, `internal/validator/validator_credential_guard.go`,
+    `internal/validator/validator_guard_wiring.go`, `internal/validator/validator_gemini_cli_legacy.go`,
+    `internal/validator/validator_guard_hook_concordance_external_test.go`,
+    `internal/generators/guard_registry_sites_ac4_test.go`, `docs/cli-parity.md`
 - ML-FA — red team (hades-tf)
 - ML-FB — `make quality` com a máquina ociosa e CI verde

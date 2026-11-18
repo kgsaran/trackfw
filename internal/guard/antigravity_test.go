@@ -398,6 +398,163 @@ func TestGuardStdoutEmpty_D2Invariant(t *testing.T) {
 	}
 }
 
+// --- A1: credViewFileScan must use path literally (no quote-stripping) ---
+
+// TestCredentialAntigravityPayload_ViewFileApostrophe_Secret asserts that a
+// view_file payload with AbsolutePath containing a literal apostrophe (e.g.
+// /dir/it's.env) is blocked when that file contains a credential.
+//
+// Regression for A1 (ML-4C, REQ-2026-11-17): credResolveArg stripped ALL
+// single-quote characters via strings.Map, turning "/dir/it's.env" into
+// "/dir/its.env", which does not exist → false negative (exit 0).
+// After the fix, the literal path is used → the file is read → exit 2.
+//
+// Conclusion asserted: credViewFileScan uses AbsolutePath literally (no
+// shell-token quote-stripping), so files with apostrophes in their names
+// are correctly scanned and blocked.
+func TestCredentialAntigravityPayload_ViewFileApostrophe_Secret(t *testing.T) {
+	projectDir, agentsDir := makeAntigravityProjectDir(t)
+	secret := googleFakeKey()
+
+	// File whose name contains a literal apostrophe.
+	secretFile := filepath.Join(projectDir, "it's.env")
+	if err := os.WriteFile(secretFile, []byte(secret), 0644); err != nil {
+		t.Fatalf("write it's.env: %v", err)
+	}
+
+	payload := antigravityPayload(t, projectDir, "view_file",
+		map[string]string{"AbsolutePath": secretFile},
+		nil,
+	)
+	code, stdout, _ := runCred(t, agentsDir, payload)
+	if code != 2 {
+		t.Fatalf("want exit 2 (view_file of it's.env with secret), got %d\n"+
+			"NOTE: exit 0 here is the A1 false negative — quote-stripping turned AbsolutePath into its.env", code)
+	}
+	if stdout != "" {
+		t.Fatalf("D2 invariant: want empty stdout on exit 2, got %q", stdout)
+	}
+}
+
+// TestCredentialAntigravityPayload_ViewFileApostrophe_Contra asserts that
+// a view_file payload pointing at an innocuous file with an apostrophe in
+// its name does NOT block, AND that the adjacent decoy "its.env" (without
+// apostrophe) containing a secret is NOT what the guard reads.
+//
+// This two-arm contra-braço closes the false-positive gap:
+//   - If the guard strips the apostrophe and reads "its.env", the decoy
+//     would cause exit 2 → the arm fails, proving the old path is in use.
+//   - If the guard reads the literal path "it's.env" (innocuous), exit 0
+//     → the arm passes.
+//
+// Conclusion asserted: the guard reads the literal AbsolutePath and ignores
+// adjacent files whose names differ only by apostrophe-stripping.
+func TestCredentialAntigravityPayload_ViewFileApostrophe_Contra(t *testing.T) {
+	projectDir, agentsDir := makeAntigravityProjectDir(t)
+	secret := googleFakeKey()
+
+	// Innocuous target: the file actually pointed to by AbsolutePath.
+	innocuousFile := filepath.Join(projectDir, "it's.env")
+	if err := os.WriteFile(innocuousFile, []byte("nothing here"), 0644); err != nil {
+		t.Fatalf("write it's.env: %v", err)
+	}
+	// Decoy: the stripped-quote form; contains a secret.
+	// If the guard strips quotes it would open this file → exit 2 (bad).
+	decoyFile := filepath.Join(projectDir, "its.env")
+	if err := os.WriteFile(decoyFile, []byte(secret), 0644); err != nil {
+		t.Fatalf("write its.env decoy: %v", err)
+	}
+
+	payload := antigravityPayload(t, projectDir, "view_file",
+		map[string]string{"AbsolutePath": innocuousFile},
+		nil,
+	)
+	code, stdout, _ := runCred(t, agentsDir, payload)
+	if code != 0 {
+		t.Fatalf("want exit 0 (it's.env is innocuous), got %d\n"+
+			"NOTE: exit 2 here means the guard read its.env (the decoy) instead of it's.env — A1 bug", code)
+	}
+	if stdout != "" {
+		t.Fatalf("D2 invariant: want empty stdout on exit 0, got %q", stdout)
+	}
+}
+
+// --- A2: git-branch guard tests with CWD = <project>/.agents ---
+
+// TestGitBranchAntigravityPayload_Push_FromAgentsDir asserts that an
+// Antigravity payload containing "git push origin main" is blocked when the
+// guard process runs from <project>/.agents (the actual CWD in production).
+//
+// Conclusion asserted: RunGitBranch calls FindProjectRoot(os.Getwd()) which
+// traverses upward from .agents/ and finds trackfw.yaml in the parent; the
+// guard is not silenced by the production CWD.
+func TestGitBranchAntigravityPayload_Push_FromAgentsDir(t *testing.T) {
+	projectDir := makeProjectDir(t)
+	agentsDir := filepath.Join(projectDir, ".agents")
+	if err := os.MkdirAll(agentsDir, 0755); err != nil {
+		t.Fatalf("mkdir .agents: %v", err)
+	}
+	payload := antigravityPayload(t, projectDir, "run_command",
+		map[string]string{"CommandLine": "git push origin main"},
+		nil,
+	)
+	code, _, _ := runWith(t, agentsDir, payload, "")
+	if code != 2 {
+		t.Fatalf("want exit 2 (push blocked from .agents cwd), got %d", code)
+	}
+}
+
+// TestGitBranchAntigravityPayload_AllowLs_FromAgentsDir asserts that a
+// non-git command is allowed when the guard process runs from .agents/.
+//
+// Conclusion asserted: RunGitBranch produces exit 0 and empty stdout for
+// benign commands regardless of whether cwd is the project root or .agents/.
+func TestGitBranchAntigravityPayload_AllowLs_FromAgentsDir(t *testing.T) {
+	projectDir := makeProjectDir(t)
+	agentsDir := filepath.Join(projectDir, ".agents")
+	if err := os.MkdirAll(agentsDir, 0755); err != nil {
+		t.Fatalf("mkdir .agents: %v", err)
+	}
+	payload := antigravityPayload(t, projectDir, "run_command",
+		map[string]string{"CommandLine": "ls"},
+		nil,
+	)
+	code, stdout, _ := runWith(t, agentsDir, payload, "")
+	if code != 0 {
+		t.Fatalf("want exit 0 (ls allowed from .agents cwd), got %d", code)
+	}
+	if stdout != "" {
+		t.Fatalf("want empty stdout on allow, got %q", stdout)
+	}
+}
+
+// --- A4: payloadCwd must be absolute before use ---
+
+// TestCredentialAntigravityPayload_RelativeCwd_FallsBackToGetwd asserts
+// that when the Antigravity payload contains a relative cwd, the guard
+// ignores it and falls back to os.Getwd() — which must contain trackfw.yaml
+// for the guard to remain active.
+//
+// Conclusion asserted: filepath.IsAbs guard on payloadCwd prevents a
+// relative cwd from corrupting the projectCwd resolution.
+func TestCredentialAntigravityPayload_RelativeCwd_FallsBackToGetwd(t *testing.T) {
+	projectDir, _ := makeAntigravityProjectDir(t)
+	secret := googleFakeKey()
+
+	// Build a payload with a RELATIVE cwd (invalid per ADR, hardening test).
+	// The relative cwd should be ignored; since we chdir into projectDir
+	// (which has trackfw.yaml), the guard stays active and blocks the secret.
+	relCwdPayload := fmt.Sprintf(
+		`{"cwd":"../nonexistent","hookEventName":"PreToolUse","toolCall":{"args":{"CommandLine":"echo %s"},"id":"c1","name":"run_command"}}`,
+		secret,
+	)
+	// Run from projectDir (has trackfw.yaml) — the guard should still block.
+	code, _, _ := runCred(t, projectDir, relCwdPayload)
+	if code != 2 {
+		t.Fatalf("want exit 2 (credential in CommandLine blocked even with relative payload cwd), got %d", code)
+	}
+}
+
 // TestExtractCommand_Priority5_AntigravityCommandLine asserts that priority 5
 // (toolCall.args.CommandLine) is used when priorities 1-4 are absent.
 //

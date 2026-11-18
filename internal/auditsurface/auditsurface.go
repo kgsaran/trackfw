@@ -23,6 +23,8 @@ import (
 	"path"
 	"sort"
 	"strings"
+
+	"github.com/kgsaran/trackfw/internal/hookschema"
 )
 
 // Runtime names in canonical order (matches check-agent-hooks-parity.sh CLIS).
@@ -712,71 +714,57 @@ func extractCursorSchema(content []byte) ([]HookTuple, error) {
 // (not just "trackfw") so that third-party groups are included in the audit —
 // they are part of the attack surface too (Threat model §1.9).
 //
-// Parsing uses json.RawMessage at the group level so that a group with an
-// unexpected shape (e.g. {"enabled": false}, or a non-object value) causes
-// only that group to be skipped — not the whole file.
+// Traversal is delegated to hookschema.WalkAntigravityEntries (A3, ML-4C
+// REQ-2026-11-17). Unlike the previous typed-unmarshal approach, per-entry
+// processing means a malformed sibling key (e.g. "enabled": false) in a
+// group no longer hides valid hook entries in that same group.
+//
+// Output is sorted for determinism: groups and events alphabetically, then
+// entries stably by matcher within each event (preserving document order
+// for equal matchers), keeping the tuple fingerprint byte-identical to the
+// previous implementation for well-formed inputs.
 //
 // Conclusion: extractAntigravitySchema yields one HookTuple per
-// (event, matcher, command) triple across all groups; tuples from third-party
-// groups are indistinguishable from trackfw's in the flat output — which
-// matches the audit-surface design intent (all hooks are attack surface).
+// (event, matcher, command) triple across all groups, skipping hooks whose
+// "type" is not "command"; tuples from third-party groups are included —
+// all hooks are attack surface.
 func extractAntigravitySchema(content []byte) ([]HookTuple, error) {
-	// Step 1: parse top level as group name → raw JSON value.
-	var topLevel map[string]json.RawMessage
-	if err := json.Unmarshal(content, &topLevel); err != nil {
+	var root map[string]any
+	if err := json.Unmarshal(content, &root); err != nil {
 		return nil, err
 	}
 
-	// Sort group names for deterministic output.
-	groups := make([]string, 0, len(topLevel))
-	for g := range topLevel {
-		groups = append(groups, g)
+	// Collect all raw tuples via the shared walker.
+	type rawTuple struct {
+		group, event, matcher, cmd, typeStr string
 	}
-	sort.Strings(groups)
+	var raw []rawTuple
+	hookschema.WalkAntigravityEntries(root, func(group, event, matcher, cmd, typeStr string) {
+		if typeStr != "command" {
+			return
+		}
+		raw = append(raw, rawTuple{group, event, matcher, cmd, typeStr})
+	})
 
-	// Step 2: for each group, try to parse as {"EVENT": [{matcher, hooks}]}.
-	// Groups that do not match this shape are silently skipped (non-fatal parse
-	// failure — the group may be a future schema extension or a non-hook key).
-	type hookEntry struct {
-		Type    string `json:"type"`
-		Command string `json:"command"`
-	}
-	type matcherEntry struct {
-		Matcher string      `json:"matcher"`
-		Hooks   []hookEntry `json:"hooks"`
-	}
-	var tuples []HookTuple
-	for _, groupName := range groups {
-		var eventMap map[string][]matcherEntry
-		if err := json.Unmarshal(topLevel[groupName], &eventMap); err != nil {
-			// Group doesn't match expected shape — skip silently.
-			continue
+	// Sort for deterministic output: group → event → matcher.
+	sort.SliceStable(raw, func(i, j int) bool {
+		if raw[i].group != raw[j].group {
+			return raw[i].group < raw[j].group
 		}
-		// Sort events for determinism.
-		events := make([]string, 0, len(eventMap))
-		for e := range eventMap {
-			events = append(events, e)
+		if raw[i].event != raw[j].event {
+			return raw[i].event < raw[j].event
 		}
-		sort.Strings(events)
-		for _, event := range events {
-			entries := eventMap[event]
-			sort.Slice(entries, func(i, j int) bool {
-				return entries[i].Matcher < entries[j].Matcher
-			})
-			for _, entry := range entries {
-				for _, h := range entry.Hooks {
-					if h.Type != "command" {
-						continue
-					}
-					tuples = append(tuples, HookTuple{
-						Event:      event,
-						Matcher:    entry.Matcher,
-						RawCommand: h.Command,
-						ScriptPath: normalizeCommand(h.Command),
-					})
-				}
-			}
-		}
+		return raw[i].matcher < raw[j].matcher
+	})
+
+	tuples := make([]HookTuple, 0, len(raw))
+	for _, r := range raw {
+		tuples = append(tuples, HookTuple{
+			Event:      r.event,
+			Matcher:    r.matcher,
+			RawCommand: r.cmd,
+			ScriptPath: normalizeCommand(r.cmd),
+		})
 	}
 	return tuples, nil
 }

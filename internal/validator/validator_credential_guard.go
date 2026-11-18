@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/kgsaran/trackfw/internal/agentconfig"
+	"github.com/kgsaran/trackfw/internal/hookschema"
 	"github.com/kgsaran/trackfw/internal/pathanchor"
 )
 
@@ -363,38 +364,14 @@ func collectCommandsWithMarkerBySchema(parsed interface{}, schema hookCmdSchemaK
 
 	// D6 (ADR-2026-11-18): Antigravity uses {groupName:{event:[...]}} at the top level — no
 	// "hooks" key. Handle this schema BEFORE the root["hooks"] lookup to avoid a silent return.
+	// Traversal delegated to hookschema.WalkAntigravityEntries (A3, ML-4C REQ-2026-11-17).
 	if schema == hookCmdSchemaAntigravity {
-		for _, groupRaw := range root {
-			groupObj, ok := groupRaw.(map[string]interface{})
-			if !ok {
-				continue
+		// Convert map[string]interface{} to map[string]any (identical underlying type).
+		hookschema.WalkAntigravityEntries(root, func(_, _, _, cmd, typeStr string) {
+			if strings.Contains(cmd, marker) {
+				*out = append(*out, guardCommandMatch{raw: cmd, typeIsCommand: typeStr == "command"})
 			}
-			for _, evRaw := range groupObj {
-				entries, ok := evRaw.([]interface{})
-				if !ok {
-					continue
-				}
-				// Same nested shape as hookCmdSchemaNested inside each event array.
-				for _, entryRaw := range entries {
-					entry, ok := entryRaw.(map[string]interface{})
-					if !ok {
-						continue
-					}
-					innerHooks, _ := entry["hooks"].([]interface{})
-					for _, ih := range innerHooks {
-						innerObj, ok := ih.(map[string]interface{})
-						if !ok {
-							continue
-						}
-						typeStr, _ := innerObj["type"].(string)
-						cmd, _ := innerObj["command"].(string)
-						if cmd != "" && strings.Contains(cmd, marker) {
-							*out = append(*out, guardCommandMatch{raw: cmd, typeIsCommand: typeStr == "command"})
-						}
-					}
-				}
-			}
-		}
+		})
 		return
 	}
 
@@ -1199,42 +1176,23 @@ func extractPresenceCommandsD17(parsed interface{}, event credentialGuardRequire
 	case hookCmdSchemaAntigravity:
 		// D6 (ADR-2026-11-18): {groupName:{event:[{matcher,hooks:[{type,command}]}]}}
 		// Iterate all group names → find event.hookEvent → filter by event.matcher → read inner hooks.
+		// Traversal delegated to hookschema.WalkAntigravityEntries (A3, ML-4C REQ-2026-11-17).
 		var out []guardCommandMatch
-		for _, groupRaw := range root {
-			groupObj, _ := groupRaw.(map[string]interface{})
-			if groupObj == nil {
-				continue
+		hookschema.WalkAntigravityEntries(root, func(_, evName, matcher, cmd, typeStr string) {
+			if evName != event.hookEvent {
+				return
 			}
-			evArr, _ := groupObj[event.hookEvent].([]interface{})
-			for _, groupEntryRaw := range evArr {
-				group, _ := groupEntryRaw.(map[string]interface{})
-				if group == nil {
-					continue
-				}
-				if event.matcher != "" {
-					m, _ := group["matcher"].(string)
-					if m != event.matcher {
-						continue
-					}
-				}
-				innerHooks, _ := group["hooks"].([]interface{})
-				for _, ih := range innerHooks {
-					innerObj, _ := ih.(map[string]interface{})
-					if innerObj == nil {
-						continue
-					}
-					typeStr, _ := innerObj["type"].(string)
-					cmd, _ := innerObj["command"].(string)
-					if cmd == "" || !containsMarker(cmd) {
-						continue
-					}
-					if requiresCommandType && typeStr != "command" {
-						continue
-					}
-					out = append(out, guardCommandMatch{raw: cmd, typeIsCommand: typeStr == "command"})
-				}
+			if event.matcher != "" && matcher != event.matcher {
+				return
 			}
-		}
+			if !containsMarker(cmd) {
+				return
+			}
+			if requiresCommandType && typeStr != "command" {
+				return
+			}
+			out = append(out, guardCommandMatch{raw: cmd, typeIsCommand: typeStr == "command"})
+		})
 		return out
 	}
 	return nil

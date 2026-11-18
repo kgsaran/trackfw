@@ -10225,7 +10225,7 @@ Windsurf e Amazon Q **permanecem com violation-grade** (`warnOnly=false` na mesm
 
 ## Regra `gemini_cli_legacy` — aviso de migração do Gemini CLI para o Antigravity (D7, ADR-2026-11-18, ML-3C)
 
-<!-- trackfw-contract: gate=internal/validator/validator_guard_hook_concordance_external_test.go partial=TestGeminiCliLegacy_ComGuardGeminiSemAntigravity (arm warn), TestGeminiCliLegacy_ComAmbosSemGuard (arm silêncio), TestGeminiCliLegacy_ComGuardGeminiEAntigravity (arm silêncio), TestGeminiCliLegacy_GeminiSemGuardCredencial (arm silêncio), TestGeminiCliLegacy_StrictMode_StillWarning (arm always-warning) exercem cada braço; a regra é roteada via applyRuleWarnOnly (nunca applyRule), garantindo que escalação via trackfw.yaml não converte em violation -->
+<!-- trackfw-contract: gate=internal/validator/validator_guard_hook_concordance_external_test.go partial=TestGeminiCliLegacy_GeminiGuardNoAntigravity_Warns (arm warn), TestGeminiCliLegacy_NeitherPresent_Silent (arm silêncio), TestGeminiCliLegacy_BothPresent_Silent (arm silêncio), TestGeminiCliLegacy_GeminiNoGuard_Silent (arm silêncio), TestGeminiCliLegacy_StrictMode_StillWarning (arm always-warning) exercem cada braço; a regra é roteada via applyRuleWarnOnly (nunca applyRule), garantindo que escalação via trackfw.yaml não converte em violation -->
 
 > REQ: `docs/req/REQ-2026-11-17-guard-de-credencial-no-google-antigravity-e-revisao-do-suporte-ao-gemini-cli.md`
 > ADR: `docs/adr/ADR-2026-11-18-guard-de-credencial-e-de-git-branch-no-google-antigravity-e-gemini-cli-como-legado.md` (D7)
@@ -10239,7 +10239,7 @@ Windsurf e Amazon Q **permanecem com violation-grade** (`warnOnly=false` na mesm
 Quando o projeto tem guard do Gemini CLI (`.gemini/settings.json` com marcador de credential guard) mas **nenhum** guard do Antigravity (`.agents/hooks.json` com marcador de credential guard), emite um warning:
 
 ```
-Gemini CLI é legado para contas individuais desde 2026-06-18 (D7, ADR-2026-11-18): o projeto tem guard do Gemini CLI (.gemini/settings.json) mas não tem guard do Antigravity (.agents/hooks.json); execute `trackfw agents install --targets antigravity`
+Gemini CLI is legacy for individual accounts since 2026-06-18 (D7, ADR-2026-11-18): project has Gemini CLI guard (.gemini/settings.json) but no Antigravity guard (.agents/hooks.json); run `trackfw agents install --targets antigravity`
 ```
 
 **Lógica de silêncio:**

@@ -43,9 +43,9 @@ func validateGeminiCliLegacyWarnings(root string) ([]string, error) {
 	}
 
 	return []string{
-		"Gemini CLI é legado para contas individuais desde 2026-06-18 (D7, ADR-2026-11-18): " +
-			"o projeto tem guard do Gemini CLI (.gemini/settings.json) mas não tem guard do Antigravity " +
-			"(.agents/hooks.json); execute `trackfw agents install --targets antigravity`",
+		"Gemini CLI is legacy for individual accounts since 2026-06-18 (D7, ADR-2026-11-18): " +
+			"project has Gemini CLI guard (.gemini/settings.json) but no Antigravity guard " +
+			"(.agents/hooks.json); run `trackfw agents install --targets antigravity`",
 	}, nil
 }
 
