@@ -3,6 +3,7 @@ package generators
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1911,6 +1912,12 @@ func InjectAmazonQHooks(rootDir string) error {
 	return os.WriteFile(path, append(out, '\n'), 0644)
 }
 
+// antigravityErrWriter is the writer used for advisory messages from
+// InjectAntigravityHooks. If nil, os.Stderr is used. Tests set it to
+// capture output without redirecting the real os.Stderr.
+// ML-FA2 (REQ-2026-11-17): F2 — enabled:false re-enable warning seam.
+var antigravityErrWriter io.Writer
+
 // InjectAntigravityHooks injects guard hooks into .agents/hooks.json for
 // the Google Antigravity CLI (agy).
 //
@@ -1984,6 +1991,34 @@ func InjectAntigravityHooks(rootDir string) error {
 	trackfwGroup, _ := root["trackfw"].(map[string]interface{})
 	if trackfwGroup == nil {
 		trackfwGroup = make(map[string]interface{})
+	}
+
+	// F2 (ML-FA2 REQ-2026-11-17): if the "trackfw" group has "enabled":false,
+	// remove the key so that the Antigravity runtime treats the group as enabled
+	// (absence == true per §5.3 of the hook contract). Emit a warning to inform
+	// the operator that the guard was silently disabled and has been re-enabled.
+	//
+	// Only a JSON boolean false triggers the warning and removal; non-boolean
+	// values (including string "false") are outside the documented contract and
+	// are left untouched to avoid unexpected side effects.
+	//
+	// Third-party groups are never touched — this block only inspects and mutates
+	// the "trackfw" group that InjectAntigravityHooks owns.
+	if enabledVal, hasEnabled := trackfwGroup["enabled"]; hasEnabled {
+		if enabled, ok := enabledVal.(bool); ok && !enabled {
+			errW := antigravityErrWriter
+			if errW == nil {
+				errW = os.Stderr
+			}
+			fmt.Fprintln(errW,
+				"trackfw: warning: .agents/hooks.json trackfw group had \"enabled\":false"+
+					" — guard was disabled; re-enabling (ML-FA2 REQ-2026-11-17)",
+			)
+		}
+		// Remove the key regardless of its value: absence means enabled per the
+		// Antigravity doc; keeping it as "enabled":true would be redundant but
+		// harmless, while keeping it as "enabled":false would suppress the guard.
+		delete(trackfwGroup, "enabled")
 	}
 
 	// Dedup pass: normalize any PSPOSIX or legacy CmdExe forms that might

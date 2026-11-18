@@ -648,3 +648,44 @@ func TestCredentialAntigravityPayload_WriteToFileWithSecret(t *testing.T) {
 		t.Fatalf("D2 invariant: want empty stdout on exit 2, got %q", stdout)
 	}
 }
+
+// --- F1 (ML-FA2 REQ-2026-11-17): P5 requires hookEventName ---
+
+// TestExtractCommand_P5_NoHookEventName_NotExtracted asserts that
+// toolCall.args.CommandLine is NOT extracted when hookEventName is absent.
+//
+// Before the ML-FA2 fix, priority 5 (P5) fired unconditionally; a payload
+// with toolCall.args.CommandLine but no hookEventName would extract the command
+// and block it (false positive for the git-branch guard). After the fix, P5 is
+// gated on isAntigravityPayload, which requires hookEventName.
+//
+// Conclusion asserted: without hookEventName the payload does not match the
+// Antigravity schema; ExtractCommand returns "" (no command extracted).
+func TestExtractCommand_P5_NoHookEventName_NotExtracted(t *testing.T) {
+	// Payload has toolCall.args.CommandLine but NO hookEventName.
+	raw := []byte(`{"toolCall":{"name":"run_command","args":{"CommandLine":"git push origin main"}}}`)
+	cmd, err := ExtractCommand(raw)
+	if err != nil {
+		t.Fatalf("ExtractCommand: unexpected error: %v", err)
+	}
+	if cmd != "" {
+		t.Fatalf("P5 must not fire without hookEventName: got %q, want \"\"", cmd)
+	}
+}
+
+// TestExtractCommand_P5_WithHookEventName_Extracted asserts that
+// toolCall.args.CommandLine IS extracted when hookEventName is present.
+//
+// Conclusion asserted: a full Antigravity payload (hookEventName + toolCall
+// object) causes P5 to extract the command from toolCall.args.CommandLine.
+func TestExtractCommand_P5_WithHookEventName_Extracted(t *testing.T) {
+	// Full Antigravity schema with hookEventName present.
+	raw := []byte(`{"hookEventName":"PreToolUse","cwd":"/proj","toolCall":{"name":"run_command","args":{"CommandLine":"git push origin main"}}}`)
+	cmd, err := ExtractCommand(raw)
+	if err != nil {
+		t.Fatalf("ExtractCommand: unexpected error: %v", err)
+	}
+	if cmd != "git push origin main" {
+		t.Fatalf("P5 must extract CommandLine with hookEventName: got %q", cmd)
+	}
+}

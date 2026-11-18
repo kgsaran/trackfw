@@ -1519,3 +1519,42 @@ func TestRunWriteScope_D4_TrailingSlash_MatchesContentInside_Allow(t *testing.T)
 		t.Fatalf("trailing slash must match content inside dir: want exit 0 (allow), got %d (stderr=%q)", rc, stderr)
 	}
 }
+
+// --- F5 (ML-FA2 REQ-2026-11-17): .agents/hooks.json frozen for subagents ---
+
+// TestRunWriteScope_SubagentFrozen_AntigravityHooksJson asserts that a subagent
+// (agent_id present) is denied when attempting to write .agents/hooks.json.
+//
+// Before the ML-FA2 fix, .agents/hooks.json was absent from
+// writeScopeSubagentFrozenRelPaths; the guard returned rc=0 (allow).
+// After the fix the path is frozen and the guard returns rc=2.
+//
+// Conclusion asserted: a subagent writing .agents/hooks.json is denied (rc=2)
+// because the path is now in writeScopeSubagentFrozenRelPaths.
+func TestRunWriteScope_SubagentFrozen_AntigravityHooksJson(t *testing.T) {
+	proj := makeWSProjectDir(t)
+	target := filepath.Join(proj, ".agents", "hooks.json")
+
+	rc, stderr := runWS(t, payload("Write", target, "subagent-id"))
+	if rc != 2 {
+		t.Fatalf("subagent writing .agents/hooks.json: want exit 2 (deny), got %d (stderr=%q)", rc, stderr)
+	}
+}
+
+// TestRunWriteScope_SubagentFrozen_AntigravityHooksJson_CounterArm asserts that
+// a subagent writing a different file under .agents/ (e.g. a skills file) is
+// NOT denied by the frozen-path rule — only hooks.json itself is frozen.
+//
+// Conclusion asserted: .agents/skills/x/SKILL.md is not covered by the
+// ".agents/hooks.json" frozen-path entry; the guard returns rc=0 (allow via
+// D3 — no frozen match, no lease enforcement for this path).
+func TestRunWriteScope_SubagentFrozen_AntigravityHooksJson_CounterArm(t *testing.T) {
+	proj := makeWSProjectDir(t)
+	// Skill file under .agents/skills/ — not frozen.
+	target := filepath.Join(proj, ".agents", "skills", "x", "SKILL.md")
+
+	rc, _ := runWS(t, payload("Write", target, "subagent-id"))
+	if rc != 0 {
+		t.Fatalf("subagent writing .agents/skills/x/SKILL.md: want exit 0 (allow), got %d", rc)
+	}
+}

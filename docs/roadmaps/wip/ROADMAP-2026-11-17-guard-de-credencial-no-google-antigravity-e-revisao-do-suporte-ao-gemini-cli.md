@@ -210,7 +210,11 @@ sem BOM.
 - ML-FA — red team (hades-tf) ✅ — **REPROVA** (`docs/seguranca/2026-11-18-red-team-req-2026-11-17-antigravity.md`):
   F5 `.agents/hooks.json` fora da lista congelada do write-scope; F2+F3 `enabled:false` no grupo `trackfw` preservado
   pelo gerador e não acusado pelo `validate`; F1 prioridade 5 sem checar o schema Antigravity
-- ML-FA2 — corretivo F1, F2, F3, F5 (apolo-tf) ⬜
-  - **Files affected:** `internal/guard/writescope.go`, `internal/guard/payload.go`, `internal/generators/agentfiles.go`,
-    `internal/validator/` (regra de fiação/credencial do Antigravity), testes correspondentes, `docs/cli-parity.md`
+- ML-FA2 — corretivo F1, F2, F3, F5 (apolo-tf) ✅ — `.agents/hooks.json` congelado para subagentes; gerador remove
+  `enabled:false` do grupo `trackfw` e avisa; `validate` acusa o grupo desabilitado; prioridade 5 só com schema Antigravity
+  - **Files affected:** `internal/guard/writescope.go`, `internal/guard/writescope_test.go`, `internal/guard/payload.go`,
+    `internal/guard/credential.go`, `internal/guard/antigravity_test.go`, `internal/generators/agentfiles.go`,
+    `internal/generators/antigravity_hooks_test.go`, `internal/hookschema/hookschema.go`,
+    `internal/validator/validator_credential_guard.go`,
+    `internal/validator/validator_credential_guard_presence_warning_test.go`, `docs/cli-parity.md`
 - ML-FB — `make quality` com a máquina ociosa e CI verde

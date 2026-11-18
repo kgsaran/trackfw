@@ -4375,6 +4375,18 @@ remove qualquer entrada de git-branch do matcher amplo e re-registra no matcher 
 deduplicadas. A proteção de symlink (`pathguard.RejectAndReport`) impede escrita através de `.agents/`
 simbólico.
 
+**Correções ML-FA2 (REQ-2026-11-17) — red-team F1/F2/F3/F5:**
+
+- **F5 — write-scope:** `.agents/hooks.json` foi adicionado a `writeScopeSubagentFrozenRelPaths` (`internal/guard/writescope.go`). Um subagente Claude Code (com `agent_id`) não pode sobrescrever esse arquivo; `agent_id` ausente (sessão principal) continua podendo escrever. Outros arquivos em `.agents/` (ex. `.agents/skills/`) não são afetados.
+
+- **F2 — `InjectAntigravityHooks` e `enabled:false`:** quando o grupo `"trackfw"` em `.agents/hooks.json` já existe com `"enabled":false`, o injector remove a chave e emite um aviso em stderr:
+  `trackfw: warning: .agents/hooks.json trackfw group had "enabled":false — guard was disabled; re-enabling (ML-FA2 REQ-2026-11-17)`
+  Grupos de terceiros com `"enabled":false` não são tocados. Valor não-booleano (incluindo a string `"false"`) é ignorado — a doc §5.3 define o campo como booleano e valores fora do contrato não são tratados.
+
+- **F3 — `validate` detecta `enabled:false`:** `validateCredentialGuardPresenceWarnings` agora verifica se o grupo `"trackfw"` em `.agents/hooks.json` tem `"enabled":false` (booleano). Quando sim, emite um aviso por evento obrigatório (mesma severidade que ausência de entradas) mesmo com as entradas D5 presentes, pois o Antigravity suprime o grupo inteiro. Implementado via `hookschema.AntigravityGroupDisabled` (`internal/hookschema/hookschema.go`) — único ponto de verificação de `enabled` por grupo. `WalkAntigravityEntries` não foi alterado: o auditsurface continua enxergando entradas em grupos desabilitados (hook hostil escondido por `enabled:false` deve ser auditável). String `"false"` não é tratada como desabilitado.
+
+- **F1 — P5 requer schema Antigravity:** `ExtractCommand` (`internal/guard/payload.go`) e `credExtractCmdAndCwd` (`internal/guard/credential.go`) agora verificam `isAntigravityPayload(root)` antes de extrair `toolCall.args.CommandLine` (prioridade 5). Sem `hookEventName` presente, P5 retorna vazio — evita que um payload sem schema Antigravity dispare o guard indevidamente. Payloads com `hookEventName` continuam funcionando normalmente.
+
 #### Suporte por CLI — visão consolidada, escopo DE PROJETO (ML-5A, `ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`)
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->

@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kgsaran/trackfw/internal/guardforms"
@@ -506,4 +507,147 @@ func TestInjectAntigravityHooks_MigratesGitBranchMatcher(t *testing.T) {
 			t.Errorf("count = %d, want 4 (legacy PSPOSIX migration)", n)
 		}
 	})
+}
+
+// --- F2 (ML-FA2 REQ-2026-11-17): enabled:false removed and warning emitted ---
+
+// TestInjectAntigravityHooks_EnabledFalse_RemovedAndWarned asserts that when
+// .agents/hooks.json has the "trackfw" group with "enabled":false,
+// InjectAntigravityHooks removes the key and emits a warning to stderr.
+//
+// Conclusion asserted: the "enabled" key is absent from the trackfw group
+// after the call, and the warning mentions "enabled:false" on stderr.
+func TestInjectAntigravityHooks_EnabledFalse_RemovedAndWarned(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CODEX_HOME", "")
+
+	agentsDir := filepath.Join(dir, ".agents")
+	if err := os.MkdirAll(agentsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Pre-seed with enabled:false on the trackfw group.
+	initial := map[string]interface{}{
+		"trackfw": map[string]interface{}{
+			"enabled":    false,
+			"PreToolUse": []interface{}{},
+		},
+	}
+	b, _ := json.MarshalIndent(initial, "", "  ")
+	if err := os.WriteFile(filepath.Join(agentsDir, "hooks.json"), append(b, '\n'), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Capture stderr via the seam.
+	var stderrBuf bytes.Buffer
+	antigravityErrWriter = &stderrBuf
+	t.Cleanup(func() { antigravityErrWriter = nil })
+
+	if err := InjectAntigravityHooks(dir); err != nil {
+		t.Fatalf("InjectAntigravityHooks: %v", err)
+	}
+
+	// The "enabled" key must be gone from the trackfw group.
+	data := helperReadJSON(t, filepath.Join(agentsDir, "hooks.json"))
+	group, _ := data["trackfw"].(map[string]interface{})
+	if group == nil {
+		t.Fatal("trackfw group missing after inject")
+	}
+	if _, hasEnabled := group["enabled"]; hasEnabled {
+		t.Errorf(`"enabled" key still present in trackfw group after inject; group=%v`, group)
+	}
+
+	// The warning must have been emitted to stderr.
+	warn := stderrBuf.String()
+	if !strings.Contains(warn, `"enabled":false`) {
+		t.Errorf(`expected warning containing "enabled":false on stderr; got %q`, warn)
+	}
+
+	// The 4 required entries must still be present.
+	if n := helperAntigravityEntryCount(data); n != 4 {
+		t.Errorf("trackfw.PreToolUse entry count = %d, want 4", n)
+	}
+}
+
+// TestInjectAntigravityHooks_ThirdPartyEnabledFalse_Untouched asserts that a
+// third-party group with "enabled":false is NOT modified by InjectAntigravityHooks.
+//
+// Conclusion asserted: InjectAntigravityHooks only manages the "trackfw" group;
+// other groups (including those with "enabled":false) are preserved verbatim.
+func TestInjectAntigravityHooks_ThirdPartyEnabledFalse_Untouched(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CODEX_HOME", "")
+
+	agentsDir := filepath.Join(dir, ".agents")
+	if err := os.MkdirAll(agentsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Pre-seed with a third-party group that has enabled:false.
+	initial := map[string]interface{}{
+		"vendor": map[string]interface{}{
+			"enabled":    false,
+			"PreToolUse": []interface{}{},
+		},
+	}
+	b, _ := json.MarshalIndent(initial, "", "  ")
+	if err := os.WriteFile(filepath.Join(agentsDir, "hooks.json"), append(b, '\n'), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Capture stderr; expect no warning (vendor group is not "trackfw").
+	var stderrBuf bytes.Buffer
+	antigravityErrWriter = &stderrBuf
+	t.Cleanup(func() { antigravityErrWriter = nil })
+
+	if err := InjectAntigravityHooks(dir); err != nil {
+		t.Fatalf("InjectAntigravityHooks: %v", err)
+	}
+
+	data := helperReadJSON(t, filepath.Join(agentsDir, "hooks.json"))
+
+	// vendor group must still have enabled:false.
+	vendor, _ := data["vendor"].(map[string]interface{})
+	if vendor == nil {
+		t.Fatal("vendor group missing")
+	}
+	if en, _ := vendor["enabled"].(bool); en != false {
+		t.Errorf("vendor enabled expected false, got %v", vendor["enabled"])
+	}
+
+	// No warning on stderr.
+	if warn := stderrBuf.String(); warn != "" {
+		t.Errorf("expected no warning for third-party group, got %q", warn)
+	}
+}
+
+// TestInjectAntigravityHooks_NoEnabledKey_NoWarning asserts that when the
+// trackfw group has no "enabled" key (the normal case), InjectAntigravityHooks
+// emits no warning and does not add an "enabled" key.
+//
+// Conclusion asserted: absence of the "enabled" key is the normal (enabled)
+// state; no warning is emitted and the key remains absent after inject.
+func TestInjectAntigravityHooks_NoEnabledKey_NoWarning(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CODEX_HOME", "")
+
+	var stderrBuf bytes.Buffer
+	antigravityErrWriter = &stderrBuf
+	t.Cleanup(func() { antigravityErrWriter = nil })
+
+	if err := InjectAntigravityHooks(dir); err != nil {
+		t.Fatalf("InjectAntigravityHooks: %v", err)
+	}
+
+	data := helperReadJSON(t, filepath.Join(dir, ".agents", "hooks.json"))
+	group, _ := data["trackfw"].(map[string]interface{})
+	if group == nil {
+		t.Fatal("trackfw group missing")
+	}
+	if _, hasEnabled := group["enabled"]; hasEnabled {
+		t.Errorf(`"enabled" key present on fresh create, want absent`)
+	}
+	if warn := stderrBuf.String(); warn != "" {
+		t.Errorf("expected no warning on fresh create, got %q", warn)
+	}
 }

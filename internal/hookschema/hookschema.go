@@ -40,6 +40,44 @@
 // (and potentially hostile) entries in the same group.
 package hookschema
 
+// AntigravityGroupDisabled reports whether the named group in root has an
+// explicit boolean false value for the "enabled" key.
+//
+// The Antigravity doc (§5.3) defines "enabled" as a boolean field that
+// defaults to true when absent. Only a JSON boolean false disables the group;
+// non-boolean values (including the string "false") are ignored and the group
+// is treated as enabled. This matches the doc contract and avoids false
+// positives from hand-edited files that use the wrong type.
+//
+// Used by InjectAntigravityHooks (F2, ML-FA2) to remove the key when
+// re-enabling a disabled trackfw group, and by the validator (F3, ML-FA2)
+// to report the guard as inactive when enabled:false is present even with
+// entries populated.
+//
+// WalkAntigravityEntries intentionally walks disabled groups so that
+// auditsurface can surface hostile hooks hidden behind enabled:false.
+// This function is the separate "is this group administratively disabled?"
+// query — callers choose how to respond.
+func AntigravityGroupDisabled(root map[string]any, groupName string) bool {
+	groupRaw, ok := root[groupName]
+	if !ok {
+		return false
+	}
+	groupObj, ok := groupRaw.(map[string]any)
+	if !ok {
+		return false
+	}
+	enabledVal, hasEnabled := groupObj["enabled"]
+	if !hasEnabled {
+		return false // absent → default true
+	}
+	enabled, ok := enabledVal.(bool)
+	if !ok {
+		return false // non-boolean → ignore (string "false" is not in contract)
+	}
+	return !enabled // true when enabled == false
+}
+
 // EntryFunc is called by WalkAntigravityEntries for every (group, event,
 // matcher, command, typeStr) tuple found in root. typeStr is the value of the
 // "type" key in the hook object; it is "command" for well-formed entries.

@@ -198,10 +198,16 @@ func ExtractCommand(data []byte) (string, error) {
 
 	// Priority 5: toolCall.args.CommandLine (Google Antigravity; ADR-2026-11-18 D3).
 	// PascalCase key — not found by priorities 1-4 (case-sensitive map).
-	if cmd, found, err := extractNested3(root, "toolCall", "args", "CommandLine"); err != nil {
-		return "", err
-	} else if found {
-		return checkNUL(cmd)
+	// Only extracted when the payload matches the Antigravity schema (hookEventName present).
+	// Without this gate, any payload that happens to carry toolCall.args.CommandLine
+	// (e.g. a crafted payload without hookEventName) would trigger P5 — a false positive
+	// that the redteam confirmed in F1 (ML-FA2 REQ-2026-11-17).
+	if isAntigravityPayload(root) {
+		if cmd, found, err := extractNested3(root, "toolCall", "args", "CommandLine"); err != nil {
+			return "", err
+		} else if found {
+			return checkNUL(cmd)
+		}
 	}
 
 	return "", nil // no command key found

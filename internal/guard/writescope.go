@@ -71,6 +71,7 @@ var writeScopeSubagentFrozenRelPaths = []string{
 	".github/hooks/",                  // prevent hook removal (directory)
 	".kiro/hooks/",                    // prevent hook removal (directory)
 	".amazonq/cli-agents/",            // prevent hook removal (directory)
+	".agents/hooks.json",              // prevent hook removal (Antigravity; ADR-2026-11-18 F5 ML-FA2)
 	".trackfw/leases/",                // prevent editing own permission (D4-D)
 }
 

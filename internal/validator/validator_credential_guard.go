@@ -1233,6 +1233,35 @@ func validateCredentialGuardPresenceWarnings() ([]string, error) {
 			continue
 		}
 
+		// F3 (ML-FA2 REQ-2026-11-17): when the Antigravity schema is detected, check if the
+		// "trackfw" group has enabled:false. If so, the guard is inactive even when entries
+		// are present — the Antigravity runtime suppresses the whole group. Emit one warning
+		// per required event (same severity and format as "entries absent") and skip the
+		// per-event extraction loop, which would otherwise find the entries and produce a
+		// false green.
+		//
+		// enabled:false is a boolean per the doc (§5.3); string "false" is not treated as
+		// disabled (non-boolean values are outside the documented contract and not measured).
+		//
+		// Contra-arm: enabled absent or true → no extra warning; fall through to per-event
+		// check below.
+		if entry.schema == hookCmdSchemaAntigravity {
+			if rootMap, ok := parsed.(map[string]any); ok && hookschema.AntigravityGroupDisabled(rootMap, "trackfw") {
+				for _, ev := range entry.events {
+					eventDesc := ev.hookEvent
+					if ev.matcher != "" {
+						eventDesc = ev.hookEvent + "[" + ev.matcher + "]"
+					}
+					msgs = append(msgs, fmt.Sprintf(
+						"%s (%s) trackfw group has \"enabled\":false — guard is inactive"+
+							" in event %s; run `trackfw update` to re-enable",
+						hf.path, hf.cli, eventDesc,
+					))
+				}
+				continue
+			}
+		}
+
 		for _, ev := range entry.events {
 			matches := extractPresenceCommandsD17(parsed, ev, entry.schema, hf.requiresCommandType)
 			if len(matches) == 0 {

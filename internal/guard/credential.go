@@ -929,8 +929,13 @@ func credExtractCmdAndCwd(data []byte) (shellCmd, cwd, toolName string, isJSON b
 
 	// Priority 5: toolCall.args.CommandLine (Google Antigravity; ADR-2026-11-18 D3).
 	// PascalCase "CommandLine" is not matched by priorities 1-4 (case-sensitive map).
-	if cmd, found, _ := extractNested3(root, "toolCall", "args", "CommandLine"); found && cmd != "" && !strings.ContainsRune(cmd, '\x00') {
-		return cmd, cwd, toolName, true
+	// Only extracted when the payload matches the Antigravity schema (hookEventName present).
+	// Gate mirrors payload.go ExtractCommand P5; without it a crafted payload without
+	// hookEventName could trigger layer-2b file scanning (F1 alignment, ML-FA2 REQ-2026-11-17).
+	if isAntigravityPayload(root) {
+		if cmd, found, _ := extractNested3(root, "toolCall", "args", "CommandLine"); found && cmd != "" && !strings.ContainsRune(cmd, '\x00') {
+			return cmd, cwd, toolName, true
+		}
 	}
 
 	return "", cwd, toolName, true // valid JSON, no command field found
