@@ -146,7 +146,7 @@ com schema Antigravity (`toolCall` objeto + `hookEventName`), a camada 1 do guar
 - [x] `go test ./internal/guard/` rc=0
 
 ### ML-3B — Hooks do Antigravity no projeto (ADR D1, D5, D6 — parte projeto)
-**Status:** ⬜ Pending
+**Status:** ✅ Done
 **Squad:** apolo-tf
 **Files affected:** `internal/generators/agentfiles.go` (`InjectAntigravityHooks`), `internal/generators/hooks.go`
 (`cliDetectors`), `internal/generators/update.go` (alvos `antigravity-credential-guard`/`antigravity-git-branch-guard`),
@@ -156,9 +156,11 @@ testes correspondentes
 `CredentialGlobalCurrentCmdExe`); grupo `trackfw`, só `PreToolUse`, matchers do D5; `pathguard` + merge preservador;
 sem BOM.
 **Acceptance criteria:**
-- [ ] `init`/`agents install --targets antigravity` grava `.agents/hooks.json`; hooks de terceiros preservados byte a byte;
+- [x] `init`/`agents install --targets antigravity` grava `.agents/hooks.json`; hooks de terceiros preservados byte a byte;
   segunda execução idempotente
-- [ ] `go test ./internal/generators/ ./internal/agentconfig/ ./internal/auditsurface/` rc=0
+- [x] `go test ./internal/generators/ ./internal/agentconfig/ ./internal/auditsurface/` rc=0; `make parity-rest` rc=0.
+  Corretivo: o guard de git-branch saiu de `run_command|manage_task` para `run_command` (ADR D5; `manage_task` não tem
+  `CommandLine`); teste de auditoria `TestExtractTuplesAntigravity` adicionado
 
 ### ML-3B2 — Guard global do Antigravity (ADR D6 — parte global; depende do ML-1B)
 **Status:** ⬜ Pending

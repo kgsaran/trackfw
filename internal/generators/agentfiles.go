@@ -1911,7 +1911,202 @@ func InjectAmazonQHooks(rootDir string) error {
 	return os.WriteFile(path, append(out, '\n'), 0644)
 }
 
+// InjectAntigravityHooks injects guard hooks into .agents/hooks.json for
+// the Google Antigravity CLI (agy).
+//
+// Format (ADR D6, D5, ML-3B — REQ-2026-11-17):
+//
+//	{"trackfw":{"PreToolUse":[
+//	  {"matcher":"run_command|manage_task","hooks":[{"type":"command","command":"<cred>"}]},
+//	  {"matcher":"write_to_file|replace_file_content|multi_replace_file_content","hooks":[...]},
+//	  {"matcher":"view_file","hooks":[{"type":"command","command":"<cred>"}]},
+//	  {"matcher":"run_command","hooks":[{"type":"command","command":"<git-branch>"}]}
+//	]}}
+//
+// Key design decisions (ADR D1, D5):
+//   - Only PreToolUse — PostToolUse does not block in Antigravity (measured ML-1A §11).
+//   - cmd.exe family: command line is "trackfw guard ... || exit 2" (valid in sh -c on
+//     macOS and cmd /s /c on Windows — both confirmed in ML-1A §11).
+//   - Top-level is group name → events map. The "trackfw" group is the only
+//     group written here; third-party groups are preserved byte-for-byte (via
+//     round-trip through map[string]interface{}).
+//   - Dedup pass removes any POSIX/PSPOSIX legacy forms that may exist in the
+//     trackfw group (from manual editing or future migration), following the
+//     AmazonQ precedent (CredentialLegacyCmdExe + CredentialLegacyPSPOSIX +
+//     CredentialCurrentPSPOSIX).
+//   - pathguard.ResolveRoot / RejectAndReport prevents writes through symlinks
+//     (ADR-2026-09-18 / ML-1B).
+//   - marshalJSONNoEscape + '\n' suffix, no BOM.
+//
+// GLOBAL guard (guard update-harness targets antigravity-credential-guard /
+// antigravity-git-branch-guard) is NOT implemented here — it waits for the
+// home-directory measurement in ML-1B (ADR D6 "🔴 só após medição").
+func InjectAntigravityHooks(rootDir string) error {
+	// ML-8A / #402: resolve root before building paths so that every path
+	// below lives in the same resolved namespace and RejectSymlinks sees
+	// the full chain.
+	guardRoot, rootErr := pathguard.ResolveRoot(rootDir)
+	if rootErr != nil {
+		return pathguard.RefuseUnverifiableRoot(filepath.Join(rootDir, ".agents", "hooks.json"), rootErr)
+	}
+
+	dir := filepath.Join(guardRoot, ".agents")
+	path := filepath.Join(dir, "hooks.json")
+	// Guard: reject writes through symlinks before any filesystem mutation
+	// (ADR-2026-09-18 / ML-1B).
+	if guardErr := pathguard.RejectAndReport(guardRoot, path); guardErr != nil {
+		return guardErr
+	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	// Top-level: map of group name → events map (Antigravity group format).
+	// Using map[string]interface{} preserves third-party groups through JSON
+	// round-trip (semantic content preserved, not necessarily exact bytes).
+	var root map[string]interface{}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &root); err != nil {
+			return fmt.Errorf("parsing %s: %w", path, err)
+		}
+	}
+	if root == nil {
+		root = make(map[string]interface{})
+	}
+
+	// Get or create the "trackfw" group.
+	trackfwGroup, _ := root["trackfw"].(map[string]interface{})
+	if trackfwGroup == nil {
+		trackfwGroup = make(map[string]interface{})
+	}
+
+	// Dedup pass: normalize any PSPOSIX or legacy CmdExe forms that might
+	// exist in the trackfw group (manual edit, future migration, or a prior
+	// version that mistakenly wrote the wrong family). This follows the
+	// AmazonQ precedent (agentfiles.go line 1848) but also adds the current
+	// PSPOSIX forms as "legacy for this runtime" — Antigravity runs cmd.exe
+	// on Windows and sh on macOS, so the PSPOSIX six-segment preamble is
+	// incorrect for both and must be replaced with the CmdExe form.
+	credentialLegacyAll := append(
+		append([]string{guardforms.CredentialCurrentPSPOSIX}, guardforms.CredentialLegacyCmdExe...),
+		guardforms.CredentialLegacyPSPOSIX...,
+	)
+	gitBranchLegacyAll := append(
+		append([]string{guardforms.GitBranchCurrentPSPOSIX}, guardforms.GitBranchLegacyCmdExe...),
+		guardforms.GitBranchLegacyPSPOSIX...,
+	)
+	for _, matcher := range []string{
+		antigravityMatcherRunCmd,
+		antigravityMatcherWrite,
+		antigravityMatcherView,
+	} {
+		trackfwGroup["PreToolUse"] = migrateDedupGuardInNestedArray(
+			trackfwGroup["PreToolUse"], matcher, guardCredentialCmdCmdExe, credentialLegacyAll,
+		)
+	}
+
+	// Migration (ML-3B corretivo): a prior version of this branch registered the
+	// git-branch guard under antigravityMatcherRunCmd ("run_command|manage_task").
+	// Remove all git-branch forms from that matcher now — the credential entry there
+	// is NOT in gitBranchLegacyAll and is left untouched by removeGuardFromNestedArrayInHooks.
+	removeGuardFromNestedArrayInHooks(trackfwGroup, "PreToolUse",
+		antigravityMatcherRunCmd, guardGitBranchCmdCmdExe, gitBranchLegacyAll,
+	)
+
+	// Dedup git-branch on its correct matcher (antigravityMatcherGitBranch = "run_command").
+	trackfwGroup["PreToolUse"] = migrateDedupGuardInNestedArray(
+		trackfwGroup["PreToolUse"], antigravityMatcherGitBranch, guardGitBranchCmdCmdExe, gitBranchLegacyAll,
+	)
+
+	// Emit (D5 — PreToolUse only):
+	//   credential guard on run_command|manage_task, write_to_file|..., view_file
+	//   git-branch guard on run_command (separate matcher — manage_task carries
+	//   Input not CommandLine, so git-branch must not fire there).
+	trackfwGroup["PreToolUse"] = appendAntigravityHookEntry(trackfwGroup["PreToolUse"], antigravityMatcherRunCmd, guardCredentialCmdCmdExe)
+	trackfwGroup["PreToolUse"] = appendAntigravityHookEntry(trackfwGroup["PreToolUse"], antigravityMatcherWrite, guardCredentialCmdCmdExe)
+	trackfwGroup["PreToolUse"] = appendAntigravityHookEntry(trackfwGroup["PreToolUse"], antigravityMatcherView, guardCredentialCmdCmdExe)
+	trackfwGroup["PreToolUse"] = appendAntigravityHookEntry(trackfwGroup["PreToolUse"], antigravityMatcherGitBranch, guardGitBranchCmdCmdExe)
+
+	root["trackfw"] = trackfwGroup
+
+	// ML-6B: marshalJSONNoEscape so any '>' literals (e.g. in future D11 forms)
+	// survive as literal redirects, not HTML-escaped '>'.
+	out, err := marshalJSONNoEscape(root)
+	if err != nil {
+		return err
+	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+	return os.WriteFile(path, append(out, '\n'), 0644)
+}
+
+// Antigravity D5 matcher constants (ADR D5, REQ-2026-11-17).
+// These are the exact tool-name regex strings used as "matcher" values in the
+// Antigravity hooks.json PreToolUse array.  Defined once here so that the
+// injector, the dedup pass, and the tests reference the same literal.
+const (
+	// antigravityMatcherRunCmd covers both run_command (shell) and manage_task
+	// (task management) — the CREDENTIAL guard fires on both.  The credential
+	// guard's layer 1 scans the raw toolCall bytes for credential patterns
+	// (internal/guard/credential.go credGetAntigravityInfo), which covers both
+	// manage_task's Input field and run_command's CommandLine field.
+	// The git-branch guard must NOT use this matcher — it reads CommandLine via
+	// ExtractCommand, which only finds it in run_command payloads; manage_task
+	// payloads carry Input (not CommandLine) so git-branch would always extract
+	// an empty string, making the entry decorative.  Use antigravityMatcherGitBranch.
+	antigravityMatcherRunCmd = "run_command|manage_task"
+	// antigravityMatcherGitBranch covers only run_command — the git-branch guard
+	// reads CommandLine from the tool call payload (ADR D5 ML-3B corretivo).
+	// manage_task carries Input, not CommandLine; firing on it would extract nothing
+	// and always pass, making the entry decorative rather than protective.
+	antigravityMatcherGitBranch = "run_command"
+	// antigravityMatcherWrite covers the three file-write/replace tools.
+	antigravityMatcherWrite = "write_to_file|replace_file_content|multi_replace_file_content"
+	// antigravityMatcherView covers the file-read tool (D5: view_file peg —
+	// layer 2 reads AbsolutePath from toolCall.args, implemented in guard).
+	antigravityMatcherView = "view_file"
+)
+
 // --- helpers ---
+
+// appendAntigravityHookEntry appends a new standalone {matcher, hooks:[{type:command,command:cmd}]}
+// entry unless an entry with the EXACT (matcher, cmd) pair already exists somewhere in the array
+// (in its own standalone entry OR embedded in a multi-command entry).
+//
+// Unlike mergeClaudeHookArray, this function does NOT merge commands into an existing entry
+// for the same matcher — each guard invocation gets its own array element.  This matches the
+// Antigravity ADR D5 contract where credential and git-branch each occupy a separate entry
+// (credential on run_command|manage_task; git-branch on run_command), PreToolUse count = 4.
+func appendAntigravityHookEntry(existing interface{}, matcher, cmd string) []interface{} {
+	arr, _ := existing.([]interface{})
+	for _, item := range arr {
+		obj, ok := item.(map[string]interface{})
+		if !ok || obj["matcher"] != matcher {
+			continue
+		}
+		innerHooks, _ := obj["hooks"].([]interface{})
+		for _, h := range innerHooks {
+			hObj, ok := h.(map[string]interface{})
+			if ok && hObj["command"] == cmd {
+				return arr // already present — idempotent
+			}
+		}
+	}
+	return append(arr, map[string]interface{}{
+		"matcher": matcher,
+		"hooks": []interface{}{
+			map[string]interface{}{
+				"type":    "command",
+				"command": cmd,
+			},
+		},
+	})
+}
 
 func mergeClaudeHookArray(existing interface{}, matcher, command string) []interface{} {
 	arr, _ := existing.([]interface{})

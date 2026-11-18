@@ -27,20 +27,21 @@ import (
 
 // Runtime names in canonical order (matches check-agent-hooks-parity.sh CLIS).
 var canonicalRuntimes = []string{
-	"claude", "codex", "gemini", "copilot", "cursor", "kiro", "windsurf", "amazonq",
+	"claude", "codex", "gemini", "copilot", "cursor", "kiro", "windsurf", "amazonq", "antigravity",
 }
 
 // runtimeWiringPath maps each runtime to its project-scope wiring file.
 // These are the ONLY paths this package ever opens — no grep, no content scan.
 var runtimeWiringPath = map[string]string{
-	"claude":   ".claude/settings.json",
-	"codex":    ".codex/hooks.json",
-	"gemini":   ".gemini/settings.json",
-	"copilot":  ".github/hooks/trackfw-attention.json",
-	"cursor":   ".cursor/hooks.json",
-	"kiro":     ".kiro/hooks/trackfw-attention.json",
-	"windsurf": ".windsurf/hooks.json",
-	"amazonq":  ".amazonq/cli-agents/q_cli_default.json",
+	"claude":      ".claude/settings.json",
+	"codex":       ".codex/hooks.json",
+	"gemini":      ".gemini/settings.json",
+	"copilot":     ".github/hooks/trackfw-attention.json",
+	"cursor":      ".cursor/hooks.json",
+	"kiro":        ".kiro/hooks/trackfw-attention.json",
+	"windsurf":    ".windsurf/hooks.json",
+	"amazonq":     ".amazonq/cli-agents/q_cli_default.json",
+	"antigravity": ".agents/hooks.json",
 }
 
 // Instruction file paths that ship in a project and instruct the agent
@@ -112,7 +113,7 @@ func RunAuditSurface(opts Options) (*Report, error) {
 		Base: opts.Base,
 	}
 
-	// 1. Hook wiring — 8 runtimes in canonical order.
+	// 1. Hook wiring — 9 runtimes in canonical order.
 	for _, runtime := range canonicalRuntimes {
 		wiringPath := runtimeWiringPath[runtime]
 		content, err := gitShow(opts.Ref, wiringPath, opts.GitRoot)
@@ -245,7 +246,7 @@ func auditLifecycleHooks(ref, gitRoot string) []LifecycleHook {
 		hooks = append(hooks, LifecycleHook{File: ".husky/pre-commit", Key: "pre-commit", Present: false})
 	}
 
-	// .vscode/tasks.json — presence/absence only (not parsed; same rationale as the 8
+	// .vscode/tasks.json — presence/absence only (not parsed; same rationale as the 9
 	// absent runtime wiring files: absence is information, not exclusion — AC13 pattern).
 	_, vsErr := gitShow(ref, ".vscode/tasks.json", gitRoot)
 	hooks = append(hooks, LifecycleHook{
@@ -517,6 +518,8 @@ func extractTuples(runtime string, content []byte) ([]HookTuple, error) {
 		return extractCursorSchema(content)
 	case "windsurf":
 		return extractWindsurfSchema(content)
+	case "antigravity":
+		return extractAntigravitySchema(content)
 	default:
 		return nil, fmt.Errorf("unknown runtime: %s", runtime)
 	}
@@ -697,6 +700,82 @@ func extractCursorSchema(content []byte) ([]HookTuple, error) {
 				RawCommand: cmd,
 				ScriptPath: normalizeCommand(cmd),
 			})
+		}
+	}
+	return tuples, nil
+}
+
+// extractAntigravitySchema parses Antigravity wiring:
+// {"GROUP": {"EVENT": [{"matcher": "...", "hooks": [{"type": "command", "command": "..."}]}]}}
+//
+// The top level is a map of group names to event maps. All groups are iterated
+// (not just "trackfw") so that third-party groups are included in the audit —
+// they are part of the attack surface too (Threat model §1.9).
+//
+// Parsing uses json.RawMessage at the group level so that a group with an
+// unexpected shape (e.g. {"enabled": false}, or a non-object value) causes
+// only that group to be skipped — not the whole file.
+//
+// Conclusion: extractAntigravitySchema yields one HookTuple per
+// (event, matcher, command) triple across all groups; tuples from third-party
+// groups are indistinguishable from trackfw's in the flat output — which
+// matches the audit-surface design intent (all hooks are attack surface).
+func extractAntigravitySchema(content []byte) ([]HookTuple, error) {
+	// Step 1: parse top level as group name → raw JSON value.
+	var topLevel map[string]json.RawMessage
+	if err := json.Unmarshal(content, &topLevel); err != nil {
+		return nil, err
+	}
+
+	// Sort group names for deterministic output.
+	groups := make([]string, 0, len(topLevel))
+	for g := range topLevel {
+		groups = append(groups, g)
+	}
+	sort.Strings(groups)
+
+	// Step 2: for each group, try to parse as {"EVENT": [{matcher, hooks}]}.
+	// Groups that do not match this shape are silently skipped (non-fatal parse
+	// failure — the group may be a future schema extension or a non-hook key).
+	type hookEntry struct {
+		Type    string `json:"type"`
+		Command string `json:"command"`
+	}
+	type matcherEntry struct {
+		Matcher string      `json:"matcher"`
+		Hooks   []hookEntry `json:"hooks"`
+	}
+	var tuples []HookTuple
+	for _, groupName := range groups {
+		var eventMap map[string][]matcherEntry
+		if err := json.Unmarshal(topLevel[groupName], &eventMap); err != nil {
+			// Group doesn't match expected shape — skip silently.
+			continue
+		}
+		// Sort events for determinism.
+		events := make([]string, 0, len(eventMap))
+		for e := range eventMap {
+			events = append(events, e)
+		}
+		sort.Strings(events)
+		for _, event := range events {
+			entries := eventMap[event]
+			sort.Slice(entries, func(i, j int) bool {
+				return entries[i].Matcher < entries[j].Matcher
+			})
+			for _, entry := range entries {
+				for _, h := range entry.Hooks {
+					if h.Type != "command" {
+						continue
+					}
+					tuples = append(tuples, HookTuple{
+						Event:      event,
+						Matcher:    entry.Matcher,
+						RawCommand: h.Command,
+						ScriptPath: normalizeCommand(h.Command),
+					})
+				}
+			}
 		}
 	}
 	return tuples, nil

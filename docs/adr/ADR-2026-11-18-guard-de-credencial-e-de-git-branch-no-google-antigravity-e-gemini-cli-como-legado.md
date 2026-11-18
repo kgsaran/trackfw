@@ -89,6 +89,10 @@ individuais desde 2026-06-18 e aponta `trackfw agents install --targets antigrav
 são medidos no ML-1B antes do guard global ser entregue. Se o `trackfw` faltar no PATH do App, a linha do D1
 fecha (exit 2) e **bloqueia todo comando**. Isso é seguro, mas inutilizável, e precisa de aviso no `doctor`.
 
+**Detecção por `.agents/`:** o Codex também usa `.agents/skills/`. Num projeto só de Codex, o `trackfw update` grava
+um `.agents/hooks.json` que só o Antigravity lê. É inofensivo e idempotente, e foi aceito para não tornar a detecção
+frágil.
+
 **Residual:**
 - `manage_task` com `send_input` carrega texto, não `CommandLine`. A camada 1 vê o segredo, mas o guard de
   git-branch não vê o comando.

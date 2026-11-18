@@ -50,6 +50,46 @@ import (
 	"github.com/kgsaran/trackfw/internal/guardforms"
 )
 
+// ac4AntigravityGroupSeed writes an Antigravity group-format fixture with a
+// legacy entry and a canonical entry under trackfw["PreToolUse"] for the given
+// matcher pair.
+func ac4AntigravityGroupSeed(t *testing.T, path, matcher, legacy, canonical string) {
+	t.Helper()
+	makeEntry := func(cmd string) interface{} {
+		return map[string]interface{}{
+			"matcher": matcher,
+			"hooks":   []interface{}{map[string]interface{}{"type": "command", "command": cmd}},
+		}
+	}
+	writeJSONFile(t, path, map[string]interface{}{
+		"trackfw": map[string]interface{}{
+			"PreToolUse": []interface{}{makeEntry(legacy), makeEntry(canonical)},
+		},
+	})
+}
+
+// countAntigravityGroup counts entries under root["trackfw"]["PreToolUse"]
+// with the given matcher and command.
+func countAntigravityGroup(root map[string]interface{}, _, matcher, cmd string) int {
+	group, _ := root["trackfw"].(map[string]interface{})
+	arr, _ := group["PreToolUse"].([]interface{})
+	n := 0
+	for _, item := range arr {
+		obj, _ := item.(map[string]interface{})
+		if obj["matcher"] != matcher {
+			continue
+		}
+		inner, _ := obj["hooks"].([]interface{})
+		for _, h := range inner {
+			hObj, _ := h.(map[string]interface{})
+			if hObj["command"] == cmd {
+				n++
+			}
+		}
+	}
+	return n
+}
+
 // ac4NestedSeed writes a nested-format fixture (Claude/Codex/Gemini/AmazonQ)
 // with a legacy entry and a canonical entry under the given event × matcher pair.
 func ac4NestedSeed(t *testing.T, path, event, matcher, legacy, canonical string) {
@@ -148,6 +188,11 @@ func TestAC4_RegistrySites(t *testing.T) {
 		return countFlatBashEntries(root, event, cmd)
 	}
 
+	// ── count alias for Antigravity group format ─────────────────────────────
+	antigravityGroupCount := func(root map[string]interface{}, _, matcher, cmd string) int {
+		return countAntigravityGroup(root, "", matcher, cmd)
+	}
+
 	// ── run factory helpers ───────────────────────────────────────────────────
 
 	// nestedInjectRun: set HOME → write nested fixture → inject → read output.
@@ -194,6 +239,21 @@ func TestAC4_RegistrySites(t *testing.T) {
 		}
 	}
 
+	// antigravityInjectRun: seeds Antigravity group format → inject → read output.
+	antigravityInjectRun := func(matcher string) func(*testing.T, string, string, string, string) map[string]interface{} {
+		return func(t *testing.T, _, _, legacy, canonical string) map[string]interface{} {
+			t.Helper()
+			dir := t.TempDir()
+			t.Setenv("CODEX_HOME", "")
+			path := filepath.Join(dir, ".agents", "hooks.json")
+			ac4AntigravityGroupSeed(t, path, matcher, legacy, canonical)
+			if err := InjectAntigravityHooks(dir); err != nil {
+				t.Fatalf("InjectAntigravityHooks: %v", err)
+			}
+			return readJSONFile(t, path)
+		}
+	}
+
 	// flatHarnessRun: set HOME → write flat fixture → UpdateHarness → read output.
 	flatHarnessRun := func(target, fileSuffix string) func(*testing.T, string, string, string, string) map[string]interface{} {
 		return func(t *testing.T, event, _, legacy, canonical string) map[string]interface{} {
@@ -230,6 +290,18 @@ func TestAC4_RegistrySites(t *testing.T) {
 	amazonQCredentialList := append(
 		append([]string{}, guardforms.CredentialLegacyCmdExe...),
 		guardforms.CredentialLegacyPSPOSIX...,
+	)
+
+	// ── combined lists for Antigravity (CmdExe + PSPOSIX + current PSPOSIX wrong-family forms) ─
+	// CredentialCurrentPSPOSIX / GitBranchCurrentPSPOSIX are treated as legacy for Antigravity
+	// because the PSPOSIX six-segment preamble is wrong-family for cmd.exe.
+	antigravityCredLegacy := append(
+		append([]string{guardforms.CredentialCurrentPSPOSIX}, guardforms.CredentialLegacyCmdExe...),
+		guardforms.CredentialLegacyPSPOSIX...,
+	)
+	antigravityGitLegacy := append(
+		append([]string{guardforms.GitBranchCurrentPSPOSIX}, guardforms.GitBranchLegacyCmdExe...),
+		guardforms.GitBranchLegacyPSPOSIX...,
 	)
 
 	rows := []row{
@@ -307,7 +379,35 @@ func TestAC4_RegistrySites(t *testing.T) {
 			canonical: guardGitBranchCmdCmdExe, list: amazonQGitBranchList,
 			run: nestedInjectRun(".amazonq/cli-agents/q_cli_default.json", InjectAmazonQHooks), count: nestedCount,
 		},
-
+		// InjectAntigravityHooks — group format — .agents/hooks.json
+		// Antigravity uses cmd.exe family (ADR D1). Legacy list = CmdExe legacy +
+		// PSPOSIX legacy + CredentialCurrentPSPOSIX / GitBranchCurrentPSPOSIX
+		// (wrong-family forms must also be replaced, following AmazonQ precedent).
+		//
+		// For each D5 credential matcher: 3 matchers × (CmdExe+PSPOSIX legacy) rows.
+		// For the git-branch matcher: 1 matcher × (CmdExe+PSPOSIX legacy) rows.
+		// The event field is unused by antigravityInjectRun (matcher drives seeding);
+		// we pass "PreToolUse" for readability.
+		{
+			site: "InjectAntigravity-cred-runcmd", event: "PreToolUse", matcher: antigravityMatcherRunCmd,
+			canonical: guardCredentialCmdCmdExe, list: antigravityCredLegacy,
+			run: antigravityInjectRun(antigravityMatcherRunCmd), count: antigravityGroupCount,
+		},
+		{
+			site: "InjectAntigravity-cred-write", event: "PreToolUse", matcher: antigravityMatcherWrite,
+			canonical: guardCredentialCmdCmdExe, list: antigravityCredLegacy,
+			run: antigravityInjectRun(antigravityMatcherWrite), count: antigravityGroupCount,
+		},
+		{
+			site: "InjectAntigravity-cred-view", event: "PreToolUse", matcher: antigravityMatcherView,
+			canonical: guardCredentialCmdCmdExe, list: antigravityCredLegacy,
+			run: antigravityInjectRun(antigravityMatcherView), count: antigravityGroupCount,
+		},
+		{
+			site: "InjectAntigravity-git", event: "PreToolUse", matcher: antigravityMatcherGitBranch,
+			canonical: guardGitBranchCmdCmdExe, list: antigravityGitLegacy,
+			run: antigravityInjectRun(antigravityMatcherGitBranch), count: antigravityGroupCount,
+		},
 		// ── Global harness sites ──────────────────────────────────────────────
 		// claude-credential-guard — nested — ~/.claude/settings.json
 		{

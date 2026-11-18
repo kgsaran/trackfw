@@ -279,14 +279,16 @@ func TestAgentsInstallInjectsGuardHooks(t *testing.T) {
 }
 
 // TestInjectHooksForToolsUnknownNameSkipped verifies that InjectHooksForTools
-// silently skips unknown CLI names (e.g. "opencode", "antigravity") without
-// error and without writing any hook files.
+// silently skips unknown CLI names (e.g. "opencode") without error and without
+// writing any hook files.
 //
 // Reconciliation: asserts the silent-skip contract of InjectHooksForTools for
 // CLIs that have no Inject*Hooks implementation.
+// Note: "antigravity" was removed from this list in ML-3B (REQ-2026-11-17) —
+// it now has an InjectAntigravityHooks implementation in cliDetectors.
 func TestInjectHooksForToolsUnknownNameSkipped(t *testing.T) {
 	dir := t.TempDir()
-	if err := generators.InjectHooksForTools([]string{"opencode", "antigravity", "unknown-tool"}, dir); err != nil {
+	if err := generators.InjectHooksForTools([]string{"opencode", "unknown-tool"}, dir); err != nil {
 		t.Fatalf("expected no error for unknown tool names, got: %v", err)
 	}
 	// No files should have been created.
