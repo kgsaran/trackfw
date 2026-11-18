@@ -4369,7 +4369,7 @@ O cwd do processo de hook é `<projeto>/.agents` — a busca de `trackfw.yaml` s
 git-branch no matcher `run_command|manage_task`. A passagem de migração de `InjectAntigravityHooks`
 remove qualquer entrada de git-branch do matcher amplo e re-registra no matcher correto `run_command`.
 
-**Guard global.** `antigravity-credential-guard` e `antigravity-git-branch-guard` (alvos de `trackfw update harness`) **pendentes de medição do caminho global (ML-3B2)** — ADR D6: o home efetivo (`USERPROFILE` × `FOLDERID_Profile` no Windows) não foi medido no binário real; a doc oficial cita `~/.gemini/config/hooks.json`. Não implementados até ML-3B2.
+**Guard global (ML-3B2 REQ-2026-11-17).** `antigravity-credential-guard` e `antigravity-git-branch-guard` (alvos de `trackfw update harness`) implementados em ML-3B2. Caminho global: `~/.gemini/config/hooks.json`. Home no Windows: `USERPROFILE` via `os.UserHomeDir()` (medido ML-1B §12 de `docs/portabilidade/2026-11-18-antigravity-contrato-de-hooks.md` — agy lê `USERPROFILE`, não `FOLDERID_Profile`). Formato Antigravity (grupo `trackfw`, só `PreToolUse`). Credential guard: três matchers D5 (run_command|manage_task, write_to_file|..., view_file), comando `"trackfw guard credential --global || exit 2"`. Git-branch guard: matcher `run_command`, mesmo comando de projeto (`"trackfw guard git-branch || exit 2"`). Leg-independence: cada alvo chama só o seu helper (`antigravityInjectCredential` / `antigravityInjectGitBranch`) — rodar só um alvo não perturba o outro. Idempotente, sem BOM, proteção de symlink (`rejectHarnessSymlink`, raiz = `HomeFor(CLIAntigravity)`). `enabled:false` removido com aviso (ML-FA2). Auditado via `globalGuardConfigFiles` / `guardGlobalHookLayout` (schema `hookCmdSchemaAntigravity`) nas 6 funções de validação global.
 
 **Merge e idempotência.** Segue o mesmo padrão dos outros CLIs: terceiros preservados, entradas trackfw
 deduplicadas. A proteção de symlink (`pathguard.RejectAndReport`) impede escrita através de `.agents/`
@@ -4852,7 +4852,7 @@ de um roadmap anterior e não relacionado
 | GitHub Copilot | `~/.copilot/settings.json` | Merge — inline `hooks.preToolUse`/`hooks.postToolUse[matcher:"bash"]` num arquivo de config geral compartilhado, **não** dedicado (diverge do escopo de projeto, que usa `.github/hooks/*.json` dedicado) — ver "GitHub Copilot global-scope wiring (ML-2E)" | Absoluto, mesmo script | Nenhum |
 | Kiro | `~/.kiro/hooks/trackfw-credential-guard.json` | **Overwrite total** — arquivo dedicado, um-arquivo-por-hook em `~/.kiro/hooks/`, nunca merge — ver "Kiro global-scope wiring (ML-2F)" | Absoluto, mesmo script (hook names `-global-pre`/`-global-post`, distintos dos de projeto) | **v3** (`kiro-cli --v3`) — documentado, sem sonda de subprocesso possível (ver caveat acima) |
 | Windsurf | — | — | — | **Fora de escopo** — sem hook nativo pré-execução, mesma razão da REQ original (PR #141) |
-| Antigravity | `~/.gemini/config/hooks.json` (doc oficial; não medido) | **Pendente de medição (ML-3B2)** — ADR D6: home efetivo no Windows (`USERPROFILE` × `FOLDERID_Profile`) não confirmado no binário real; aguarda ML-3B2 antes de implementar | — | — |
+| Antigravity | `~/.gemini/config/hooks.json` | USERPROFILE via `os.UserHomeDir()` no Windows (medido ML-1B §12 portabilidade doc 2026-11-18; agy lê USERPROFILE, não FOLDERID_Profile) | `antigravity-credential-guard` (ML-3B2) | `antigravity-git-branch-guard` (ML-3B2) |
 
 ##### Achados transversais (Waves 1-4 deste roadmap)
 

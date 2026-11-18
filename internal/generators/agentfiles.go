@@ -1912,6 +1912,56 @@ func InjectAmazonQHooks(rootDir string) error {
 	return os.WriteFile(path, append(out, '\n'), 0644)
 }
 
+// antigravityHandleEnabledFalse checks the trackfw group for an "enabled":false
+// entry and removes it, emitting a warning via errW if the value was a boolean
+// false. This is the F2 fix from ML-FA2 (REQ-2026-11-17), shared between the
+// project-scope InjectAntigravityHooks and the global harness targets.
+// pathLabel is used in the warning message to identify the file (e.g.
+// ".agents/hooks.json" or "~/.gemini/config/hooks.json").
+func antigravityHandleEnabledFalse(group map[string]interface{}, errW io.Writer, pathLabel string) {
+	enabledVal, hasEnabled := group["enabled"]
+	if !hasEnabled {
+		return
+	}
+	if enabled, ok := enabledVal.(bool); ok && !enabled {
+		fmt.Fprintf(errW,
+			"trackfw: warning: %s trackfw group had \"enabled\":false"+
+				" — guard was disabled; re-enabling (ML-FA2 REQ-2026-11-17)\n",
+			pathLabel,
+		)
+	}
+	delete(group, "enabled")
+}
+
+// antigravityInjectCredential updates the credential hooks in an Antigravity
+// trackfw group. It deduplicates all legacy forms under the three D5 credential
+// matchers and appends the canonical cmd entry for each. Called by both
+// InjectAntigravityHooks (project scope, cmd = CredentialCurrentCmdExe) and
+// harnessCredentialGuardTargetAntigravity (global scope, cmd = CredentialGlobalCurrentCmdExe).
+// legacies is the full list of forms to displace before inserting cmd.
+func antigravityInjectCredential(group map[string]interface{}, cmd string, legacies []string) {
+	for _, matcher := range []string{antigravityMatcherRunCmd, antigravityMatcherWrite, antigravityMatcherView} {
+		group["PreToolUse"] = migrateDedupGuardInNestedArray(
+			group["PreToolUse"], matcher, cmd, legacies,
+		)
+	}
+	group["PreToolUse"] = appendAntigravityHookEntry(group["PreToolUse"], antigravityMatcherRunCmd, cmd)
+	group["PreToolUse"] = appendAntigravityHookEntry(group["PreToolUse"], antigravityMatcherWrite, cmd)
+	group["PreToolUse"] = appendAntigravityHookEntry(group["PreToolUse"], antigravityMatcherView, cmd)
+}
+
+// antigravityInjectGitBranch updates the git-branch hook in an Antigravity
+// trackfw group. It deduplicates all legacy forms under the git-branch matcher
+// and appends the canonical cmd entry. Called by both InjectAntigravityHooks
+// (project scope) and harnessGitBranchGuardTargetAntigravity (global scope).
+// cmd is GitBranchCurrentCmdExe for both scopes.
+func antigravityInjectGitBranch(group map[string]interface{}, cmd string, legacies []string) {
+	group["PreToolUse"] = migrateDedupGuardInNestedArray(
+		group["PreToolUse"], antigravityMatcherGitBranch, cmd, legacies,
+	)
+	group["PreToolUse"] = appendAntigravityHookEntry(group["PreToolUse"], antigravityMatcherGitBranch, cmd)
+}
+
 // antigravityErrWriter is the writer used for advisory messages from
 // InjectAntigravityHooks. If nil, os.Stderr is used. Tests set it to
 // capture output without redirecting the real os.Stderr.
@@ -1946,8 +1996,10 @@ var antigravityErrWriter io.Writer
 //   - marshalJSONNoEscape + '\n' suffix, no BOM.
 //
 // GLOBAL guard (guard update-harness targets antigravity-credential-guard /
-// antigravity-git-branch-guard) is NOT implemented here — it waits for the
-// home-directory measurement in ML-1B (ADR D6 "🔴 só após medição").
+// antigravity-git-branch-guard) is implemented in harnessCredentialGuardTargetAntigravity
+// and harnessGitBranchGuardTargetAntigravity in update.go (ML-3B2 REQ-2026-11-17).
+// Global path: ~/.gemini/config/hooks.json. Windows home: USERPROFILE via
+// os.UserHomeDir() (measured ML-1B §12 of portabilidade doc).
 func InjectAntigravityHooks(rootDir string) error {
 	// ML-8A / #402: resolve root before building paths so that every path
 	// below lives in the same resolved namespace and RejectSymlinks sees
@@ -1993,33 +2045,13 @@ func InjectAntigravityHooks(rootDir string) error {
 		trackfwGroup = make(map[string]interface{})
 	}
 
-	// F2 (ML-FA2 REQ-2026-11-17): if the "trackfw" group has "enabled":false,
-	// remove the key so that the Antigravity runtime treats the group as enabled
-	// (absence == true per §5.3 of the hook contract). Emit a warning to inform
-	// the operator that the guard was silently disabled and has been re-enabled.
-	//
-	// Only a JSON boolean false triggers the warning and removal; non-boolean
-	// values (including string "false") are outside the documented contract and
-	// are left untouched to avoid unexpected side effects.
-	//
-	// Third-party groups are never touched — this block only inspects and mutates
-	// the "trackfw" group that InjectAntigravityHooks owns.
-	if enabledVal, hasEnabled := trackfwGroup["enabled"]; hasEnabled {
-		if enabled, ok := enabledVal.(bool); ok && !enabled {
-			errW := antigravityErrWriter
-			if errW == nil {
-				errW = os.Stderr
-			}
-			fmt.Fprintln(errW,
-				"trackfw: warning: .agents/hooks.json trackfw group had \"enabled\":false"+
-					" — guard was disabled; re-enabling (ML-FA2 REQ-2026-11-17)",
-			)
-		}
-		// Remove the key regardless of its value: absence means enabled per the
-		// Antigravity doc; keeping it as "enabled":true would be redundant but
-		// harmless, while keeping it as "enabled":false would suppress the guard.
-		delete(trackfwGroup, "enabled")
+	// F2 (ML-FA2 REQ-2026-11-17): remove "enabled":false from the trackfw group
+	// and warn. Shared helper also handles global targets (ML-3B2).
+	errW := antigravityErrWriter
+	if errW == nil {
+		errW = os.Stderr
 	}
+	antigravityHandleEnabledFalse(trackfwGroup, errW, ".agents/hooks.json")
 
 	// Dedup pass: normalize any PSPOSIX or legacy CmdExe forms that might
 	// exist in the trackfw group (manual edit, future migration, or a prior
@@ -2036,37 +2068,21 @@ func InjectAntigravityHooks(rootDir string) error {
 		append([]string{guardforms.GitBranchCurrentPSPOSIX}, guardforms.GitBranchLegacyCmdExe...),
 		guardforms.GitBranchLegacyPSPOSIX...,
 	)
-	for _, matcher := range []string{
-		antigravityMatcherRunCmd,
-		antigravityMatcherWrite,
-		antigravityMatcherView,
-	} {
-		trackfwGroup["PreToolUse"] = migrateDedupGuardInNestedArray(
-			trackfwGroup["PreToolUse"], matcher, guardCredentialCmdCmdExe, credentialLegacyAll,
-		)
-	}
 
 	// Migration (ML-3B corretivo): a prior version of this branch registered the
 	// git-branch guard under antigravityMatcherRunCmd ("run_command|manage_task").
 	// Remove all git-branch forms from that matcher now — the credential entry there
 	// is NOT in gitBranchLegacyAll and is left untouched by removeGuardFromNestedArrayInHooks.
+	// This migration only applies to the project-scope file; the global targets are
+	// brand new and have no prior malformed data.
 	removeGuardFromNestedArrayInHooks(trackfwGroup, "PreToolUse",
 		antigravityMatcherRunCmd, guardGitBranchCmdCmdExe, gitBranchLegacyAll,
 	)
 
-	// Dedup git-branch on its correct matcher (antigravityMatcherGitBranch = "run_command").
-	trackfwGroup["PreToolUse"] = migrateDedupGuardInNestedArray(
-		trackfwGroup["PreToolUse"], antigravityMatcherGitBranch, guardGitBranchCmdCmdExe, gitBranchLegacyAll,
-	)
-
-	// Emit (D5 — PreToolUse only):
-	//   credential guard on run_command|manage_task, write_to_file|..., view_file
-	//   git-branch guard on run_command (separate matcher — manage_task carries
-	//   Input not CommandLine, so git-branch must not fire there).
-	trackfwGroup["PreToolUse"] = appendAntigravityHookEntry(trackfwGroup["PreToolUse"], antigravityMatcherRunCmd, guardCredentialCmdCmdExe)
-	trackfwGroup["PreToolUse"] = appendAntigravityHookEntry(trackfwGroup["PreToolUse"], antigravityMatcherWrite, guardCredentialCmdCmdExe)
-	trackfwGroup["PreToolUse"] = appendAntigravityHookEntry(trackfwGroup["PreToolUse"], antigravityMatcherView, guardCredentialCmdCmdExe)
-	trackfwGroup["PreToolUse"] = appendAntigravityHookEntry(trackfwGroup["PreToolUse"], antigravityMatcherGitBranch, guardGitBranchCmdCmdExe)
+	// Dedup + emit credential guard (run_command|manage_task, write_to_file|..., view_file)
+	// and git-branch guard (run_command only) via shared helpers (ML-3B2 REQ-2026-11-17).
+	antigravityInjectCredential(trackfwGroup, guardCredentialCmdCmdExe, credentialLegacyAll)
+	antigravityInjectGitBranch(trackfwGroup, guardGitBranchCmdCmdExe, gitBranchLegacyAll)
 
 	root["trackfw"] = trackfwGroup
 

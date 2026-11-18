@@ -309,6 +309,35 @@ func TestAC4_RegistrySites(t *testing.T) {
 		guardforms.GitBranchLegacyPSPOSIX...,
 	)
 
+	// ── combined lists for global Antigravity harness targets ────────────────
+	// Global forms use CredentialGlobal* / GitBranch* (same CmdExe family).
+	// CredentialGlobalCurrentPSPOSIX is a wrong-family form that must be migrated.
+	antigravityGlobalCredLegacy := append(
+		[]string{guardforms.CredentialGlobalCurrentPSPOSIX, guardforms.LegacyD2CredentialGlobalCmdExe},
+		guardforms.CredentialGlobalLegacyPSPOSIX...,
+	)
+	antigravityGlobalGitLegacy := append(append(
+		[]string{guardforms.GitBranchCurrentPSPOSIX},
+		guardforms.GitBranchLegacyCmdExe...,
+	), guardforms.GitBranchLegacyPSPOSIX...)
+
+	// antigravityHarnessRun: set HOME → write Antigravity group fixture →
+	// UpdateHarness → read output.
+	// Unlike antigravityInjectRun (which sets dir for InjectAntigravityHooks),
+	// this sets HOME so that AntigravityConfigDir resolves to home/.gemini/config/.
+	antigravityHarnessRun := func(target, matcher string) func(*testing.T, string, string, string, string) map[string]interface{} {
+		return func(t *testing.T, _, _, legacy, canonical string) map[string]interface{} {
+			t.Helper()
+			home := harnessHome(t)
+			path := filepath.Join(home, ".gemini", "config", "hooks.json")
+			ac4AntigravityGroupSeed(t, path, matcher, legacy, canonical)
+			if _, err := UpdateHarness(UpdateOptions{Targets: []string{target}, InstallMissing: true}); err != nil {
+				t.Fatalf("UpdateHarness(%s): %v", target, err)
+			}
+			return readJSONFile(t, path)
+		}
+	}
+
 	rows := []row{
 		// ── Project-scope inject sites ────────────────────────────────────────
 		// InjectClaudeHooks — nested — .claude/settings.json
@@ -482,6 +511,29 @@ func TestAC4_RegistrySites(t *testing.T) {
 		},
 		// windsurf-git-branch-guard: no global target — omitted (see file comment)
 		// kiro-credential-guard: total overwrite — omitted (see file comment)
+		// antigravity-credential-guard — Antigravity group format — ~/.gemini/config/hooks.json
+		// Global: canonical is CredentialGlobalCurrentCmdExe; legacy includes CredentialGlobalCurrentPSPOSIX (wrong-family).
+		{
+			site: "HarnessAntigravity-cred-runcmd", event: "PreToolUse", matcher: antigravityMatcherRunCmd,
+			canonical: guardCredentialGlobalCmdCmdExe, list: antigravityGlobalCredLegacy,
+			run: antigravityHarnessRun("antigravity-credential-guard", antigravityMatcherRunCmd), count: antigravityGroupCount,
+		},
+		{
+			site: "HarnessAntigravity-cred-write", event: "PreToolUse", matcher: antigravityMatcherWrite,
+			canonical: guardCredentialGlobalCmdCmdExe, list: antigravityGlobalCredLegacy,
+			run: antigravityHarnessRun("antigravity-credential-guard", antigravityMatcherWrite), count: antigravityGroupCount,
+		},
+		{
+			site: "HarnessAntigravity-cred-view", event: "PreToolUse", matcher: antigravityMatcherView,
+			canonical: guardCredentialGlobalCmdCmdExe, list: antigravityGlobalCredLegacy,
+			run: antigravityHarnessRun("antigravity-credential-guard", antigravityMatcherView), count: antigravityGroupCount,
+		},
+		// antigravity-git-branch-guard — Antigravity group format — ~/.gemini/config/hooks.json
+		{
+			site: "HarnessAntigravity-git", event: "PreToolUse", matcher: antigravityMatcherGitBranch,
+			canonical: guardGitBranchCmdCmdExe, list: antigravityGlobalGitLegacy,
+			run: antigravityHarnessRun("antigravity-git-branch-guard", antigravityMatcherGitBranch), count: antigravityGroupCount,
+		},
 	}
 
 	for _, r := range rows {

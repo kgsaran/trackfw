@@ -393,6 +393,23 @@ if [[ -n "${S1_GO_OUT:-}" ]]; then
 fi
 
 # ===========================================================================
+# Scenario 5b — member-explicit check for ML-3B2 antigravity guard targets.
+# Verifies that "antigravity-credential-guard" and "antigravity-git-branch-guard"
+# appear by name in the declared target list (beyond the vacuity count check).
+# ===========================================================================
+if [[ -n "${S1_GO_OUT:-}" ]]; then
+  ids_go_5b=$(target_ids_json "$S1_GO_OUT" 2>/dev/null || echo "PARSE_ERROR")
+  for _want_id in "antigravity-credential-guard" "antigravity-git-branch-guard"; do
+    if python3 -c "import json,sys; ids=json.loads(sys.argv[1]); sys.exit(0 if '${_want_id}' in ids else 1)" "$ids_go_5b" 2>/dev/null; then
+      ok "update-harness/target-list/member-explicit/${_want_id}"
+    else
+      diag "update-harness/target-list/member-explicit/${_want_id}" \
+        "Go declared target list does not contain '${_want_id}' — buildHarnessTargetIDs missing antigravity case (ML-3B2)"
+    fi
+  done
+fi
+
+# ===========================================================================
 # Scenario 6 — skip warning emitted (exit 0) when artifact is outdated+owned,
 # global scope.
 # ===========================================================================

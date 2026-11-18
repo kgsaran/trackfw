@@ -38,13 +38,14 @@ import (
 
 // CLI name constants used by HomeFor and ClaudeConfigDir.
 const (
-	CLIClaude   = "claude"
-	CLICodex    = "codex"
-	CLIGemini   = "gemini"
-	CLICursor   = "cursor"
-	CLICopilot  = "copilot"
-	CLIWindsurf = "windsurf"
-	CLIKiro     = "kiro"
+	CLIClaude       = "claude"
+	CLICodex        = "codex"
+	CLIGemini       = "gemini"
+	CLIAntigravity  = "antigravity"
+	CLICursor       = "cursor"
+	CLICopilot      = "copilot"
+	CLIWindsurf     = "windsurf"
+	CLIKiro         = "kiro"
 )
 
 // CLIHomeResolver resolves the home directory for a given agent CLI.
@@ -137,6 +138,15 @@ func (OSCLIHomeResolver) HomeFor(cli string) (string, error) {
 		// show that neither HOME nor USERPROFILE override the Codex profile path;
 		// os.UserHomeDir() matches the API result. Same trade-off accepted for
 		// Claude in ADR-2026-10-14 D1 now extended to Codex (D2).
+		return effectiveUserHomeDir()
+	}
+	if effectiveGOOS() == "windows" && cli == CLIAntigravity {
+		// Google Antigravity (agy) on Windows reads the global hooks.json from
+		// USERPROFILE (os.UserHomeDir() in Go), NOT FOLDERID_Profile — opposite
+		// of Codex. Measured 2026-11-18: §12 A3-Win of
+		// docs/portabilidade/2026-11-18-antigravity-contrato-de-hooks.md shows
+		// that setting USERPROFILE=C:\agyprobe\altprofile makes agy read the
+		// hooks.json at that path; os.UserHomeDir() returns USERPROFILE on Windows.
 		return effectiveUserHomeDir()
 	}
 	return homedir.Dir()
@@ -453,4 +463,52 @@ func InertCodexGuardPath(codexDir string) (path string, present bool) {
 		return p, true
 	}
 	return "", false
+}
+
+// AntigravityConfigDir returns the directory that contains the Google Antigravity
+// (agy) global hooks.json — `<home>/.gemini/config`, where `<home>` is resolved
+// via HomeFor(CLIAntigravity).
+//
+// On Windows, HomeFor(CLIAntigravity) returns USERPROFILE (os.UserHomeDir()),
+// matching the measurement in §12 of
+// docs/portabilidade/2026-11-18-antigravity-contrato-de-hooks.md. On other
+// platforms, it returns HOME via homedir.Dir().
+//
+// Callers join "hooks.json" to the result:
+//
+//	dir, err := agentconfig.AntigravityConfigDir(agentconfig.DefaultResolver)
+//	if err != nil { /* emit finding per A7 */ }
+//	path := filepath.Join(dir, "hooks.json")
+func AntigravityConfigDir(r CLIHomeResolver) (string, error) {
+	home, err := r.HomeFor(CLIAntigravity)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".gemini", "config"), nil
+}
+
+// AntigravityHooksDisplayPath returns the human-readable display path for the
+// Google Antigravity global hooks.json. When the resolved path is under
+// homedir.Dir(), it is abbreviated with "~/" (e.g., "~/.gemini/config/hooks.json"
+// in the control case). When the resolved path is outside homedir.Dir()
+// (e.g., USERPROFILE ≠ HOME on Windows), the absolute path is returned as-is.
+// Falls back to "~/.gemini/config/hooks.json" when antigravityDir is empty.
+//
+// Declared in agentconfig so both internal/generators and internal/validator
+// can call the same function (the validator cannot import generators due to
+// circular dependency). Mirrors CodexHooksDisplayPath.
+func AntigravityHooksDisplayPath(antigravityDir string) string {
+	if antigravityDir == "" {
+		return "~/.gemini/config/hooks.json"
+	}
+	p := filepath.Join(antigravityDir, "hooks.json")
+	home, err := homedir.Dir()
+	if err != nil {
+		return p
+	}
+	rel, err := filepath.Rel(home, p)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return p
+	}
+	return "~/" + filepath.ToSlash(rel)
 }

@@ -520,3 +520,99 @@ func TestCodexHooksDisplayPath_OutsideHome_UsesAbsolute(t *testing.T) {
 		t.Errorf("CodexHooksDisplayPath outside HOME: got %q, want %q", got, want)
 	}
 }
+
+// TestOSCLIHomeResolver_WindowsBranch_Antigravity exercises OSCLIHomeResolver's
+// Windows branch for Antigravity (agy) via SetPlatformForTest on macOS/Linux.
+//
+// Conclusion (ML-3B2 REQ-2026-11-17): on Windows (simulated), HomeFor(CLIAntigravity)
+// returns os.UserHomeDir() (USERPROFILE), NOT homedir.Dir() (HOME). Measured in
+// ML-1B §12 of docs/portabilidade/2026-11-18-antigravity-contrato-de-hooks.md.
+// This test FAILS without the CLIAntigravity case in the Windows branch of
+// OSCLIHomeResolver.HomeFor.
+func TestOSCLIHomeResolver_WindowsBranch_Antigravity(t *testing.T) {
+	userprofileDir := t.TempDir()
+	homeDir := t.TempDir()
+
+	restore := agentconfig.SetPlatformForTest("windows", func() (string, error) {
+		return userprofileDir, nil
+	})
+	defer restore()
+
+	t.Setenv("HOME", homeDir)
+	t.Setenv("CODEX_HOME", "")
+
+	r := agentconfig.OSCLIHomeResolver{}
+	got, err := r.HomeFor(agentconfig.CLIAntigravity)
+	if err != nil {
+		t.Fatalf("HomeFor(CLIAntigravity): unexpected error: %v", err)
+	}
+	if got != userprofileDir {
+		t.Errorf("HomeFor(CLIAntigravity) on simulated Windows: got %q, want %q (USERPROFILE)",
+			got, userprofileDir)
+	}
+}
+
+// TestAntigravityConfigDir_Default_JoinsHomeDotGeminiConfig confirms that
+// AntigravityConfigDir returns <home>/.gemini/config on non-Windows.
+//
+// Conclusion (ML-3B2 REQ-2026-11-17): AntigravityConfigDir appends .gemini/config
+// to the user's home dir; this test FAILS if the path suffix is wrong.
+func TestAntigravityConfigDir_Default_JoinsHomeDotGeminiConfig(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("CODEX_HOME", "")
+
+	dir, err := agentconfig.AntigravityConfigDir(agentconfig.DefaultResolver)
+	if err != nil {
+		t.Fatalf("AntigravityConfigDir: unexpected error: %v", err)
+	}
+	want := filepath.Join(homeDir, ".gemini", "config")
+	if dir != want {
+		t.Errorf("AntigravityConfigDir: got %q, want %q", dir, want)
+	}
+}
+
+// TestAntigravityConfigDir_Windows_UsesUserprofile confirms that on Windows (simulated)
+// AntigravityConfigDir appends .gemini/config to USERPROFILE, not HOME.
+//
+// Conclusion (ML-3B2 REQ-2026-11-17): on Windows AntigravityConfigDir uses
+// USERPROFILE via os.UserHomeDir(); FAILS without the CLIAntigravity Windows branch.
+func TestAntigravityConfigDir_Windows_UsesUserprofile(t *testing.T) {
+	userprofileDir := t.TempDir()
+	homeDir := t.TempDir()
+
+	restore := agentconfig.SetPlatformForTest("windows", func() (string, error) {
+		return userprofileDir, nil
+	})
+	defer restore()
+
+	t.Setenv("HOME", homeDir)
+	t.Setenv("CODEX_HOME", "")
+
+	dir, err := agentconfig.AntigravityConfigDir(agentconfig.DefaultResolver)
+	if err != nil {
+		t.Fatalf("AntigravityConfigDir on simulated Windows: unexpected error: %v", err)
+	}
+	want := filepath.Join(userprofileDir, ".gemini", "config")
+	if dir != want {
+		t.Errorf("AntigravityConfigDir on simulated Windows: got %q, want %q (USERPROFILE/.gemini/config)",
+			dir, want)
+	}
+}
+
+// TestAntigravityHooksDisplayPath_InsideHome_UsesRelative confirms that a
+// dir inside HOME returns "~/.gemini/config/hooks.json".
+//
+// Conclusion (ML-3B2 REQ-2026-11-17): path inside HOME is abbreviated; FAILS
+// if the function always returns the absolute path.
+func TestAntigravityHooksDisplayPath_InsideHome_UsesRelative(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("CODEX_HOME", "")
+
+	antigravityDir := filepath.Join(homeDir, ".gemini", "config")
+	got := agentconfig.AntigravityHooksDisplayPath(antigravityDir)
+	if got != "~/.gemini/config/hooks.json" {
+		t.Errorf("AntigravityHooksDisplayPath inside HOME: got %q, want %q", got, "~/.gemini/config/hooks.json")
+	}
+}

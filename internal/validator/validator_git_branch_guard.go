@@ -83,16 +83,21 @@ type globalGuardConfigFile struct {
 
 // globalGuardConfigFiles is the closed list of GLOBAL hook/settings files `trackfw update harness`
 // can write a guard entry into — the global-scope counterpart of credentialGuardHookFiles
-// (validator_credential_guard.go). This list has 7 entries (Claude, Codex, Gemini, Cursor, Copilot,
-// Kiro, Windsurf). Windsurf has a credential-guard harness target (harnessCredentialGuardTargetWindsurf
-// in internal/generators/update.go) at ~/.codeium/windsurf/hooks.json; it has no separate
-// git-branch-guard global target (declared gap, ML-1B REQ-2026-10-06). For the git-branch-guard
-// validator pass, the Windsurf global file will be read but will contain no git-branch marker →
-// silently skipped (no false violation). ML-1A2 (REQ-2026-10-25 D16): Windsurf global added here
-// so the schema-aware collection (hookCmdSchemaFlat) is applied, closing the fail-open for a
-// credential-guard marker placed in a non-command field of ~/.codeium/windsurf/hooks.json.
+// (validator_credential_guard.go). This list has 8 entries (Claude, Codex, Gemini, Cursor, Copilot,
+// Kiro, Windsurf, Antigravity). Windsurf has a credential-guard harness target
+// (harnessCredentialGuardTargetWindsurf in internal/generators/update.go) at
+// ~/.codeium/windsurf/hooks.json; it has no separate git-branch-guard global target (declared gap,
+// ML-1B REQ-2026-10-06). For the git-branch-guard validator pass, the Windsurf global file will be
+// read but will contain no git-branch marker → silently skipped (no false violation). ML-1A2
+// (REQ-2026-10-25 D16): Windsurf global added here so the schema-aware collection
+// (hookCmdSchemaFlat) is applied, closing the fail-open for a credential-guard marker placed in a
+// non-command field of ~/.codeium/windsurf/hooks.json.
+// ML-3B2 (REQ-2026-11-17): Antigravity (agy) global added at ~/.gemini/config/hooks.json —
+// Antigravity group format (hookCmdSchemaAntigravity), CmdExe family.
+// Windows home is USERPROFILE via os.UserHomeDir() (measured ML-1B §12 portabilidade doc
+// 2026-11-18); resolution handled like Codex via agentconfig.AntigravityConfigDir.
 // The globalCredentialGuardInstalled{…} functions were removed in D15, ADR-2026-10-04 adendo
-// 2026-10-24; this list is the validator's own, independently maintained copy of the 7 paths.
+// 2026-10-24; this list is the validator's own, independently maintained copy of the 8 paths.
 var globalGuardConfigFiles = []globalGuardConfigFile{
 	// ML-2B: `family` campo normativo — ADR-2026-10-04 D2 revista.
 	{".claude/settings.json", "Claude Code", true, guardShellFamilyPSPosix},
@@ -106,6 +111,12 @@ var globalGuardConfigFiles = []globalGuardConfigFile{
 	// "type" discriminant. family=PS/POSIX: harnessCredentialGuardTargetWindsurf uses guardCredentialGlobalCmdPSPOSIX.
 	// No "type" field: requiresCommandType=false avoids false "structurally malformed" violations.
 	{".codeium/windsurf/hooks.json", "Windsurf", false, guardShellFamilyPSPosix},
+	// ML-3B2 (REQ-2026-11-17): Antigravity (agy) global at ~/.gemini/config/hooks.json.
+	// Antigravity group format ({"trackfw":{"PreToolUse":[...]}}), CmdExe family.
+	// requiresCommandType=true: "type":"command" is documented and required.
+	// path ".gemini/config/hooks.json" is relative to HomeFor(CLIAntigravity) (USERPROFILE on Windows);
+	// actual full path is resolved via agentconfig.AntigravityConfigDir (like Codex).
+	{".gemini/config/hooks.json", "Antigravity", true, guardShellFamilyCmdExe},
 }
 
 // guardGlobalHookLayout maps each global hook-file path (relative to $HOME, as stored in
@@ -133,6 +144,8 @@ var guardGlobalHookLayout = map[string]hookCmdSchemaKind{
 	".kiro/hooks/trackfw-git-branch-guard.json": hookCmdSchemaKiro,
 	// ML-1A2 (REQ-2026-10-25): Windsurf global uses the same flat schema as the project-scope file.
 	".codeium/windsurf/hooks.json": hookCmdSchemaFlat,
+	// ML-3B2 (REQ-2026-11-17): Antigravity global uses the Antigravity group schema.
+	".gemini/config/hooks.json": hookCmdSchemaAntigravity,
 }
 
 // globalGuardConfigPath resolves the actual on-disk path (relative to $HOME) that
@@ -213,6 +226,9 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker, subcmdMarker, sub
 	// USERPROFILE resolution. A7: resolution error → finding, never silent skip.
 	codexDir, codexDirErr := agentconfig.CodexConfigDir(agentconfig.DefaultResolver)
 
+	// ML-3B2 (REQ-2026-11-17): same pattern for Antigravity CLI — Windows USERPROFILE resolution.
+	antigravityDir, antigravityDirErr := agentconfig.AntigravityConfigDir(agentconfig.DefaultResolver)
+
 	var msgs []string
 	// anySubcmdFormFound e hasPSPosixSubcmd rastreiam o uso da nova forma de subcomando Go.
 	var anySubcmdFormFound bool
@@ -222,7 +238,9 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker, subcmdMarker, sub
 		// ML-1A: Claude Code's settings.json lives in claudeDir (which honours CLAUDE_CONFIG_DIR
 		// and, on Windows, USERPROFILE instead of HOME).
 		// ML-4A4: Codex CLI's hooks.json lives in codexDir (which honours CODEX_HOME and, on
-		// Windows, USERPROFILE instead of HOME). All other CLIs still use homedir.Dir().
+		// Windows, USERPROFILE instead of HOME).
+		// ML-3B2: Antigravity hooks.json lives in antigravityDir (honours USERPROFILE on Windows).
+		// All other CLIs still use homedir.Dir().
 		var fullPath string
 		if gf.cli == "Claude Code" {
 			if claudeDirErr != nil {
@@ -248,15 +266,30 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker, subcmdMarker, sub
 				continue
 			}
 			fullPath = filepath.Join(codexDir, "hooks.json")
+		} else if gf.cli == "Antigravity" {
+			if antigravityDirErr != nil {
+				// A7: resolution error → finding, never silent skip.
+				msgs = append(msgs, fmt.Sprintf(
+					"Antigravity global config directory cannot be resolved (%s) — "+
+						"trackfw cannot tell whether %s is wired; ensure USERPROFILE is "+
+						"set correctly",
+					antigravityDirErr, scriptMarker,
+				))
+				continue
+			}
+			fullPath = filepath.Join(antigravityDir, "hooks.json")
 		} else {
 			fullPath = filepath.Join(home, relPath)
 		}
 		// ML-4A4 R1: for Codex CLI, the display path is the real resolved path
 		// (which may differ from ~/.codex/hooks.json when CODEX_HOME is set).
+		// ML-3B2: same for Antigravity.
 		// All other CLIs keep the "~/<relPath>" form (home-relative).
 		msgPath := "~/" + relPath
 		if gf.cli == "Codex CLI" {
 			msgPath = agentconfig.CodexHooksDisplayPath(codexDir)
+		} else if gf.cli == "Antigravity" {
+			msgPath = agentconfig.AntigravityHooksDisplayPath(antigravityDir)
 		}
 		content, readErr := readRegularFile(fullPath)
 		if readErr != nil {
@@ -470,6 +503,8 @@ func validateGuardGlobalHookShLegacyWarnings(scriptMarker string) ([]string, err
 	claudeDir, claudeDirErr := agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver)
 	// ML-4A4: same pattern for Codex CLI.
 	codexDir, codexDirErr := agentconfig.CodexConfigDir(agentconfig.DefaultResolver)
+	// ML-3B2: same pattern for Antigravity.
+	antigravityDir, antigravityDirErr := agentconfig.AntigravityConfigDir(agentconfig.DefaultResolver)
 
 	var warnings []string
 	for _, gf := range globalGuardConfigFiles {
@@ -495,13 +530,26 @@ func validateGuardGlobalHookShLegacyWarnings(scriptMarker string) ([]string, err
 				continue
 			}
 			fullPath = filepath.Join(codexDir, "hooks.json")
+		} else if gf.cli == "Antigravity" {
+			if antigravityDirErr != nil {
+				warnings = append(warnings, fmt.Sprintf(
+					"Antigravity global config directory cannot be resolved (%s) — "+
+						"trackfw cannot check for legacy hook forms",
+					antigravityDirErr,
+				))
+				continue
+			}
+			fullPath = filepath.Join(antigravityDir, "hooks.json")
 		} else {
 			fullPath = filepath.Join(home, relPath)
 		}
 		// ML-4A4 R1: real display path for Codex CLI.
+		// ML-3B2: same for Antigravity.
 		msgPath := "~/" + relPath
 		if gf.cli == "Codex CLI" {
 			msgPath = agentconfig.CodexHooksDisplayPath(codexDir)
+		} else if gf.cli == "Antigravity" {
+			msgPath = agentconfig.AntigravityHooksDisplayPath(antigravityDir)
 		}
 		content, readErr := readRegularFile(fullPath)
 		if readErr != nil {
@@ -547,6 +595,8 @@ func validateGuardGlobalHookD2InlineWarnings(scriptMarker, subcmdMarker, subcmdN
 	claudeDir, claudeDirErr := agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver)
 	// ML-4A4: same pattern for Codex CLI.
 	codexDir, codexDirErr := agentconfig.CodexConfigDir(agentconfig.DefaultResolver)
+	// ML-3B2: same pattern for Antigravity.
+	antigravityDir, antigravityDirErr := agentconfig.AntigravityConfigDir(agentconfig.DefaultResolver)
 
 	var warnings []string
 	for _, gf := range globalGuardConfigFiles {
@@ -572,13 +622,25 @@ func validateGuardGlobalHookD2InlineWarnings(scriptMarker, subcmdMarker, subcmdN
 				continue
 			}
 			fullPath = filepath.Join(codexDir, "hooks.json")
+		} else if gf.cli == "Antigravity" {
+			if antigravityDirErr != nil {
+				warnings = append(warnings, fmt.Sprintf(
+					"Antigravity global config directory cannot be resolved (%s) — "+
+						"trackfw cannot check for D2 inline forms",
+					antigravityDirErr,
+				))
+				continue
+			}
+			fullPath = filepath.Join(antigravityDir, "hooks.json")
 		} else {
 			fullPath = filepath.Join(home, relPath)
 		}
-		// ML-4A4 R1: real display path for Codex CLI.
+		// ML-4A4 R1 / ML-3B2: real display path for Codex CLI and Antigravity.
 		msgPath := "~/" + relPath
 		if gf.cli == "Codex CLI" {
 			msgPath = agentconfig.CodexHooksDisplayPath(codexDir)
+		} else if gf.cli == "Antigravity" {
+			msgPath = agentconfig.AntigravityHooksDisplayPath(antigravityDir)
 		}
 		content, readErr := readRegularFile(fullPath)
 		if readErr != nil {
@@ -631,6 +693,8 @@ func validateGuardGlobalHookD11LegacyWarnings(scriptMarker, subcmdMarker, subcmd
 	claudeDir, claudeDirErr := agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver)
 	// ML-4A4: same pattern for Codex CLI.
 	codexDir, codexDirErr := agentconfig.CodexConfigDir(agentconfig.DefaultResolver)
+	// ML-3B2: same pattern for Antigravity.
+	antigravityDir, antigravityDirErr := agentconfig.AntigravityConfigDir(agentconfig.DefaultResolver)
 
 	var warnings []string
 	for _, gf := range globalGuardConfigFiles {
@@ -656,13 +720,25 @@ func validateGuardGlobalHookD11LegacyWarnings(scriptMarker, subcmdMarker, subcmd
 				continue
 			}
 			fullPath = filepath.Join(codexDir, "hooks.json")
+		} else if gf.cli == "Antigravity" {
+			if antigravityDirErr != nil {
+				warnings = append(warnings, fmt.Sprintf(
+					"Antigravity global config directory cannot be resolved (%s) — "+
+						"trackfw cannot check for D11 legacy forms",
+					antigravityDirErr,
+				))
+				continue
+			}
+			fullPath = filepath.Join(antigravityDir, "hooks.json")
 		} else {
 			fullPath = filepath.Join(home, relPath)
 		}
-		// ML-4A4 R1: real display path for Codex CLI.
+		// ML-4A4 R1 / ML-3B2: real display path for Codex CLI and Antigravity.
 		msgPath := "~/" + relPath
 		if gf.cli == "Codex CLI" {
 			msgPath = agentconfig.CodexHooksDisplayPath(codexDir)
+		} else if gf.cli == "Antigravity" {
+			msgPath = agentconfig.AntigravityHooksDisplayPath(antigravityDir)
 		}
 		content, readErr := readRegularFile(fullPath)
 		if readErr != nil {
@@ -724,6 +800,8 @@ func validateGuardGlobalHookD11RevisedLegacyWarnings(scriptMarker, subcmdMarker,
 	claudeDir, claudeDirErr := agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver)
 	// ML-4A4: same pattern for Codex CLI.
 	codexDir, codexDirErr := agentconfig.CodexConfigDir(agentconfig.DefaultResolver)
+	// ML-3B2: same pattern for Antigravity.
+	antigravityDir, antigravityDirErr := agentconfig.AntigravityConfigDir(agentconfig.DefaultResolver)
 
 	var warnings []string
 	for _, gf := range globalGuardConfigFiles {
@@ -739,13 +817,20 @@ func validateGuardGlobalHookD11RevisedLegacyWarnings(scriptMarker, subcmdMarker,
 				continue
 			}
 			fullPath = filepath.Join(codexDir, "hooks.json")
+		} else if gf.cli == "Antigravity" {
+			if antigravityDirErr != nil {
+				continue
+			}
+			fullPath = filepath.Join(antigravityDir, "hooks.json")
 		} else {
 			fullPath = filepath.Join(home, relPath)
 		}
-		// ML-4A4 R1: real display path for Codex CLI.
+		// ML-4A4 R1 / ML-3B2: real display path for Codex CLI and Antigravity.
 		msgPath := "~/" + relPath
 		if gf.cli == "Codex CLI" {
 			msgPath = agentconfig.CodexHooksDisplayPath(codexDir)
+		} else if gf.cli == "Antigravity" {
+			msgPath = agentconfig.AntigravityHooksDisplayPath(antigravityDir)
 		}
 		content, readErr := readRegularFile(fullPath)
 		if readErr != nil {
@@ -797,6 +882,8 @@ func validateGuardGlobalHookD18LegacyWarnings(scriptMarker, subcmdMarker, subcmd
 	claudeDir, claudeDirErr := agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver)
 	// ML-4A4: same pattern for Codex CLI.
 	codexDir, codexDirErr := agentconfig.CodexConfigDir(agentconfig.DefaultResolver)
+	// ML-3B2: same pattern for Antigravity.
+	antigravityDir, antigravityDirErr := agentconfig.AntigravityConfigDir(agentconfig.DefaultResolver)
 
 	var warnings []string
 	for _, gf := range globalGuardConfigFiles {
@@ -812,13 +899,20 @@ func validateGuardGlobalHookD18LegacyWarnings(scriptMarker, subcmdMarker, subcmd
 				continue
 			}
 			fullPath = filepath.Join(codexDir, "hooks.json")
+		} else if gf.cli == "Antigravity" {
+			if antigravityDirErr != nil {
+				continue
+			}
+			fullPath = filepath.Join(antigravityDir, "hooks.json")
 		} else {
 			fullPath = filepath.Join(home, relPath)
 		}
-		// ML-4A4 R1: real display path for Codex CLI.
+		// ML-4A4 R1 / ML-3B2: real display path for Codex CLI and Antigravity.
 		msgPath := "~/" + relPath
 		if gf.cli == "Codex CLI" {
 			msgPath = agentconfig.CodexHooksDisplayPath(codexDir)
+		} else if gf.cli == "Antigravity" {
+			msgPath = agentconfig.AntigravityHooksDisplayPath(antigravityDir)
 		}
 		content, readErr := readRegularFile(fullPath)
 		if readErr != nil {

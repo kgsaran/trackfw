@@ -164,14 +164,16 @@ sem BOM.
   `CommandLine`); teste de auditoria `TestExtractTuplesAntigravity` adicionado
 
 ### ML-3B2 — Guard global do Antigravity (ADR D6 — parte global; depende do ML-1B)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — medido no binário: grava `~/.gemini/config/hooks.json` (4 entradas, sem BOM, idempotente); `make quality` rc=0
 **Squad:** apolo-tf
-**Files affected:** `internal/generators/update.go`, `internal/agentconfig/agentconfig.go` (`CLIAntigravity`), testes
+**Files affected:** `internal/generators/update.go`, `internal/generators/agentfiles.go`, `internal/agentconfig/agentconfig.go`
+(`CLIAntigravity`), `internal/validator/validator_git_branch_guard.go`, `scripts/check-update-parity.sh`, `docs/cli-parity.md`,
+`internal/agentconfig/agentconfig_test.go`, `internal/generators/update_test.go`, `internal/generators/guard_registry_sites_ac4_test.go`
 **Acceptance criteria:**
-- [ ] `update harness --targets antigravity-credential-guard --install-missing` grava no caminho global **medido** no ML-1B,
+- [x] `update harness --targets antigravity-credential-guard --install-missing` grava no caminho global **medido** no ML-1B,
   com `HOME`/`USERPROFILE` isolados nos testes
-- [ ] teste de membro explícito para os dois IDs novos (não só contagem — Superfície B do threat model)
-- [ ] `scripts/check-update-parity.sh` e `make parity-rest` rc=0
+- [x] teste de membro explícito para os dois IDs novos (não só contagem — Superfície B do threat model)
+- [x] `scripts/check-update-parity.sh` e `make parity-rest` rc=0
 
 ### ML-3C — Auditoria e aviso de legado (ADR D6, D7)
 **Status:** ✅ Done (parte projeto; auditoria do global vai com o ML-3B2)

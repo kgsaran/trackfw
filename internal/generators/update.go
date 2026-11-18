@@ -512,7 +512,7 @@ var harnessCatalogTargetOrder = []string{
 }
 
 // HarnessTargetIDs is the fixed, declared order of `trackfw update harness`
-// targets: 34 ids — "claude-skill", then "claude-credential-guard" and
+// targets: 38 ids — "claude-skill", then "claude-credential-guard" and
 // "claude-git-branch-guard" (global hook wiring for Claude Code — placed
 // immediately after claude-skill since all three are Claude-Code-scoped
 // global artifacts), then for each catalog target in
@@ -534,12 +534,17 @@ var harnessCatalogTargetOrder = []string{
 // documented global git-branch-guard hook path equivalent to the project-scope
 // .windsurf/hooks.json), and "kiro-credential-guard"/
 // "kiro-git-branch-guard" inserted immediately BEFORE "kiro-agents"/
-// "kiro-skills" (ML-2F). Within each tool, credential-guard always precedes
-// git-branch-guard (where it exists), which always precedes that tool's own
-// agents/skills pair, never follows it. Order here is authoritative for both
-// JSON output and iteration — it must never be derived from the filesystem or
-// from what happens to be installed on a given machine (see docs/cli-parity.md,
-// "targets follows the declared target order, not filesystem order").
+// "kiro-skills" (ML-2F), and "antigravity-credential-guard"/
+// "antigravity-git-branch-guard" inserted immediately BEFORE
+// "antigravity-agents"/"antigravity-skills" (ML-3B2, REQ-2026-11-17 — global
+// guard for Google Antigravity at ~/.gemini/config/hooks.json; Windows home
+// is USERPROFILE via os.UserHomeDir(), measured in ML-1B §12). Within each
+// tool, credential-guard always precedes git-branch-guard (where it exists),
+// which always precedes that tool's own agents/skills pair, never follows it.
+// Order here is authoritative for both JSON output and iteration — it must
+// never be derived from the filesystem or from what happens to be installed on
+// a given machine (see docs/cli-parity.md, "targets follows the declared
+// target order, not filesystem order").
 var HarnessTargetIDs = buildHarnessTargetIDs()
 
 func buildHarnessTargetIDs() []string {
@@ -568,6 +573,9 @@ func buildHarnessTargetIDs() []string {
 		}
 		if tool == "kiro" {
 			ids = append(ids, "kiro-credential-guard", "kiro-git-branch-guard")
+		}
+		if tool == "antigravity" {
+			ids = append(ids, "antigravity-credential-guard", "antigravity-git-branch-guard")
 		}
 		ids = append(ids, tool+"-agents", tool+"-skills")
 	}
@@ -633,6 +641,15 @@ func UpdateHarness(opts UpdateOptions) (UpdateReport, error) {
 	codexDir, codexDirErr := agentconfig.CodexConfigDir(agentconfig.DefaultResolver)
 	if codexDirErr == nil {
 		codexDir = filepath.Clean(codexDir)
+	}
+
+	// ML-3B2 (REQ-2026-11-17): Google Antigravity global hooks path may differ from
+	// home/.gemini/config on Windows (USERPROFILE ≠ HOME in Git Bash). Same pattern as
+	// Claude/Codex above. Global path: ~/.gemini/config/hooks.json. Windows home is
+	// USERPROFILE via os.UserHomeDir() (measured ML-1B §12).
+	antigravityDir, antigravityDirErr := agentconfig.AntigravityConfigDir(agentconfig.DefaultResolver)
+	if antigravityDirErr == nil {
+		antigravityDir = filepath.Clean(antigravityDir)
 	}
 
 	// NOTE: the script files are now first-class targets ("git-branch-guard-script",
@@ -736,6 +753,14 @@ func UpdateHarness(opts UpdateOptions) (UpdateReport, error) {
 		}
 		if id == "kiro-git-branch-guard" {
 			results = append(results, harnessGitBranchGuardTargetKiro(home, opts))
+			continue
+		}
+		if id == "antigravity-credential-guard" {
+			results = append(results, harnessCredentialGuardTargetAntigravity(antigravityDir, antigravityDirErr, opts))
+			continue
+		}
+		if id == "antigravity-git-branch-guard" {
+			results = append(results, harnessGitBranchGuardTargetAntigravity(antigravityDir, antigravityDirErr, opts))
 			continue
 		}
 		tool, kind, ok := splitHarnessCatalogTargetID(id)
@@ -2740,6 +2765,225 @@ func harnessGitBranchGuardTargetKiro(home string, opts UpdateOptions) TargetResu
 	}
 
 	if string(data) == string(desired) {
+		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
+	}
+	if opts.DryRun {
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+	}
+	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+}
+
+// harnessCredentialGuardTargetAntigravity evaluates (and, unless DryRun, applies)
+// the global-scope credential-guard hook wiring for Google Antigravity (agy):
+// PreToolUse entries in ~/.gemini/config/hooks.json under the "trackfw" group,
+// for the three D5 credential matchers (run_command|manage_task,
+// write_to_file|..., view_file), pointing at guardCredentialGlobalCmdCmdExe.
+//
+// Design decisions:
+//   - Antigravity group format: {"trackfw":{"PreToolUse":[...]}} — same as the
+//     project-scope .agents/hooks.json (InjectAntigravityHooks).
+//   - CmdExe family: guardCredentialGlobalCmdCmdExe = "trackfw guard credential
+//     --global || exit 2". On Windows, agy reads USERPROFILE (os.UserHomeDir).
+//   - Symlink root: filepath.Dir(filepath.Dir(antigravityDir)) = HomeFor(CLIAntigravity),
+//     the user's home directory for the Antigravity CLI (USERPROFILE on Windows).
+//   - Shares antigravityInjectCredential with InjectAntigravityHooks (leg independence).
+//   - No legacyScriptPath: brand-new target, no prior .sh form exists.
+//   - antigravityHandleEnabledFalse: handles enabled:false in the trackfw group.
+//   - Measured ML-1B §12 (portabilidade doc 2026-11-18): global path confirmed,
+//     Windows home confirmed USERPROFILE via os.UserHomeDir().
+func harnessCredentialGuardTargetAntigravity(antigravityDir string, antigravityDirErr error, opts UpdateOptions) TargetResult {
+	const id = "antigravity-credential-guard"
+	displayPath := agentconfig.AntigravityHooksDisplayPath(antigravityDir)
+	if antigravityDirErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: "~/.gemini/config/hooks.json", Message: fmt.Sprintf("resolving Antigravity config dir: %s", antigravityDirErr)}
+	}
+
+	path := filepath.Join(antigravityDir, "hooks.json")
+	// Guard: reject writes through symlinks before any filesystem mutation
+	// (ADR-2026-09-18 / ML-1B). Root is HomeFor(CLIAntigravity) =
+	// filepath.Dir(filepath.Dir(antigravityDir)).
+	symlinkRoot := filepath.Dir(filepath.Dir(antigravityDir))
+	if result, guarded := rejectHarnessSymlink(symlinkRoot, path, id, displayPath); guarded {
+		return result
+	}
+
+	raw, err := os.ReadFile(path)
+	switch {
+	case os.IsNotExist(err):
+		if !opts.InstallMissing {
+			return TargetResult{ID: id, State: TargetMissing, Path: displayPath}
+		}
+		if opts.DryRun {
+			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		}
+		root := make(map[string]interface{})
+		group := make(map[string]interface{})
+		credGlobalLegacy := append(
+			[]string{guardforms.CredentialGlobalCurrentPSPOSIX, guardforms.LegacyD2CredentialGlobalCmdExe},
+			guardforms.CredentialGlobalLegacyPSPOSIX...,
+		)
+		antigravityInjectCredential(group, guardCredentialGlobalCmdCmdExe, credGlobalLegacy)
+		root["trackfw"] = group
+		desired, marshalErr := marshalJSONNoEscape(root)
+		if marshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
+		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+		}
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	case err != nil:
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
+	}
+
+	var root map[string]interface{}
+	if len(raw) > 0 {
+		if unmarshalErr := json.Unmarshal(raw, &root); unmarshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: unmarshalErr.Error()}
+		}
+	}
+	if root == nil {
+		root = make(map[string]interface{})
+	}
+
+	trackfwGroup, _ := root["trackfw"].(map[string]interface{})
+	if trackfwGroup == nil {
+		trackfwGroup = make(map[string]interface{})
+	}
+
+	// F2 (ML-FA2 REQ-2026-11-17): remove "enabled":false and warn (global file).
+	errW := opts.ErrWriter
+	if errW == nil {
+		errW = os.Stderr
+	}
+	antigravityHandleEnabledFalse(trackfwGroup, errW, displayPath)
+
+	credGlobalLegacy := append(
+		[]string{guardforms.CredentialGlobalCurrentPSPOSIX, guardforms.LegacyD2CredentialGlobalCmdExe},
+		guardforms.CredentialGlobalLegacyPSPOSIX...,
+	)
+	antigravityInjectCredential(trackfwGroup, guardCredentialGlobalCmdCmdExe, credGlobalLegacy)
+	root["trackfw"] = trackfwGroup
+
+	out, marshalErr := marshalJSONNoEscape(root)
+	if marshalErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+	}
+	desired := append(out, '\n')
+	if string(desired) == string(raw) {
+		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
+	}
+	if opts.DryRun {
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+	}
+	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+}
+
+// harnessGitBranchGuardTargetAntigravity evaluates (and, unless DryRun, applies)
+// the global-scope git-branch-guard hook wiring for Google Antigravity (agy):
+// PreToolUse[matcher:"run_command"] entry in ~/.gemini/config/hooks.json under
+// the "trackfw" group, pointing at guardGitBranchCmdCmdExe.
+//
+// Shares the same file as harnessCredentialGuardTargetAntigravity. Each target
+// calls only its own leg (antigravityInjectGitBranch here) so running them
+// independently is idempotent — the other leg's matchers are never touched.
+func harnessGitBranchGuardTargetAntigravity(antigravityDir string, antigravityDirErr error, opts UpdateOptions) TargetResult {
+	const id = "antigravity-git-branch-guard"
+	displayPath := agentconfig.AntigravityHooksDisplayPath(antigravityDir)
+	if antigravityDirErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: "~/.gemini/config/hooks.json", Message: fmt.Sprintf("resolving Antigravity config dir: %s", antigravityDirErr)}
+	}
+
+	path := filepath.Join(antigravityDir, "hooks.json")
+	// Guard: reject writes through symlinks before any filesystem mutation
+	// (ADR-2026-09-18 / ML-1B). Root is HomeFor(CLIAntigravity).
+	symlinkRoot := filepath.Dir(filepath.Dir(antigravityDir))
+	if result, guarded := rejectHarnessSymlink(symlinkRoot, path, id, displayPath); guarded {
+		return result
+	}
+
+	raw, err := os.ReadFile(path)
+	switch {
+	case os.IsNotExist(err):
+		if !opts.InstallMissing {
+			return TargetResult{ID: id, State: TargetMissing, Path: displayPath}
+		}
+		if opts.DryRun {
+			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		}
+		root := make(map[string]interface{})
+		group := make(map[string]interface{})
+		gitBranchLegacyAll := append(append(
+			[]string{guardforms.GitBranchCurrentPSPOSIX},
+			guardforms.GitBranchLegacyCmdExe...,
+		), guardforms.GitBranchLegacyPSPOSIX...)
+		antigravityInjectGitBranch(group, guardGitBranchCmdCmdExe, gitBranchLegacyAll)
+		root["trackfw"] = group
+		desired, marshalErr := marshalJSONNoEscape(root)
+		if marshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
+		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+		}
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	case err != nil:
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
+	}
+
+	var root map[string]interface{}
+	if len(raw) > 0 {
+		if unmarshalErr := json.Unmarshal(raw, &root); unmarshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: unmarshalErr.Error()}
+		}
+	}
+	if root == nil {
+		root = make(map[string]interface{})
+	}
+
+	trackfwGroup, _ := root["trackfw"].(map[string]interface{})
+	if trackfwGroup == nil {
+		trackfwGroup = make(map[string]interface{})
+	}
+
+	// F2 (ML-FA2 REQ-2026-11-17): remove "enabled":false and warn (global file).
+	errW := opts.ErrWriter
+	if errW == nil {
+		errW = os.Stderr
+	}
+	antigravityHandleEnabledFalse(trackfwGroup, errW, displayPath)
+
+	gitBranchLegacyAll := append(append(
+		[]string{guardforms.GitBranchCurrentPSPOSIX},
+		guardforms.GitBranchLegacyCmdExe...,
+	), guardforms.GitBranchLegacyPSPOSIX...)
+	antigravityInjectGitBranch(trackfwGroup, guardGitBranchCmdCmdExe, gitBranchLegacyAll)
+	root["trackfw"] = trackfwGroup
+
+	out, marshalErr := marshalJSONNoEscape(root)
+	if marshalErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+	}
+	desired := append(out, '\n')
+	if string(desired) == string(raw) {
 		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
 	}
 	if opts.DryRun {
