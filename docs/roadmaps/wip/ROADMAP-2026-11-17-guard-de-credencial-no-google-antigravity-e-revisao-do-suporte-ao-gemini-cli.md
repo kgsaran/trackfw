@@ -48,7 +48,7 @@ REQ: docs/req/REQ-2026-11-17-guard-de-credencial-no-google-antigravity-e-revisao
 > Dependências: nenhuma. Bloqueia toda implementação.
 
 ### ML-0A — Threat model
-**Status:** ⬜ Pending
+**Status:** ✅ Done
 **Squad:** hades-tf
 **Files affected:** `docs/seguranca/2026-11-18-wave0-antigravity-threat-model.md` (novo)
 **Actions:**
@@ -60,10 +60,12 @@ REQ: docs/req/REQ-2026-11-17-guard-de-credencial-no-google-antigravity-e-revisao
 3. Alvos de falsificação nas duas direções por superfície.
 4. Residual declarado.
 **Acceptance criteria:**
-- [ ] as quatro seções com evidência (arquivo:linha ou fonte), sem linha de implementação
+- [x] as quatro seções com evidência (arquivo:linha ou fonte), sem linha de implementação — 13 superfícies (inclui
+  `internal/auditsurface/auditsurface.go` `canonicalRuntimes`), 14 ameaças, residual R1–R7. Medido: guard de git-branch
+  libera em silêncio payload de schema desconhecido (T2); os dois guards esperam EOF do stdin sem limite (T-Timeout)
 
 ### ML-0B — Contrato de hooks do Antigravity e status do Gemini CLI, por fonte primária
-**Status:** ⬜ Pending
+**Status:** ✅ Done
 **Squad:** prometeu-tf
 **Files affected:** `docs/portabilidade/2026-11-18-antigravity-contrato-de-hooks.md` (novo)
 **Actions:** a partir da documentação oficial (`antigravity.google/docs/hooks`, IDE e CLI `agy`) e do blog do Google
@@ -75,8 +77,10 @@ acesso). Onde a doc for omissa ou contraditória, escrever "não documentado" e 
 com o **roteiro de medição** para o KG rodar no Mac e na VM (comandos exatos, hooks.json de sonda que grava stdin,
 `$PSVersionTable`/`$0`/linha de comando do processo pai num arquivo, contra-braço).
 **Acceptance criteria:**
-- [ ] cada afirmação com URL; nenhuma afirmação de comportamento sem fonte ou sem marcar "medir"
-- [ ] roteiro de medição executável sem interpretação (Mac e Windows)
+- [x] cada afirmação com URL; nenhuma afirmação de comportamento sem fonte ou sem marcar "medir" — conferido pelo
+  arquiteto contra `antigravity.google/docs/hooks.md`: global `~/.gemini/config/hooks.json`, `toolCall.args.CommandLine`,
+  `decision` no stdout, `lastUserInput` em todo payload
+- [x] roteiro de medição executável sem interpretação (Mac e Windows)
 
 **Wave gates:**
 ```bash
