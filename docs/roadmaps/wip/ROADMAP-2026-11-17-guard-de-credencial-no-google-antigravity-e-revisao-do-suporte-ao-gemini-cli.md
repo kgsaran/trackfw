@@ -104,21 +104,65 @@ test -s docs/portabilidade/2026-11-18-antigravity-contrato-de-hooks.md
 
 ## Wave 2 — ADR
 ### ML-2A — ADR do guard no Antigravity e legado do Gemini CLI
-**Status:** ⬜ Pending
+**Status:** ✅ Done
 **Squad:** zeus-tf
 **Acceptance criteria:**
-- [ ] ADR em `docs/adr/` com: formato da linha de hook do Antigravity (e se o guard precisa de saída JSON —
-  ex. `trackfw guard credential --format antigravity`), caminhos projeto/global, alvos de `update harness`, auditoria
-  no `validate`/`doctor`, e o aviso de legado do Gemini
-- [ ] REQ ligada à ADR
+- [x] ADR `ADR-2026-11-18-guard-de-credencial-e-de-git-branch-no-google-antigravity-e-gemini-cli-como-legado.md`:
+  forma cmd.exe nas duas plataformas, sem saída JSON, payload `toolCall.args.CommandLine`, `lastUserInput` fora (KG: a)
+- [x] REQ ligada à ADR
 
-## Wave 3 — Implementação (MLs detalhados após a ADR, com arquivos e valores exatos)
-> Dependências: Wave 2.
-- ML-3A — saída no contrato do Antigravity no `trackfw guard credential`/`git-branch` (se a ADR exigir)
-- ML-3B — `InjectAntigravityHooks` (projeto) + `cliDetectors`; alvos globais `antigravity-credential-guard`/
-  `antigravity-git-branch-guard` no `update harness`
-- ML-3C — auditoria no `validate`/`doctor` (mesmo caminho da escrita) + aviso de legado do Gemini
-- ML-3D — `docs/cli-parity.md` e `catalog.json`
+## Wave 3 — Implementação (ADR-2026-11-18; 3A ∥ 3B, depois 3C, depois 3D)
+> Dependências: Wave 2. 3A e 3B tocam pacotes disjuntos (`internal/guard` × `internal/generators`+`internal/agentconfig`).
+> 3C depende da API de caminhos do 3B. 3D (docs) por último.
+
+### ML-3A — Payload do Antigravity no guard (ADR D2, D3, D4)
+**Status:** ⬜ Pending
+**Squad:** apolo-tf
+**Files affected:** `internal/guard/payload.go`, `internal/guard/credential.go`, testes em `internal/guard/`
+**Actions:** `ExtractCommand` e `credExtractCmdAndCwd` reconhecem `toolCall.args.CommandLine` e o `cwd` do payload;
+com schema Antigravity (`toolCall` objeto + `hookEventName`), a camada 1 do guard de credencial varre só `toolCall`.
+**Acceptance criteria:**
+- [ ] git-branch: payload Antigravity com `git push` para branch protegida → exit 2 (hoje 0: T2); contra-braço `ls` → 0
+- [ ] credencial: segredo fake em `toolCall.args.CommandLine` → 2; o mesmo segredo só em `lastUserInput` → 0
+- [ ] camada 2 lê arquivo citado em `CommandLine` (ex. `cat <arquivo com segredo>`) → 2
+- [ ] invariante: em todo caminho de exit 0 dos dois guards, stdout vazio (teste por tabela)
+- [ ] schemas de Claude/Codex/Gemini sem mudança de veredito (testes existentes verdes)
+- [ ] `go test ./internal/guard/` rc=0
+
+### ML-3B — Hooks do Antigravity no projeto e no global (ADR D1, D5, D6)
+**Status:** ⬜ Pending
+**Squad:** apolo-tf
+**Files affected:** `internal/generators/agentfiles.go` (`InjectAntigravityHooks`), `internal/generators/hooks.go`
+(`cliDetectors`), `internal/generators/update.go` (alvos `antigravity-credential-guard`/`antigravity-git-branch-guard`),
+`internal/agentconfig/agentconfig.go` (`CLIAntigravity` em `HomeFor`), `internal/auditsurface/auditsurface.go`,
+testes correspondentes
+**Actions:** linha = `guardforms.CredentialCurrentCmdExe`/`GitBranchCurrentCmdExe` (global:
+`CredentialGlobalCurrentCmdExe`); grupo `trackfw`, só `PreToolUse`, matchers do D5; `pathguard` + merge preservador;
+sem BOM.
+**Acceptance criteria:**
+- [ ] `init`/`agents install --targets antigravity` grava `.agents/hooks.json`; hooks de terceiros preservados byte a byte;
+  segunda execução idempotente
+- [ ] `update harness --targets antigravity-credential-guard --install-missing` grava em `~/.gemini/config/hooks.json`
+  (Windows: `USERPROFILE`), com `HOME` e `USERPROFILE` isolados nos testes
+- [ ] teste de membro explícito para os dois IDs novos (não só contagem — Superfície B do threat model)
+- [ ] `go test ./internal/generators/ ./internal/agentconfig/ ./internal/auditsurface/` rc=0
+
+### ML-3C — Auditoria e aviso de legado (ADR D6, D7)
+**Status:** ⬜ Pending
+**Squad:** apolo-tf
+**Files affected:** `internal/validator/` (regras de guard de credencial/git-branch + regra nova `gemini_cli_legacy`),
+`internal/commands/doctor*.go`
+**Acceptance criteria:**
+- [ ] `validate`/`doctor` auditam o guard do Antigravity no mesmo caminho do 3B (braço: removido → acusa; presente → ok)
+- [ ] `gemini_cli_legacy` em nível warning: guard do Gemini sem o do Antigravity → aviso; com os dois → silêncio
+- [ ] `go test ./internal/validator/ ./internal/commands/` rc=0
+
+### ML-3D — `docs/cli-parity.md` e `catalog.json`
+**Status:** ⬜ Pending
+**Squad:** apolo-tf
+**Acceptance criteria:**
+- [ ] contrato do Antigravity (linha, matchers, caminhos, schema) e status de legado do Gemini documentados
+- [ ] `make parity-rest` rc=0
 
 ## Wave 4 — Prova real, revisão e red team
 - ML-4A — KG roda no Antigravity real (Mac e Windows): segredo fake bloqueado, comando inócuo liberado

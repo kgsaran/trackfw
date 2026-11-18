@@ -2,7 +2,7 @@
 status: Open
 date: 2026-11-17
 author: "zeus-tf (pedido do KG)"
-adr: ""
+adr: "docs/adr/ADR-2026-11-18-guard-de-credencial-e-de-git-branch-no-google-antigravity-e-gemini-cli-como-legado.md"
 roadmap: "docs/roadmaps/wip/ROADMAP-2026-11-17-guard-de-credencial-no-google-antigravity-e-revisao-do-suporte-ao-gemini-cli.md"
 ---
 
@@ -49,7 +49,7 @@ agente novo, e não comportamento de plataforma.
 
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->
-ADR: 
+ADR: docs/adr/ADR-2026-11-18-guard-de-credencial-e-de-git-branch-no-google-antigravity-e-gemini-cli-como-legado.md
 
 ## Blocked by ADRs
 <!-- none -->
