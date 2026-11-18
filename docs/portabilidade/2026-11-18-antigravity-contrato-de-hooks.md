@@ -960,3 +960,46 @@ O `app_data_dir` derivado do log é mais confiável do que comparar variáveis d
    completado. Consequência: **nenhuma chave fake literal pode ser escrita neste documento**, motivo
    pelo qual M13 usa geradores de chave. A confirmação de comportamento fica como item de medição M13
    no binário Antigravity real.
+
+## 11. Medido (ML-1A, 2026-11-18) — `agy` 1.5.11 no macOS e no Windows 11 ARM64
+
+Runners: `docs/portabilidade/antigravity-sondas/run-arms-{mac.sh,windows.ps1}`, rodados pelo KG; modo headless
+(`agy -p ... --dangerously-skip-permissions --output-format stream-json`), hook de projeto em `.agents/hooks.json`,
+matcher `run_command`. Cada braço foi confirmado no `stream-json`: o passo `run_command` termina em `ERROR` e a
+resposta do agente cita o hook. Ou seja, o marcador ausente é bloqueio do hook, não recusa do modelo.
+
+| Braço (saída do hook) | macOS | Windows | Leitura |
+|---|---|---|---|
+| `{"decision":"allow"}`, exit 0 | executa | executa | contra-braço |
+| `{"decision":"deny"}`, exit 0 | **bloqueia** | **bloqueia** | contrato documentado |
+| stdout vazio, **exit 2** | **bloqueia** | **bloqueia** | contrato atual do trackfw funciona |
+| stdout vazio, exit 1 | **bloqueia** | **bloqueia** | todo exit ≠ 0 é fail-closed |
+| stdout vazio, exit 0 | executa | executa | = allow; guard silencioso libera |
+| `NOT_JSON`, exit 0 | **bloqueia** (`failed to unmarshal result ... via protojson`) | **bloqueia** | stdout que não é JSON válido bloqueia |
+
+| Ambiente do hook | macOS | Windows |
+|---|---|---|
+| Quem executa o `command` | `sh -c` (`$0=sh`, bash 3.2 do `/bin/sh`); pai do script = `agy` | `cmd /s /c "<command>"`; avô = `agy.exe` |
+| cwd do hook | `<projeto>/.agents` (diretório do `hooks.json`) | `C:\Users\Lab\agyprobe\.agents` |
+| `HOME` / `USERPROFILE` | `HOME` herdado | `HOME` **vazio**, `USERPROFILE=C:\Users\Lab` |
+| PATH | herdado do shell que lançou o `agy` | herdado (inclui `C:\Program Files\Git\cmd`) |
+| Payload (stdin) | `toolCall.args.CommandLine`, `toolCall.name`, `cwd`, `workspacePaths`, `lastUserInput`, `hookEventName` | idem; caminhos com `\\` |
+| `<app_data_dir>` efetivo | `~/.gemini/antigravity-cli` | `C:\Users\Lab\.gemini\antigravity-cli` |
+
+**Consequências para a ADR:**
+1. O contrato de saída do trackfw (exit 0 silencioso = libera, exit 2 = bloqueia) já é respeitado. Não é preciso
+   saída JSON; o `hookSpecificOutput` que o guard de git-branch escreve junto com exit 2 também bloqueia (exit ≠ 0).
+   🔴 Mas qualquer **texto não-JSON no stdout com exit 0** bloqueia o comando: o guard nunca pode escrever no stdout ao
+   liberar.
+2. O shell do hook é `sh -c` no macOS e `cmd /s /c` no Windows. As formas de linha que o trackfw já tem (POSIX e
+   cmd.exe, ML-2B da REQ-2026-11-15) se aplicam por plataforma.
+3. O comando chega em `toolCall.args.CommandLine`. O guard de git-branch não extrai esse campo e libera em silêncio
+   (T2 do threat model); a camada 2 do guard de credencial também não. É mudança de código obrigatória.
+4. O cwd do hook é `.agents/`, não a raiz: a busca de `trackfw.yaml` sobe e acha a raiz; o campo `cwd` do payload é a
+   raiz do workspace.
+5. `lastUserInput` está em todo payload: a camada 1 do guard de credencial vai bloquear um comando inócuo se o prompt
+   do usuário contiver um segredo (falso positivo a decidir na ADR).
+
+**Ainda não medido:** caminho global efetivo (`~/.gemini/config/hooks.json`) e precedência projeto × global (M9),
+`enabled:false` (M9b), timeout (M8), Gemini CLI com chave paga (M12). M9 exige escrever em `~/.gemini/config/`,
+o que pede autorização do KG.

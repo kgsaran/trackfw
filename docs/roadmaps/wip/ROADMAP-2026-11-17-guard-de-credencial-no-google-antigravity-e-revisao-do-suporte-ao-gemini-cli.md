@@ -96,8 +96,10 @@ test -s docs/portabilidade/2026-11-18-antigravity-contrato-de-hooks.md
 **Squad:** zeus-tf + KG (comandos rodados pelo KG; o classificador bloqueia o agente de rodar CLI de terceiro com bypass)
 **Files affected:** `docs/portabilidade/2026-11-18-antigravity-contrato-de-hooks.md` (seção "Medido")
 **Acceptance criteria:**
-- [ ] tabela plataforma × (shell do hook, payload do stdin, efeito de exit 2, efeito de `{"decision":"deny"}`, stdout
-  vazio, JSON inválido, caminho global efetivo) preenchida, com contra-braço
+- [x] tabela plataforma × (shell do hook, payload do stdin, efeito de exit 2, efeito de `{"decision":"deny"}`, stdout
+  vazio, JSON inválido) preenchida, com contra-braço — §11 do contrato; `agy` 1.5.11, Mac e Windows: exit ≠ 0 bloqueia,
+  stdout vazio + exit 0 libera, JSON inválido bloqueia; hook via `sh -c` (Mac) e `cmd /s /c` (Windows)
+- [ ] caminho global efetivo e precedência projeto × global (M9) — exige escrever em `~/.gemini/config/` (autorização do KG)
 - [ ] Gemini CLI: o binário instalado executa shell com chave de API? (contra-braço: sem chave)
 
 ## Wave 2 — ADR
