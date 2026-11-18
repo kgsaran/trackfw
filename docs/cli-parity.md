@@ -3931,6 +3931,8 @@ matcher-merge parity with Go/Node.)
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
+> **Status de legado (D7, ADR-2026-11-18):** o Gemini CLI é **legado para contas individuais** desde 2026-06-18; o fluxo do Google migrou para o Antigravity. O trackfw continua gerando e auditando os guards do Gemini CLI (quem tem chave de API paga segue usando), mas a regra `gemini_cli_legacy` emite um warning quando o projeto tem guard do Gemini CLI e nenhum guard do Antigravity — ver [Regra `gemini_cli_legacy`](#regra-gemini_cli_legacy--aviso-de-migração-do-gemini-cli-para-o-antigravity-d7-adr-2026-11-18-ml-3c) no final deste documento.
+
 
 `InjectGeminiHooks` (Go: `internal/generators/agentfiles.go`; Node.js:
 `npm/src/generators/hooks.js:injectGeminiHooks`; Python:
@@ -4316,6 +4318,63 @@ this shape.
 (`PostToolUse`/`matcher: "*"`) entries, in the same `hooks` array. Idempotent: the file is always fully
 regenerated with the same four entries, so re-running the injector never duplicates or drifts.
 
+#### Antigravity wiring (ML-3B) — `.agents/hooks.json`, grupo `trackfw`, só `PreToolUse`
+
+<!-- trackfw-contract: gate=internal/generators/antigravity_hooks_test.go,internal/validator/validator_guard_hook_concordance_external_test.go partial=TestInjectAntigravityHooks cobre create/idempotente/symlink-rejeição/sem-BOM/sem-PSPOSIX/migração-git-branch; os testes de concordância ML-3C exercem os matchers e a linha CmdExe via ValidateUnfiltered -->
+
+`InjectAntigravityHooks` (`internal/generators/agentfiles.go`) escreve `.agents/hooks.json` com
+um único grupo nomeado `"trackfw"`. Terceiros podem ter outros grupos no mesmo arquivo — são preservados
+intactos via round-trip JSON (`map[string]interface{}`).
+
+**Arquivo e esquema.** O Antigravity usa o formato `{groupName: {event: [{matcher, hooks:[{type,command}]}]}}` —
+o nível raiz é um mapa de nome-de-grupo → mapa de eventos. Dentro do grupo `"trackfw"` há só `"PreToolUse"`:
+`PostToolUse` não bloqueia no Antigravity (medido no `agy` 1.5.11, §11 do contrato de hooks). O evento de atenção
+(`Notification`) não existe no Antigravity — o hook de atenção do board não tem equivalente e permanece residual.
+
+**Linha de hook e família de shell.** O comando emitido é a forma **cmd.exe** (D1, ADR-2026-11-18):
+```
+trackfw guard credential || exit 2
+trackfw guard git-branch || exit 2
+```
+Esta forma é válida tanto em `sh -c` (macOS, medido) quanto em `cmd /s /c` (Windows, medido) — os dois
+shells que o `agy` 1.5.11 usa ao executar hooks. A forma PSPOSIX não serve: `cmd.exe` não a interpreta.
+Se o `trackfw` não estiver no PATH, a linha sai com 127 (`sh`) ou 9009 (`cmd`) e vira `exit 2`: fail-closed.
+
+**Matchers (D5, ADR-2026-11-18).** Quatro entradas em `PreToolUse`:
+
+| Matcher | Guard | Motivo |
+|---|---|---|
+| `run_command\|manage_task` | `trackfw guard credential` | Shell (`run_command`) e gerenciamento de tarefa (`manage_task`) — camada 1 varre `toolCall` raw; inclui `CommandLine` de `run_command` e `Input` de `manage_task` |
+| `write_to_file\|replace_file_content\|multi_replace_file_content` | `trackfw guard credential` | Ferramentas de escrita/substituição de arquivo — equivalente das pernas de escrita do Gemini CLI |
+| `view_file` | `trackfw guard credential` | Leitura de arquivo — camada 2 lê `toolCall.args.AbsolutePath` (D5); não é decorativa: o guard inspeciona o conteúdo do arquivo referenciado |
+| `run_command` | `trackfw guard git-branch` | Só `run_command` — `manage_task` carrega `Input`, não `CommandLine`; o git-branch guard extrairia string vazia e a entrada seria decorativa |
+
+**Contrato de saída (D2, ADR-2026-11-18).** Exit ≠ 0 bloqueia; exit 0 com stdout vazio libera.
+Stdout não-JSON com exit 0 bloqueia — portanto **o guard nunca escreve no stdout ao liberar**.
+
+**Payload (D3, ADR-2026-11-18).** O Antigravity entrega:
+- `toolCall.args.CommandLine` — o comando a ser executado (prioridade 5 de `ExtractCommand` e `credExtractCmdAndCwd`; ver [Contrato de payload do script](#contrato-de-payload-do-script-gitbranchguardscript))
+- `cwd` — raiz do workspace (o cwd do hook é `.agents/`, não a raiz; o guard sobe o `trackfw.yaml` a partir daí)
+- `lastUserInput` — presente em TODOS os payloads; a camada 1 do guard de credencial **não** varre este campo em payloads Antigravity (D4) — só varre os bytes de `toolCall`, prevenindo falso positivo quando o prompt do usuário contém um segredo
+- `toolCall.args.AbsolutePath` — extraído pela camada 2 do guard de credencial quando `toolName == "view_file"`
+
+**Detecção de schema Antigravity.** A função `isAntigravityPayload` (`internal/guard/payload.go`) classifica um
+payload como Antigravity quando `toolCall` é um objeto JSON **e** `hookEventName` está presente. Ambas as
+condições são necessárias (case-sensitive).
+
+**cwd e HOME no Windows.** No Windows, `HOME` chega vazio ao hook; `USERPROFILE` está disponível.
+O cwd do processo de hook é `<projeto>/.agents` — a busca de `trackfw.yaml` sobe a árvore e encontra a raiz.
+
+**Dedup e migração.** A versão anterior desta branch (pré-ML-3B-corretivo) registrava o guard de
+git-branch no matcher `run_command|manage_task`. A passagem de migração de `InjectAntigravityHooks`
+remove qualquer entrada de git-branch do matcher amplo e re-registra no matcher correto `run_command`.
+
+**Guard global.** `antigravity-credential-guard` e `antigravity-git-branch-guard` (alvos de `trackfw update harness`) **pendentes de medição do caminho global (ML-3B2)** — ADR D6: o home efetivo (`USERPROFILE` × `FOLDERID_Profile` no Windows) não foi medido no binário real; a doc oficial cita `~/.gemini/config/hooks.json`. Não implementados até ML-3B2.
+
+**Merge e idempotência.** Segue o mesmo padrão dos outros CLIs: terceiros preservados, entradas trackfw
+deduplicadas. A proteção de symlink (`pathguard.RejectAndReport`) impede escrita através de `.agents/`
+simbólico.
+
 #### Suporte por CLI — visão consolidada, escopo DE PROJETO (ML-5A, `ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`)
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
@@ -4340,8 +4399,9 @@ documenta com a fonte primária (doc oficial do CLI) e o teste que o comprova.
 | Cursor ([ML-2E](#cursor-wiring-ml-2e--cursorhooksjson-hooksbeforeshellexecutionhooksaftershellexecution)) | `beforeShellExecution` | `afterShellExecution` | nenhum — evento já é shell-specific (o guard precisa ver todo comando) | `exit 2` = `deny` (ou JSON `{"permission": "deny", ...}`) | **Sim** — ML-4A |
 | Kiro ([ML-2F](#kiro-wiring-ml-2f--kirohookstrackfw-attentionjson-format-correction--pretoolusepostotooluse-matcher-shell)) | `PreToolUse` | `PostToolUse` | `matcher: "shell"` (categoria de tool, alcança todo tool de shell built-in) | qualquer exit ≠ 0 bloqueia `PreToolUse` — mais estrito que os demais CLIs (não só `exit 2`) | **Sim** — ML-4A |
 | Windsurf | — | — | — | **Fora de escopo** — sem hook nativo pré-execução no CLI real, confirmado por `REQ-2026-06-20-attention-hooks-agent-clis.md` e pelo comentário já existente em `internal/generators/agentfiles.go` | N/A |
+| Antigravity ([ML-3B](#antigravity-wiring-ml-3b--agentshooksjson-grupo-trackfw-só-pretooluse)) | `PreToolUse` | — (sem pós-execução que bloqueia) | `run_command\|manage_task`, `write_to_file\|replace_file_content\|multi_replace_file_content`, `view_file` (cred); `run_command` (git-branch) | exit ≠ 0 bloqueia; stdout não-JSON com exit 0 bloqueia; stdout vazio + exit 0 libera (medido agy 1.5.11, §11) | Não — payload de runtime confirmado em ML-1A, não em sabotagem e2e dedicada |
 
-**Cobertura de sabotagem end-to-end: 3 de 6 CLIs** (Claude Code, Cursor, Kiro). Codex, Gemini CLI e
+**Cobertura de sabotagem end-to-end: 3 de 7 CLIs** (Claude Code, Cursor, Kiro). Codex, Gemini CLI e
 GitHub Copilot ficaram sem teste de sabotagem — não por omissão, mas porque a documentação oficial
 recuperada para cada um deles (citada nas seções "wiring" respectivas) não expõe, com confiança
 suficiente, um exemplo completo do payload JSON que chega via **stdin em runtime** ao hook (distinto do
@@ -4780,6 +4840,7 @@ de um roadmap anterior e não relacionado
 | GitHub Copilot | `~/.copilot/settings.json` | Merge — inline `hooks.preToolUse`/`hooks.postToolUse[matcher:"bash"]` num arquivo de config geral compartilhado, **não** dedicado (diverge do escopo de projeto, que usa `.github/hooks/*.json` dedicado) — ver "GitHub Copilot global-scope wiring (ML-2E)" | Absoluto, mesmo script | Nenhum |
 | Kiro | `~/.kiro/hooks/trackfw-credential-guard.json` | **Overwrite total** — arquivo dedicado, um-arquivo-por-hook em `~/.kiro/hooks/`, nunca merge — ver "Kiro global-scope wiring (ML-2F)" | Absoluto, mesmo script (hook names `-global-pre`/`-global-post`, distintos dos de projeto) | **v3** (`kiro-cli --v3`) — documentado, sem sonda de subprocesso possível (ver caveat acima) |
 | Windsurf | — | — | — | **Fora de escopo** — sem hook nativo pré-execução, mesma razão da REQ original (PR #141) |
+| Antigravity | `~/.gemini/config/hooks.json` (doc oficial; não medido) | **Pendente de medição (ML-3B2)** — ADR D6: home efetivo no Windows (`USERPROFILE` × `FOLDERID_Profile`) não confirmado no binário real; aguarda ML-3B2 antes de implementar | — | — |
 
 ##### Achados transversais (Waves 1-4 deste roadmap)
 
@@ -6861,7 +6922,7 @@ todo CLI de agente), via subcomando Go `trackfw guard`:
 | Família de shell | Linha de hook emitida (REQ-2026-11-13 / D18 ML-2I) |
 |---|---|
 | PS/POSIX (Claude Code, Codex, Gemini CLI, Cursor, Copilot, Windsurf) | `set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set ConfirmPreference None -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE` |
-| cmd.exe (Kiro, Amazon Q) | `trackfw guard git-branch \|\| exit 2` |
+| cmd.exe (Kiro, Amazon Q, **Antigravity**) | `trackfw guard git-branch \|\| exit 2` |
 | Idem para credential-guard | `set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set ConfirmPreference None -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE` / `trackfw guard credential \|\| exit 2` |
 
 **REQ-2026-10-20 — correção de falha do hook sob zsh (ADR-2026-10-04, 2026-10-21):**
@@ -7302,6 +7363,14 @@ O contrato de payload do `gitBranchGuardScript` (seção acima) também foi ajus
 `tool_info.command_line` (formato real do payload `pre_run_command` do Windsurf) foi adicionado à
 cadeia de tentativas de extração do comando via stdin JSON, ao lado dos campos genéricos já
 existentes (`.tool_input.command`, `.command`, `.hook_input.command`).
+
+**Prioridade 5: `toolCall.args.CommandLine` (Google Antigravity, ML-3A, ADR-2026-11-18 D3).** O Antigravity
+entrega o comando em `toolCall.args.CommandLine` — PascalCase, case-sensitive, não reconhecido pelas
+prioridades 1–4. Adicionado como prioridade 5 em `ExtractCommand` e `credExtractCmdAndCwd`
+(`internal/guard/payload.go` e `internal/guard/credential.go`), via `extractNested3(root, "toolCall", "args", "CommandLine")`.
+A detecção de schema Antigravity (`isAntigravityPayload`: `toolCall` é objeto + `hookEventName` presente)
+é usada pela camada 1 do guard de credencial para restringir o scan aos bytes de `toolCall` — excluindo
+`lastUserInput` para evitar falso positivo (D4, ADR-2026-11-18).
 
 ### Campos mínimos do custom agent Amazon Q — Go como canônico (2026-08-20, ML-1A-bis)
 
@@ -10097,7 +10166,7 @@ Quando `agent_id` está presente no payload (subagente) e `agent_type` é um slu
 - Escrita fora de qualquer projeto trackfw (sem `trackfw.yaml` ancestral) não é bloqueada pela D4.
 - Escrita por Bash (`echo >>`, `sed -i`, `cp`) escapa da D3 e da D4; só a D2 (`trackfw barrier ml_scope`) a detecta na auditoria de commit.
 
-## Regra `credential_guard_presence_warning` — aviso de presença do guard nos 6 CLIs sem exigência de violation (D17, REQ-2026-10-25 #619)
+## Regra `credential_guard_presence_warning` — aviso de presença do guard nos 7 CLIs sem exigência de violation (D17, REQ-2026-10-25 #619; Antigravity adicionado em ML-3C, REQ-2026-11-17)
 
 <!-- trackfw-contract: gate=internal/validator/validator_credential_guard_presence_warning_test.go,internal/validator/validator_guard_hook_concordance_external_test.go partial=os testes AC1 (par-por-par para os 6 CLIs), AC2 (roteamento para warnings via ValidateUnfiltered), AC4 (red-team PostToolUse e Kiro command-raiz) e AC5 (contagem da tabela de entradas) cobrem o comportamento especificado aqui; o Cenário 47 de check-gates-falsify.sh usa o gerador de fixture atualizado com os 3 pares modernos; NÃO há teste de integração via CLI (parity-rest) neste ML -->
 
@@ -10111,7 +10180,7 @@ Quando `agent_id` está presente no payload (subagente) e `agent_type` é um slu
 
 `credential_guard_presence_warning` (severity default `warning`, never `error` — D17 decision by KG):
 
-Para cada um dos 6 CLIs sem violation-grade (Claude Code, Codex CLI, Gemini CLI, Cursor, GitHub Copilot CLI, Kiro), quando o arquivo de hook de **projeto** **existir** no disco, verifica se o campo executável de cada par `(evento, matcher)` esperado contém o marcador do credential guard (`trackfw-credential-guard.sh` ou `trackfw guard credential`).
+Para cada um dos 7 CLIs sem violation-grade (Claude Code, Codex CLI, Gemini CLI, Cursor, GitHub Copilot CLI, Kiro, **Antigravity**), quando o arquivo de hook de **projeto** **existir** no disco, verifica se o campo executável de cada par `(evento, matcher)` esperado contém o marcador do credential guard (`trackfw-credential-guard.sh` ou `trackfw guard credential`).
 
 **Lista de entradas (`credentialGuardRequiredEntries` em `validator_credential_guard.go`):**
 
@@ -10123,6 +10192,7 @@ Para cada um dos 6 CLIs sem violation-grade (Claude Code, Codex CLI, Gemini CLI,
 | Cursor | `.cursor/hooks.json` | schemaFlat | `beforeShellExecution` (sem matcher), preToolUse+`Read`, preToolUse+`Write` |
 | GitHub Copilot CLI | `.github/hooks/trackfw-attention.json` | schemaFlat | preToolUse+`bash`, preToolUse+`view`, preToolUse+`create\|edit` |
 | Kiro | `.kiro/hooks/trackfw-attention.json` | schemaKiro | PreToolUse+`shell`, PreToolUse+`read`, PreToolUse+`write` |
+| Antigravity | `.agents/hooks.json` | schemaAntigravity | PreToolUse+`run_command\|manage_task`, PreToolUse+`write_to_file\|replace_file_content\|multi_replace_file_content`, PreToolUse+`view_file` |
 
 Windsurf e Amazon Q **permanecem com violation-grade** (`warnOnly=false` na mesma tabela).
 
@@ -10133,7 +10203,7 @@ Windsurf e Amazon Q **permanecem com violation-grade** (`warnOnly=false` na mesm
 
 **Comportamento de silêncio:** arquivo ausente → silêncio (guard global pode estar instalado). Arquivo presente mas JSON inválido → silêncio (já reportado por `credential_guard_hook_resolvable`).
 
-**Ponto único:** `credentialGuardRequiredEntries` é a tabela compartilhada entre `validateCredentialGuardPresenceRequired` (violations, `warnOnly=false`) e `validateCredentialGuardPresenceWarnings` (warnings, `warnOnly=true`). AC5 pina os contadores: 2 violation-grade e 6 warning-grade.
+**Ponto único:** `credentialGuardRequiredEntries` é a tabela compartilhada entre `validateCredentialGuardPresenceRequired` (violations, `warnOnly=false`) e `validateCredentialGuardPresenceWarnings` (warnings, `warnOnly=true`). AC5 pina os contadores: 2 violation-grade e 7 warning-grade (Antigravity adicionado em ML-3C, REQ-2026-11-17).
 
 ### O que ela NÃO cobre
 
@@ -10152,3 +10222,41 @@ Windsurf e Amazon Q **permanecem com violation-grade** (`warnOnly=false` na mesm
     `internal/validator/validator.go:287-296` (case `originAnchorOK` de `ruleSeverity`). Este é o comportamento
     da maioria dos projetos reais (que rodaram `trackfw init` e têm remote configurado).
 - Não transforma o aviso em violation em nenhum CLI novo — essa decisão está reservada para uma próxima versão major.
+
+## Regra `gemini_cli_legacy` — aviso de migração do Gemini CLI para o Antigravity (D7, ADR-2026-11-18, ML-3C)
+
+<!-- trackfw-contract: gate=internal/validator/validator_guard_hook_concordance_external_test.go partial=TestGeminiCliLegacy_ComGuardGeminiSemAntigravity (arm warn), TestGeminiCliLegacy_ComAmbosSemGuard (arm silêncio), TestGeminiCliLegacy_ComGuardGeminiEAntigravity (arm silêncio), TestGeminiCliLegacy_GeminiSemGuardCredencial (arm silêncio), TestGeminiCliLegacy_StrictMode_StillWarning (arm always-warning) exercem cada braço; a regra é roteada via applyRuleWarnOnly (nunca applyRule), garantindo que escalação via trackfw.yaml não converte em violation -->
+
+> REQ: `docs/req/REQ-2026-11-17-guard-de-credencial-no-google-antigravity-e-revisao-do-suporte-ao-gemini-cli.md`
+> ADR: `docs/adr/ADR-2026-11-18-guard-de-credencial-e-de-git-branch-no-google-antigravity-e-gemini-cli-como-legado.md` (D7)
+
+### O que a regra faz
+
+<!-- trackfw-contract: none reason=comportamento coberto pela anotação de contrato da seção pai (## Regra gemini_cli_legacy) acima — os gates exercem os cinco braços via ValidateUnfiltered -->
+
+`gemini_cli_legacy` (severity padrão `warning`, **nunca** `error` — D7, sempre via `applyRuleWarnOnly`):
+
+Quando o projeto tem guard do Gemini CLI (`.gemini/settings.json` com marcador de credential guard) mas **nenhum** guard do Antigravity (`.agents/hooks.json` com marcador de credential guard), emite um warning:
+
+```
+Gemini CLI é legado para contas individuais desde 2026-06-18 (D7, ADR-2026-11-18): o projeto tem guard do Gemini CLI (.gemini/settings.json) mas não tem guard do Antigravity (.agents/hooks.json); execute `trackfw agents install --targets antigravity`
+```
+
+**Lógica de silêncio:**
+- Gemini tem guard **e** Antigravity tem guard → silêncio.
+- Gemini não tem guard (ausente ou ilegível) → silêncio (sem alvo, sem aviso).
+- Nenhum tem guard → silêncio.
+
+**Esta regra é ALWAYS warning.** `applyRuleWarnOnly` impede que `rules: gemini_cli_legacy: error` no `trackfw.yaml` converta o aviso em violation — testado em `TestGeminiCliLegacy_StrictMode_StillWarning`. O `doctor` repete o mesmo aviso via `ValidateGeminiCliLegacyWarningsForDoctor`.
+
+**Implementação:** `internal/validator/validator_gemini_cli_legacy.go` (ML-3C, REQ-2026-11-17).
+Wiring em `ValidateUnfiltered` e `ValidateTagged` em `internal/validator/validator.go`.
+Severity default registrada em `defaultSeverities` como `"warning"` (linha ~264).
+
+### O que ela NÃO cobre
+
+<!-- trackfw-contract: none reason=autodeclaração de limites; nenhuma afirmação de comportamento verificável por gate -->
+
+- Projetos que nunca tiveram guard do Gemini CLI nem do Antigravity — sem aviso (intencionalmente).
+- Falha de leitura de arquivo → tratada como "ausente" → silêncio.
+- Guard do Gemini CLI no escopo global (`~/.gemini/settings.json`) — só o escopo de projeto é verificado.

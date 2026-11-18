@@ -183,11 +183,11 @@ sem BOM.
 - [x] `go test ./internal/validator/ ./internal/commands/` rc=0
 
 ### ML-3D — `docs/cli-parity.md` e `catalog.json`
-**Status:** ⬜ Pending
+**Status:** ✅ Done (parte projeto; o global entra com o ML-3B2)
 **Squad:** apolo-tf
 **Acceptance criteria:**
-- [ ] contrato do Antigravity (linha, matchers, caminhos, schema) e status de legado do Gemini documentados
-- [ ] `make parity-rest` rc=0
+- [x] contrato do Antigravity (linha, matchers, caminhos, schema) e status de legado do Gemini documentados
+- [x] `make parity-rest` rc=0
 
 ## Wave 4 — Prova real, revisão e red team
 - ML-4A — KG roda no Antigravity real — **CLI `agy`, App e IDE**, no Mac e no Windows — com

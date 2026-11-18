@@ -193,18 +193,12 @@ func TestInjectAntigravityHooks_PreservesThirdParty(t *testing.T) {
 // When .agents/ is a symlink pointing outside the project root, InjectAntigravityHooks
 // returns an error and does not write the target file — pathguard rejects it.
 func TestInjectAntigravityHooks_SymlinkDirRejected(t *testing.T) {
-	if os.Getenv("CI") == "" {
-		// Symlink creation may require elevated privileges on Windows CI agents.
-		// On POSIX (macOS, Linux) this always works in t.TempDir.
-	}
 	dir := t.TempDir()
 	target := t.TempDir() // outside project root
 	t.Setenv("CODEX_HOME", "")
 
 	symlinkPath := filepath.Join(dir, ".agents")
-	if err := os.Symlink(target, symlinkPath); err != nil {
-		t.Skipf("cannot create symlink (OS/permissions): %v", err)
-	}
+	symlinkOrSkip(t, target, symlinkPath)
 
 	err := InjectAntigravityHooks(dir)
 	if err == nil {
