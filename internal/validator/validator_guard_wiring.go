@@ -338,7 +338,14 @@ func guardWiringExtractTuples(parsed map[string]any, schema hookCmdSchemaKind, f
 				tuples = append(tuples, wiringTuple{event: event, matcher: matcher, guardType: guardType})
 			}
 		}
-		hookschema.WalkAntigravityEntries(parsed, func(_, event, matcher, cmd, _ string) {
+		// ML-4C2 (REQ-2026-11-17): restore the R-2 filter that existed in ML-3C before
+		// WalkAntigravityEntries replaced the inline traversal. Only "type":"command"
+		// entries are executed by the Antigravity runtime; other types (e.g.
+		// "notification") must not count as live wiring.
+		hookschema.WalkAntigravityEntries(parsed, func(_, event, matcher, cmd, typeStr string) {
+			if typeStr != "command" {
+				return
+			}
 			if gt := guardWiringTypeFromCmd(cmd, family); gt != "" {
 				addTuple(event, matcher, gt)
 			}
@@ -500,34 +507,11 @@ func guardWiringExtractCommandsFromEntry(entry map[string]any, schema hookCmdSch
 		}
 		return nil
 
-	case hookCmdSchemaAntigravity:
-		// D6 (ADR-2026-11-18): Antigravity entries share the same nested structure as
-		// hookCmdSchemaNested — entry["hooks"][i]["command"] — once inside a group's event list.
-		// guardWiringExtractTuples already iterates the outer group/event layers; each call to
-		// this function receives one entry object (one matcher block).
-		innerHooks, ok := entry["hooks"].([]any)
-		if !ok {
-			return nil
-		}
-		var cmds []string
-		for _, ih := range innerHooks {
-			innerObj, ok := ih.(map[string]any)
-			if !ok {
-				continue
-			}
-			// R-2: "type" present and != "command" → hook item not executed by runtime.
-			if typeVal, hasType := innerObj["type"]; hasType {
-				typeStr, isStr := typeVal.(string)
-				if !isStr || typeStr != "command" {
-					continue
-				}
-			}
-			if cmd, ok := innerObj["command"].(string); ok && cmd != "" {
-				cmds = append(cmds, cmd)
-			}
-		}
-		return cmds
 	}
+	// ML-4C2 (REQ-2026-11-17): hookCmdSchemaAntigravity is no longer handled here.
+	// guardWiringExtractTuples returns early for Antigravity (line ~331) before any
+	// call to this function; the outer group/event traversal is performed by
+	// hookschema.WalkAntigravityEntries. This case was dead code after ML-4C.
 	return nil
 }
 

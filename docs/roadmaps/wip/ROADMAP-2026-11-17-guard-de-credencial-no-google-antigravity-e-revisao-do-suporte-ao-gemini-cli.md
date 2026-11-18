@@ -203,5 +203,8 @@ sem BOM.
     `internal/validator/validator_guard_wiring.go`, `internal/validator/validator_gemini_cli_legacy.go`,
     `internal/validator/validator_guard_hook_concordance_external_test.go`,
     `internal/generators/guard_registry_sites_ac4_test.go`, `docs/cli-parity.md`
+- ML-4C2 — corretivo do ML-4C ✅ — auditoria volta a exigir `type: "command"` no schema Antigravity (o walker do 4C
+  tinha perdido o filtro); case morto removido. **Files affected:** `internal/validator/validator_guard_wiring.go`,
+  `internal/validator/validator_guard_wiring_test.go`
 - ML-FA — red team (hades-tf)
 - ML-FB — `make quality` com a máquina ociosa e CI verde
