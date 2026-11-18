@@ -194,11 +194,16 @@ const credMaxFileSize = 1048576 // 1 MiB
 //
 // Order of operations:
 //  1. Read all stdin (no timeout — residual declared in ADR D9).
-//  2. Check trackfw.yaml in cwd only (no walk-up, per ADR D9 and .sh L8).
+//  2. Check trackfw.yaml: in process cwd (non-Antigravity) or in payload cwd
+//     (Antigravity; ADR-2026-11-18 D3 — hook runs from <project>/.agents).
 //  3. Layer 1: scan payload for all patterns in credPatterns.
+//     Antigravity: scan only toolCall bytes to avoid false positives from
+//     lastUserInput (ADR-2026-11-18 D4).
 //  4. Unescape \" → " to get RAW.
 //  5. Extract REDIRECTS from RAW.
 //  6. Layer 2: scan non-ephemeral redirect files and command file args.
+//     view_file (Antigravity): scan toolCall.args.AbsolutePath directly
+//     (ADR-2026-11-18 D5).
 //  7. No match → return 0.
 //  8. Exemption: all redirects are ephemeral → return 0.
 //  9. Read credential_guard.mode (default "warn") via ReadCredentialGuardMode.
@@ -209,18 +214,27 @@ func RunCredential(stdin io.Reader, stdout, stderr io.Writer) int {
 	// Step 1: Read all stdin — INPUT=$(cat); no timeout (ADR D9 residual).
 	data, _ := io.ReadAll(stdin)
 
-	// Step 2: Check for trackfw.yaml in cwd only (no walk-up; .sh L8).
-	cwd, err := os.Getwd()
+	// Step 2: Check for trackfw.yaml.
+	// Antigravity hooks run from <project>/.agents, so os.Getwd() points there,
+	// not to the project root where trackfw.yaml lives. Use the payload cwd when
+	// the Antigravity schema is detected (ADR-2026-11-18 D3).
+	processCwd, err := os.Getwd()
 	if err != nil {
 		return 0
 	}
-	if _, err := os.Stat(filepath.Join(cwd, "trackfw.yaml")); err != nil {
+	isAntig, payloadCwd, layer1Str := credGetAntigravityInfo(data)
+	projectCwd := processCwd
+	if isAntig && payloadCwd != "" {
+		projectCwd = payloadCwd
+	}
+	if _, err := os.Stat(filepath.Join(projectCwd, "trackfw.yaml")); err != nil {
 		return 0 // not inside a trackfw project
 	}
 
 	// Step 3: Layer 1 — scan all patterns in order.
-	inputStr := string(data)
-	layer1Match := credScanInput(inputStr)
+	// For Antigravity payloads, layer1Str is the raw toolCall bytes only
+	// (excludes lastUserInput to prevent false positives; ADR-2026-11-18 D4).
+	layer1Match := credScanInput(layer1Str)
 
 	// Steps 4–8: Extract shell command, scan for redirects, run Layer 2, apply
 	// ephemeral exemption.
@@ -267,6 +281,13 @@ func RunCredential(stdin io.Reader, stdout, stderr io.Writer) int {
 		finding = credDeepScan(data, shellCwd)
 	}
 
+	// D5 (ADR-2026-11-18): view_file scan — read the file at toolCall.args.AbsolutePath.
+	// Only active when toolName == "view_file" (Antigravity; credViewFileScan is a no-op
+	// for other tool names). Same rules as Layer 2: regular file, 1 MiB limit.
+	if finding.typ == "" {
+		finding = credViewFileScan(toolName, data, shellCwd)
+	}
+
 	if finding.typ == "" {
 		return 0
 	}
@@ -300,7 +321,7 @@ func RunCredential(stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	// Step 9: Read credential_guard.mode from trackfw.yaml (default "warn").
-	mode := credReadModeWithDefault(filepath.Join(cwd, "trackfw.yaml"), "warn")
+	mode := credReadModeWithDefault(filepath.Join(projectCwd, "trackfw.yaml"), "warn")
 
 	// Step 10: Block or warn.
 	origin := credFindingMessage(finding)
@@ -310,8 +331,8 @@ func RunCredential(stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	fmt.Fprintf(stderr, "trackfw-credential-guard: warning - possible %s %s\n", finding.typ, origin)
-	roadmapDir := credReadRoadmapDir(filepath.Join(cwd, "trackfw.yaml"))
-	credWriteAttention(cwd, roadmapDir, finding)
+	roadmapDir := credReadRoadmapDir(filepath.Join(projectCwd, "trackfw.yaml"))
+	credWriteAttention(projectCwd, roadmapDir, finding)
 
 	return 0
 }
@@ -334,8 +355,9 @@ func RunCredentialGlobal(stdin io.Reader, stdout, stderr io.Writer) int {
 	// Step 2: No trackfw.yaml guard — global scope runs in any directory.
 
 	// Step 3: Layer 1 — scan all patterns in order.
-	inputStr := string(data)
-	layer1Match := credScanInput(inputStr)
+	// For Antigravity payloads, narrow to toolCall bytes only (D4: excludes lastUserInput).
+	_, _, layer1Str := credGetAntigravityInfo(data)
+	layer1Match := credScanInput(layer1Str)
 
 	// Steps 4–8: same logic as RunCredential (JSON-aware extraction and exemption).
 	shellCmd, shellCwd, toolName, isJSON := credExtractCmdAndCwd(data)
@@ -367,6 +389,11 @@ func RunCredentialGlobal(stdin io.Reader, stdout, stderr io.Writer) int {
 	// F4: deep-scan all command/command_line values (same as RunCredential).
 	if finding.typ == "" && isJSON {
 		finding = credDeepScan(data, shellCwd)
+	}
+
+	// D5 (ADR-2026-11-18): view_file scan (same as RunCredential).
+	if finding.typ == "" {
+		finding = credViewFileScan(toolName, data, shellCwd)
 	}
 
 	if finding.typ == "" {
@@ -714,6 +741,72 @@ func credWindowsADSBase(path, goos string) (string, bool) {
 	return base, true
 }
 
+// credGetAntigravityInfo parses data to detect the Google Antigravity payload
+// schema (ADR-2026-11-18 D3, D4) and returns:
+//   - isAntig: true when toolCall is a JSON object AND hookEventName is present
+//   - payloadCwd: the workspace root from root-level "cwd" (only set when isAntig=true)
+//   - layer1Str: string to scan in layer 1:
+//     • when isAntig: raw bytes of the "toolCall" value only (excludes lastUserInput)
+//     • otherwise: the full payload as a string
+//
+// The narrowing to toolCall prevents false positives from lastUserInput (D4):
+// the prompt was already sent to the model; scanning it cannot protect a secret
+// and blocks the subsequent command for a credential found in the prompt text.
+func credGetAntigravityInfo(data []byte) (isAntig bool, payloadCwd, layer1Str string) {
+	stripped := bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF})
+	trimmed := bytes.TrimLeft(stripped, " \t\r\n")
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return false, "", string(data)
+	}
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(stripped, &root); err != nil {
+		return false, "", string(stripped)
+	}
+	if !isAntigravityPayload(root) {
+		return false, "", string(stripped)
+	}
+	// Extract workspace root from root-level "cwd" field (confirmed in payload §4.3).
+	var pCwd string
+	if rawCwd, ok := root["cwd"]; ok && !isJSONNull(rawCwd) {
+		var c string
+		if json.Unmarshal(rawCwd, &c) == nil && c != "" {
+			pCwd = c
+		}
+	}
+	// Layer-1 scan string: raw bytes of toolCall value (includes name, id, args.CommandLine).
+	layer1Str = string(root["toolCall"])
+	return true, pCwd, layer1Str
+}
+
+// credViewFileScan runs a layer-2 file scan for the Google Antigravity
+// view_file tool (ADR-2026-11-18 D5). When toolName is "view_file", it reads
+// toolCall.args.AbsolutePath from data and calls credScanFile on it.
+//
+// The same rules as the standard layer-2 apply: only regular files, same 1 MiB
+// size limit, message "detected in file <path> referenced by the command."
+//
+// Returns a zero credFinding when toolName != "view_file", when AbsolutePath is
+// absent or empty, or when the file contains no credential pattern.
+func credViewFileScan(toolName string, data []byte, shellCwd string) credFinding {
+	if toolName != "view_file" {
+		return credFinding{}
+	}
+	stripped := bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF})
+	var root map[string]json.RawMessage
+	if json.Unmarshal(stripped, &root) != nil {
+		return credFinding{}
+	}
+	absPath, found, _ := extractNested3(root, "toolCall", "args", "AbsolutePath")
+	if !found || absPath == "" {
+		return credFinding{}
+	}
+	resolved := credResolveArg(absPath, shellCwd, toolName)
+	if typ, cleanedPath := credScanFile(resolved); typ != "" {
+		return credFinding{typ: typ, path: cleanedPath}
+	}
+	return credFinding{}
+}
+
 // credExtractCmdAndCwd parses a JSON hook payload and returns the shell command
 // and the working directory declared in the payload (tool_info.cwd).
 //
@@ -722,6 +815,7 @@ func credWindowsADSBase(path, goos string) (string, bool) {
 //  2. command (root-level)
 //  3. tool_info.command_line
 //  4. hook_input.command
+//  5. toolCall.args.CommandLine  (Google Antigravity; ADR-2026-11-18 D3)
 //
 // Special case: when tool_name == "fs_write" (Amazon Q write tool), the
 // tool_input.command value is an enum tag ("create"/"str_replace"/…), not a
@@ -749,6 +843,18 @@ func credExtractCmdAndCwd(data []byte) (shellCmd, cwd, toolName string, isJSON b
 	// Ignore unmarshal errors: toolName="" is a safe default (deny-list never fires for "").
 	if rawTool, ok := root["tool_name"]; ok {
 		_ = json.Unmarshal(rawTool, &toolName)
+	}
+	// Antigravity fallback: tool name lives in toolCall.name, not root-level tool_name.
+	// Extract it only when toolName is still empty (no double-extraction for other schemas).
+	if toolName == "" {
+		if rawTC, ok := root["toolCall"]; ok && !isJSONNull(rawTC) {
+			var tc map[string]json.RawMessage
+			if json.Unmarshal(rawTC, &tc) == nil {
+				if rawName, ok := tc["name"]; ok {
+					_ = json.Unmarshal(rawName, &toolName)
+				}
+			}
+		}
 	}
 
 	// fs_write: "command" carries an enum tag, not a shell command.
@@ -790,6 +896,12 @@ func credExtractCmdAndCwd(data []byte) (shellCmd, cwd, toolName string, isJSON b
 	}
 	// Priority 4: hook_input.command
 	if cmd, found, _ := extractNested(root, "hook_input", "command"); found && cmd != "" && !strings.ContainsRune(cmd, '\x00') {
+		return cmd, cwd, toolName, true
+	}
+
+	// Priority 5: toolCall.args.CommandLine (Google Antigravity; ADR-2026-11-18 D3).
+	// PascalCase "CommandLine" is not matched by priorities 1-4 (case-sensitive map).
+	if cmd, found, _ := extractNested3(root, "toolCall", "args", "CommandLine"); found && cmd != "" && !strings.ContainsRune(cmd, '\x00') {
 		return cmd, cwd, toolName, true
 	}
 

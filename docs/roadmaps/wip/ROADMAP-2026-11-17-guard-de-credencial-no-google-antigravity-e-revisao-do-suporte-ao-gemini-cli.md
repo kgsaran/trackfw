@@ -130,20 +130,20 @@ test -s docs/portabilidade/2026-11-18-antigravity-contrato-de-hooks.md
 > 3C depende da API de caminhos do 3B. 3D (docs) por último.
 
 ### ML-3A — Payload do Antigravity no guard (ADR D2, D3, D4)
-**Status:** ⬜ Pending
+**Status:** ✅ Done
 **Squad:** apolo-tf
 **Files affected:** `internal/guard/payload.go`, `internal/guard/credential.go`, testes em `internal/guard/`
 **Actions:** `ExtractCommand` e `credExtractCmdAndCwd` reconhecem `toolCall.args.CommandLine` e o `cwd` do payload;
 com schema Antigravity (`toolCall` objeto + `hookEventName`), a camada 1 do guard de credencial varre só `toolCall`.
 **Acceptance criteria:**
-- [ ] git-branch: payload Antigravity com `git push` para branch protegida → exit 2 (hoje 0: T2); contra-braço `ls` → 0
-- [ ] credencial: segredo fake em `toolCall.args.CommandLine` → 2; o mesmo segredo só em `lastUserInput` → 0
-- [ ] camada 2 lê arquivo citado em `CommandLine` (ex. `cat <arquivo com segredo>`) → 2
-- [ ] camada 2 lê `toolCall.args.AbsolutePath` de `view_file` (arquivo regular, mesmo limite de tamanho) → segredo no
+- [x] git-branch: payload Antigravity com `git push` para branch protegida → exit 2 (hoje 0: T2); contra-braço `ls` → 0
+- [x] credencial: segredo fake em `toolCall.args.CommandLine` → 2; o mesmo segredo só em `lastUserInput` → 0
+- [x] camada 2 lê arquivo citado em `CommandLine` (ex. `cat <arquivo com segredo>`) → 2
+- [x] camada 2 lê `toolCall.args.AbsolutePath` de `view_file` (arquivo regular, mesmo limite de tamanho) → segredo no
   arquivo = 2; arquivo inócuo = 0 (sem isso a perna `view_file` do D5 seria decorativa)
-- [ ] invariante: em todo caminho de exit 0 dos dois guards, stdout vazio (teste por tabela)
-- [ ] schemas de Claude/Codex/Gemini sem mudança de veredito (testes existentes verdes)
-- [ ] `go test ./internal/guard/` rc=0
+- [x] invariante: em todo caminho de exit 0 dos dois guards, stdout vazio (teste por tabela)
+- [x] schemas de Claude/Codex/Gemini sem mudança de veredito (testes existentes verdes)
+- [x] `go test ./internal/guard/` rc=0
 
 ### ML-3B — Hooks do Antigravity no projeto (ADR D1, D5, D6 — parte projeto)
 **Status:** ⬜ Pending
