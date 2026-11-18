@@ -135,6 +135,10 @@ const (
 	// the artifact; Remedy instructs the user to install a POSIX shell.
 	// (REQ-IMP-9, REQ-2026-11-15 ML-3D.)
 	DoctorWindowsShMissing DoctorFindingKind = "windows-sh-missing"
+
+	// DoctorGeminiCliLegacy: the project has a Gemini CLI credential guard but no Antigravity
+	// credential guard. D7 (ADR-2026-11-18, ML-3C): advisory, never automatic remedy.
+	DoctorGeminiCliLegacy DoctorFindingKind = "gemini-cli-legacy"
 )
 
 // DoctorFinding is one artifact requiring the user's attention, plus a

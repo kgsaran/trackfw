@@ -77,6 +77,15 @@ const (
 	// D16 (ADR-2026-10-04): only "bash" entries count as wiring for Copilot global; a guard marker
 	// in any other field is NOT wiring and must not be recognized as such.
 	hookCmdSchemaFlatBash
+	// hookCmdSchemaAntigravity: the top-level key is a GROUP NAME (not "hooks").
+	// Format: {groupName: {event: [{matcher, hooks:[{type, command}]}]}}.
+	// Generator function: InjectAntigravityHooks (agentfiles.go) — group name is "trackfw".
+	// D6 (ADR-2026-11-18): extraction iterates all top-level group names, then events, then
+	// entries within each event — the executable command lives at
+	// root[groupName][event][i]["hooks"][j]["command"] (same nested shape as hookCmdSchemaNested
+	// once you skip the group-name indirection).
+	// CLIs: Google Antigravity (.agents/hooks.json).
+	hookCmdSchemaAntigravity
 )
 
 // guardWiringHookLayout maps each hook file path to its command-extraction schema.
@@ -96,6 +105,9 @@ var guardWiringHookLayout = map[string]hookCmdSchemaKind{
 	".cursor/hooks.json":                     hookCmdSchemaFlat,
 	".windsurf/hooks.json":                   hookCmdSchemaFlat,
 	".kiro/hooks/trackfw-attention.json":     hookCmdSchemaKiro,
+	// D6 (ADR-2026-11-18): Antigravity uses group-name top-level keys (hookCmdSchemaAntigravity).
+	// guardWiringExtractTuples handles this schema BEFORE the root["hooks"] lookup.
+	".agents/hooks.json": hookCmdSchemaAntigravity,
 }
 
 // disableKeyKind classifies the hook disable mechanism for a given CLI.
@@ -312,6 +324,47 @@ func guardWiringParseTuples(content []byte, hf credentialGuardHookFile) ([]wirin
 // R-1 (ML-2C): command extraction is schema-specific (not recursive). schema must be the value
 // from guardWiringHookLayout[hf.path] for the file being parsed.
 func guardWiringExtractTuples(parsed map[string]any, schema hookCmdSchemaKind, family guardShellFamily) []wiringTuple {
+	// D6 (ADR-2026-11-18): Antigravity uses {groupName:{event:[...]}} at the top level — there is
+	// no "hooks" key. Handle this schema BEFORE the root["hooks"] lookup to avoid a silent nil.
+	if schema == hookCmdSchemaAntigravity {
+		var tuples []wiringTuple
+		seen := make(map[string]bool)
+		addTuple := func(event, matcher, guardType string) {
+			key := event + "\x00" + matcher + "\x00" + guardType
+			if !seen[key] {
+				seen[key] = true
+				tuples = append(tuples, wiringTuple{event: event, matcher: matcher, guardType: guardType})
+			}
+		}
+		for groupName, groupRaw := range parsed {
+			groupObj, ok := groupRaw.(map[string]any)
+			if !ok {
+				continue
+			}
+			for eventName, entriesRaw := range groupObj {
+				entries, ok := entriesRaw.([]any)
+				if !ok {
+					continue
+				}
+				for _, entryRaw := range entries {
+					entry, ok := entryRaw.(map[string]any)
+					if !ok {
+						continue
+					}
+					matcher, _ := entry["matcher"].(string)
+					cmds := guardWiringExtractCommandsFromEntry(entry, hookCmdSchemaAntigravity)
+					for _, cmd := range cmds {
+						if gt := guardWiringTypeFromCmd(cmd, family); gt != "" {
+							addTuple(eventName, matcher, gt)
+						}
+					}
+				}
+			}
+			_ = groupName // group name is not used for tuple identity
+		}
+		return tuples
+	}
+
 	hooksRaw, ok := parsed["hooks"]
 	if !ok {
 		return nil
@@ -465,6 +518,34 @@ func guardWiringExtractCommandsFromEntry(entry map[string]any, schema hookCmdSch
 			return []string{cmd}
 		}
 		return nil
+
+	case hookCmdSchemaAntigravity:
+		// D6 (ADR-2026-11-18): Antigravity entries share the same nested structure as
+		// hookCmdSchemaNested — entry["hooks"][i]["command"] — once inside a group's event list.
+		// guardWiringExtractTuples already iterates the outer group/event layers; each call to
+		// this function receives one entry object (one matcher block).
+		innerHooks, ok := entry["hooks"].([]any)
+		if !ok {
+			return nil
+		}
+		var cmds []string
+		for _, ih := range innerHooks {
+			innerObj, ok := ih.(map[string]any)
+			if !ok {
+				continue
+			}
+			// R-2: "type" present and != "command" → hook item not executed by runtime.
+			if typeVal, hasType := innerObj["type"]; hasType {
+				typeStr, isStr := typeVal.(string)
+				if !isStr || typeStr != "command" {
+					continue
+				}
+			}
+			if cmd, ok := innerObj["command"].(string); ok && cmd != "" {
+				cmds = append(cmds, cmd)
+			}
+		}
+		return cmds
 	}
 	return nil
 }

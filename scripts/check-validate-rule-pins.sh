@@ -8,7 +8,7 @@
 # specific rule names, message substrings, exit codes.  Nothing here invokes
 # `node npm/bin/trackfw` or `python3 -m trackfw`.
 #
-# Pin inventory (40 pins across 8 blocks):
+# Pin inventory (42 pins across 9 blocks):
 #   Block 1 — ADR/REQ rule-set:         {adr_accepted_when_req_done, blocked_by_draft_adr}
 #   Block 2 — branch_has_wip_roadmap:    nomatch/diff message markers + --agent guidance
 #                                        + the ML-3A matcher: token overlap accepts (PIN6),
@@ -24,6 +24,8 @@
 #                                         filled ADR/REQ → no warning (PIN31)
 #   Block 8 — windows_sh_missing:        GOOS != windows → rule silent with .sh artifacts (PIN32),
 #                                         GOOS == windows + sh present → rule silent (PIN33)
+#   Block 9 — gemini_cli_legacy:         Gemini guard + no Antigravity → warning (PIN34),
+#                                         both guards present → silent (PIN35)
 #
 # Falsification evidence is recorded after `make quality` run.
 set -euo pipefail
@@ -1338,7 +1340,112 @@ else:
           f"GOOS=windows + sh in PATH → windows_sh_missing silent")
 PY
 
-echo "validate-rule-pins: all 40 pins pass"
+# BLOCK 9: gemini_cli_legacy pins (D7, ADR-2026-11-18, ML-3C REQ-2026-11-17)
+#
+# Pins:
+#   PIN34 — Gemini guard present, no Antigravity → gemini_cli_legacy warning fires
+#   PIN35 — both Gemini guard and Antigravity guard present → rule silent
+# ---------------------------------------------------------------------------
+GCL_TMP=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-gcl-pins.XXXXXX")
+# GCL_TMP cleanup handled by the combined EXIT trap at the top of this script.
+trap 'rm -rf "$TMP_DIR" "${FENCE_TMP:-}" "${WSM_TMP:-}" "${GCL_TMP:-}"' EXIT
+
+# Minimal fixture: trackfw.yaml + .gemini/settings.json with credential guard
+mkdir -p \
+  "$GCL_TMP/gcl/docs/roadmaps/wip" \
+  "$GCL_TMP/gcl/.gemini"
+
+cat >"$GCL_TMP/gcl/trackfw.yaml" <<'EOF'
+roadmap_dir: docs/roadmaps
+EOF
+
+# .gemini/settings.json with credential guard subcommand marker (hookCmdSchemaNested)
+cat >"$GCL_TMP/gcl/.gemini/settings.json" <<'EOF'
+{
+  "hooks": {
+    "BeforeTool": [
+      {
+        "matcher": "run_shell_command",
+        "hooks": [{"type": "command", "command": "trackfw guard credential || exit 2"}]
+      }
+    ]
+  }
+}
+EOF
+
+set +e
+(cd "$GCL_TMP/gcl" && "$GO_BIN" validate --json) >"$GCL_TMP/gcl.json" 2>"$GCL_TMP/gcl.stderr"
+GCL_RC=$?
+set -e
+
+# PIN34: Gemini guard present, no Antigravity → warning
+python3 - "$GCL_TMP/gcl.json" "$GCL_RC" <<'PY'
+import json, sys
+path, rc = sys.argv[1], int(sys.argv[2])
+GCL_RULE = "gemini_cli_legacy"
+
+with open(path, encoding="utf-8") as f:
+    payload = json.load(f)
+
+warnings = payload.get("warnings", [])
+violations = payload.get("violations", [])
+
+gcl_warnings = [w for w in warnings if w.get("rule") == GCL_RULE]
+gcl_violations = [v for v in violations if v.get("rule") == GCL_RULE]
+
+if gcl_violations:
+    raise SystemExit(
+        f"PIN34: gemini_cli_legacy must be a warning, never a violation; got: {gcl_violations!r}"
+    )
+if not gcl_warnings:
+    raise SystemExit(
+        f"PIN34: expected gemini_cli_legacy warning when Gemini guard present and Antigravity absent; "
+        f"warnings={warnings!r}"
+    )
+print("OK [validate-rule-pins/pin34-gcl-gemini-only-warns]  Gemini guard + no Antigravity → warning")
+PY
+
+# Add Antigravity guard (.agents/hooks.json with credential guard, hookCmdSchemaAntigravity)
+mkdir -p "$GCL_TMP/gcl/.agents"
+cat >"$GCL_TMP/gcl/.agents/hooks.json" <<'EOF'
+{
+  "trackfw": {
+    "PreToolUse": [
+      {
+        "matcher": "run_command|manage_task",
+        "hooks": [{"type": "command", "command": "trackfw guard credential || exit 2"}]
+      }
+    ]
+  }
+}
+EOF
+
+set +e
+(cd "$GCL_TMP/gcl" && "$GO_BIN" validate --json) >"$GCL_TMP/gcl2.json" 2>"$GCL_TMP/gcl2.stderr"
+GCL2_RC=$?
+set -e
+
+# PIN35: both guards present → rule silent
+python3 - "$GCL_TMP/gcl2.json" "$GCL2_RC" <<'PY'
+import json, sys
+path, rc = sys.argv[1], int(sys.argv[2])
+GCL_RULE = "gemini_cli_legacy"
+
+with open(path, encoding="utf-8") as f:
+    payload = json.load(f)
+
+all_items = payload.get("violations", []) + payload.get("warnings", [])
+gcl_items = [item for item in all_items if item.get("rule") == GCL_RULE]
+
+if gcl_items:
+    raise SystemExit(
+        f"PIN35: gemini_cli_legacy must be silent when both Gemini and Antigravity guards present; "
+        f"got: {gcl_items!r}"
+    )
+print("OK [validate-rule-pins/pin35-gcl-both-guards-silent]  both guards present → gemini_cli_legacy silent")
+PY
+
+echo "validate-rule-pins: all 42 pins pass"
 echo "  Block 1 (rule-set):          pin1"
 echo "  Block 2 (bhr-messages):      pin2-pin5 + pin2b/pin2c/pin2d (ML-3A matcher)"
 echo "  Block 3 (credential-guard):  pin6-pin20 + pin20b/pin20c (ML-4C Windows migration warning)"
@@ -1347,3 +1454,4 @@ echo "  Block 5 (unterminated-fence): pin26-pin27"
 echo "  Block 6 (adr-without-prefix): pin28-pin29"
 echo "  Block 7 (adr-req-has-content): pin30-pin31"
 echo "  Block 8 (windows-sh-missing): pin32-pin33"
+echo "  Block 9 (gemini-cli-legacy):  pin34-pin35"

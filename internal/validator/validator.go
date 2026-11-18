@@ -258,6 +258,10 @@ var ruleDefaults = map[string]string{
 	// docs/agents-working-context/ means transition history is silently lost on clone.
 	// Default "warning" — the pattern may be intentional in some projects.
 	"log_entries_dir_gitignored": "warning",
+	// D7 (ADR-2026-11-18, ML-3C): Gemini CLI is legacy for individual accounts since 2026-06-18.
+	// When a project has a Gemini CLI guard but no Antigravity guard, emit a warning.
+	// ALWAYS a warning — routed via applyRuleWarnOnly, never overrideable to "error".
+	"gemini_cli_legacy": "warning",
 	// ML-1A (REQ-2026-10-24): ci_trigger: manual — gate will not run automatically on PR.
 	// Default "warning": the project may have deliberately chosen manual dispatch.
 	// ci_trigger_invalid is absent (defaults to "error" via the fallthrough).
@@ -1342,6 +1346,15 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	presenceWarnMsgs, _ := validateCredentialGuardPresenceWarnings()
 	applyRuleWarnOnly("credential_guard_presence_warning", presenceWarnMsgs, &warnings)
 
+	// D7 (ADR-2026-11-18, ML-3C): Gemini CLI legacy warning.
+	// Always-warning, never blockable — routed via applyRuleWarnOnly only.
+	// 🔴 Mirror site in validateUnfilteredTagged below — forgetting it silences the rule from --json.
+	{
+		cwd, _ := os.Getwd()
+		geminiLegacyMsgs, _ := validateGeminiCliLegacyWarnings(cwd)
+		applyRuleWarnOnly("gemini_cli_legacy", geminiLegacyMsgs, &warnings)
+	}
+
 	return violations, warnings, nil
 }
 
@@ -1897,6 +1910,14 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 	// 🔴 Missing this site silences credential_guard_presence_warning from --json output.
 	presenceWarnMsgsT, _ := validateCredentialGuardPresenceWarnings()
 	applyRuleWarnOnlyTagged("credential_guard_presence_warning", presenceWarnMsgsT, &warnings)
+
+	// D7 (ADR-2026-11-18, ML-3C): mirror of ValidateUnfiltered gemini_cli_legacy block.
+	// 🔴 Missing this site silences gemini_cli_legacy from --json output.
+	{
+		cwd, _ := os.Getwd()
+		geminiLegacyMsgsT, _ := validateGeminiCliLegacyWarnings(cwd)
+		applyRuleWarnOnlyTagged("gemini_cli_legacy", geminiLegacyMsgsT, &warnings)
+	}
 
 	return violations, warnings, nil
 }

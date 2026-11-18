@@ -173,14 +173,14 @@ sem BOM.
 - [ ] `scripts/check-update-parity.sh` e `make parity-rest` rc=0
 
 ### ML-3C — Auditoria e aviso de legado (ADR D6, D7)
-**Status:** ⬜ Pending
+**Status:** ✅ Done (parte projeto; auditoria do global vai com o ML-3B2)
 **Squad:** apolo-tf
 **Files affected:** `internal/validator/` (regras de guard de credencial/git-branch + regra nova `gemini_cli_legacy`),
 `internal/commands/doctor*.go`
 **Acceptance criteria:**
-- [ ] `validate`/`doctor` auditam o guard do Antigravity no mesmo caminho do 3B (braço: removido → acusa; presente → ok)
-- [ ] `gemini_cli_legacy` em nível warning: guard do Gemini sem o do Antigravity → aviso; com os dois → silêncio
-- [ ] `go test ./internal/validator/ ./internal/commands/` rc=0
+- [x] `validate`/`doctor` auditam o guard do Antigravity no mesmo caminho do 3B (braço: removido → acusa; presente → ok)
+- [x] `gemini_cli_legacy` em nível warning: guard do Gemini sem o do Antigravity → aviso; com os dois → silêncio
+- [x] `go test ./internal/validator/ ./internal/commands/` rc=0
 
 ### ML-3D — `docs/cli-parity.md` e `catalog.json`
 **Status:** ⬜ Pending

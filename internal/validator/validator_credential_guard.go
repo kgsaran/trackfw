@@ -106,6 +106,13 @@ var credentialGuardHookFiles = []credentialGuardHookFile{
 	//   requiresCommandType=false (schema has no "type" discriminant in inner command objects);
 	//   family=cmd.exe: ADR-2026-10-04 D2 — Amazon Q invokes hooks without a shell suffix.
 	{".amazonq/cli-agents/q_cli_default.json", "Amazon Q", false, false, guardShellFamilyCmdExe},
+	// Antigravity (Google): {groupName:{event:[{matcher,hooks:[{type,command}]}]}}.
+	//   D1 (ADR-2026-11-18): uses CredentialCurrentCmdExe / GitBranchCurrentCmdExe — the cmd.exe
+	//   form without shell suffix, valid in both sh -c (macOS) and cmd /s /c (Windows).
+	//   requiresCommandType=true: inner hook objects carry "type":"command".
+	//   requiresVarOrShellPrefix=false: the cmd.exe form is an inline subcommand, not a path.
+	//   family=cmd.exe: matches the form written by InjectAntigravityHooks.
+	{".agents/hooks.json", "Antigravity", true, false, guardShellFamilyCmdExe},
 }
 
 // hookAnchorageClass classifica a semântica de ancoragem de um valor de comando de hook.
@@ -353,6 +360,44 @@ func collectCommandsWithMarkerBySchema(parsed interface{}, schema hookCmdSchemaK
 	if !ok {
 		return
 	}
+
+	// D6 (ADR-2026-11-18): Antigravity uses {groupName:{event:[...]}} at the top level — no
+	// "hooks" key. Handle this schema BEFORE the root["hooks"] lookup to avoid a silent return.
+	if schema == hookCmdSchemaAntigravity {
+		for _, groupRaw := range root {
+			groupObj, ok := groupRaw.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			for _, evRaw := range groupObj {
+				entries, ok := evRaw.([]interface{})
+				if !ok {
+					continue
+				}
+				// Same nested shape as hookCmdSchemaNested inside each event array.
+				for _, entryRaw := range entries {
+					entry, ok := entryRaw.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					innerHooks, _ := entry["hooks"].([]interface{})
+					for _, ih := range innerHooks {
+						innerObj, ok := ih.(map[string]interface{})
+						if !ok {
+							continue
+						}
+						typeStr, _ := innerObj["type"].(string)
+						cmd, _ := innerObj["command"].(string)
+						if cmd != "" && strings.Contains(cmd, marker) {
+							*out = append(*out, guardCommandMatch{raw: cmd, typeIsCommand: typeStr == "command"})
+						}
+					}
+				}
+			}
+		}
+		return
+	}
+
 	hooksRaw, ok := root["hooks"]
 	if !ok {
 		return
@@ -912,6 +957,18 @@ var credentialGuardRequiredEntries = []credentialGuardRequiredEntry{
 		warnOnly: true,
 		schema:   hookCmdSchemaKiro,
 	},
+	// D6/D7 (ADR-2026-11-18, ML-3C): Antigravity — 3 PreToolUse matchers from D5.
+	// warnOnly=true: absence is advisory, same as the other 6 non-violation CLIs.
+	{
+		hookFile: credentialGuardHookFile{".agents/hooks.json", "Antigravity", true, false, guardShellFamilyCmdExe},
+		events: []credentialGuardRequiredEvent{
+			{hookEvent: "PreToolUse", matcher: "run_command|manage_task"},
+			{hookEvent: "PreToolUse", matcher: "write_to_file|replace_file_content|multi_replace_file_content"},
+			{hookEvent: "PreToolUse", matcher: "view_file"},
+		},
+		warnOnly: true,
+		schema:   hookCmdSchemaAntigravity,
+	},
 }
 
 // extractCredentialGuardCommandsFromEvent extracts all command strings from a single event slot.
@@ -1136,6 +1193,47 @@ func extractPresenceCommandsD17(parsed interface{}, event credentialGuardRequire
 				continue
 			}
 			out = append(out, guardCommandMatch{raw: cmd, typeIsCommand: typeStr == "command"})
+		}
+		return out
+
+	case hookCmdSchemaAntigravity:
+		// D6 (ADR-2026-11-18): {groupName:{event:[{matcher,hooks:[{type,command}]}]}}
+		// Iterate all group names → find event.hookEvent → filter by event.matcher → read inner hooks.
+		var out []guardCommandMatch
+		for _, groupRaw := range root {
+			groupObj, _ := groupRaw.(map[string]interface{})
+			if groupObj == nil {
+				continue
+			}
+			evArr, _ := groupObj[event.hookEvent].([]interface{})
+			for _, groupEntryRaw := range evArr {
+				group, _ := groupEntryRaw.(map[string]interface{})
+				if group == nil {
+					continue
+				}
+				if event.matcher != "" {
+					m, _ := group["matcher"].(string)
+					if m != event.matcher {
+						continue
+					}
+				}
+				innerHooks, _ := group["hooks"].([]interface{})
+				for _, ih := range innerHooks {
+					innerObj, _ := ih.(map[string]interface{})
+					if innerObj == nil {
+						continue
+					}
+					typeStr, _ := innerObj["type"].(string)
+					cmd, _ := innerObj["command"].(string)
+					if cmd == "" || !containsMarker(cmd) {
+						continue
+					}
+					if requiresCommandType && typeStr != "command" {
+						continue
+					}
+					out = append(out, guardCommandMatch{raw: cmd, typeIsCommand: typeStr == "command"})
+				}
+			}
 		}
 		return out
 	}
