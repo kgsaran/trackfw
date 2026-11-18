@@ -1000,6 +1000,9 @@ resposta do agente cita o hook. Ou seja, o marcador ausente é bloqueio do hook,
 5. `lastUserInput` está em todo payload: a camada 1 do guard de credencial vai bloquear um comando inócuo se o prompt
    do usuário contiver um segredo (falso positivo a decidir na ADR).
 
+**stdin:** o `agy` fecha o stdin do hook. O `cat` (Mac) e o `ReadToEnd` (Windows) das sondas retornaram nos 7 braços, então
+o T-Timeout do threat model não se materializa no `agy` 1.5.11.
+
 **Ainda não medido:** caminho global efetivo (`~/.gemini/config/hooks.json`) e precedência projeto × global (M9),
 `enabled:false` (M9b), timeout (M8), Gemini CLI com chave paga (M12). M9 exige escrever em `~/.gemini/config/`,
 o que pede autorização do KG.

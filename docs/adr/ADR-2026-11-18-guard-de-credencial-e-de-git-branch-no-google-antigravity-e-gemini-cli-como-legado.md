@@ -55,16 +55,19 @@ O prompt já foi entregue ao modelo; bloquear o comando seguinte não protege o 
 - Guard de credencial: `run_command|manage_task`, `write_to_file|replace_file_content|multi_replace_file_content` e
   `view_file`. É o equivalente das três pernas do Gemini; a perna `AfterTool` não tem equivalente porque o
   `PostToolUse` não bloqueia.
+- Para a perna `view_file` não ser decorativa, a camada 2 lê o arquivo de `toolCall.args.AbsolutePath`: só arquivo
+  regular, com o mesmo limite das leituras de hoje. No Gemini, a perna `read_file` só pegava segredo na saída
+  (`AfterTool`), e isso não existe no Antigravity.
 - Guard de git-branch: `run_command`.
 
 **D6 — Onde gravar e auditar.**
 - Projeto: `InjectAntigravityHooks(rootDir)` grava `.agents/hooks.json` com o mesmo `pathguard` e o mesmo merge
   preservador das outras CLIs, num grupo nomeado `trackfw` (o formato agrupa por nome).
 - Detecção em `cliDetectors`: diretório `.agents/`.
-- Global: alvos `antigravity-credential-guard` e `antigravity-git-branch-guard` no `update harness`, gravando em
-  `~/.gemini/config/hooks.json`.
-- `agentconfig.HomeFor` ganha `CLIAntigravity`, que usa `USERPROFILE` no Windows (o `agy` é Go, e
-  `os.UserHomeDir` do Go lê `USERPROFILE`; medir na Wave 4) e `HOME` nos demais.
+- Global: alvos `antigravity-credential-guard` e `antigravity-git-branch-guard` no `update harness`. 🔴 O caminho
+  e o home efetivo (`USERPROFILE` × `FOLDERID_Profile` no Windows) só entram depois de medidos no ML-1B; até lá a
+  doc diz `~/.gemini/config/hooks.json`. Não repetir o erro do Codex, cujo home foi presumido pelo fonte e
+  desmentido pelo binário.
 - `validate`/`doctor` auditam no mesmo caminho em que a escrita grava.
 - `auditsurface.canonicalRuntimes` inclui o Antigravity.
 
@@ -80,6 +83,11 @@ individuais desde 2026-06-18 e aponta `trackfw agents install --targets antigrav
 - A extração de payload ganha um schema. Os testes de schema das outras CLIs fixam que nada muda para elas.
 - O hook de atenção do board não tem equivalente no Antigravity (não existe evento `Notification`). Fica como
   residual declarado.
+
+**Escopo da medição:** os resultados do Context são do CLI `agy` lançado por terminal. App e IDE leem o mesmo
+`hooks.json` segundo a doc, mas o shell do hook e o PATH (app de macOS aberto pelo Finder não herda o PATH do shell)
+são medidos no ML-1B antes do guard global ser entregue. Se o `trackfw` faltar no PATH do App, a linha do D1
+fecha (exit 2) e **bloqueia todo comando**. Isso é seguro, mas inutilizável, e precisa de aviso no `doctor`.
 
 **Residual:**
 - `manage_task` com `send_input` carrega texto, não `CommandLine`. A camada 1 vê o segredo, mas o guard de

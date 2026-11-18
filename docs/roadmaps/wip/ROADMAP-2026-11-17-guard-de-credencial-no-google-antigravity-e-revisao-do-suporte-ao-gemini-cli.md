@@ -106,6 +106,8 @@ test -s docs/portabilidade/2026-11-18-antigravity-contrato-de-hooks.md
 ### ML-1B — Hook global, home efetivo e App/IDE (bloqueia o ML-3B2)
 **Status:** ⬜ Pending — aguarda autorização do KG para escrever em `~/.gemini/config/`
 **Squad:** zeus-tf + KG
+**Files affected:** `docs/portabilidade/2026-11-18-antigravity-contrato-de-hooks.md` (§11),
+`docs/portabilidade/antigravity-sondas/` (runners do ML-1B)
 **Acceptance criteria:**
 - [ ] hook só no global `~/.gemini/config/hooks.json` dispara no `agy` (Mac e Windows); precedência projeto × global
 - [ ] Windows: com `USERPROFILE` apontando para um diretório temporário, qual `hooks.json` global o `agy` carrega
