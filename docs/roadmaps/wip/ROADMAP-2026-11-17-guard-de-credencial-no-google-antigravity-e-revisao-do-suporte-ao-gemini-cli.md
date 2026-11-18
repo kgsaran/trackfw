@@ -94,12 +94,24 @@ test -s docs/portabilidade/2026-11-18-antigravity-contrato-de-hooks.md
 ### ML-1A — Antigravity no Mac e na VM Windows
 **Status:** ⬜ Pending
 **Squad:** zeus-tf + KG (comandos rodados pelo KG; o classificador bloqueia o agente de rodar CLI de terceiro com bypass)
-**Files affected:** `docs/portabilidade/2026-11-18-antigravity-contrato-de-hooks.md` (seção "Medido")
+**Files affected:** `docs/portabilidade/2026-11-18-antigravity-contrato-de-hooks.md` (seção "Medido"),
+`docs/portabilidade/antigravity-sondas/run-arms-mac.sh`, `docs/portabilidade/antigravity-sondas/run-arms-windows.ps1`
 **Acceptance criteria:**
 - [x] tabela plataforma × (shell do hook, payload do stdin, efeito de exit 2, efeito de `{"decision":"deny"}`, stdout
   vazio, JSON inválido) preenchida, com contra-braço — §11 do contrato; `agy` 1.5.11, Mac e Windows: exit ≠ 0 bloqueia,
   stdout vazio + exit 0 libera, JSON inválido bloqueia; hook via `sh -c` (Mac) e `cmd /s /c` (Windows)
-- [ ] caminho global efetivo e precedência projeto × global (M9) — exige escrever em `~/.gemini/config/` (autorização do KG)
+- [x] `agy` fecha o stdin do hook (o `cat`/`ReadToEnd` das sondas retornou nos 7 braços das duas plataformas) — T-Timeout
+  do threat model não se materializa no `agy` 1.5.11
+
+### ML-1B — Hook global, home efetivo e App/IDE (bloqueia o ML-3B2)
+**Status:** ⬜ Pending — aguarda autorização do KG para escrever em `~/.gemini/config/`
+**Squad:** zeus-tf + KG
+**Acceptance criteria:**
+- [ ] hook só no global `~/.gemini/config/hooks.json` dispara no `agy` (Mac e Windows); precedência projeto × global
+- [ ] Windows: com `USERPROFILE` apontando para um diretório temporário, qual `hooks.json` global o `agy` carrega
+  (`USERPROFILE` × `FOLDERID_Profile` — o caso que o Codex revelou no ML-4A da REQ-2026-11-15)
+- [ ] App e IDE (Mac e Windows): um braço allow com leitura de PATH e do shell do hook; macOS App aberto pelo Finder
+  acha o `trackfw` no PATH?
 - [ ] Gemini CLI: o binário instalado executa shell com chave de API? (contra-braço: sem chave)
 
 ## Wave 2 — ADR
@@ -125,11 +137,13 @@ com schema Antigravity (`toolCall` objeto + `hookEventName`), a camada 1 do guar
 - [ ] git-branch: payload Antigravity com `git push` para branch protegida → exit 2 (hoje 0: T2); contra-braço `ls` → 0
 - [ ] credencial: segredo fake em `toolCall.args.CommandLine` → 2; o mesmo segredo só em `lastUserInput` → 0
 - [ ] camada 2 lê arquivo citado em `CommandLine` (ex. `cat <arquivo com segredo>`) → 2
+- [ ] camada 2 lê `toolCall.args.AbsolutePath` de `view_file` (arquivo regular, mesmo limite de tamanho) → segredo no
+  arquivo = 2; arquivo inócuo = 0 (sem isso a perna `view_file` do D5 seria decorativa)
 - [ ] invariante: em todo caminho de exit 0 dos dois guards, stdout vazio (teste por tabela)
 - [ ] schemas de Claude/Codex/Gemini sem mudança de veredito (testes existentes verdes)
 - [ ] `go test ./internal/guard/` rc=0
 
-### ML-3B — Hooks do Antigravity no projeto e no global (ADR D1, D5, D6)
+### ML-3B — Hooks do Antigravity no projeto (ADR D1, D5, D6 — parte projeto)
 **Status:** ⬜ Pending
 **Squad:** apolo-tf
 **Files affected:** `internal/generators/agentfiles.go` (`InjectAntigravityHooks`), `internal/generators/hooks.go`
@@ -142,10 +156,17 @@ sem BOM.
 **Acceptance criteria:**
 - [ ] `init`/`agents install --targets antigravity` grava `.agents/hooks.json`; hooks de terceiros preservados byte a byte;
   segunda execução idempotente
-- [ ] `update harness --targets antigravity-credential-guard --install-missing` grava em `~/.gemini/config/hooks.json`
-  (Windows: `USERPROFILE`), com `HOME` e `USERPROFILE` isolados nos testes
-- [ ] teste de membro explícito para os dois IDs novos (não só contagem — Superfície B do threat model)
 - [ ] `go test ./internal/generators/ ./internal/agentconfig/ ./internal/auditsurface/` rc=0
+
+### ML-3B2 — Guard global do Antigravity (ADR D6 — parte global; depende do ML-1B)
+**Status:** ⬜ Pending
+**Squad:** apolo-tf
+**Files affected:** `internal/generators/update.go`, `internal/agentconfig/agentconfig.go` (`CLIAntigravity`), testes
+**Acceptance criteria:**
+- [ ] `update harness --targets antigravity-credential-guard --install-missing` grava no caminho global **medido** no ML-1B,
+  com `HOME`/`USERPROFILE` isolados nos testes
+- [ ] teste de membro explícito para os dois IDs novos (não só contagem — Superfície B do threat model)
+- [ ] `scripts/check-update-parity.sh` e `make parity-rest` rc=0
 
 ### ML-3C — Auditoria e aviso de legado (ADR D6, D7)
 **Status:** ⬜ Pending
@@ -165,7 +186,9 @@ sem BOM.
 - [ ] `make parity-rest` rc=0
 
 ## Wave 4 — Prova real, revisão e red team
-- ML-4A — KG roda no Antigravity real (Mac e Windows): segredo fake bloqueado, comando inócuo liberado
+- ML-4A — KG roda no Antigravity real — **CLI `agy`, App e IDE**, no Mac e no Windows — com
+  `credential_guard.mode: block` explícito no `trackfw.yaml` do projeto de teste (o default de projeto pode ser warn):
+  segredo fake bloqueado, comando inócuo liberado, `git push` para branch protegida bloqueado
 - ML-4B — revisão de qualidade (hefesto-tf)
 - ML-FA — red team (hades-tf)
 - ML-FB — `make quality` com a máquina ociosa e CI verde
