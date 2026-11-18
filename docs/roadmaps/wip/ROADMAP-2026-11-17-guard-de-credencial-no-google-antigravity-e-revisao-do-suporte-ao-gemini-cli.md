@@ -109,9 +109,10 @@ test -s docs/portabilidade/2026-11-18-antigravity-contrato-de-hooks.md
 **Files affected:** `docs/portabilidade/2026-11-18-antigravity-contrato-de-hooks.md` (§11),
 `docs/portabilidade/antigravity-sondas/` (runners do ML-1B)
 **Acceptance criteria:**
-- [ ] hook só no global `~/.gemini/config/hooks.json` dispara no `agy` (Mac e Windows); precedência projeto × global
-- [ ] Windows: com `USERPROFILE` apontando para um diretório temporário, qual `hooks.json` global o `agy` carrega
-  (`USERPROFILE` × `FOLDERID_Profile` — o caso que o Codex revelou no ML-4A da REQ-2026-11-15)
+- [x] hook só no global `~/.gemini/config/hooks.json` dispara no `agy` (Mac e Windows); precedência projeto × global —
+  §12: os dois níveis somam e deny vence
+- [x] Windows: com `USERPROFILE` apontando para um diretório temporário, qual `hooks.json` global o `agy` carrega
+  (`USERPROFILE` × `FOLDERID_Profile` — o caso que o Codex revelou no ML-4A da REQ-2026-11-15) — §12: **`USERPROFILE`**
 - [ ] App e IDE (Mac e Windows): um braço allow com leitura de PATH e do shell do hook; macOS App aberto pelo Finder
   acha o `trackfw` no PATH?
 - [ ] Gemini CLI: o binário instalado executa shell com chave de API? (contra-braço: sem chave)

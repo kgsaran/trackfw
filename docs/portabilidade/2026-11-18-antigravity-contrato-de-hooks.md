@@ -1006,3 +1006,24 @@ o T-Timeout do threat model não se materializa no `agy` 1.5.11.
 **Ainda não medido:** caminho global efetivo (`~/.gemini/config/hooks.json`) e precedência projeto × global (M9),
 `enabled:false` (M9b), timeout (M8), Gemini CLI com chave paga (M12). M9 exige escrever em `~/.gemini/config/`,
 o que pede autorização do KG.
+
+## 12. Medido (ML-1B, 2026-11-18) — hook global, precedência e home no Windows
+
+Runners: `docs/portabilidade/antigravity-sondas/m9-{mac.sh,win.ps1}` (o arquivo global é criado e apagado pelo
+próprio runner; não existia antes). `agy` 1.5.11. Mac rodado pelo arquiteto; Windows rodado pelo KG na sessão
+interativa (por SSH o `agy` não acessa o Gerenciador de Credenciais e pede login).
+
+| Braço | macOS | Windows |
+|---|---|---|
+| A1 — só `~/.gemini/config/hooks.json` (allow) | hook global dispara; comando executa | comando executa (contagem no console do KG) |
+| A2 — global allow + projeto allow | **os dois disparam** (merge); executa | executa |
+| A3 (Mac) — global **deny** + projeto allow | **bloqueia**: deny de qualquer nível vence | — |
+| A3 (Win) — `USERPROFILE=C:\agyprobe\altprofile`, global real e alternativo presentes | — | **só o alternativo dispara** (`probe_allow-alt_*.log`); o real, não |
+
+**Consequências:**
+- O global vive em `<home>/.gemini/config/hooks.json`, e o `<home>` do `agy` no Windows é o **`USERPROFILE`**
+  (`os.UserHomeDir` do Go), não o `FOLDERID_Profile`. É o oposto do Codex.
+  `agentconfig.HomeFor(CLIAntigravity)` = `USERPROFILE` no Windows e `HOME` nos demais.
+- Os hooks de projeto e global somam, e qualquer `deny` (ou exit ≠ 0) vence. Um hook de projeto não desliga o
+  guard global.
+- **Ainda não medido:** App e IDE (PATH e shell do hook quando abertos pela interface gráfica).
