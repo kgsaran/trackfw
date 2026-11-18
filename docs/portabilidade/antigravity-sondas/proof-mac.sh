@@ -16,7 +16,7 @@ git init -q && git commit -q --allow-empty -m init
 printf 'req_dir: docs/req\nroadmap_dir: docs/roadmaps\ncredential_guard:\n  mode: block\n' > trackfw.yaml
 mkdir -p docs/req docs/roadmaps .agents
 TH=$(mktemp -d)
-( env HOME="$TH" USERPROFILE="$TH" CODEX_HOME= trackfw agents install --targets antigravity --scope project --items architect --force >/dev/null 2>&1 )
+( env HOME="$TH" USERPROFILE="$TH" CODEX_HOME= trackfw agents install --targets antigravity --scope project --items architect --identity-preset neutral --force </dev/null >/dev/null 2>&1 )
 echo "install_rc=$? hooks=$(test -f .agents/hooks.json && echo yes || echo no)"
 echo "which trackfw: $(command -v trackfw) $(trackfw --version 2>&1 | head -1)"
 KEY="AIza$(python3 -c 'print("F"*35)')"

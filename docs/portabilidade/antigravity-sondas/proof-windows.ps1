@@ -19,7 +19,7 @@ New-Item -ItemType Directory $TH | Out-Null
 $oldU = $env:USERPROFILE
 $env:USERPROFILE = $TH
 $env:HOME = $TH
-trackfw agents install --targets antigravity --scope project --items architect --force *> $null
+trackfw agents install --targets antigravity --scope project --items architect --identity-preset neutral --force *> $null
 Write-Host "install_rc=$LASTEXITCODE hooks=$(Test-Path "$P\.agents\hooks.json")"
 $env:USERPROFILE = $oldU
 Remove-Item Env:HOME
