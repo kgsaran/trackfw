@@ -3,7 +3,7 @@ status: Open
 date: 2026-11-17
 author: "zeus-tf (pedido do KG)"
 adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-11-17-guard-de-credencial-no-google-antigravity-e-revisao-do-suporte-ao-gemini-cli.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-11-17-guard-de-credencial-no-google-antigravity-e-revisao-do-suporte-ao-gemini-cli.md"
 ---
 
 # REQ: Guard de credencial no Google Antigravity e revisão do suporte ao Gemini CLI
@@ -56,4 +56,4 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/backlog/ROADMAP-2026-11-17-guard-de-credencial-no-google-antigravity-e-revisao-do-suporte-ao-gemini-cli.md
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-11-17-guard-de-credencial-no-google-antigravity-e-revisao-do-suporte-ao-gemini-cli.md
