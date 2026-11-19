@@ -246,3 +246,32 @@ sem BOM.
       após `update harness` → silêncio. 7 testes conferidos por nome (`-run ^TestAntigravityIDEGlobalGuard_`). Pins 42→45.
       Desvio aceito: `proof-mac.sh` ganhou trap do `mktemp -d` (gate `check-mktemp-cleanup`).
 - ML-FB — `make quality` com a máquina ociosa e CI verde
+
+## Wave 5 — OpenCode (issue #691; decisão do KG em 2026-11-19, opção a)
+> Mesma causa: o OpenCode é o único alvo do catálogo sem hook (`hooks.go:16`). Mecanismo diferente: plugin JS/TS
+> (`tool.execute.before`). O ML-3B fixou o skip num teste (`antigravity_hooks_test.go`, `contra_opencode_still_skips`);
+> a Wave 5 é quem muda esse teste. O PR #692 fica em rascunho até a Wave 5 fechar.
+> 5-0 ∥ 5A (arquivos disjuntos); 5B depois dos dois; 5C (ADR) depois do 5B; implementação só depois do 5C.
+
+### ML-5-0 — Threat model do plugin do OpenCode (hades-tf)
+**Status:** 🔄 In progress
+**Files affected:** `docs/seguranca/2026-11-19-wave5-opencode-threat-model.md`
+**Acceptance criteria:**
+- [ ] ameaças do plugin JS/TS: quem carrega, onde (projeto × global), se o agente consegue desligar ou editar o plugin,
+  falha do `spawn` do `trackfw` (fail-open × fail-closed), e entradas que não passam pelo `tool.execute.before`
+- [ ] braços de medição propostos para o ML-5B, cada um com resultado esperado e contra-braço
+
+### ML-5A — Contrato do plugin do OpenCode por fonte primária (prometeu-tf)
+**Status:** 🔄 In progress
+**Files affected:** `docs/portabilidade/2026-11-19-opencode-contrato-de-plugin.md`
+**Acceptance criteria:**
+- [ ] por fonte primária (doc oficial e código-fonte, com URL e versão): onde ficam os plugins (projeto/global), como são
+  registrados, a assinatura do `tool.execute.before`, como bloquear (throw? retorno?), payload (nome da ferramenta, args
+  do bash/edit/read), runtime (Bun/Node) e como chamar um binário externo
+- [ ] a diferença entre `opencode` 1.19.5 (Homebrew, no Mac do KG) e `@opencode/cli` 2.3.0 (a medição do #691) — mesmo
+  produto ou outro?
+- [ ] itens que só o binário responde, listados para o ML-5B
+
+### ML-5B — Medição no binário real (KG + zeus-tf) — ⬜ Pending
+### ML-5C — ADR (adendo ao ADR-2026-11-18 ou ADR próprio) — ⬜ Pending
+### ML-5D… — implementação, revisão (hefesto) e red team (hades) — ⬜ Pending, detalhados após o ML-5C

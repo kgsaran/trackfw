@@ -40,11 +40,16 @@ agente novo, e não comportamento de plataforma.
 - [ ] Decisão registrada em ADR sobre o Gemini CLI: manter, marcar como legado ou remover os hooks. Se a decisão for remover,
   ela inclui a migração das instalações existentes.
 - [ ] `docs/cli-parity.md` e o catálogo refletem o estado medido.
+- [ ] OpenCode (Wave 5): plugin medido no binário real. Se ele bloquear, `init`/`update`/`agents install` gravam o guard de
+  credencial e de git-branch, o `validate`/`doctor` auditam e o `update harness` reporta `missing`. Se não bloquear, a
+  limitação fica medida e escrita no ADR.
 
 ## Negative scope
 - Não altera o comportamento de Windows de outros CLIs (isso é da REQ-2026-11-15).
-- Não cria guard para OpenCode, mesmo sendo o outro CLI sem hook. Se a investigação mostrar a mesma causa, ele entra como ML
-  desta REQ, pela Regra Dura de Causa Raiz, mas não está no escopo inicial.
+- ~~Não cria guard para OpenCode~~ — **revogado em 2026-11-19 (decisão do KG, issue #691):** a investigação mostrou a
+  mesma causa (o OpenCode é o único alvo do catálogo sem hook; `hooks.go:16` nomeava os dois). Ele entra na Wave 5 desta
+  REQ, que começa medindo se um plugin do OpenCode consegue bloquear de verdade. O mecanismo é outro (plugin JS/TS com
+  `tool.execute.before`, não hook JSON + shell).
 - Não remove o suporte ao Gemini CLI sem a ADR do critério acima.
 
 ## Linked ADR
