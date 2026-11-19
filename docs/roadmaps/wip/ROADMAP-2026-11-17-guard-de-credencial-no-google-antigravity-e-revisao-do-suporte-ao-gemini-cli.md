@@ -323,6 +323,9 @@ guard); F1, F3, F5, F7 baixos; VS residual
 - [x] `webfetch` e `grep` no guard; `grep` em arquivo regular lido em Go; demais ferramentas nativas mapeadas ou declaradas (F6)
 - [x] caminhos congelados `.opencode/plugin/`, `.opencode/opencode.json(c)` (F1, F3)
 - [x] A2, A4, A5, A6, A8 corrigidos (A2: o JS resolve `OPENCODE_CONFIG_DIR` relativo contra o cwd em vez de ignorar — aceito, protege mais)
-- [x] cada achado com teste que reprova antes e passa depois; `make quality` rc=0 (zeus); runtime JS 11 braços PASS no Mac
-- [ ] **ML-5I2:** `websearch` (lista do contrato, l. 387) fora do guard — a consulta exfiltra como a URL do `webfetch`
+- [x] cada achado com teste que reprova antes e passa depois; runtime JS 11 braços PASS no Mac
+- [ ] `make quality` — **rc=2**, não 0: `check-raw-read-ban` reprova `os.ReadFile` em `validator_opencode_plugin.go:169`. O commit
+  `fix(opencode)… (ML-5I)` afirmou rc=0 por erro do zeus (commitou antes de ler o rc); o apolo tinha rodado os gates em partes.
+- [ ] **ML-5I2:** corrigir a leitura crua acima e pôr `websearch` (lista do contrato, l. 387) no guard — a consulta exfiltra
+  como a URL do `webfetch`
 ### ML-5H — prova real com o plugin do produto (KG) — ⬜ Pending
