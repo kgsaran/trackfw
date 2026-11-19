@@ -228,4 +228,17 @@ sem BOM.
     `internal/generators/antigravity_hooks_test.go`, `internal/hookschema/hookschema.go`,
     `internal/validator/validator_credential_guard.go`,
     `internal/validator/validator_credential_guard_presence_warning_test.go`, `docs/cli-parity.md`
+- ML-4E — aviso da IDE sem guard global (ADR D8; apolo-tf) — **Status:** 🔄 In progress
+  - **Por quê:** a medição do ML-4A mostrou que a IDE 2.6.0/2.7.0 ignora `.agents/hooks.json`; quem usa a IDE fica sem
+    guard e sem aviso. Mesma causa da REQ (o guard não chega ao produto do Google), por isso entra aqui.
+  - **Files affected:** `internal/validator/validator_antigravity_ide_global_guard.go` (novo) e o teste,
+    `internal/validator/validator.go` (dois sítios, espelho do `gemini_cli_legacy`), `internal/commands/doctor.go`,
+    `internal/integrations/` (FindingKind novo), o sítio do aviso no install/init, `scripts/check-validate-rule-pins.sh`,
+    `docs/cli-parity.md`
+  - **Acceptance criteria:**
+    - [ ] regra warning nunca violation; dispara só com as 3 condições do D8; silenciosa sem a IDE, com o global
+      presente, ou sem o hook de projeto
+    - [ ] `validate` e `validate --json` emitem (dois sítios); `doctor` emite; install/init imprimem o aviso
+    - [ ] testes com HOME temporário — nunca o `~/.gemini` real; pins novos no `check-validate-rule-pins.sh` verdes
+    - [ ] `make quality` rc=0
 - ML-FB — `make quality` com a máquina ociosa e CI verde

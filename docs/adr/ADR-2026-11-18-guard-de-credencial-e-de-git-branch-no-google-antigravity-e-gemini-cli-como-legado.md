@@ -76,6 +76,20 @@ porque quem tem chave de API paga segue usando. Uma regra do `validate` em níve
 avisa quando há guard do Gemini CLI e nenhum do Antigravity no projeto: diz que o Gemini CLI é legado para contas
 individuais desde 2026-06-18 e aponta `trackfw agents install --targets antigravity`. O `doctor` repete o aviso.
 
+**D8 — A IDE do Antigravity só respeita o guard global (decisão do KG em 2026-11-19, opção b).** Medido no macOS
+(contrato §13): a IDE 2.6.0 e a 2.7.0 ignoram `.agents/hooks.json` e bloqueiam pelo `~/.gemini/config/hooks.json`.
+Uma regra nova do `validate`, `antigravity_ide_global_guard`, em nível **warning** (nunca violation, via
+`applyRuleWarnOnly`), dispara quando as três condições valem:
+1. o projeto tem guard de credencial em `.agents/hooks.json`;
+2. a IDE está instalada: `<HomeFor(CLIAntigravity)>/.antigravity-ide` é diretório. No macOS isso foi medido
+   (`~/.antigravity-ide/extensions`); no Windows o caminho não foi medido;
+3. o `hooks.json` global (`AntigravityConfigDir`) não tem guard de credencial.
+
+A mensagem diz que a IDE ignora o hook do projeto e manda rodar
+`trackfw update harness --targets antigravity-credential-guard --install-missing`. A mesma função alimenta o `doctor`
+e o aviso impresso pelo `agents install`/`init` quando gravam o hook do Antigravity no projeto. Uma função só, três
+consumidores.
+
 ## Consequences
 
 - Quem usa Antigravity passa a ter guard de credencial e de git-branch, no projeto e no global.
