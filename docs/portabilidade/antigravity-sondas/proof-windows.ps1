@@ -12,6 +12,8 @@ New-Item -ItemType Directory -Force -Path $M, $L, "$P\docs\req", "$P\docs\roadma
 $env:PATH = "C:\agyprobe\bin;$env:PATH"
 Set-Location $P
 git init -q
+git config user.email probe@example.invalid
+git config user.name probe
 git commit -q --allow-empty -m init
 [IO.File]::WriteAllText("$P\trackfw.yaml", "req_dir: docs/req`nroadmap_dir: docs/roadmaps`ncredential_guard:`n  mode: block`n", [Text.Encoding]::ASCII)
 $TH = Join-Path $env:TEMP ('agyproof-' + [guid]::NewGuid())
