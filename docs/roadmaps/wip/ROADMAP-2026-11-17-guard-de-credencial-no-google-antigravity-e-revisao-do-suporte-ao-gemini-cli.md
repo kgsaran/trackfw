@@ -254,23 +254,29 @@ sem BOM.
 > 5-0 ∥ 5A (arquivos disjuntos); 5B depois dos dois; 5C (ADR) depois do 5B; implementação só depois do 5C.
 
 ### ML-5-0 — Threat model do plugin do OpenCode (hades-tf)
-**Status:** 🔄 In progress
+**Status:** ✅ Done — 13 ameaças; ALTO: T1 fail-open com checagem ingênua (`status===2`; ENOENT dá `null`), T3 V1 `bash` × V2
+`shell` e APIs incompatíveis, T4 `event.input.command` não é `tool_input.command` (libera em silêncio), T6 `--pure`/
+`OPENCODE_PURE=1` desliga plugins, T7 agente edita/remove o plugin, T9 MCP/`task` fora do `execute.before`, T13 write-scope
+só conhece nomes PascalCase
 **Files affected:** `docs/seguranca/2026-11-19-wave5-opencode-threat-model.md`
 **Acceptance criteria:**
-- [ ] ameaças do plugin JS/TS: quem carrega, onde (projeto × global), se o agente consegue desligar ou editar o plugin,
+- [x] ameaças do plugin JS/TS: quem carrega, onde (projeto × global), se o agente consegue desligar ou editar o plugin,
   falha do `spawn` do `trackfw` (fail-open × fail-closed), e entradas que não passam pelo `tool.execute.before`
-- [ ] braços de medição propostos para o ML-5B, cada um com resultado esperado e contra-braço
+- [x] braços de medição propostos para o ML-5B, cada um com resultado esperado e contra-braço
 
 ### ML-5A — Contrato do plugin do OpenCode por fonte primária (prometeu-tf)
-**Status:** 🔄 In progress
+**Status:** ✅ Done — plugin `.js/.ts` solto em `.opencode/plugins/` e `~/.config/opencode/plugins/` (Windows também XDG);
+runtime Bun; `throw` no `execute.before` bloqueia; `execute.after` não bloqueia. 1.19.5 (V1) e 2.3.x (V2) são o mesmo
+produto (`anomalyco/opencode`, conferido pelo zeus via `gh api` e `npm view`) com API de plugin incompatível → dual-export.
+Achado: `read` com caminho → guard sai 0 (sem extrator), mesma causa do D5 `view_file` → ML nesta wave
 **Files affected:** `docs/portabilidade/2026-11-19-opencode-contrato-de-plugin.md`
 **Acceptance criteria:**
-- [ ] por fonte primária (doc oficial e código-fonte, com URL e versão): onde ficam os plugins (projeto/global), como são
+- [x] por fonte primária (doc oficial e código-fonte, com URL e versão): onde ficam os plugins (projeto/global), como são
   registrados, a assinatura do `tool.execute.before`, como bloquear (throw? retorno?), payload (nome da ferramenta, args
   do bash/edit/read), runtime (Bun/Node) e como chamar um binário externo
-- [ ] a diferença entre `opencode` 1.19.5 (Homebrew, no Mac do KG) e `@opencode/cli` 2.3.0 (a medição do #691) — mesmo
+- [x] a diferença entre `opencode` 1.19.5 (Homebrew, no Mac do KG) e `@opencode/cli` 2.3.0 (a medição do #691) — mesmo
   produto ou outro?
-- [ ] itens que só o binário responde, listados para o ML-5B
+- [x] itens que só o binário responde, listados para o ML-5B
 
 ### ML-5B — Medição no binário real (KG + zeus-tf) — ⬜ Pending
 ### ML-5C — ADR (adendo ao ADR-2026-11-18 ou ADR próprio) — ⬜ Pending
