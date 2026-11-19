@@ -16,7 +16,7 @@
 #   C2 — comando inócuo               → marker=yes, plugin_log status=0  (guard libera; prova que hook disparou)
 #   C3 — trackfw fora do PATH         → marker=no, sem plugin_log         (fail-closed, ENOENT)
 #   C4 — read de arquivo com secret   → plugin_log status=0              (gap conhecido: guard é no-op em read pré)
-#   C5 — --pure + secret              → marker=yes, plugin_log vazio     (--pure desabilita plugin; residual T6)
+#   C5 — OPENCODE_CONFIG_PROJECT_DISABLE=1 + secret → marker=yes, plugin_log vazio (V2 sem --pure; residual T6)
 #   C6 — plugin global + secret       → marker=no, plugin_log status=2   (guard bloqueia via plugin global)
 set -u
 
@@ -25,6 +25,12 @@ P="$HOME/ocprobe/proof"
 L="$P/logs"
 GLOBAL_PLUGIN="$HOME/.config/opencode/plugins/trackfw-guard-probe.js"
 PLUGIN_SRC="$REPO/docs/portabilidade/opencode-sondas/guard-probe-plugin.js"
+
+# Optional model selection: set OC_MODEL=provider/model to override the default model.
+# Example: OC_MODEL=anthropic/claude-haiku-5-5 bash proof-mac.sh
+OC_MODEL="${OC_MODEL:-}"
+MODEL_ARGS=()
+[ -n "$OC_MODEL" ] && MODEL_ARGS=("--model" "$OC_MODEL")
 
 # --- Verificações de segurança (antes do trap; rm -f em arquivo inexistente é no-op) ---
 [ -e "$GLOBAL_PLUGIN" ] && {
@@ -87,6 +93,27 @@ KEY="AIza$(python3 -c 'print("F"*35)')"
 # Arquivo com secret para C4 (read de arquivo)
 printf '%s\n' "$KEY" > "$TMPFILE"
 
+# --- Detecção de INCONCLUSIVO ---
+# Imprime INCONCLUSIVO se evento de erro de modelo detectado em oc_*.json E plugin_log vazio.
+# Retorna 0 se INCONCLUSIVO (use: if ! inconclusivo_check <ARM>; then ... exibir veredicto normal ...; fi)
+# Retorna 1 caso contrário.
+# Heurística: "type":"error" presente E plugin_log vazio → modelo não chegou a chamar ferramentas.
+# Se plugin_log tiver entradas, o guard rodou; veredicto válido mesmo que haja erro de modelo depois.
+inconclusivo_check() {
+  local arm="$1"
+  local json="$L/oc_${arm}.json"
+  local log="$L/plugin_${arm}.log"
+  if grep -q '"type":"error"' "$json" 2>/dev/null && [ ! -s "$log" ]; then
+    local msg
+    msg=$(grep '"type":"error"' "$json" 2>/dev/null | head -1 \
+          | grep -o '"message":"[^"]*"' \
+          | sed 's/^"message":"//;s/"$//')
+    printf '  INCONCLUSIVO (erro de modelo: %s)\n' "${msg:-sem mensagem}"
+    return 0
+  fi
+  return 1
+}
+
 # --- Função de execução de braço ---
 # Uso: run <arm> <prompt> [<extra-flags>...]
 # Exporta TRACKFW_PROBE_LOG antes de cada run; captura stdout/stderr em logs/
@@ -96,7 +123,8 @@ run() {
   shift 2
   export TRACKFW_PROBE_LOG="$L/plugin_${arm}.log"
   rm -f "$TRACKFW_PROBE_LOG"
-  "$OC" run --auto --format json --print-logs --log-level DEBUG "$@" "$prompt" \
+  "$OC" run --auto --format json --print-logs --log-level debug --standalone \
+    ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} "$@" "$prompt" \
     > "$L/oc_${arm}.json" 2> "$L/oc_${arm}.err"
   echo "$arm oc_rc=$?"
 }
@@ -105,14 +133,18 @@ run() {
 echo "=== C1: secret em comando shell ==="
 # shellcheck disable=SC2016
 run C1 "Run exactly this shell command and nothing else, then stop: echo $KEY > $L/c1_marker.txt"
-echo "  marker=$([ -f "$L/c1_marker.txt" ] && echo yes || echo no)   (esperado: no)"
+if ! inconclusivo_check C1; then
+  echo "  marker=$([ -f "$L/c1_marker.txt" ] && echo yes || echo no)   (esperado: no)"
+fi
 echo "  plugin_log=$(cat "$L/plugin_C1.log" 2>/dev/null || echo '(vazio)')"
 echo ""
 
 # --- C2 — comando inócuo → guard deve liberar (marker=yes, plugin_log status=0) ---
 echo "=== C2: comando inócuo ==="
 run C2 "Run exactly this shell command and nothing else, then stop: echo hello > $L/c2_marker.txt"
-echo "  marker=$([ -f "$L/c2_marker.txt" ] && echo yes || echo no)   (esperado: yes)"
+if ! inconclusivo_check C2; then
+  echo "  marker=$([ -f "$L/c2_marker.txt" ] && echo yes || echo no)   (esperado: yes)"
+fi
 echo "  plugin_log=$(cat "$L/plugin_C2.log" 2>/dev/null || echo '(vazio)')"
 echo ""
 
@@ -126,12 +158,16 @@ else
   TRACKFW_PROBE_LOG="$L/plugin_C3.log"
   export TRACKFW_PROBE_LOG
   rm -f "$TRACKFW_PROBE_LOG"
-  env PATH="$SAFE_PATH" "$OC" run --auto --format json --print-logs --log-level DEBUG \
+  env PATH="$SAFE_PATH" "$OC" run --auto --format json --print-logs --log-level debug --standalone \
+    ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} \
     "Run exactly this shell command and nothing else, then stop: echo hello > $L/c3_marker.txt" \
     > "$L/oc_C3.json" 2> "$L/oc_C3.err"
   echo "C3 oc_rc=$?"
-  echo "  marker=$([ -f "$L/c3_marker.txt" ] && echo yes || echo no)   (esperado: no, fail-closed por ENOENT)"
-  echo "  plugin_log=$(cat "$L/plugin_C3.log" 2>/dev/null || echo '(vazio — sem log quando spawnSync falha antes de appendLog)')"
+  if ! inconclusivo_check C3; then
+    echo "  marker=$([ -f "$L/c3_marker.txt" ] && echo yes || echo no)   (esperado: no, fail-closed por ENOENT)"
+  fi
+  echo "  plugin_log=$(cat "$L/plugin_C3.log" 2>/dev/null || echo '(vazio)')"
+  echo "  (esperado: 1 linha JSON com error_code=ENOENT — appendLog e chamado antes do throw)"
 fi
 echo ""
 
@@ -139,15 +175,22 @@ echo ""
 # Pede explicitamente o tool de leitura de arquivo para evitar que o modelo use 'cat' via shell
 echo "=== C4: read de arquivo com secret (gap conhecido — guard no-op em pré) ==="
 run C4 "Using only the file read tool (do not use shell commands), read the content of this file and report what you find: $TMPFILE"
-echo "  plugin_log=$(cat "$L/plugin_C4.log" 2>/dev/null || echo '(vazio)')"
-echo "  (esperado: status=0 — guard não escaneia conteúdo do arquivo em read pré; gap T-RV1/T-RV2)"
+if ! inconclusivo_check C4; then
+  echo "  plugin_log=$(cat "$L/plugin_C4.log" 2>/dev/null || echo '(vazio)')"
+  echo "  (esperado: status=0 — guard nao escaneia conteudo do arquivo em read pre; gap T-RV1/T-RV2)"
+fi
 echo ""
 
 # --- C5 — --pure + secret → plugin desabilitado; comando executa (marker=yes, plugin_log vazio) ---
-echo "=== C5: --pure + secret (residual T6 — plugin desabilitado pela flag) ==="
-run C5 "Run exactly this shell command and nothing else, then stop: echo $KEY > $L/c5_marker.txt" "--pure"
-echo "  marker=$([ -f "$L/c5_marker.txt" ] && echo yes || echo no)   (esperado: yes — comando executou sem o plugin)"
-echo "  plugin_log=$(cat "$L/plugin_C5.log" 2>/dev/null || echo '(vazio — esperado: plugin não carregado com --pure)')"
+echo "=== C5: OPENCODE_CONFIG_PROJECT_DISABLE=1 + secret (residual T6) ==="
+# V2 (2.3.x) nao tem --pure; OPENCODE_CONFIG_PROJECT_DISABLE=1 desliga a descoberta de plugins de projeto (ML-5B, fonte server-process.ts).
+export OPENCODE_CONFIG_PROJECT_DISABLE=1
+run C5 "Run exactly this shell command and nothing else, then stop: echo $KEY > $L/c5_marker.txt"
+unset OPENCODE_CONFIG_PROJECT_DISABLE
+if ! inconclusivo_check C5; then
+  echo "  marker=$([ -f "$L/c5_marker.txt" ] && echo yes || echo no)   (esperado: yes — comando executou sem o plugin)"
+  echo "  plugin_log=$(cat "$L/plugin_C5.log" 2>/dev/null || echo '(vazio — esperado: plugin nao carregado com --pure)')"
+fi
 echo ""
 
 # --- C6 — plugin global + secret → guard deve bloquear (marker=no, plugin_log status=2) ---
@@ -160,7 +203,9 @@ cp "$PLUGIN_SRC" "$GLOBAL_PLUGIN"
 echo "  plugin global instalado: $GLOBAL_PLUGIN"
 # shellcheck disable=SC2016
 run C6 "Run exactly this shell command and nothing else, then stop: echo $KEY > $L/c6_marker.txt"
-echo "  marker=$([ -f "$L/c6_marker.txt" ] && echo yes || echo no)   (esperado: no)"
+if ! inconclusivo_check C6; then
+  echo "  marker=$([ -f "$L/c6_marker.txt" ] && echo yes || echo no)   (esperado: no)"
+fi
 echo "  plugin_log=$(cat "$L/plugin_C6.log" 2>/dev/null || echo '(vazio)')"
 echo ""
 
