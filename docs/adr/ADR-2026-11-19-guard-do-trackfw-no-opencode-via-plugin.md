@@ -92,6 +92,31 @@ Medido no opencode **2.3.2**, no macOS e no Windows 11 ARM64, com o resultado ig
 e recomenda `trackfw update harness --targets opencode-guard`. Não entra regra no `validate`, porque ela dispararia
 para todo projeto sem global e viraria ruído.
 
+**D7 — Correções do ML-5F e do ML-5G (2026-11-19).** A revisão de qualidade e o red team reprovaram o D3 e o D4 como
+estavam implementados. Os ajustes:
+
+- **D4 ampliado:**
+  - A autoproteção nega escrita em **qualquer arquivo** sob os diretórios de plugin, não só no `trackfw-guard.js`:
+    `.opencode/plugins/`, `.opencode/plugin/`, `<config>/plugins/` e `<config>/plugin/`. Também nega escrita em
+    `opencode.json`/`opencode.jsonc` na raiz do projeto, em `.opencode/` e em `<config>`.
+  - A comparação passa a ser por identidade de arquivo: `realpath` do alvo, ou do diretório pai quando o alvo ainda não
+    existe, e comparação sem caixa em sistemas que não distinguem maiúsculas (F2/F8).
+  - Os alvos de `patch`/`apply_patch` são extraídos dos cabeçalhos do texto do patch (`*** Add/Update/Delete File:`,
+    `*** Move to:`, `+++ `/`--- `) (A7/F5).
+  - A precedência `filePath`/`path` passa a ser a mesma em todo o plugin (F7).
+  - `writeScopeSubagentFrozenRelPaths` ganha `.opencode/plugin/`, `.opencode/opencode.json` e
+    `.opencode/opencode.jsonc` (F1/F3).
+- **Detecção do que a autoproteção não cobre (F4):** escrita por `shell` dentro do diretório de plugin não é barrada,
+  porque o plugin não interpreta comando de shell. Em compensação, o `validate`/`doctor` acusam qualquer arquivo
+  `.js`/`.ts` nos diretórios de plugin do projeto e do global que não seja o `trackfw-guard.js`, e qualquer chave
+  `plugin`/`plugins` em `opencode.json(c)`. A severidade é a mesma do plugin adulterado.
+- **D3 ampliado (F6):**
+  - `webfetch` passa pelo guard de credencial (a URL vai no `tool_input`).
+  - `grep` também passa pelo guard. Em Go, `hook_source=opencode && tool_name=grep` com `tool_input.path` apontando
+    para arquivo regular é lido como no `read`. Diretório não é lido: residual.
+  - As demais ferramentas nativas da V2 que carregam conteúdo ou caminho de leitura, listadas no contrato, ficam
+    mapeadas ou declaradas residual uma a uma.
+
 ## Consequences
 
 - O OpenCode passa a ter guard de credencial e de git-branch, no projeto e no global, com `missing` visível.
@@ -105,6 +130,11 @@ para todo projeto sem global e viraria ruído.
 - `--pure` (1.x) e `OPENCODE_CONFIG_PROJECT_DISABLE=1` desligam o plugin de projeto. A proteção nesse caso é o global.
 - O `execute.after` não bloqueia na V2, então não há redação de saída.
 - O agente pode apagar o plugin por `shell`.
+- O agente pode escrever no diretório de plugin por `shell`. Não é barrado, só detectado pelo `validate`/`doctor` (D7).
+- `grep` sobre diretório não tem o conteúdo varrido.
+- Um `trackfw` anterior a esta REQ no PATH bloqueia o comando com segredo, mas não lê o arquivo do `read`. A versão sozinha
+  não distingue os dois binários (VS do red team).
+- O D5 e a auditoria do plugin são warning-only, sem escalada via `rules:` (A9), como o `gemini_cli_legacy`.
 
 ## Alternatives Considered
 

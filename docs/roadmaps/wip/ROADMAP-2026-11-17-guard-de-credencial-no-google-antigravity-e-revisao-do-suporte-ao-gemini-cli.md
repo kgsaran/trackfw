@@ -312,4 +312,16 @@ testes em `internal/guard/` (arquivo novo `opencode_test.go`)
   (`TestInjectHooksForToolsUnknownNameSkipped`) dividido; remédio do projeto stale era o do global; comentários do asset em
   PT → EN; testes que faltavam (validator 9, agentconfig 8, runtime JS 5 braços — rodam no Mac, não pulam; update-parity 5c-2/5c-3).
 
-### ML-5F — Revisão (hefesto-tf) · ML-5G — red team (hades-tf) · ML-5H — prova real com o plugin do produto (KG) — ⬜ Pending
+### ML-5F — Revisão (hefesto-tf) — ✅ Done — **REPROVA** (`docs/qualidade/2026-11-19-ml-5f-opencode-review.md`): A7 bloqueante
+(`patch` com alvo no texto pula a autoproteção); A2, A4, A5, A6, A8 baixos; A9 nota
+### ML-5G — Red team (hades-tf) — ✅ Done — **REPROVA** (`docs/seguranca/2026-11-19-red-team-wave5-opencode.md`): F4 HIGH (escrita
+de outro plugin em `.opencode/plugins/` ou por `shell`), F2/F8 (caixa e symlink na comparação), F6 (`webfetch`/`grep` fora do
+guard); F1, F3, F5, F7 baixos; VS residual
+### ML-5I — Corretivo de A7/F1–F8 e notas (apolo-tf; ADR-2026-11-19 D7) — 🔄 In progress
+- [ ] autoproteção por diretório de plugin, `realpath` + caixa, alvos de patch, precedência única (A7, F2, F4, F5, F7, F8)
+- [ ] `validate`/`doctor` acusam plugin estranho e chave `plugin(s)` no `opencode.json(c)` (F4 fix b)
+- [ ] `webfetch` e `grep` no guard; `grep` em arquivo regular lido em Go; demais ferramentas nativas mapeadas ou declaradas (F6)
+- [ ] caminhos congelados `.opencode/plugin/`, `.opencode/opencode.json(c)` (F1, F3)
+- [ ] A2, A4, A5, A6, A8 corrigidos
+- [ ] cada achado com teste que reprova antes e passa depois; `make quality` rc=0
+### ML-5H — prova real com o plugin do produto (KG) — ⬜ Pending
