@@ -115,6 +115,7 @@ test -s docs/portabilidade/2026-11-18-antigravity-contrato-de-hooks.md
   (`USERPROFILE` × `FOLDERID_Profile` — o caso que o Codex revelou no ML-4A da REQ-2026-11-15) — §12: **`USERPROFILE`**
 - [ ] App e IDE (Mac e Windows): um braço allow com leitura de PATH e do shell do hook; macOS App aberto pelo Finder
   acha o `trackfw` no PATH?
+  — Windows App/IDE fora (KG, 2026-11-18, opção b: VM sem App/IDE; residual no ADR); Mac App e IDE pendentes
 - [ ] Gemini CLI: o binário instalado executa shell com chave de API? (contra-braço: sem chave)
 
 ## Wave 2 — ADR

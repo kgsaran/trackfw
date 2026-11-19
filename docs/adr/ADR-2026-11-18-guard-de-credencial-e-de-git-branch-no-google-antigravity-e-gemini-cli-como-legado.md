@@ -96,6 +96,9 @@ frágil.
 **Residual:**
 - `manage_task` com `send_input` carrega texto, não `CommandLine`. A camada 1 vê o segredo, mas o guard de
   git-branch não vê o comando.
+- App e IDE do Antigravity no **Windows** não foram medidos (decisão do KG em 2026-11-18, opção b): a VM não tem
+  App/IDE e o `trackfw` não está no PATH do usuário. Sem `trackfw` no PATH, a linha do D1 fecha (9009 → exit 2) e
+  bloqueia todo comando; o `doctor` deve ser o aviso. Só o CLI `agy` tem prova real no Windows.
 - Precedência projeto × global, `enabled:false` e timeout ainda não foram medidos. A Wave 4 mede no binário real
   antes do merge.
 
