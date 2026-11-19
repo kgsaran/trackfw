@@ -4425,7 +4425,7 @@ plugins/trackfw-guard.js`. Absent/no-marker/stale → `missing`/status update. T
 
 **auditsurface.** `"opencode"` added to `canonicalRuntimes` and `runtimeWiringPath`. Non-JSON file uses `extractOpenCodePluginSchema` (synthetic tuple, `RawCommand="trackfw guard"` when marker present, `"marker-absent"` otherwise).
 
-**ADR residual.** Payload extraction for OpenCode (the Go-side `guard credential` command reading stdin from the plugin's `execa` call) is deferred — the plugin calls `trackfw guard credential` as a subprocess; the guard reads the payload from stdin as in all other CLIs. No new payload extraction path is needed for the OpenCode plugin variant.
+**Payload extraction (D3/D4).** The plugin calls `trackfw guard credential` as a subprocess via `spawnSync` (not `execa`). The guard reads the JSON payload from stdin via `credOpenCodeReadScan`: when `hook_source="opencode"` and `tool_name="read"` or `"grep"`, the guard reads the file at `tool_input.file_path` (with `tool_input.path` as fallback for `grep`) and scans its content. Directory paths are not read. This is the only path where `guard credential` performs a filesystem read on behalf of the plugin (D7 F6, REQ-2026-11-17 ML-5I).
 
 #### Suporte por CLI — visão consolidada, escopo DE PROJETO (ML-5A, `ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`)
 
@@ -4893,7 +4893,7 @@ de um roadmap anterior e não relacionado
 | Kiro | `~/.kiro/hooks/trackfw-credential-guard.json` | **Overwrite total** — arquivo dedicado, um-arquivo-por-hook em `~/.kiro/hooks/`, nunca merge — ver "Kiro global-scope wiring (ML-2F)" | Absoluto, mesmo script (hook names `-global-pre`/`-global-post`, distintos dos de projeto) | **v3** (`kiro-cli --v3`) — documentado, sem sonda de subprocesso possível (ver caveat acima) |
 | Windsurf | — | — | — | **Fora de escopo** — sem hook nativo pré-execução, mesma razão da REQ original (PR #141) |
 | Antigravity | `~/.gemini/config/hooks.json` | USERPROFILE via `os.UserHomeDir()` no Windows (medido ML-1B §12 portabilidade doc 2026-11-18; agy lê USERPROFILE, não FOLDERID_Profile) | `antigravity-credential-guard` (ML-3B2) | `antigravity-git-branch-guard` (ML-3B2) |
-| OpenCode | `<openCodeConfigDir>/plugins/trackfw-guard.js` | **Overwrite total** — arquivo dedicado CommonJS (`.js`), sempre idempotente por comparação de conteúdo; `const SCOPE = "global"` para o alvo global — ver "OpenCode guard (`opencode-guard`) — ML-5E" abaixo | `trackfw guard credential` (executado pelo plugin via `execa`) | `opencode-guard` (ML-5E) |
+| OpenCode | `<openCodeConfigDir>/plugins/trackfw-guard.js` | **Overwrite total** — arquivo dedicado CommonJS (`.js`), sempre idempotente por comparação de conteúdo; `const SCOPE = "global"` para o alvo global — ver "OpenCode guard (`opencode-guard`) — ML-5E" abaixo | `trackfw guard credential` (executado pelo plugin via `spawnSync`) | `opencode-guard` (ML-5E) |
 
 ##### Achados transversais (Waves 1-4 deste roadmap)
 

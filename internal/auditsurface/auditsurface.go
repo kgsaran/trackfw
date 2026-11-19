@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	"github.com/kgsaran/trackfw/internal/hookschema"
+	"github.com/kgsaran/trackfw/internal/opencodeplugin"
 )
 
 // Runtime names in canonical order (matches check-agent-hooks-parity.sh CLIS).
@@ -48,7 +49,7 @@ var runtimeWiringPath = map[string]string{
 	// presence and by the // trackfw:opencode-guard marker (ADR-2026-11-19 D1).
 	// extractTuples treats this as a single synthetic tuple whose RawCommand
 	// encodes the marker status ("marker-present" / "marker-absent").
-	"opencode": ".opencode/plugins/trackfw-guard.js",
+	"opencode": opencodeplugin.PluginRelPath,
 }
 
 // Instruction file paths that ship in a project and instruct the agent
@@ -897,8 +898,8 @@ func FormatText(r *Report) string {
 }
 
 // openCodePluginMarker is the first-line sentinel of a trackfw-generated
-// OpenCode plugin. Must match opencodeplugin.Marker exactly.
-const openCodePluginMarker = "// trackfw:opencode-guard"
+// OpenCode plugin. Defined as opencodeplugin.Marker (A4).
+var openCodePluginMarker = opencodeplugin.Marker
 
 // extractOpenCodePluginSchema extracts a synthetic hook tuple from the
 // OpenCode plugin (a CommonJS JS file, not JSON).

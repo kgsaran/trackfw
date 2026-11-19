@@ -7,12 +7,13 @@
 // Format: CommonJS (module.exports) — compatible with Bun via CJS interop.
 //   Export V2 {id, setup}: setup(ctx) is called by the V2 loader.
 //   Export V1 server: server({directory, worktree}) is called by the V1 loader.
-//   Zero external imports: only node:child_process, node:path and node:os (built-in).
+//   Zero external imports: only node:child_process, node:fs, node:path and node:os (built-in).
 //
-// Self-protection D4: denies write/edit/patch/apply_patch whose target is the
-//   plugin itself (project or global variant), opencode.json/opencode.jsonc of
-//   the project or the global config dir (computed with the same precedence as Go:
-//   OPENCODE_CONFIG_DIR → XDG_CONFIG_HOME/opencode → <home>/.config/opencode).
+// Self-protection D4: denies write/edit/patch/apply_patch whose target is under
+//   the plugin directory, the global or project plugins/ or plugin/ directories,
+//   or any protected config file (opencode.json/opencode.jsonc). Comparison is
+//   by directory containment after fs.realpathSync (F2/F8), case-insensitive on
+//   darwin and win32 (F2). Patch headers are parsed to extract targets (A7/F5).
 //
 // D2: spawnSync with argv array (never via shell) — avoids D18 (inherited errexit).
 //   timeout: 30 000 ms; expired → error.code=ETIMEDOUT → fail-closed.
@@ -25,6 +26,7 @@
 const childProcess = require("node:child_process")
 const nodePath = require("node:path")
 const nodeOS = require("node:os")
+const fs = require("node:fs")
 
 // SCOPE: "project" for the project plugin; "global" for the global plugin.
 // This is the ONLY line that differs between the two generated files.
@@ -36,22 +38,87 @@ const SHELL_TOOLS = new Set(["bash", "shell"])
 // FILE_WRITE_TOOLS: write tool IDs (ADR D3)
 const FILE_WRITE_TOOLS = new Set(["write", "edit", "patch", "apply_patch"])
 
-// FILE_READ_TOOLS: read tool IDs (ADR D3)
-const FILE_READ_TOOLS = new Set(["read"])
+// FILE_READ_TOOLS: read and grep tool IDs (ADR D3, D7 F6)
+const FILE_READ_TOOLS = new Set(["read", "grep"])
 
-// Platform: case-insensitive path comparison on Windows and macOS
-// (darwin uses HFS+ case-insensitive by default; win32 is always case-insensitive).
-function eqPath(a, b) {
-  if (process.platform === "win32" || process.platform === "darwin") {
-    return a.toLowerCase() === b.toLowerCase()
+// WEBFETCH_TOOLS: webfetch tool ID (ADR D3, D7 F6)
+const WEBFETCH_TOOLS = new Set(["webfetch"])
+
+// realpathOrParent resolves symlinks via fs.realpathSync. When the target does
+// not exist, it walks up to the nearest existing ancestor, resolves that via
+// realpathSync, and reattaches the unresolved tail — preserving the original
+// case of path components that could not be resolved (F2/F8).
+function realpathOrParent(p) {
+  try { return fs.realpathSync(p) } catch (e1) {}
+  var abs = nodePath.resolve(p)
+  var parts = abs.split(nodePath.sep)
+  for (var len = parts.length - 1; len >= 1; len--) {
+    var ancestor = parts.slice(0, len).join(nodePath.sep) || nodePath.sep
+    try {
+      var resolved = fs.realpathSync(ancestor)
+      var tail = parts.slice(len).join(nodePath.sep)
+      return nodePath.join(resolved, tail)
+    } catch (e2) {}
   }
-  return a === b
+  return abs
+}
+
+// isUnderDir returns true when resolvedTarget is strictly under dir
+// (separator-boundary check). Case-insensitive on darwin and win32 (F2/F4).
+function isUnderDir(resolvedTarget, dir) {
+  var normalDir = nodePath.resolve(dir)
+  var sep = nodePath.sep
+  var prefix = normalDir.endsWith(sep) ? normalDir : normalDir + sep
+  if (process.platform === "darwin" || process.platform === "win32") {
+    return resolvedTarget.toLowerCase().startsWith(prefix.toLowerCase())
+  }
+  return resolvedTarget.startsWith(prefix)
+}
+
+// pathsEqual compares two paths for equality. a is expected to be a
+// realpathOrParent-resolved path; b is normalized with nodePath.resolve.
+// Case-insensitive on darwin and win32 (F2).
+function pathsEqual(a, b) {
+  var normB = nodePath.resolve(b)
+  if (process.platform === "darwin" || process.platform === "win32") {
+    return a.toLowerCase() === normB.toLowerCase()
+  }
+  return a === normB
+}
+
+// extractPatchTargets parses OpenAI-patch and unified-diff headers to extract
+// target file paths (A7/F5). Relative paths are resolved against projectDir.
+// Recognized headers:
+//   *** Update File: <path>
+//   *** Add File:    <path>
+//   *** Delete File: <path>
+//   *** Move to:     <path>
+//   +++ <path>[\t<date>]
+//   --- <path>[\t<date>]   (skipped for /dev/null)
+function extractPatchTargets(patchText, projectDir) {
+  var targets = []
+  var lines = patchText.split(/\r?\n/)
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i]
+    var m
+    // OpenAI patch format headers
+    if ((m = line.match(/^\*\*\* (?:Update File|Add File|Delete File|Move to):\s+(.+)$/))) {
+      targets.push(nodePath.resolve(projectDir, m[1].trim()))
+    } else if ((m = line.match(/^(?:\+\+\+|---)\s+(.+?)(?:\t.*)?$/))) {
+      // Unified diff header — skip /dev/null
+      var p = m[1].trim()
+      if (p !== "/dev/null" && p !== "dev/null") {
+        targets.push(nodePath.resolve(projectDir, p))
+      }
+    }
+  }
+  return targets
 }
 
 // globalOpenCodeConfigDir returns the GLOBAL OpenCode config directory,
 // using the same precedence as Go (agentconfig.OpenCodeConfigDir):
-//   1. OPENCODE_CONFIG_DIR (if non-empty) — R-1: a relative value is accepted
-//      here because it is the same value that Go used when writing the plugin.
+//   1. OPENCODE_CONFIG_DIR (if non-empty) — R-1: a relative value is resolved
+//      against process.cwd() (same behaviour as Go filepath.Abs; A2 fix).
 //   2. XDG_CONFIG_HOME/opencode (if XDG_CONFIG_HOME is non-empty)
 //   3. <home>/.config/opencode  — <home> is nodeOS.homedir(), which on win32
 //      returns USERPROFILE (same as os.UserHomeDir() in Go).
@@ -65,7 +132,7 @@ function eqPath(a, b) {
 function globalOpenCodeConfigDir() {
   var envDir = (process.env.OPENCODE_CONFIG_DIR || "").trim()
   if (envDir) {
-    return envDir
+    return nodePath.resolve(envDir)  // A2: resolve relative paths
   }
   var xdg = (process.env.XDG_CONFIG_HOME || "").trim()
   if (xdg) {
@@ -74,56 +141,86 @@ function globalOpenCodeConfigDir() {
   return nodePath.join(nodeOS.homedir(), ".config", "opencode")
 }
 
-// selfProtect checks whether the write tool targets the plugin itself
-// (project or global variant) or the OpenCode config files — and throws if so (D4).
-// args: tool fields (V1 uses filePath; V2 uses path).
-// projectDir: absolute project root.
+// selfProtect checks whether the write tool targets any protected path and
+// throws if so (D4). Protected paths are:
+//   - Any file under dirname(realpathSync(__filename)) — the actual plugin dir
+//   - Any file under <projectDir>/.opencode/plugins/ or .opencode/plugin/
+//   - Any file under <globalDir>/plugins/ or <globalDir>/plugin/
+//   - Protected config files: opencode.json / opencode.jsonc (project + global)
+//
+// Candidates are collected from args.filePath ?? args.path (F7) and from
+// patch/apply_patch headers in args.patchText (A7/F5). Comparison uses
+// realpathOrParent for symlink resolution (F2/F8) and is case-insensitive on
+// darwin and win32 (F2).
 function selfProtect(tool, args, projectDir) {
   if (!FILE_WRITE_TOOLS.has(tool)) {
     return
   }
 
-  // Resolve the write target. V1 uses filePath; V2 uses path.
-  var rawTarget = args.path || args.filePath || null
-  if (!rawTarget) {
-    // M17 residual: patch/apply_patch without an explicit path cannot be verified.
-    return
-  }
-  var target = nodePath.resolve(projectDir, rawTarget)
-  var globalDir = globalOpenCodeConfigDir()
+  // F7: uniform field precedence filePath ?? path
+  var rawTarget = args.filePath != null ? args.filePath
+    : (args.path != null ? args.path : null)
 
-  // Protected plugin files: __filename itself + the complement (project ↔ global).
-  var pluginProtected = [
-    __filename,
-    nodePath.join(globalDir, "plugins", "trackfw-guard.js"),
-    nodePath.join(projectDir, ".opencode", "plugins", "trackfw-guard.js"),
-  ]
-  for (var i = 0; i < pluginProtected.length; i++) {
-    if (eqPath(target, pluginProtected[i])) {
-      throw new Error(
-        "trackfw-guard: blocked — write to opencode plugin file is not permitted (D4 self-protection)"
-      )
+  // Collect all candidates
+  var candidates = []
+  if (rawTarget) {
+    candidates.push(nodePath.resolve(projectDir, rawTarget))
+  }
+
+  // A7/F5: extract targets from patch/apply_patch headers
+  var patchText = args.patchText != null ? args.patchText
+    : (args.patch != null ? args.patch : null)
+  if ((tool === "patch" || tool === "apply_patch") && patchText) {
+    var patchTargets = extractPatchTargets(patchText, projectDir)
+    for (var pi = 0; pi < patchTargets.length; pi++) {
+      candidates.push(patchTargets[pi])
     }
   }
 
-  // Protected config files (opencode.json / opencode.jsonc): project + global.
-  var base = nodePath.basename(target)
-  if (base !== "opencode.json" && base !== "opencode.jsonc") {
+  if (candidates.length === 0) {
     return
   }
-  var configProtected = [
-    nodePath.join(globalDir, "opencode.json"),
-    nodePath.join(globalDir, "opencode.jsonc"),
-    nodePath.join(projectDir, "opencode.json"),
-    nodePath.join(projectDir, "opencode.jsonc"),
-    nodePath.join(projectDir, ".opencode", "opencode.json"),
-    nodePath.join(projectDir, ".opencode", "opencode.jsonc"),
+
+  var globalDir = globalOpenCodeConfigDir()
+
+  // Protected directories: any write under these is denied (F4)
+  var protectedDirs = [
+    nodePath.dirname(realpathOrParent(__filename)),
+    nodePath.resolve(projectDir, ".opencode", "plugins"),
+    nodePath.resolve(projectDir, ".opencode", "plugin"),
+    nodePath.resolve(globalDir, "plugins"),
+    nodePath.resolve(globalDir, "plugin"),
   ]
-  for (var j = 0; j < configProtected.length; j++) {
-    if (eqPath(target, configProtected[j])) {
-      throw new Error(
-        "trackfw-guard: blocked — write to opencode config file is not permitted (D4 self-protection)"
-      )
+
+  // Protected config files
+  var protectedFiles = [
+    nodePath.resolve(globalDir, "opencode.json"),
+    nodePath.resolve(globalDir, "opencode.jsonc"),
+    nodePath.resolve(projectDir, "opencode.json"),
+    nodePath.resolve(projectDir, "opencode.jsonc"),
+    nodePath.resolve(projectDir, ".opencode", "opencode.json"),
+    nodePath.resolve(projectDir, ".opencode", "opencode.jsonc"),
+  ]
+
+  for (var ci = 0; ci < candidates.length; ci++) {
+    var realC = realpathOrParent(candidates[ci])
+
+    // Check protected directories (F4)
+    for (var di = 0; di < protectedDirs.length; di++) {
+      if (isUnderDir(realC, protectedDirs[di])) {
+        throw new Error(
+          "trackfw-guard: blocked — write to opencode plugin file is not permitted (D4 self-protection)"
+        )
+      }
+    }
+
+    // Check protected config files
+    for (var fi = 0; fi < protectedFiles.length; fi++) {
+      if (pathsEqual(realC, protectedFiles[fi])) {
+        throw new Error(
+          "trackfw-guard: blocked — write to opencode config file is not permitted (D4 self-protection)"
+        )
+      }
     }
   }
 }
@@ -150,7 +247,7 @@ function runGuard(guardCmd, tool, args, projectDir) {
       toolInput[k] = args[k]
     }
   }
-  // Normalize file_path to absolute (V1 uses filePath; V2 uses path)
+  // F7: normalize file_path to absolute — filePath takes precedence over path
   if (args.filePath) {
     toolInput.file_path = nodePath.resolve(projectDir, args.filePath)
   } else if (args.path) {
@@ -201,10 +298,11 @@ function runGuard(guardCmd, tool, args, projectDir) {
 }
 
 /**
- * Checks the tool and calls applicable guards (ADR D3).
- * shell/bash: credential + git-branch.
+ * Checks the tool and calls applicable guards (ADR D3, D7).
+ * shell/bash:            credential + git-branch.
  * write/edit/patch/apply_patch: credential.
- * read: credential (hook_source="opencode" enables file_path check in the Go guard).
+ * read/grep:             credential (hook_source="opencode" enables path check).
+ * webfetch:              credential (URL and body may carry secrets; F6).
  * Other tools: pass through without any call.
  */
 function checkTools(tool, args, projectDir) {
@@ -217,6 +315,8 @@ function checkTools(tool, args, projectDir) {
   } else if (FILE_WRITE_TOOLS.has(tool)) {
     runGuard("credential", tool, args, projectDir)
   } else if (FILE_READ_TOOLS.has(tool)) {
+    runGuard("credential", tool, args, projectDir)
+  } else if (WEBFETCH_TOOLS.has(tool)) {
     runGuard("credential", tool, args, projectDir)
   }
   // Tools outside the list: pass through without any call

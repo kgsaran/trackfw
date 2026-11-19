@@ -317,11 +317,12 @@ testes em `internal/guard/` (arquivo novo `opencode_test.go`)
 ### ML-5G — Red team (hades-tf) — ✅ Done — **REPROVA** (`docs/seguranca/2026-11-19-red-team-wave5-opencode.md`): F4 HIGH (escrita
 de outro plugin em `.opencode/plugins/` ou por `shell`), F2/F8 (caixa e symlink na comparação), F6 (`webfetch`/`grep` fora do
 guard); F1, F3, F5, F7 baixos; VS residual
-### ML-5I — Corretivo de A7/F1–F8 e notas (apolo-tf; ADR-2026-11-19 D7) — 🔄 In progress
-- [ ] autoproteção por diretório de plugin, `realpath` + caixa, alvos de patch, precedência única (A7, F2, F4, F5, F7, F8)
-- [ ] `validate`/`doctor` acusam plugin estranho e chave `plugin(s)` no `opencode.json(c)` (F4 fix b)
-- [ ] `webfetch` e `grep` no guard; `grep` em arquivo regular lido em Go; demais ferramentas nativas mapeadas ou declaradas (F6)
-- [ ] caminhos congelados `.opencode/plugin/`, `.opencode/opencode.json(c)` (F1, F3)
-- [ ] A2, A4, A5, A6, A8 corrigidos
-- [ ] cada achado com teste que reprova antes e passa depois; `make quality` rc=0
+### ML-5I — Corretivo de A7/F1–F8 e notas (apolo-tf; ADR-2026-11-19 D7) — ✅ Done
+- [x] autoproteção por diretório de plugin, `realpath` + caixa, alvos de patch, precedência única (A7, F2, F4, F5, F7, F8)
+- [x] `validate`/`doctor` acusam plugin estranho e chave `plugin(s)` no `opencode.json(c)` (F4 fix b)
+- [x] `webfetch` e `grep` no guard; `grep` em arquivo regular lido em Go; demais ferramentas nativas mapeadas ou declaradas (F6)
+- [x] caminhos congelados `.opencode/plugin/`, `.opencode/opencode.json(c)` (F1, F3)
+- [x] A2, A4, A5, A6, A8 corrigidos (A2: o JS resolve `OPENCODE_CONFIG_DIR` relativo contra o cwd em vez de ignorar — aceito, protege mais)
+- [x] cada achado com teste que reprova antes e passa depois; `make quality` rc=0 (zeus); runtime JS 11 braços PASS no Mac
+- [ ] **ML-5I2:** `websearch` (lista do contrato, l. 387) fora do guard — a consulta exfiltra como a URL do `webfetch`
 ### ML-5H — prova real com o plugin do produto (KG) — ⬜ Pending

@@ -9,10 +9,6 @@ import (
 	"github.com/kgsaran/trackfw/internal/pathguard"
 )
 
-// openCodePluginRelPath is the project-scope relative path of the OpenCode
-// guard plugin within a project root. ADR-2026-11-19 D5.
-const openCodePluginRelPath = ".opencode/plugins/trackfw-guard.js"
-
 // InjectOpenCodePlugin writes (or refreshes) the trackfw guard plugin for
 // OpenCode at <rootDir>/.opencode/plugins/trackfw-guard.js using the
 // canonical project-scope content from internal/opencodeplugin.
@@ -32,10 +28,10 @@ func InjectOpenCodePlugin(rootDir string) error {
 	// ML-8A: resolve root so the pathguard namespace is consistent.
 	guardRoot, rootErr := pathguard.ResolveRoot(rootDir)
 	if rootErr != nil {
-		return pathguard.RefuseUnverifiableRoot(filepath.Join(rootDir, openCodePluginRelPath), rootErr)
+		return pathguard.RefuseUnverifiableRoot(filepath.Join(rootDir, opencodeplugin.PluginRelPath), rootErr)
 	}
 
-	path := filepath.Join(guardRoot, openCodePluginRelPath)
+	path := filepath.Join(guardRoot, opencodeplugin.PluginRelPath)
 	if guardErr := pathguard.RejectAndReport(guardRoot, path); guardErr != nil {
 		return guardErr
 	}

@@ -848,14 +848,17 @@ func credViewFileScan(toolName string, data []byte, shellCwd string) credFinding
 	return credFinding{}
 }
 
-// credOpenCodeReadScan runs a layer-2 file scan for the OpenCode read tool
-// (ADR-2026-11-19 D3). Active only when both conditions are explicitly true:
+// credOpenCodeReadScan runs a layer-2 file scan for the OpenCode read and grep
+// tools (ADR-2026-11-19 D3, D7). Active only when both conditions are true:
 //   - hook_source == "opencode"  (checked via isOpenCodePayload; lição F1)
-//   - tool_name  == "read"       (checked directly from root["tool_name"])
+//   - tool_name  == "read" OR tool_name == "grep"
 //
-// When both conditions hold, reads tool_input.file_path and calls
-// credScanFilePath on it. The same constraints as credViewFileScan apply:
-// only regular files, same 1 MiB size limit, path must be absolute.
+// For "read": reads tool_input.file_path (absolutized by the plugin).
+// For "grep": reads tool_input.path (absolutized by the plugin).
+// Directory paths are not read (credScanFilePath requires a regular file).
+//
+// The same constraints as credViewFileScan apply: only regular files,
+// same 1 MiB size limit, path must be absolute.
 //
 // Returns a zero credFinding when the conditions are not met, the path is
 // missing, relative, or points to a non-regular file, or when the file
@@ -876,16 +879,34 @@ func credOpenCodeReadScan(data []byte) credFinding {
 	if rawTN, ok := root["tool_name"]; ok && !isJSONNull(rawTN) {
 		_ = json.Unmarshal(rawTN, &toolName)
 	}
-	if toolName != "read" {
+
+	var filePath string
+	switch toolName {
+	case "read":
+		// plugin normalises V2 "path" → "file_path" before sending the payload.
+		fp, found, _ := extractNested(root, "tool_input", "file_path")
+		if !found || fp == "" {
+			return credFinding{}
+		}
+		filePath = fp
+	case "grep":
+		// V2 grep tool sends tool_input.path (ADR-2026-11-19 D7 F6).
+		// The plugin absolutizes it to file_path; fall back to path if the
+		// plugin sends the native field directly.
+		fp, found1, _ := extractNested(root, "tool_input", "file_path")
+		if found1 && fp != "" {
+			filePath = fp
+		} else {
+			fp2, found2, _ := extractNested(root, "tool_input", "path")
+			if !found2 || fp2 == "" {
+				return credFinding{}
+			}
+			filePath = fp2
+		}
+	default:
 		return credFinding{}
 	}
-	// Extract tool_input.file_path (ADR-2026-11-19 D3; contract §8 confirmed:
-	// V2 sends "path" natively; the plugin normalises it to "file_path" in the
-	// payload. table row T-RC in §4.2 uses {"tool_input":{"file_path":"…"}}).
-	filePath, found, _ := extractNested(root, "tool_input", "file_path")
-	if !found || filePath == "" {
-		return credFinding{}
-	}
+
 	// Require absolute path — do NOT join with cwd.
 	// Unlike credViewFileScan (Antigravity) which may fall back to shellCwd,
 	// the OpenCode contract (ADR D3) mandates an absolute file_path from the plugin.

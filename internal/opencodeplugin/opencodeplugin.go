@@ -24,6 +24,11 @@ import (
 // files from third-party plugins and to detect tampering.
 const Marker = "// trackfw:opencode-guard"
 
+// PluginRelPath is the project-scope relative path of the OpenCode guard plugin
+// within a trackfw project. Use this constant instead of a local literal so that
+// every caller stays in sync when the path changes (A4).
+const PluginRelPath = ".opencode/plugins/trackfw-guard.js"
+
 // projectScopeToken is the exact string in the asset that carries the scope
 // value. Render replaces it once to produce the global variant.
 const projectScopeToken = `const SCOPE = "project"`

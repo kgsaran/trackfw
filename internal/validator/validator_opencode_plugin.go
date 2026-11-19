@@ -29,6 +29,7 @@ package validator
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -38,10 +39,6 @@ import (
 	"github.com/kgsaran/trackfw/internal/integrations"
 	"github.com/kgsaran/trackfw/internal/opencodeplugin"
 )
-
-// openCodePluginRelPath is the relative path of the project-scoped guard plugin
-// under the project root.
-const openCodePluginRelPath = ".opencode/plugins/trackfw-guard.js"
 
 // openCodeDirRelPath is the directory whose presence signals that OpenCode is in use
 // in this project.
@@ -57,50 +54,180 @@ func validateOpenCodePluginWarningsWith(root string, _ agentconfig.CLIHomeResolv
 		return nil, nil // OpenCode not in use — silent
 	}
 
-	pluginPath := filepath.Join(root, openCodePluginRelPath)
+	var warns []string
+
+	// Main plugin presence / marker / staleness check.
+	pluginPath := filepath.Join(root, opencodeplugin.PluginRelPath)
 	content, readErr := readRegularFile(pluginPath)
 	if readErr != nil {
 		if os.IsNotExist(readErr) {
-			return []string{fmt.Sprintf(
+			warns = append(warns, fmt.Sprintf(
 				".opencode/ detected but %s is absent — run `trackfw update`",
-				openCodePluginRelPath,
-			)}, nil
+				opencodeplugin.PluginRelPath,
+			))
+		} else {
+			// Unreadable (special file, permission error) — treat as absent.
+			warns = append(warns, fmt.Sprintf(
+				"%s is not readable — run `trackfw update`",
+				opencodeplugin.PluginRelPath,
+			))
 		}
-		// Unreadable (special file, permission error) — treat as absent.
-		return []string{fmt.Sprintf(
-			"%s is not readable — run `trackfw update`",
-			openCodePluginRelPath,
-		)}, nil
+	} else {
+		// Check marker on first line.
+		normalized := integrations.NormalizeCRLF(content)
+		firstLine := string(normalized)
+		if idx := strings.IndexByte(firstLine, '\n'); idx >= 0 {
+			firstLine = firstLine[:idx]
+		}
+		if firstLine != opencodeplugin.Marker {
+			warns = append(warns, fmt.Sprintf(
+				"%s is present but missing the trackfw:opencode-guard marker — "+
+					"run `trackfw update` to refresh it",
+				opencodeplugin.PluginRelPath,
+			))
+		} else {
+			// Check staleness against canonical render.
+			canonical, renderErr := opencodeplugin.Render("project")
+			if renderErr != nil {
+				return nil, renderErr
+			}
+			canonicalNorm := integrations.NormalizeCRLF(canonical)
+			if !bytes.Equal(normalized, canonicalNorm) {
+				warns = append(warns, fmt.Sprintf(
+					"%s is stale — run `trackfw update` to refresh it",
+					opencodeplugin.PluginRelPath,
+				))
+			}
+		}
 	}
 
-	// Check marker on first line.
-	normalized := integrations.NormalizeCRLF(content)
-	firstLine := string(normalized)
-	if idx := strings.IndexByte(firstLine, '\n'); idx >= 0 {
-		firstLine = firstLine[:idx]
-	}
-	if firstLine != opencodeplugin.Marker {
-		return []string{fmt.Sprintf(
-			"%s is present but missing the trackfw:opencode-guard marker — "+
-				"run `trackfw update` to refresh it",
-			openCodePluginRelPath,
-		)}, nil
-	}
+	// F4 fix b: warn on sibling JS/TS/MJS/CJS files in plugin dirs.
+	warns = append(warns, warnSiblingPluginFiles(root)...)
 
-	// Check staleness against canonical render.
-	canonical, renderErr := opencodeplugin.Render("project")
-	if renderErr != nil {
-		return nil, renderErr
-	}
-	canonicalNorm := integrations.NormalizeCRLF(canonical)
-	if !bytes.Equal(normalized, canonicalNorm) {
-		return []string{fmt.Sprintf(
-			"%s is stale — run `trackfw update` to refresh it",
-			openCodePluginRelPath,
-		)}, nil
-	}
+	// F4 fix b: warn on "plugin" or "plugins" keys in opencode.json(c).
+	warns = append(warns, warnOpenCodeConfigKeys(root)...)
 
-	return nil, nil
+	if len(warns) == 0 {
+		return nil, nil
+	}
+	return warns, nil
+}
+
+// warnSiblingPluginFiles returns warnings for any .js/.ts/.mjs/.cjs file in
+// .opencode/plugins/ or .opencode/plugin/ that is NOT trackfw-guard.js (D7 F4 fix b).
+func warnSiblingPluginFiles(root string) []string {
+	var warns []string
+	pluginDirs := []string{
+		filepath.Join(root, ".opencode", "plugins"),
+		filepath.Join(root, ".opencode", "plugin"),
+	}
+	scriptExts := map[string]bool{
+		".js":  true,
+		".ts":  true,
+		".mjs": true,
+		".cjs": true,
+	}
+	for _, dir := range pluginDirs {
+		entries, dirErr := os.ReadDir(dir)
+		if dirErr != nil {
+			continue // dir absent or not readable — silent
+		}
+		rel := filepath.Base(dir) // "plugins" or "plugin"
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			if name == "trackfw-guard.js" {
+				continue
+			}
+			if scriptExts[strings.ToLower(filepath.Ext(name))] {
+				warns = append(warns, fmt.Sprintf(
+					"unexpected plugin script .opencode/%s/%s — only trackfw-guard.js is expected; "+
+						"remove or verify this file is intentional",
+					rel, name,
+				))
+			}
+		}
+	}
+	return warns
+}
+
+// warnOpenCodeConfigKeys returns warnings when opencode.json or opencode.jsonc
+// (project root or .opencode/) contains a top-level "plugin" or "plugins" key
+// (D7 F4 fix b). The parse is JSONC-tolerant (strips // line comments before
+// unmarshalling so comment-annotated config files are handled correctly).
+func warnOpenCodeConfigKeys(root string) []string {
+	var warns []string
+	candidates := []string{
+		filepath.Join(root, "opencode.json"),
+		filepath.Join(root, "opencode.jsonc"),
+		filepath.Join(root, ".opencode", "opencode.json"),
+		filepath.Join(root, ".opencode", "opencode.jsonc"),
+	}
+	for _, path := range candidates {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		stripped := stripJSONCLineComments(raw)
+		var obj map[string]json.RawMessage
+		if err := json.Unmarshal(stripped, &obj); err != nil {
+			continue // malformed — not our problem here
+		}
+		rel, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			rel = path
+		}
+		for _, key := range []string{"plugin", "plugins"} {
+			if _, ok := obj[key]; ok {
+				warns = append(warns, fmt.Sprintf(
+					"%s contains a %q key — plugin loading should use the trackfw-managed %s",
+					rel, key, opencodeplugin.PluginRelPath,
+				))
+			}
+		}
+	}
+	return warns
+}
+
+// stripJSONCLineComments removes // line comments from JSONC content.
+// It handles string literals correctly (skips // inside quoted strings) but
+// does not handle block comments or multi-line strings — sufficient for
+// opencode.json(c) which uses only single-line // comments.
+func stripJSONCLineComments(data []byte) []byte {
+	out := make([]byte, 0, len(data))
+	inStr := false
+	for i := 0; i < len(data); i++ {
+		c := data[i]
+		if inStr {
+			out = append(out, c)
+			if c == '\\' && i+1 < len(data) {
+				i++
+				out = append(out, data[i])
+			} else if c == '"' {
+				inStr = false
+			}
+			continue
+		}
+		if c == '"' {
+			inStr = true
+			out = append(out, c)
+			continue
+		}
+		if c == '/' && i+1 < len(data) && data[i+1] == '/' {
+			// Skip until end of line (keep the newline).
+			for i < len(data) && data[i] != '\n' {
+				i++
+			}
+			if i < len(data) {
+				out = append(out, '\n')
+			}
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
 }
 
 // validateOpenCodePluginWarnings is the production entry point (DefaultResolver).
@@ -128,7 +255,7 @@ func ValidateOpenCodePluginWarningsWithForTest(root string, r agentconfig.CLIHom
 // global OpenCode plugin is absent. Used only by doctor, not by validate.
 func validateOpenCodePluginGlobalAbsentWith(root string, r agentconfig.CLIHomeResolver) ([]string, error) {
 	// Condition 1: project plugin must be present and have the marker.
-	pluginPath := filepath.Join(root, openCodePluginRelPath)
+	pluginPath := filepath.Join(root, opencodeplugin.PluginRelPath)
 	content, readErr := readRegularFile(pluginPath)
 	if readErr != nil {
 		return nil, nil // project plugin absent — no D6 advisory

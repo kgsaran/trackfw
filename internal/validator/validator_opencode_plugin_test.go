@@ -280,6 +280,159 @@ func TestOpenCodePlugin_ProjectAbsent_D6Silent(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------
+// F4 fix b: sibling plugin file detection
+// --------------------------------------------------------------------------
+
+// TestOpenCodePlugin_Sibling_JS_Warns asserts that a .js file in .opencode/plugins/
+// other than trackfw-guard.js triggers a warning.
+//
+// Conclusion: warnSiblingPluginFiles detects unexpected .js siblings and returns a warning.
+func TestOpenCodePlugin_Sibling_JS_Warns(t *testing.T) {
+	t.Setenv("OPENCODE_CONFIG_DIR", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	projectDir := t.TempDir()
+	r := isolatedResolver(t)
+	writeOpenCodeDir(t, projectDir)
+	writeCanonicalPlugin(t, projectDir)
+
+	// Add a sibling .js file.
+	sibling := filepath.Join(projectDir, ".opencode", "plugins", "evil.js")
+	if err := os.WriteFile(sibling, []byte("console.log('evil')"), 0644); err != nil {
+		t.Fatalf("write sibling: %v", err)
+	}
+
+	msgs := validator.ValidateOpenCodePluginWarningsWithForTest(projectDir, r)
+	found := false
+	for _, m := range msgs {
+		if strings.Contains(m, "evil.js") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected sibling warning for evil.js; got: %v", msgs)
+	}
+}
+
+// TestOpenCodePlugin_Sibling_TS_Warns asserts that a .ts file in .opencode/plugin/ (singular)
+// triggers a warning.
+//
+// Conclusion: warnSiblingPluginFiles covers both plugins/ and plugin/ directories.
+func TestOpenCodePlugin_Sibling_TS_Warns(t *testing.T) {
+	t.Setenv("OPENCODE_CONFIG_DIR", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	projectDir := t.TempDir()
+	r := isolatedResolver(t)
+	writeOpenCodeDir(t, projectDir)
+
+	// Use .opencode/plugin/ (singular) with a .ts file.
+	pluginSingularDir := filepath.Join(projectDir, ".opencode", "plugin")
+	if err := os.MkdirAll(pluginSingularDir, 0755); err != nil {
+		t.Fatalf("MkdirAll plugin dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(pluginSingularDir, "other.ts"), []byte("export {}"), 0644); err != nil {
+		t.Fatalf("write other.ts: %v", err)
+	}
+
+	msgs := validator.ValidateOpenCodePluginWarningsWithForTest(projectDir, r)
+	found := false
+	for _, m := range msgs {
+		if strings.Contains(m, "other.ts") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected sibling warning for other.ts in plugin/ dir; got: %v", msgs)
+	}
+}
+
+// TestOpenCodePlugin_NoSibling_NoExtraWarning asserts that the canonical plugin without
+// any sibling files produces no extra warnings.
+//
+// Conclusion: warnSiblingPluginFiles is silent when only trackfw-guard.js is present.
+func TestOpenCodePlugin_NoSibling_NoExtraWarning(t *testing.T) {
+	t.Setenv("OPENCODE_CONFIG_DIR", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	projectDir := t.TempDir()
+	r := isolatedResolver(t)
+	writeOpenCodeDir(t, projectDir)
+	writeCanonicalPlugin(t, projectDir)
+
+	msgs := validator.ValidateOpenCodePluginWarningsWithForTest(projectDir, r)
+	if len(msgs) != 0 {
+		t.Errorf("expected no warnings for canonical plugin with no siblings; got: %v", msgs)
+	}
+}
+
+// --------------------------------------------------------------------------
+// F4 fix b: opencode.json(c) plugin/plugins key detection
+// --------------------------------------------------------------------------
+
+// TestOpenCodePlugin_ConfigPluginsKey_Warns asserts that opencode.json with a "plugins"
+// top-level key triggers a warning.
+//
+// Conclusion: warnOpenCodeConfigKeys detects "plugins" key in opencode.json at project root.
+func TestOpenCodePlugin_ConfigPluginsKey_Warns(t *testing.T) {
+	t.Setenv("OPENCODE_CONFIG_DIR", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	projectDir := t.TempDir()
+	r := isolatedResolver(t)
+	writeOpenCodeDir(t, projectDir)
+	writeCanonicalPlugin(t, projectDir)
+
+	// opencode.json with a "plugins" key at project root.
+	cfg := `{"plugins": [{"src": "other.js"}]}`
+	if err := os.WriteFile(filepath.Join(projectDir, "opencode.json"), []byte(cfg), 0644); err != nil {
+		t.Fatalf("write opencode.json: %v", err)
+	}
+
+	msgs := validator.ValidateOpenCodePluginWarningsWithForTest(projectDir, r)
+	found := false
+	for _, m := range msgs {
+		if strings.Contains(m, "plugins") && strings.Contains(m, "opencode.json") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected warning for 'plugins' key in opencode.json; got: %v", msgs)
+	}
+}
+
+// TestOpenCodePlugin_ConfigPluginKeyJSONC_Warns asserts that opencode.jsonc with
+// a "plugin" key (and a // comment) triggers a warning — JSONC-tolerant parsing.
+//
+// Conclusion: warnOpenCodeConfigKeys strips // comments before parsing; "plugin" key detected.
+func TestOpenCodePlugin_ConfigPluginKeyJSONC_Warns(t *testing.T) {
+	t.Setenv("OPENCODE_CONFIG_DIR", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	projectDir := t.TempDir()
+	r := isolatedResolver(t)
+	writeOpenCodeDir(t, projectDir)
+	writeCanonicalPlugin(t, projectDir)
+
+	// opencode.jsonc with a JSONC comment and "plugin" key in .opencode/ subdir.
+	cfg := "// opencode config\n{\"plugin\": {\"src\": \"other.js\"}}\n"
+	opencodeSubDir := filepath.Join(projectDir, ".opencode")
+	if err := os.WriteFile(filepath.Join(opencodeSubDir, "opencode.jsonc"), []byte(cfg), 0644); err != nil {
+		t.Fatalf("write opencode.jsonc: %v", err)
+	}
+
+	msgs := validator.ValidateOpenCodePluginWarningsWithForTest(projectDir, r)
+	found := false
+	for _, m := range msgs {
+		if strings.Contains(m, "\"plugin\"") && strings.Contains(m, "opencode.jsonc") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected warning for 'plugin' key in .opencode/opencode.jsonc; got: %v", msgs)
+	}
+}
+
+// --------------------------------------------------------------------------
 // End-to-end: warning routes to warnings (not violations) in Validate()
 // --------------------------------------------------------------------------
 

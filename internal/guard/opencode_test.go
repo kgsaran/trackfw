@@ -392,3 +392,138 @@ func TestWriteScope_OpenCode_MainSession_Allowed(t *testing.T) {
 		t.Fatalf("main session writing opencode.json: want exit 0 (allow), got %d", rc)
 	}
 }
+
+// TestWriteScope_OpenCode_PluginSingularDir_SubagentDenied asserts that a
+// subagent is denied when writing inside .opencode/plugin/ (singular, V1).
+//
+// Conclusion asserted: ".opencode/plugin/" is in writeScopeSubagentFrozenRelPaths;
+// a subagent writing .opencode/plugin/evil.js is denied (rc=2) — fixing F3.
+func TestWriteScope_OpenCode_PluginSingularDir_SubagentDenied(t *testing.T) {
+	proj := makeWSProjectDir(t)
+	target := filepath.Join(proj, ".opencode", "plugin", "evil.js")
+
+	rc, stderr := runWS(t, payload("Write", target, "subagent-id"))
+	if rc != 2 {
+		t.Fatalf("subagent writing .opencode/plugin/evil.js: want exit 2 (deny), got %d (stderr=%q)", rc, stderr)
+	}
+}
+
+// TestWriteScope_OpenCode_OpencodeJsonInOpencode_SubagentDenied asserts that
+// a subagent is denied when writing .opencode/opencode.json (higher precedence
+// than ./opencode.json per OpenCode §1.1).
+//
+// Conclusion asserted: ".opencode/opencode.json" is in writeScopeSubagentFrozenRelPaths;
+// a subagent writing .opencode/opencode.json is denied (rc=2) — fixing F1.
+func TestWriteScope_OpenCode_OpencodeJsonInOpencode_SubagentDenied(t *testing.T) {
+	proj := makeWSProjectDir(t)
+	target := filepath.Join(proj, ".opencode", "opencode.json")
+
+	rc, stderr := runWS(t, payload("Write", target, "subagent-id"))
+	if rc != 2 {
+		t.Fatalf("subagent writing .opencode/opencode.json: want exit 2 (deny), got %d (stderr=%q)", rc, stderr)
+	}
+}
+
+// TestWriteScope_OpenCode_OpencodeJsoncInOpencode_SubagentDenied asserts that
+// a subagent is denied when writing .opencode/opencode.jsonc.
+//
+// Conclusion asserted: ".opencode/opencode.jsonc" is in writeScopeSubagentFrozenRelPaths;
+// a subagent writing .opencode/opencode.jsonc is denied (rc=2) — fixing F1.
+func TestWriteScope_OpenCode_OpencodeJsoncInOpencode_SubagentDenied(t *testing.T) {
+	proj := makeWSProjectDir(t)
+	target := filepath.Join(proj, ".opencode", "opencode.jsonc")
+
+	rc, stderr := runWS(t, payload("Write", target, "subagent-id"))
+	if rc != 2 {
+		t.Fatalf("subagent writing .opencode/opencode.jsonc: want exit 2 (deny), got %d (stderr=%q)", rc, stderr)
+	}
+}
+
+// openCodePayloadGrep builds an OpenCode credential guard payload for the
+// "grep" tool with tool_input.path pointing to a file.
+func openCodePayloadGrep(t *testing.T, filePath, cwd string) string {
+	t.Helper()
+	m := map[string]any{
+		"hook_source": "opencode",
+		"tool_name":   "grep",
+		"tool_input":  map[string]any{"path": filePath},
+		"cwd":         cwd,
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		t.Fatalf("marshal grep payload: %v", err)
+	}
+	return string(b)
+}
+
+// TestOpenCodeGrep_SecretInFile_Blocked asserts that when hook_source="opencode"
+// and tool_name="grep" with tool_input.path pointing to a regular file containing
+// a credential, the guard reads the file and exits 2.
+//
+// Conclusion asserted: credOpenCodeReadScan accepts tool_name="grep" with
+// tool_input.path (absolute) in addition to tool_name="read" with file_path —
+// closing the grep file-read coverage gap in F6 (ADR-2026-11-19 D7).
+func TestOpenCodeGrep_SecretInFile_Blocked(t *testing.T) {
+	projectDir := makeOpenCodeProjectDir(t)
+	secret := googleFakeKeyOC()
+
+	secretFile := filepath.Join(projectDir, "config.env")
+	if err := os.WriteFile(secretFile, []byte("GOOGLE_KEY="+secret+"\n"), 0644); err != nil {
+		t.Fatalf("write config.env: %v", err)
+	}
+
+	p := openCodePayloadGrep(t, secretFile, projectDir)
+	code, stdout, _ := runCred(t, projectDir, p)
+	if code != 2 {
+		t.Fatalf("want exit 2 (grep file with credential blocked), got %d\n"+
+			"NOTE: exit 0 means credOpenCodeReadScan does not handle tool_name=grep", code)
+	}
+	if stdout != "" {
+		t.Fatalf("D2 invariant: want empty stdout on exit 2, got %q", stdout)
+	}
+}
+
+// TestOpenCodeGrep_DirectoryPath_NotRead asserts that grep with a directory path
+// does not trigger file reading — only regular files are scanned.
+//
+// Conclusion asserted: credOpenCodeReadScan skips non-regular files for grep,
+// same as for read; a directory path returns exit 0 without error.
+func TestOpenCodeGrep_DirectoryPath_NotRead(t *testing.T) {
+	projectDir := makeOpenCodeProjectDir(t)
+
+	p := openCodePayloadGrep(t, projectDir, projectDir)
+	code, stdout, stderr := runCred(t, projectDir, p)
+	if code != 0 {
+		t.Fatalf("want exit 0 (grep directory path → not read), got %d", code)
+	}
+	if stdout != "" {
+		t.Fatalf("D2 invariant: want empty stdout on exit 0, got %q", stdout)
+	}
+	if stderr != "" {
+		t.Fatalf("want empty stderr on exit 0 (no detection), got %q", stderr)
+	}
+}
+
+// TestOpenCodeGrep_GlobalScope_SecretInFile_Blocked asserts that the global
+// scope (--global) also scans via grep.
+//
+// Conclusion asserted: credOpenCodeReadScan with tool_name="grep" is called
+// in RunCredentialGlobal; a credential in the grepped file triggers exit 2.
+func TestOpenCodeGrep_GlobalScope_SecretInFile_Blocked(t *testing.T) {
+	dir := t.TempDir()
+	secret := googleFakeKeyOC()
+
+	secretFile := filepath.Join(dir, "config.env")
+	if err := os.WriteFile(secretFile, []byte("GOOGLE_KEY="+secret+"\n"), 0644); err != nil {
+		t.Fatalf("write config.env: %v", err)
+	}
+
+	p := openCodePayloadGrep(t, secretFile, dir)
+	code, stdout, _ := runCredGlobal(t, dir, p)
+	if code != 2 {
+		t.Fatalf("want exit 2 (global scope grep with credential blocked), got %d", code)
+	}
+	if stdout != "" {
+		t.Fatalf("D2 invariant: want empty stdout on exit 2, got %q", stdout)
+	}
+}
