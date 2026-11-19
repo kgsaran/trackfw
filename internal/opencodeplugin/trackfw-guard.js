@@ -14,6 +14,24 @@
 //   or any protected config file (opencode.json/opencode.jsonc). Comparison is
 //   by directory containment after fs.realpathSync (F2/F8), case-insensitive on
 //   darwin and win32 (F2). Patch headers are parsed to extract targets (A7/F5).
+//   N5 (ML-5I5): for patch/apply_patch a mention scan runs BEFORE header extraction.
+//   ALL string-valued args are concatenated, backslash-normalized to "/" and
+//   lowercased; if any protected-path pattern appears anywhere, the call is
+//   denied immediately. This closes the git-apply -pN bypass: "+++ z/.opencode/
+//   plugins/x" extracts a candidate "<projectDir>/z/.opencode/plugins/x" that is
+//   NOT under the protected dir after resolution, defeating the second layer.
+//   N6 (ML-5I6): two additional closures on top of N5:
+//     (a) The mention scan now checks a SECOND haystack with octal \NNN sequences
+//         decoded before the \ → / pass, so "+++ \"z/\056opencode/plugins/x\""
+//         matches ".opencode/plugin" after decoding \056 → '.' even though the
+//         raw form "/056opencode" does not.
+//     (b) After extractPatchTargets, each resolved candidate path is checked with
+//         the same mention needles (\ → /, lowercase). This catches candidates
+//         decoded by unquoteGitPath whose resolved form contains ".opencode/plugin"
+//         but whose z/ prefix defeated the directory-containment check, as well
+//         as bypasses using dot-segment normalization (z/.opencode/./plugins/x)
+//         that the raw mention scan misses (the string ".opencode/plugin" is absent
+//         from the unnormalized form).
 //
 // D2: spawnSync with argv array (never via shell) — avoids D18 (inherited errexit).
 //   timeout: 30 000 ms; expired → error.code=ETIMEDOUT → fail-closed.
@@ -286,6 +304,30 @@ function globalOpenCodeConfigDir() {
 // than pass-through — a patch/apply_patch with no recognizable headers cannot
 // be verified and must not proceed (F5 fail-closed).
 //
+// N5 (ML-5I5): patch/apply_patch — mention scan (first layer, before header
+// extraction). ALL string-valued args are concatenated, backslash-normalized to
+// "/" and lowercased; if any of the protected-path patterns appears in the text,
+// the call is denied. Patterns: ".opencode/plugin", "opencode.json", and the
+// global config dir (raw + realpathOrParent) followed by "/plugin" or
+// "/opencode.json". This closes the git-apply -pN bypass: "+++ z/.opencode/
+// plugins/x" extracts candidate "<projectDir>/z/.opencode/plugins/x" which is
+// NOT under the protected dir after resolution (second layer misses it), but the
+// raw text still contains ".opencode/plugin" which the mention layer catches.
+//
+// N6 (ML-5I6): two additions:
+//   (a) The mention scan uses a second haystack (n5LowOct) where octal \NNN
+//       sequences are decoded BEFORE the \ → / pass. This catches "+++ \"z/\056
+//       opencode/plugins/x\"" (octal-encoded '.') and similar body-line forms.
+//       The original haystack (n5Low) is kept so that Windows paths with literal
+//       backslash-digit sequences (e.g. C:\Users\100x) are still matched by the
+//       global-dir needle without false negative from octal misinterpretation.
+//   (b) After extractPatchTargets populates candidates, each resolved candidate
+//       string is scanned with the same needles (\ → /, lowercase). This catches
+//       the case where unquoteGitPath decodes octals in the header token but the
+//       resolved candidate escapes directory containment via a prefix (z/) as well
+//       as dot-segment forms (z/.opencode/./plugins/x) that resolve to a path
+//       containing ".opencode/plugin" even though the raw string does not.
+//
 // Comparison uses realpathOrParent for symlink resolution (F2/F8) and is
 // case-insensitive on darwin and win32 (F2).
 function selfProtect(tool, args, projectDir) {
@@ -307,6 +349,52 @@ function selfProtect(tool, args, projectDir) {
   // Scan patchText and patch first (the canonical fields), then every remaining
   // string-valued own field — covers non-standard field names like "diff".
   if (tool === "patch" || tool === "apply_patch") {
+    // N5 (ML-5I5): mention scan — first layer, before header extraction.
+    // Concat ALL string-valued args, replace \ with /, lowercase, then search
+    // for any protected-path pattern. Each arg is separated by "\n" to prevent
+    // two adjacent fields from splicing into a false mention (e.g. "foo" + "bar"
+    // vs. "foobar").
+    //
+    // N6 (ML-5I6-a): also build a second haystack (n5LowOct) with octal \NNN
+    // sequences decoded BEFORE the \ → / pass. This handles "+++ \"z/\056opencode/
+    // plugins/x\"" where \056 (octal '.') becomes '/' via the plain pass but '.'
+    // via the octal-decode pass, so ".opencode/plugin" is matched in n5LowOct.
+    var n5Text = ""
+    var n5TextOct = ""
+    for (var n5k in args) {
+      if (Object.prototype.hasOwnProperty.call(args, n5k) && typeof args[n5k] === "string") {
+        var n5v = args[n5k]
+        n5Text += n5v.replace(/\\/g, "/") + "\n"
+        // Decode octal \NNN sequences (same range as unquoteGitPath: [0-3][0-7][0-7])
+        // using Buffer so multi-byte UTF-8 sequences (e.g. \302\251) are decoded
+        // correctly as a unit rather than character by character.
+        var n5Oct = n5v.replace(/\\([0-3][0-7]{2})/g, function(_, oct) {
+          return String.fromCharCode(parseInt(oct, 8))
+        })
+        n5TextOct += n5Oct.replace(/\\/g, "/") + "\n"
+      }
+    }
+    var n5Low = n5Text.toLowerCase()
+    var n5LowOct = n5TextOct.toLowerCase()
+    var n5GlobalDir = globalOpenCodeConfigDir()
+    var n5GlobalNorm = n5GlobalDir.replace(/\\/g, "/").toLowerCase()
+    var n5GlobalReal = ""
+    try { n5GlobalReal = fs.realpathSync(n5GlobalDir).replace(/\\/g, "/").toLowerCase() } catch (n5e) {}
+    var n5Patterns = [".opencode/plugin", "opencode.json",
+      n5GlobalNorm + "/plugin", n5GlobalNorm + "/opencode.json"]
+    if (n5GlobalReal && n5GlobalReal !== n5GlobalNorm) {
+      n5Patterns.push(n5GlobalReal + "/plugin")
+      n5Patterns.push(n5GlobalReal + "/opencode.json")
+    }
+    for (var n5i = 0; n5i < n5Patterns.length; n5i++) {
+      if (n5Low.indexOf(n5Patterns[n5i]) !== -1 || n5LowOct.indexOf(n5Patterns[n5i]) !== -1) {
+        throw new Error(
+          "trackfw-guard: blocked — patch mentions a protected opencode path " +
+          "and cannot be safely verified (D4 self-protection)"
+        )
+      }
+    }
+
     var scannedKeys = {}
     var patchText = args.patchText != null ? args.patchText
       : (args.patch != null ? args.patch : null)
@@ -337,6 +425,24 @@ function selfProtect(tool, args, projectDir) {
         "trackfw-guard: blocked — patch/apply_patch with no recognizable target headers " +
         "cannot be verified and is not permitted (D4 fail-closed F5)"
       )
+    }
+
+    // N6 (ML-5I6-b): scan each resolved candidate string with the same mention
+    // needles (\ → /, lowercase). Catches candidates decoded by unquoteGitPath
+    // whose resolved path contains ".opencode/plugin" but whose z/ prefix defeated
+    // the directory-containment check below, as well as dot-segment forms
+    // (z/.opencode/./plugins/x) that resolve to a matching path even though the
+    // raw text does not contain ".opencode/plugin" verbatim.
+    for (var n6ci = 0; n6ci < candidates.length; n6ci++) {
+      var n6candLow = candidates[n6ci].replace(/\\/g, "/").toLowerCase()
+      for (var n6pi = 0; n6pi < n5Patterns.length; n6pi++) {
+        if (n6candLow.indexOf(n5Patterns[n6pi]) !== -1) {
+          throw new Error(
+            "trackfw-guard: blocked — patch path decodes to a protected opencode path " +
+            "and cannot be safely verified (D4 self-protection)"
+          )
+        }
+      }
     }
   } else if (candidates.length === 0) {
     return

@@ -346,9 +346,11 @@ vírgula final
 - [x] 5 braços novos (arm19–arm23) com FAIL antes / PASS depois; 23 braços PASS, 0 SKIP no Mac
 - [x] `make quality` — `MQ_RC=0` literal (apolo). Nota do zeus: o apolo editou este roadmap contra o handoff; conteúdo
   conferido e mantido.
-### ML-5I5 — Patch nega por menção ao caminho protegido (apolo-tf) — 🔄 In progress
-- [ ] residual do 5I4: `git apply -pN` remove qualquer prefixo, então reconhecer cabeçalho por cabeçalho não fecha. Regra nova:
+### ML-5I5 — Patch nega por menção ao caminho protegido (apolo-tf) — ✅ Done (+ ML-5I6: menção também nos caminhos
+decodificados e com octal decodificado — fecha `+++ "z/\056opencode/plugins/x.js"`)
+- [x] residual do 5I4: `git apply -pN` remove qualquer prefixo, então reconhecer cabeçalho por cabeçalho não fecha. Regra nova:
   `patch`/`apply_patch` cujo texto mencione, em qualquer posição e sem caixa, `.opencode/plugin`, `opencode.json` ou o diretório
   de config global (forma crua e `realpath`) → bloqueado, mesmo sem cabeçalho reconhecido
+- [x] 29 braços JS PASS no Mac, nenhum SKIP; `make quality` **MQ_RC=0 lido pelo zeus no log** (365 OK)
 ### ML-5H — prova real com o plugin do produto (KG) — ⬜ Pending — scripts prontos (`proof-product-mac.sh`,
 `proof-product-windows.ps1`, 7/7 por máquina); roda depois do ML-5I3 e de nova rodada do hades

@@ -283,6 +283,12 @@ plugin.setup(ctx).then(function() {
 //	arm10_patch_innocent_no_self_throw — patch targeting innocent file → no self-protection throw
 //	arm11_webfetch_secret_throws      — webfetch URL containing secret → credential guard → exit 1
 //	arm12_websearch_secret_throws     — websearch query containing secret → credential guard → exit 1
+//	arm24_mention_zpfx_throws         — +++ z/.opencode/plugins/x.js (git apply -pN bypass) → mention layer fires D4 → exit 1
+//	arm25_mention_mixedcase_throws    — +++ z/.OpenCode/Plugins/x.js (mixed case) → mention layer fires D4 → exit 1
+//	arm26_opencode_notes_no_throw     — patch touching src/opencode-notes.md → "opencode" substring, not a protected pattern → no throw
+//	arm27_octal_zprefix_throws        — +++ "z/\056opencode/plugins/x.js" (octal-encoded dot, z/ prefix) → D4 self-protection → exit 1
+//	arm28_octal_in_body_throws        — octal \056opencode in patch body (innocent header) → D4 from mention scan octal decode → exit 1
+//	arm29_global_dir_mention_throws   — patch body mentioning <OPENCODE_CONFIG_DIR>/plugins/x.js → global-dir pattern in mention scan → exit 1
 func TestOpenCodePlugin_JSRuntime(t *testing.T) {
 	nodeRuntime := findNodeRuntime()
 	if nodeRuntime == "" {
@@ -778,6 +784,140 @@ func TestOpenCodePlugin_JSRuntime(t *testing.T) {
 		// the unquoted/undecoded token does not resolve to a protected path).
 		if !strings.Contains(stderr, "D4 self-protection") {
 			t.Errorf("arm23: expected D4 self-protection in stderr (pre-fix gives ENOENT or fail-closed); got %q", stderr)
+		}
+	})
+
+	t.Run("arm24_mention_zpfx_throws", func(t *testing.T) {
+		// Conclusion: patch with "+++ z/.opencode/plugins/x.js" header → extractPatchTargets
+		// yields candidate "<projectDir>/z/.opencode/plugins/x.js" which is NOT under any
+		// protected dir (second layer misses it) — before fix: credential guard called, fake
+		// trackfw exits 0 → no throw (rc=0, bypass); after fix: mention layer finds
+		// ".opencode/plugin" in lowercased raw text and throws "D4 self-protection" (N5-ML5I5).
+		envNoTrackfw := nodeEnvNoTrackfw(secret)
+		patchText := "--- /dev/null\n+++ z/.opencode/plugins/x.js\n@@\n+var evil=1\n"
+		driver := makeV2Driver(pluginPath, projectDir, "patch",
+			fmt.Sprintf(`{ patchText: %q }`, patchText))
+		_, stderr, rc := runNodeDriver(t, nodeRuntime, driver, envNoTrackfw)
+		if rc == 0 {
+			t.Fatalf("arm24: expected D4 throw for patch with z/-prefixed plugin path; got rc=0 stderr=%q", stderr)
+		}
+		// Discriminator: D4 self-protection from mention layer (not ENOENT from credential guard).
+		if !strings.Contains(stderr, "D4 self-protection") {
+			t.Errorf("arm24: expected D4 self-protection in stderr (pre-fix: rc=0, bypass via z/ prefix); got %q", stderr)
+		}
+	})
+
+	t.Run("arm25_mention_mixedcase_throws", func(t *testing.T) {
+		// Conclusion: patch with "+++ z/.OpenCode/Plugins/x.js" header (mixed case, z/ prefix)
+		// → extractPatchTargets yields "<projectDir>/z/.OpenCode/Plugins/x.js"; the z/ prefix
+		// defeats directory protection (candidate not under .opencode/plugins/); on Linux the
+		// case mismatch also defeats isUnderDir — before fix: bypass (rc=0); after fix: mention
+		// layer lowercases the haystack and finds ".opencode/plugin" → "D4 self-protection" (N5-ML5I5).
+		envNoTrackfw := nodeEnvNoTrackfw(secret)
+		patchText := "--- /dev/null\n+++ z/.OpenCode/Plugins/x.js\n@@\n+var evil=1\n"
+		driver := makeV2Driver(pluginPath, projectDir, "patch",
+			fmt.Sprintf(`{ patchText: %q }`, patchText))
+		_, stderr, rc := runNodeDriver(t, nodeRuntime, driver, envNoTrackfw)
+		if rc == 0 {
+			t.Fatalf("arm25: expected D4 throw for patch with z/-prefixed mixed-case plugin path; got rc=0 stderr=%q", stderr)
+		}
+		// Discriminator: D4 self-protection from mention layer (not ENOENT from credential guard).
+		if !strings.Contains(stderr, "D4 self-protection") {
+			t.Errorf("arm25: expected D4 self-protection in stderr (pre-fix: rc=0 on all platforms via z/ bypass); got %q", stderr)
+		}
+	})
+
+	t.Run("arm26_opencode_notes_no_throw", func(t *testing.T) {
+		// Conclusion: patch whose headers and body mention "opencode" only as part of a
+		// filename (src/opencode-notes.md) but not any protected pattern
+		// (.opencode/plugin, opencode.json) → mention scan does not fire, selfProtect
+		// passes, guard called, fake trackfw exits 0 → no throw (N5-ML5I5 control).
+		captureFile := filepath.Join(t.TempDir(), "captured26.json")
+		envCapture := append(nodeEnv(fakeDir, secret), "TRACKFW_STDIN_CAPTURE="+captureFile)
+		patchText := "--- /dev/null\n+++ b/src/opencode-notes.md\n@@\n+# opencode notes\n"
+		driver := makeV2Driver(pluginPath, projectDir, "patch",
+			fmt.Sprintf(`{ patchText: %q }`, patchText))
+		stdout, stderr, rc := runNodeDriver(t, nodeRuntime, driver, envCapture)
+		_ = stdout
+		if rc != 0 {
+			t.Fatalf("arm26: expected no throw for patch touching src/opencode-notes.md; got rc=%d stderr=%q", rc, stderr)
+		}
+	})
+
+	t.Run("arm27_octal_zprefix_throws", func(t *testing.T) {
+		// Conclusion: patch with '+++ "z/\056opencode/plugins/x.js"' header — octal \056
+		// encodes '.' and the z/ prefix keeps the extracted candidate outside the protected
+		// dir after resolve — denied by either the mention-scan octal-decode layer or the
+		// decoded-candidate needle scan (N6-ML5I6).
+		//
+		// Before fix (ML-5I5 only): the mention scan replaces '\' → '/' giving '/056opencode'
+		// (no '.opencode/plugin' match), and the extracted candidate resolves to
+		// <projectDir>/z/.opencode/plugins/x.js which is NOT under the protected dir →
+		// credential guard called → fake trackfw exits 0 → rc=0 (bypass).
+		//
+		// After fix (ML-5I6): caught by either the second mention haystack (octal decoded) or
+		// the extracted-candidate needle scan → D4 self-protection → rc=1.
+		patchText := "--- /dev/null\n+++ \"z/\\056opencode/plugins/x.js\"\n@@\n+var evil=1\n"
+		driver := makeV2Driver(pluginPath, projectDir, "patch",
+			fmt.Sprintf(`{ patchText: %q }`, patchText))
+		_, stderr, rc := runNodeDriver(t, nodeRuntime, driver, nodeEnv(fakeDir, secret))
+		if rc == 0 {
+			t.Fatalf("arm27: FAIL before fix — expected D4 throw for octal z/-prefixed plugin path; got rc=0 stderr=%q", stderr)
+		}
+		// Discriminator: D4 self-protection (not ENOENT which is the pre-fix 5I5 behavior when
+		// credential guard is called on the bypass candidate and trackfw is absent).
+		if !strings.Contains(stderr, "D4 self-protection") {
+			t.Errorf("arm27: expected D4 self-protection in stderr; got %q", stderr)
+		}
+	})
+
+	t.Run("arm28_octal_in_body_throws", func(t *testing.T) {
+		// Conclusion: patch with an innocent header (src/main.go) and a body line containing
+		// '\056opencode/plugins/x.js' — the body line is not extracted by extractPatchTargets,
+		// so only the mention-scan octal-decode layer catches it (N6-ML5I6).
+		//
+		// Before fix: mention scan replaces '\' → '/' → '/056opencode' → no match → guard
+		// called on innocent candidate → fake trackfw exits 0 → rc=0 (bypass).
+		//
+		// After fix: mention scan also checks an octal-decoded haystack where \056 → '.' →
+		// '.opencode/plugin' match → D4 self-protection → rc=1.
+		patchText := "--- a/src/main.go\n+++ b/src/main.go\n@@\n+see \"\\056opencode/plugins/x.js\"\n"
+		driver := makeV2Driver(pluginPath, projectDir, "patch",
+			fmt.Sprintf(`{ patchText: %q }`, patchText))
+		_, stderr, rc := runNodeDriver(t, nodeRuntime, driver, nodeEnv(fakeDir, secret))
+		if rc == 0 {
+			t.Fatalf("arm28: FAIL before fix — expected D4 throw for octal in patch body; got rc=0 stderr=%q", stderr)
+		}
+		// Discriminator: D4 self-protection from mention layer (not ENOENT from guard).
+		if !strings.Contains(stderr, "D4 self-protection") {
+			t.Errorf("arm28: expected D4 self-protection in stderr; got %q", stderr)
+		}
+	})
+
+	t.Run("arm29_global_dir_mention_throws", func(t *testing.T) {
+		// Conclusion: when OPENCODE_CONFIG_DIR is set to a temp dir and the patch body
+		// mentions <configDir>/plugins/x.js (not in any recognized header), the mention
+		// scan fires the global-dir-qualified needle and throws D4 self-protection
+		// (global pattern armed in ML-5I6; pattern was present but untested since ML-5I5).
+		//
+		// This arm always PASSES on ML-5I5 code or later (the global pattern already exists
+		// in N5); it adds formal coverage for the code path.
+		globalDir := t.TempDir()
+		// Use native separator in the path to exercise backslash handling on Windows.
+		pluginMention := globalDir + string(filepath.Separator) + "plugins" + string(filepath.Separator) + "x.js"
+		// Innocent header so extraction doesn't catch the global dir; only mention scan fires.
+		patchText := "--- /dev/null\n+++ b/src/readme.md\n@@\n+install to " + pluginMention + "\n"
+		envGlobal := append(nodeEnvNoTrackfw(secret), "OPENCODE_CONFIG_DIR="+globalDir)
+		driver := makeV2Driver(pluginPath, projectDir, "patch",
+			fmt.Sprintf(`{ patchText: %q }`, patchText))
+		_, stderr, rc := runNodeDriver(t, nodeRuntime, driver, envGlobal)
+		if rc == 0 {
+			t.Fatalf("arm29: expected D4 throw for patch mentioning global config dir plugins; got rc=0 stderr=%q", stderr)
+		}
+		// Discriminator: D4 self-protection from mention scan (not ENOENT — trackfw absent but
+		// selfProtect fires first; arm exercises the global-dir needle added in N5-ML5I5).
+		if !strings.Contains(stderr, "D4 self-protection") {
+			t.Errorf("arm29: expected D4 self-protection in stderr (global-dir pattern); got %q", stderr)
 		}
 	})
 }
