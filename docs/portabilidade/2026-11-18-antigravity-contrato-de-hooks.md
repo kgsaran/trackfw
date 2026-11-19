@@ -1045,7 +1045,8 @@ Leituras:
 - **IDE 2.6.0 não lê `.agents/hooks.json`.** O bundle da IDE cita `.gemini/config` e nenhuma vez `.agents/hooks`; o
   `language_server` do App cita `.agents/hooks.json`. Para a IDE nessa versão, só o guard global protege
   (`trackfw update harness --targets antigravity-credential-guard`). A IDE mostrava "Restart to Update" durante o teste;
-  uma versão nova pode passar a ler o hook de projeto — não medido.
+  atualizada para a **2.7.0** (2026-11-19), a IDE repetiu: chave falsa passou só com o hook de projeto (`ide_secret.txt`
+  criado, 11.7.0 primeiro no PATH).
 - **Binário antigo no PATH vaza em silêncio.** Com o `trackfw` 11.5.0 do Homebrew primeiro no PATH, o App executou o
   comando com a chave: o 11.5.0 sai 0 para o payload do Antigravity (medido fora do App: 11.5.0 rc=0, 11.7.0 rc=2,
   mesmo payload, cwd `.agents/`). O hook só protege com trackfw ≥ a versão desta REQ.
