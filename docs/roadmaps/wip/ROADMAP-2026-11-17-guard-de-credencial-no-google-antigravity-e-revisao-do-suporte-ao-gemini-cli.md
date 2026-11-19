@@ -37,7 +37,7 @@ REQ: docs/req/REQ-2026-11-17-guard-de-credencial-no-google-antigravity-e-revisao
 - [ ] AC3 — ADR com o contrato do Antigravity e a decisão de legado do Gemini
 - [ ] AC4 — `init`/`update` gravam guard de credencial e de git-branch para o Antigravity (projeto e global) e
   `doctor`/`validate` auditam no mesmo caminho
-- [ ] AC5 — Antigravity real bloqueia um segredo fake e libera um comando inócuo, no Mac e no Windows
+- [x] AC5 — Antigravity real bloqueia um segredo fake e libera um comando inócuo, no Mac e no Windows (CLI `agy`; App/IDE no ML-1B)
 - [ ] AC6 — aviso de legado do Gemini CLI no `doctor`/`validate`
 - [ ] AC7 — `docs/cli-parity.md` e catálogo refletem o medido; `make quality` e CI verdes
 
@@ -196,6 +196,13 @@ sem BOM.
 - ML-4A — KG roda no Antigravity real — **CLI `agy`, App e IDE**, no Mac e no Windows — com
   `credential_guard.mode: block` explícito no `trackfw.yaml` do projeto de teste (o default de projeto pode ser warn):
   segredo fake bloqueado, comando inócuo liberado, `git push` para branch protegida bloqueado
+  - **CLI `agy` ✅ (2026-11-18, KG; `proof-mac.sh` e `proof-windows.ps1`, trackfw 11.7.0 da branch, 4/4 chamadas por
+    máquina):** Mac e Windows iguais — B1 segredo fake → `jsonhook__trackfw_PreToolUse_0_0` exit 2, marcador ausente;
+    B2 `echo hello` → DONE, marcador criado; B3 `git commit` cru → `PreToolUse_3_0` (guard de git-branch) exit 2,
+    `raw git commit blocked` no ndjson (Mac commits=1; no Windows o contador saiu vazio porque a VM não tinha identidade
+    git — corrigido no script, a evidência é o ndjson); B4 só o global `update harness` → segredo bloqueado. Nota: o
+    braço real foi `git commit`, não `git push`; o bloqueio de push para branch protegida tem teste de payload no ML-3A.
+  - **App e IDE ⬜** — pendente (item do ML-1B).
 - ML-4B — revisão de qualidade (hefesto-tf)
 - ML-4B — revisão do hefesto ✅ — APROVA COM NOTAS (`docs/qualidade/2026-11-18-ml-4b-antigravity-review.md`); A1 bloqueante
 - ML-4C — corretivo A1–A7 ✅ — `view_file` usa `AbsolutePath` literal (apóstrofo no nome dava falso negativo; o teste
