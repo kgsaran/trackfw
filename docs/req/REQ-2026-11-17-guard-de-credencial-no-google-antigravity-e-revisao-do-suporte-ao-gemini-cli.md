@@ -55,6 +55,7 @@ agente novo, e não comportamento de plataforma.
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->
 ADR: docs/adr/ADR-2026-11-18-guard-de-credencial-e-de-git-branch-no-google-antigravity-e-gemini-cli-como-legado.md
+ADR (Wave 5, OpenCode): docs/adr/ADR-2026-11-19-guard-do-trackfw-no-opencode-via-plugin.md
 
 ## Blocked by ADRs
 <!-- none -->

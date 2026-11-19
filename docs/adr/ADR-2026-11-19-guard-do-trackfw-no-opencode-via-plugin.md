@@ -1,0 +1,116 @@
+---
+status: Accepted
+date: 2026-11-19
+author: "zeus-tf (decisões do KG em 2026-11-19)"
+---
+
+# ADR: guard do trackfw no OpenCode via plugin
+
+> Date: 2026-11-19 | Status: Accepted
+
+## Context
+
+O OpenCode é o único alvo do catálogo sem guard (`internal/generators/hooks.go:16`; issue #691). Por isso, sob o
+OpenCode, `git commit` na `main` passa e um segredo no comando não é barrado. A REQ-2026-11-17 absorveu o caso na
+Wave 5, aplicando a Regra Dura de Causa Raiz (decisão do KG em 2026-11-19).
+
+O mecanismo é diferente dos outros CLIs. O OpenCode não tem hook JSON + shell: ele carrega plugins JS/TS que rodam no
+Bun. Fontes:
+- contrato: `docs/portabilidade/2026-11-19-opencode-contrato-de-plugin.md` (§1–§7 por fonte primária, §8 medido);
+- threat model: `docs/seguranca/2026-11-19-wave5-opencode-threat-model.md`.
+
+Medido no opencode **2.3.2**, no macOS e no Windows 11 ARM64, com o resultado igual nas duas máquinas (contrato §8):
+- `throw` no `tool.execute.before` bloqueia a ferramenta;
+- o plugin de projeto (`.opencode/plugins/`) e o global (`~/.config/opencode/plugins/`, no Windows
+  `%USERPROFILE%\.config\opencode\plugins\`) são carregados sem nenhuma config;
+- com `trackfw` fora do PATH, `spawnSync` dá `ENOENT`, e com `throw` nesse caso a ferramenta fica bloqueada;
+- `read` de um arquivo com segredo passa, porque os args da ferramenta só trazem o caminho;
+- `OPENCODE_CONFIG_PROJECT_DISABLE=1` desliga o plugin de projeto, e o global continua valendo;
+- o payload no formato `{tool_name, tool_input, cwd}` já é reconhecido pelos dois guards: rc=2 para chave fake,
+  `git commit`, `git add -A` e `git push`, e rc=0 para `ls` (medido sem modelo).
+
+**Pendente:** o braço C7, `git commit` real sob o OpenCode.
+
+## Decision
+
+**D1 — Um arquivo de plugin, gerado pelo Go.**
+- O conteúdo é `trackfw-guard.js`: CommonJS, sem dependência npm, embutido no binário com `go:embed`.
+- O arquivo começa com o marcador `// trackfw:opencode-guard`, que o `validate` e o `doctor` usam para reconhecer e
+  auditar. A única diferença entre projeto e global é a constante `SCOPE` (`"project"` ou `"global"`); fora isso, o
+  conteúdo é igual.
+- **A API suportada é a V2** (`setup`), que é a medida. O export V1 (`server`) continua no arquivo porque custa uma
+  função, mas é declarado **não medido** (decisão do KG, opção a). A doc não diz "suporta 1.x".
+
+**D2 — Como o plugin chama o guard.**
+- O plugin roda `spawnSync("trackfw", ["guard", <guard>, ...])` com argv, **nunca por shell** (aviso D18 do threat
+  model). O payload vai em JSON no stdin, com timeout de 30 s.
+- Ele bloqueia com `throw` se `result.error || result.status !== 0`, cobrindo `ENOENT`, timeout e sinal: falha fecha.
+  A mensagem do erro é o stderr do guard.
+- Com `SCOPE="global"`, o guard de credencial recebe `--global`.
+- O plugin não escreve log. O `TRACKFW_PROBE_LOG` era só da sonda.
+
+**D3 — Payload e cobertura.**
+- O payload é `{"hook_source":"opencode","tool_name":<nome>,"tool_input":<args, com "file_path" absoluto quando houver
+  caminho>,"cwd":<raiz absoluta do projeto>}`.
+
+| Ferramenta (V2 e V1) | Guard |
+|---|---|
+| `shell`, `bash` | credencial e git-branch |
+| `write`, `edit`, `patch`, `apply_patch` | credencial |
+| `read` | credencial |
+
+- No guard (Go), o `read` funciona como o `view_file` do Antigravity (ADR-2026-11-18 D5). A camada 2 lê
+  `tool_input.file_path` **somente** quando `hook_source == "opencode"` e `tool_name == "read"`. É checagem de schema
+  explícita, não prioridade de campo (lição do F1). O arquivo precisa ser regular e vale o mesmo limite de tamanho.
+  Isso fecha o gap medido no C4.
+
+**D4 — O agente não desliga o próprio guard (T7).**
+- O plugin nega `write`/`edit`/`patch`/`apply_patch` cujo alvo resolvido seja:
+  - o próprio arquivo de plugin (projeto ou global);
+  - `opencode.json` ou `opencode.jsonc` do projeto ou do global.
+- `.opencode/plugins/` e `opencode.json`/`opencode.jsonc` entram em `writeScopeSubagentFrozenRelPaths`, para que
+  subagentes do Claude não os editem. O write-scope continua só no Claude. Por isso o T13 (nomes em minúsculas) não
+  abre brecha aqui, já que o OpenCode não passa pelo write-scope.
+- Apagar o plugin por `shell` (`rm`) não é barrado: residual.
+
+**D5 — Geração e auditoria, no mesmo caminho.**
+- **Projeto:**
+  - `cliDetectors["opencode"]` detecta o diretório `.opencode/`;
+  - `InjectOpenCodePlugin(rootDir)` grava `.opencode/plugins/trackfw-guard.js` com `pathguard`;
+  - o teste `contra_opencode_still_skips` é invertido nesse mesmo ML.
+- **Global:**
+  - o alvo `opencode-guard` do `update harness` grava `<config>/plugins/trackfw-guard.js`;
+  - `<config>` é `OPENCODE_CONFIG_DIR` se definido, senão `XDG_CONFIG_HOME/opencode` se definido, senão
+    `<home>/.config/opencode`;
+  - `<home>` é `USERPROFILE` no Windows (medido) e `HOME` nos demais (`agentconfig.CLIOpenCode`);
+  - quando o arquivo falta, o `update harness` reporta **`missing`**. É o sinal que o #691 mostrou não existir.
+- **Auditoria:** `validate` e `doctor` auditam os mesmos dois caminhos. Arquivo ausente, sem o marcador ou diferente do
+  canônico gera a mesma severidade dos outros guards ausentes ou desatualizados.
+- `auditsurface.canonicalRuntimes` inclui o OpenCode.
+
+**D6 — O plugin de projeto pode ser desligado (C5).** O `doctor` informa quando há plugin de projeto e não há o global,
+e recomenda `trackfw update harness --targets opencode-guard`. Não entra regra no `validate`, porque ela dispararia
+para todo projeto sem global e viraria ruído.
+
+## Consequences
+
+- O OpenCode passa a ter guard de credencial e de git-branch, no projeto e no global, com `missing` visível.
+- O guard ganha um schema de payload, o `hook_source: opencode`. Os testes de schema das outras CLIs fixam que nada
+  muda para elas.
+
+**Residual:**
+- OpenCode 1.x (`opencode-ai`, API V1) não foi medido no binário.
+- MCP, `task` (subagente) e ferramentas de plugin de terceiro podem não passar pelo `execute.before` (T9, não medido).
+- `write`, `edit` e `patch` não foram medidos no binário.
+- `--pure` (1.x) e `OPENCODE_CONFIG_PROJECT_DISABLE=1` desligam o plugin de projeto. A proteção nesse caso é o global.
+- O `execute.after` não bloqueia na V2, então não há redação de saída.
+- O agente pode apagar o plugin por `shell`.
+
+## Alternatives Considered
+
+- **Plugin chamando o guard por shell** (`sh -c`/`cmd /c`): rejeitada. A linha poliglota aborta com `errexit`/`nounset`
+  herdados e falha aberta (D18).
+- **Plugin com `@opencode-ai/plugin` como dependência:** rejeitada, por supply chain (T11). O arquivo solto foi medido
+  e funciona.
+- **Regra de `validate` para projeto sem plugin global:** rejeitada, porque seria ruído. Fica só no `doctor`.
+- **Ligar o write-scope ao OpenCode:** fora desta REQ. Exigiria resolver os cinco pré-requisitos do T13.

@@ -285,5 +285,27 @@ opencode 2.3.2, Mac e Windows iguais, 6/6 cada (contrato §8): chave em `shell` 
 disparando; `trackfw` ausente → bloqueado (ENOENT); `read` com segredo liberado (gap); `OPENCODE_CONFIG_PROJECT_DISABLE=1`
 desliga o plugin de projeto; plugin global bloqueia sozinho. Dois runs anteriores no Mac (LM Studio desligado; `--log-level
 DEBUG` recusado pela 2.x) não mediram nada e foram descartados.
-### ML-5C — ADR (adendo ao ADR-2026-11-18 ou ADR próprio) — ⬜ Pending
-### ML-5D… — implementação, revisão (hefesto) e red team (hades) — ⬜ Pending, detalhados após o ML-5C
+### ML-5C — ADR — ✅ Done: `docs/adr/ADR-2026-11-19-guard-do-trackfw-no-opencode-via-plugin.md` (D1–D6). V1 (1.x) declarado
+residual, não medido (decisão do KG em 2026-11-19, opção a).
+
+### ML-5D — Guard em Go: `read` do OpenCode e caminhos congelados (apolo-tf; ADR D3, D4) — 🔄 In progress
+**Files affected:** `internal/guard/credential.go`, `internal/guard/payload.go` (só se preciso), `internal/guard/writescope.go`,
+testes em `internal/guard/` (arquivo novo `opencode_test.go`)
+- [ ] `hook_source=="opencode" && tool_name=="read"` → camada 2 lê `tool_input.file_path` (regular, mesmo limite): segredo → 2
+- [ ] contra-braços: o mesmo payload sem `hook_source`, ou com `tool_name` diferente → o arquivo NÃO é lido
+- [ ] `.opencode/plugins/`, `opencode.json` e `opencode.jsonc` congelados para subagentes
+- [ ] testes de schema das outras CLIs inalterados
+
+### ML-5E — Plugin, geração e auditoria (apolo-tf; ADR D1, D2, D4, D5, D6) — 🔄 In progress (∥ 5D, arquivos disjuntos)
+**Files affected:** asset novo do plugin em `internal/generators/` (go:embed), `internal/generators/hooks.go`, `agentfiles.go`,
+`update.go`, `antigravity_hooks_test.go` (inverter `contra_opencode_still_skips`), `internal/agentconfig/agentconfig.go`,
+`internal/validator/` (auditoria), `internal/commands/doctor.go`, `internal/integrations/`, `internal/auditsurface/`,
+`scripts/check-update-parity.sh`, `scripts/check-validate-rule-pins.sh` (se houver regra nova), `docs/cli-parity.md`
+- [ ] `init`/`update`/`agents install` com `.opencode/` gravam `.opencode/plugins/trackfw-guard.js`; `update harness
+  --targets opencode-guard` grava o global e reporta `missing` quando ausente
+- [ ] plugin: argv sem shell, `throw` em `error || status !== 0`, mapeamento de ferramentas do D3, autoproteção do D4,
+  sem log; teste sem modelo (node) para segredo/inócuo/ENOENT/autoproteção
+- [ ] `validate`/`doctor` auditam o mesmo caminho; `doctor` informa projeto sem global (D6)
+- [ ] `make quality` rc=0 (só no fim, depois do 5D)
+
+### ML-5F — Revisão (hefesto-tf) · ML-5G — red team (hades-tf) · ML-5H — prova real com o plugin do produto (KG) — ⬜ Pending
