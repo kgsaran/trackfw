@@ -97,6 +97,11 @@ function pathsEqual(a, b) {
 //   *** Move to:     <path>
 //   +++ <path>[\t<date>]
 //   --- <path>[\t<date>]   (skipped for /dev/null)
+//
+// N2: unified diff headers may carry an "a/" or "b/" prefix (git diff default).
+// Both the prefixed form and the stripped form are added as candidates — this
+// avoids overblocking patches targeting a real directory literally named "a/"
+// or "b/" while ensuring the stripped form is always checked.
 function extractPatchTargets(patchText, projectDir) {
   var targets = []
   var lines = patchText.split(/\r?\n/)
@@ -110,7 +115,12 @@ function extractPatchTargets(patchText, projectDir) {
       // Unified diff header — skip /dev/null
       var p = m[1].trim()
       if (p !== "/dev/null" && p !== "dev/null") {
+        // N2: add the raw form (handles real dirs named "a/" or "b/")
         targets.push(nodePath.resolve(projectDir, p))
+        // N2: also add the a/b-stripped form (the path apply_patch actually writes)
+        if (/^[ab]\//.test(p)) {
+          targets.push(nodePath.resolve(projectDir, p.slice(2)))
+        }
       }
     }
   }
@@ -150,52 +160,91 @@ function globalOpenCodeConfigDir() {
 //   - Any file under <globalDir>/plugins/ or <globalDir>/plugin/
 //   - Protected config files: opencode.json / opencode.jsonc (project + global)
 //
-// Candidates are collected from args.filePath ?? args.path (F7) and from
-// patch/apply_patch headers in args.patchText (A7/F5). Comparison uses
-// realpathOrParent for symlink resolution (F2/F8) and is case-insensitive on
-// darwin and win32 (F2).
+// N1: protectedDirs and protectedFiles are resolved via realpathOrParent so that
+// a symlinked projectDir or OPENCODE_CONFIG_DIR (e.g. dotfile manager pattern
+// ~/.config → /data/config) does not create a bypass.
+//
+// F7: candidates are collected from ALL present path fields (filePath, path,
+// file_path, file) — not just the first non-null one — to close the reversed-
+// field bypass ({filePath:"innocuous", path:"plugin"} → ALLOW in prior code).
+//
+// A7/F5: targets are extracted from patch/apply_patch headers. When no targets
+// can be extracted from any string field, the call is fail-closed (throw) rather
+// than pass-through — a patch/apply_patch with no recognizable headers cannot
+// be verified and must not proceed (F5 fail-closed).
+//
+// Comparison uses realpathOrParent for symlink resolution (F2/F8) and is
+// case-insensitive on darwin and win32 (F2).
 function selfProtect(tool, args, projectDir) {
   if (!FILE_WRITE_TOOLS.has(tool)) {
     return
   }
 
-  // F7: uniform field precedence filePath ?? path
-  var rawTarget = args.filePath != null ? args.filePath
-    : (args.path != null ? args.path : null)
-
-  // Collect all candidates
+  // F7: collect ALL present path fields as candidates (not just filePath ?? path).
+  var pathFieldNames = ["filePath", "path", "file_path", "file"]
   var candidates = []
-  if (rawTarget) {
-    candidates.push(nodePath.resolve(projectDir, rawTarget))
-  }
-
-  // A7/F5: extract targets from patch/apply_patch headers
-  var patchText = args.patchText != null ? args.patchText
-    : (args.patch != null ? args.patch : null)
-  if ((tool === "patch" || tool === "apply_patch") && patchText) {
-    var patchTargets = extractPatchTargets(patchText, projectDir)
-    for (var pi = 0; pi < patchTargets.length; pi++) {
-      candidates.push(patchTargets[pi])
+  for (var pfi = 0; pfi < pathFieldNames.length; pfi++) {
+    var v = args[pathFieldNames[pfi]]
+    if (v != null && typeof v === "string") {
+      candidates.push(nodePath.resolve(projectDir, v))
     }
   }
 
-  if (candidates.length === 0) {
+  // A7/F5: extract targets from patch/apply_patch headers.
+  // Scan patchText and patch first (the canonical fields), then every remaining
+  // string-valued own field — covers non-standard field names like "diff".
+  if (tool === "patch" || tool === "apply_patch") {
+    var scannedKeys = {}
+    var patchText = args.patchText != null ? args.patchText
+      : (args.patch != null ? args.patch : null)
+    if (patchText) {
+      scannedKeys["patchText"] = true
+      scannedKeys["patch"] = true
+      var patchTargets = extractPatchTargets(patchText, projectDir)
+      for (var pi = 0; pi < patchTargets.length; pi++) {
+        candidates.push(patchTargets[pi])
+      }
+    }
+    // Scan all remaining string fields not already scanned and not path fields.
+    var knownPathKeys = {"filePath": true, "path": true, "file_path": true, "file": true}
+    for (var k in args) {
+      if (Object.prototype.hasOwnProperty.call(args, k) &&
+          typeof args[k] === "string" &&
+          !scannedKeys[k] &&
+          !knownPathKeys[k]) {
+        var extra = extractPatchTargets(args[k], projectDir)
+        for (var ei = 0; ei < extra.length; ei++) {
+          candidates.push(extra[ei])
+        }
+      }
+    }
+    // F5: fail-closed — patch/apply_patch with no extractable targets is not permitted.
+    if (candidates.length === 0) {
+      throw new Error(
+        "trackfw-guard: blocked — patch/apply_patch with no recognizable target headers " +
+        "cannot be verified and is not permitted (D4 fail-closed F5)"
+      )
+    }
+  } else if (candidates.length === 0) {
     return
   }
 
   var globalDir = globalOpenCodeConfigDir()
 
-  // Protected directories: any write under these is denied (F4)
-  var protectedDirs = [
+  // Protected directories: any write under these is denied (F4).
+  // N1: resolved via realpathOrParent so symlinked dirs (dotfile managers, etc.)
+  // do not create a bypass.
+  var rawProtectedDirs = [
     nodePath.dirname(realpathOrParent(__filename)),
     nodePath.resolve(projectDir, ".opencode", "plugins"),
     nodePath.resolve(projectDir, ".opencode", "plugin"),
     nodePath.resolve(globalDir, "plugins"),
     nodePath.resolve(globalDir, "plugin"),
   ]
+  var resolvedDirs = rawProtectedDirs.map(function(d) { return realpathOrParent(d) })
 
-  // Protected config files
-  var protectedFiles = [
+  // Protected config files — also resolved via realpathOrParent (N1).
+  var rawProtectedFiles = [
     nodePath.resolve(globalDir, "opencode.json"),
     nodePath.resolve(globalDir, "opencode.jsonc"),
     nodePath.resolve(projectDir, "opencode.json"),
@@ -203,13 +252,14 @@ function selfProtect(tool, args, projectDir) {
     nodePath.resolve(projectDir, ".opencode", "opencode.json"),
     nodePath.resolve(projectDir, ".opencode", "opencode.jsonc"),
   ]
+  var resolvedFiles = rawProtectedFiles.map(function(f) { return realpathOrParent(f) })
 
   for (var ci = 0; ci < candidates.length; ci++) {
     var realC = realpathOrParent(candidates[ci])
 
     // Check protected directories (F4)
-    for (var di = 0; di < protectedDirs.length; di++) {
-      if (isUnderDir(realC, protectedDirs[di])) {
+    for (var di = 0; di < resolvedDirs.length; di++) {
+      if (isUnderDir(realC, resolvedDirs[di])) {
         throw new Error(
           "trackfw-guard: blocked — write to opencode plugin file is not permitted (D4 self-protection)"
         )
@@ -217,8 +267,8 @@ function selfProtect(tool, args, projectDir) {
     }
 
     // Check protected config files
-    for (var fi = 0; fi < protectedFiles.length; fi++) {
-      if (pathsEqual(realC, protectedFiles[fi])) {
+    for (var fi = 0; fi < resolvedFiles.length; fi++) {
+      if (pathsEqual(realC, resolvedFiles[fi])) {
         throw new Error(
           "trackfw-guard: blocked — write to opencode config file is not permitted (D4 self-protection)"
         )

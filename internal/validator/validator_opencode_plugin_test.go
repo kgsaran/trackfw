@@ -471,3 +471,148 @@ func TestOpenCodePlugin_ValidateForTest_Absent_IsWarning(t *testing.T) {
 		t.Errorf("expected opencode plugin absent warning in warnings slice; warnings=%v", warnings)
 	}
 }
+
+// --------------------------------------------------------------------------
+// N3: global plugins/ and opencode.json(c) sibling/key detection (ML-5I3)
+// --------------------------------------------------------------------------
+
+// TestOpenCodePlugin_GlobalSiblingJS_Warns asserts that an unexpected .js file in
+// the global OpenCode plugins directory triggers a warning (N3: warnSiblingPluginFiles
+// must inspect the global dir via the resolver).
+//
+// Conclusion: warnSiblingPluginFiles detects unexpected .js siblings in the
+// global opencode plugins/ dir and returns a warning (N3 fix).
+func TestOpenCodePlugin_GlobalSiblingJS_Warns(t *testing.T) {
+	projectDir := t.TempDir()
+	writeOpenCodeDir(t, projectDir)
+	writeCanonicalPlugin(t, projectDir)
+
+	globalConfigDir := t.TempDir()
+	t.Setenv("OPENCODE_CONFIG_DIR", globalConfigDir)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	// Write an unexpected .js sibling in the global plugins dir.
+	globalPluginDir := filepath.Join(globalConfigDir, "plugins")
+	if err := os.MkdirAll(globalPluginDir, 0755); err != nil {
+		t.Fatalf("MkdirAll global plugins dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(globalPluginDir, "evil.js"), []byte("var evil=1"), 0644); err != nil {
+		t.Fatalf("write evil.js: %v", err)
+	}
+
+	r := isolatedResolver(t)
+	msgs := validator.ValidateOpenCodePluginWarningsWithForTest(projectDir, r)
+	found := false
+	for _, m := range msgs {
+		if strings.Contains(m, "evil.js") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected global sibling warning for evil.js; got: %v", msgs)
+	}
+}
+
+// TestOpenCodePlugin_GlobalConfigPluginsKey_Warns asserts that a "plugins" key in the
+// global opencode.json triggers a warning (N3: warnOpenCodeConfigKeys must inspect
+// the global config file).
+//
+// Conclusion: warnOpenCodeConfigKeys detects "plugins" key in global opencode.json
+// and returns a warning (N3 fix).
+func TestOpenCodePlugin_GlobalConfigPluginsKey_Warns(t *testing.T) {
+	projectDir := t.TempDir()
+	writeOpenCodeDir(t, projectDir)
+	writeCanonicalPlugin(t, projectDir)
+
+	globalConfigDir := t.TempDir()
+	t.Setenv("OPENCODE_CONFIG_DIR", globalConfigDir)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	// Write global opencode.json with a "plugins" key.
+	cfg := `{"plugins": ["/tmp/evil.js"]}`
+	if err := os.WriteFile(filepath.Join(globalConfigDir, "opencode.json"), []byte(cfg), 0644); err != nil {
+		t.Fatalf("write global opencode.json: %v", err)
+	}
+
+	r := isolatedResolver(t)
+	msgs := validator.ValidateOpenCodePluginWarningsWithForTest(projectDir, r)
+	found := false
+	for _, m := range msgs {
+		if strings.Contains(m, "plugins") && strings.Contains(m, "opencode.json") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected global opencode.json plugins-key warning; got: %v", msgs)
+	}
+}
+
+// --------------------------------------------------------------------------
+// N4: JSONC block comment and trailing comma support (ML-5I3)
+// --------------------------------------------------------------------------
+
+// TestOpenCodePlugin_JSONCBlockComment_Warns asserts that opencode.jsonc with a /* */
+// block comment is parsed correctly and the "plugins" key is detected.
+//
+// Conclusion: stripJSONCLineComments strips /* */ block comments so json.Unmarshal
+// succeeds and the "plugins" key is detected (N4 fix).
+func TestOpenCodePlugin_JSONCBlockComment_Warns(t *testing.T) {
+	t.Setenv("OPENCODE_CONFIG_DIR", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	projectDir := t.TempDir()
+	r := isolatedResolver(t)
+	writeOpenCodeDir(t, projectDir)
+	writeCanonicalPlugin(t, projectDir)
+
+	// opencode.jsonc with a block comment containing the plugins key.
+	cfg := "/* global config */\n{\"plugins\": [\"/tmp/evil.js\"]}\n"
+	if err := os.WriteFile(filepath.Join(projectDir, "opencode.jsonc"), []byte(cfg), 0644); err != nil {
+		t.Fatalf("write opencode.jsonc: %v", err)
+	}
+
+	msgs := validator.ValidateOpenCodePluginWarningsWithForTest(projectDir, r)
+	found := false
+	for _, m := range msgs {
+		if strings.Contains(m, "plugins") && strings.Contains(m, "opencode.jsonc") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected block-comment JSONC warning for plugins key; got: %v", msgs)
+	}
+}
+
+// TestOpenCodePlugin_JSONCTrailingComma_Warns asserts that opencode.jsonc with a
+// trailing comma before } is parsed correctly and the "plugins" key is detected.
+//
+// Conclusion: stripJSONCLineComments (enhanced) removes trailing commas so
+// json.Unmarshal succeeds and the "plugins" key is detected (N4 fix).
+func TestOpenCodePlugin_JSONCTrailingComma_Warns(t *testing.T) {
+	t.Setenv("OPENCODE_CONFIG_DIR", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	projectDir := t.TempDir()
+	r := isolatedResolver(t)
+	writeOpenCodeDir(t, projectDir)
+	writeCanonicalPlugin(t, projectDir)
+
+	// opencode.jsonc with trailing comma before closing brace.
+	cfg := "{\"plugins\": [\"/tmp/evil.js\"], }\n"
+	if err := os.WriteFile(filepath.Join(projectDir, "opencode.jsonc"), []byte(cfg), 0644); err != nil {
+		t.Fatalf("write opencode.jsonc with trailing comma: %v", err)
+	}
+
+	msgs := validator.ValidateOpenCodePluginWarningsWithForTest(projectDir, r)
+	found := false
+	for _, m := range msgs {
+		if strings.Contains(m, "plugins") && strings.Contains(m, "opencode.jsonc") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected trailing-comma JSONC warning for plugins key; got: %v", msgs)
+	}
+}

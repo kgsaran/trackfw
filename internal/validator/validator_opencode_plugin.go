@@ -46,7 +46,9 @@ const openCodeDirRelPath = ".opencode"
 
 // validateOpenCodePluginWarningsWith is the resolver-injectable entry point.
 // It checks the project-scoped plugin under root using the given CLIHomeResolver.
-func validateOpenCodePluginWarningsWith(root string, _ agentconfig.CLIHomeResolver) ([]string, error) {
+// N3: the resolver is now used (not discarded) to also inspect the global
+// OpenCode config directory for sibling plugin files and plugin config keys.
+func validateOpenCodePluginWarningsWith(root string, r agentconfig.CLIHomeResolver) ([]string, error) {
 	// Condition: .opencode/ must be a directory — otherwise OpenCode is not in use here.
 	opencodeDir := filepath.Join(root, openCodeDirRelPath)
 	fi, err := os.Stat(opencodeDir)
@@ -101,11 +103,14 @@ func validateOpenCodePluginWarningsWith(root string, _ agentconfig.CLIHomeResolv
 		}
 	}
 
-	// F4 fix b: warn on sibling JS/TS/MJS/CJS files in plugin dirs.
-	warns = append(warns, warnSiblingPluginFiles(root)...)
+	// N3: resolve the global OpenCode config directory; "" means unresolvable — skip.
+	globalDir, _ := agentconfig.OpenCodeConfigDir(r)
 
-	// F4 fix b: warn on "plugin" or "plugins" keys in opencode.json(c).
-	warns = append(warns, warnOpenCodeConfigKeys(root)...)
+	// F4 fix b + N3: warn on sibling JS/TS/MJS/CJS files in project and global plugin dirs.
+	warns = append(warns, warnSiblingPluginFiles(root, globalDir)...)
+
+	// F4 fix b + N3: warn on "plugin" or "plugins" keys in project and global opencode.json(c).
+	warns = append(warns, warnOpenCodeConfigKeys(root, globalDir)...)
 
 	if len(warns) == 0 {
 		return nil, nil
@@ -114,25 +119,40 @@ func validateOpenCodePluginWarningsWith(root string, _ agentconfig.CLIHomeResolv
 }
 
 // warnSiblingPluginFiles returns warnings for any .js/.ts/.mjs/.cjs file in
-// .opencode/plugins/ or .opencode/plugin/ that is NOT trackfw-guard.js (D7 F4 fix b).
-func warnSiblingPluginFiles(root string) []string {
-	var warns []string
-	pluginDirs := []string{
-		filepath.Join(root, ".opencode", "plugins"),
-		filepath.Join(root, ".opencode", "plugin"),
+// plugin directories that is NOT trackfw-guard.js (D7 F4 fix b, N3).
+//
+// Project dirs checked: .opencode/plugins/ and .opencode/plugin/ under root.
+// Global dirs checked (N3): <globalDir>/plugins/ and <globalDir>/plugin/ when
+// globalDir is non-empty. When global dirs match the project dirs (unusual),
+// the entry is reported once.
+func warnSiblingPluginFiles(root, globalDir string) []string {
+	type dirEntry struct {
+		dir   string
+		label string // display label used in warning message
 	}
+	dirs := []dirEntry{
+		{filepath.Join(root, ".opencode", "plugins"), ".opencode/plugins"},
+		{filepath.Join(root, ".opencode", "plugin"), ".opencode/plugin"},
+	}
+	if globalDir != "" {
+		dirs = append(dirs,
+			dirEntry{filepath.Join(globalDir, "plugins"), "global opencode plugins/"},
+			dirEntry{filepath.Join(globalDir, "plugin"), "global opencode plugin/"},
+		)
+	}
+
 	scriptExts := map[string]bool{
 		".js":  true,
 		".ts":  true,
 		".mjs": true,
 		".cjs": true,
 	}
-	for _, dir := range pluginDirs {
-		entries, dirErr := os.ReadDir(dir)
+	var warns []string
+	for _, de := range dirs {
+		entries, dirErr := os.ReadDir(de.dir)
 		if dirErr != nil {
 			continue // dir absent or not readable — silent
 		}
-		rel := filepath.Base(dir) // "plugins" or "plugin"
 		for _, e := range entries {
 			if e.IsDir() {
 				continue
@@ -143,9 +163,9 @@ func warnSiblingPluginFiles(root string) []string {
 			}
 			if scriptExts[strings.ToLower(filepath.Ext(name))] {
 				warns = append(warns, fmt.Sprintf(
-					"unexpected plugin script .opencode/%s/%s — only trackfw-guard.js is expected; "+
+					"unexpected plugin script in %s%s — only trackfw-guard.js is expected; "+
 						"remove or verify this file is intentional",
-					rel, name,
+					de.label, name,
 				))
 			}
 		}
@@ -154,19 +174,33 @@ func warnSiblingPluginFiles(root string) []string {
 }
 
 // warnOpenCodeConfigKeys returns warnings when opencode.json or opencode.jsonc
-// (project root or .opencode/) contains a top-level "plugin" or "plugins" key
-// (D7 F4 fix b). The parse is JSONC-tolerant (strips // line comments before
-// unmarshalling so comment-annotated config files are handled correctly).
-func warnOpenCodeConfigKeys(root string) []string {
+// contains a top-level "plugin" or "plugins" key (D7 F4 fix b, N3).
+//
+// Project candidates: opencode.json(c) at the project root and under .opencode/.
+// Global candidates (N3): opencode.json(c) directly under globalDir when globalDir
+// is non-empty. The parse is JSONC-tolerant: stripJSONCLineComments strips //
+// line comments and /* */ block comments (N4), and trailing commas before }/] are
+// removed (N4) before json.Unmarshal, so comment-annotated JSONC files are handled.
+func warnOpenCodeConfigKeys(root, globalDir string) []string {
 	var warns []string
-	candidates := []string{
-		filepath.Join(root, "opencode.json"),
-		filepath.Join(root, "opencode.jsonc"),
-		filepath.Join(root, ".opencode", "opencode.json"),
-		filepath.Join(root, ".opencode", "opencode.jsonc"),
+	type candidate struct {
+		path    string
+		display string // path shown in the warning (relative to root when possible)
 	}
-	for _, path := range candidates {
-		raw, err := readRegularFile(path)
+	candidates := []candidate{
+		{filepath.Join(root, "opencode.json"), ""},
+		{filepath.Join(root, "opencode.jsonc"), ""},
+		{filepath.Join(root, ".opencode", "opencode.json"), ""},
+		{filepath.Join(root, ".opencode", "opencode.jsonc"), ""},
+	}
+	if globalDir != "" {
+		candidates = append(candidates,
+			candidate{filepath.Join(globalDir, "opencode.json"), filepath.Join(globalDir, "opencode.json")},
+			candidate{filepath.Join(globalDir, "opencode.jsonc"), filepath.Join(globalDir, "opencode.jsonc")},
+		)
+	}
+	for _, c := range candidates {
+		raw, err := readRegularFile(c.path)
 		if err != nil {
 			continue
 		}
@@ -175,15 +209,20 @@ func warnOpenCodeConfigKeys(root string) []string {
 		if err := json.Unmarshal(stripped, &obj); err != nil {
 			continue // malformed — not our problem here
 		}
-		rel, relErr := filepath.Rel(root, path)
-		if relErr != nil {
-			rel = path
+		display := c.display
+		if display == "" {
+			rel, relErr := filepath.Rel(root, c.path)
+			if relErr != nil {
+				display = c.path
+			} else {
+				display = rel
+			}
 		}
 		for _, key := range []string{"plugin", "plugins"} {
 			if _, ok := obj[key]; ok {
 				warns = append(warns, fmt.Sprintf(
 					"%s contains a %q key — plugin loading should use the trackfw-managed %s",
-					rel, key, opencodeplugin.PluginRelPath,
+					display, key, opencodeplugin.PluginRelPath,
 				))
 			}
 		}
@@ -191,11 +230,17 @@ func warnOpenCodeConfigKeys(root string) []string {
 	return warns
 }
 
-// stripJSONCLineComments removes // line comments from JSONC content.
-// It handles string literals correctly (skips // inside quoted strings) but
-// does not handle block comments or multi-line strings — sufficient for
-// opencode.json(c) which uses only single-line // comments.
+// stripJSONCLineComments removes comments and trailing commas from JSONC content
+// to produce valid JSON that json.Unmarshal can parse. It handles:
+//   - // line comments (outside strings): stripped to end of line.
+//   - /* */ block comments (outside strings, N4): stripped entirely.
+//   - Trailing commas before } or ] (N4): removed so JSONC-with-trailing-commas
+//     parses correctly. The removal is applied after comment stripping.
+//
+// String literals are handled correctly: comment markers and commas inside
+// quoted strings are not treated as JSONC syntax.
 func stripJSONCLineComments(data []byte) []byte {
+	// Pass 1: strip // and /* */ comments outside string literals.
 	out := make([]byte, 0, len(data))
 	inStr := false
 	for i := 0; i < len(data); i++ {
@@ -215,19 +260,56 @@ func stripJSONCLineComments(data []byte) []byte {
 			out = append(out, c)
 			continue
 		}
-		if c == '/' && i+1 < len(data) && data[i+1] == '/' {
-			// Skip until end of line (keep the newline).
-			for i < len(data) && data[i] != '\n' {
-				i++
+		if c == '/' && i+1 < len(data) {
+			if data[i+1] == '/' {
+				// Line comment: skip until end of line (preserve the newline).
+				for i < len(data) && data[i] != '\n' {
+					i++
+				}
+				if i < len(data) {
+					out = append(out, '\n')
+				}
+				continue
 			}
-			if i < len(data) {
-				out = append(out, '\n')
+			if data[i+1] == '*' {
+				// Block comment (N4): skip until closing */.
+				i += 2
+				for i < len(data) {
+					if data[i] == '*' && i+1 < len(data) && data[i+1] == '/' {
+						i += 2
+						break
+					}
+					i++
+				}
+				i-- // outer loop will i++ to the char after the block comment
+				continue
 			}
-			continue
 		}
 		out = append(out, c)
 	}
-	return out
+
+	// Pass 2: remove trailing commas before } or ] (N4).
+	// We scan the comment-stripped output; at this point there are no JSONC
+	// comments, so the only commas we care about are real JSON commas.
+	// We use a simple string-unaware pass: a comma followed by optional
+	// whitespace and then } or ] is a trailing comma. This is safe because
+	// valid JSON does not have ,\s*[}\]] inside string values.
+	result := make([]byte, 0, len(out))
+	for i := 0; i < len(out); i++ {
+		if out[i] == ',' {
+			// Look ahead past whitespace.
+			j := i + 1
+			for j < len(out) && (out[j] == ' ' || out[j] == '\t' || out[j] == '\n' || out[j] == '\r') {
+				j++
+			}
+			if j < len(out) && (out[j] == '}' || out[j] == ']') {
+				// Trailing comma — skip it.
+				continue
+			}
+		}
+		result = append(result, out[i])
+	}
+	return result
 }
 
 // validateOpenCodePluginWarnings is the production entry point (DefaultResolver).

@@ -333,8 +333,12 @@ guard); F1, F3, F5, F7 baixos; VS residual
 N1 (diretórios protegidos sem `realpath` — symlink de dotfiles), N2 (`a/`/`b/` do diff git escapa), N3 (`validate` não olha o
 global — o D7 do ADR afirmava que olhava); baixos: F5 patch sem cabeçalho libera, F7 campos invertidos, N4 JSONC `/* */` e
 vírgula final
-### ML-5I3 — Corretivo da rodada 2 (apolo-tf) — 🔄 In progress
-- [ ] N1, N2, N3 com teste que reprova antes; F5 fail-closed; F7 checa todos os campos de caminho; N4 JSONC completo
-- [ ] `make quality` rc=0 lido no log
+### ML-5I3 — Corretivo da rodada 2 (apolo-tf) — ✅ Done
+- [x] N1, N2, N3 com teste que reprova antes; F5 fail-closed; F7 checa todos os campos de caminho; N4 JSONC completo
+  (18 braços JS PASS no Mac, nenhum SKIP; 4 testes Go novos conferidos pelo nome — zeus)
+- [x] `make quality` — `MQ_RC=0` literal reportado pelo apolo; o zeus roda de novo após o ML-5I4
+### ML-5I4 — Cabeçalhos git de renomeação/cópia no extrator de patch (apolo-tf) — 🔄 In progress
+- [ ] `diff --git a/X b/Y`, `rename from/to`, `copy from/to` viram alvos; patch misto (`+++` inócuo + rename para
+  `.opencode/plugins/`) → bloqueado. Achado do zeus na auditoria do 5I3 (o apolo o listou como residual)
 ### ML-5H — prova real com o plugin do produto (KG) — ⬜ Pending — scripts prontos (`proof-product-mac.sh`,
 `proof-product-windows.ps1`, 7/7 por máquina); roda depois do ML-5I3 e de nova rodada do hades

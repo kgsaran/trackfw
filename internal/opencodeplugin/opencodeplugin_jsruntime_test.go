@@ -551,4 +551,128 @@ func TestOpenCodePlugin_JSRuntime(t *testing.T) {
 			t.Errorf("arm12: threw ENOENT instead of guard block; stderr=%q", stderr)
 		}
 	})
+
+	t.Run("arm13_symlink_projectdir_throws", func(t *testing.T) {
+		// Conclusion: when projectDir is a symlink, selfProtect resolves protectedFiles/Dirs
+		// via realpathOrParent so a write targeting the REAL path is still blocked (N1 fix).
+		realProjectDirRaw := t.TempDir()
+		realProjectDir, err := filepath.EvalSymlinks(realProjectDirRaw)
+		if err != nil {
+			t.Fatalf("EvalSymlinks(realProjectDir): %v", err)
+		}
+		symlinkProjectDir := filepath.Join(t.TempDir(), "link-to-proj")
+		if !symlinkOrSkip(t, realProjectDir, symlinkProjectDir) {
+			return
+		}
+		envNoTrackfw := nodeEnvNoTrackfw(secret)
+		// Target is the REAL opencode.json (not via symlink) — bypasses if protectedFiles not resolved.
+		realTarget := filepath.Join(realProjectDir, "opencode.json")
+		driver := makeV2Driver(pluginPath, symlinkProjectDir, "write",
+			fmt.Sprintf(`{ path: %q }`, realTarget))
+		_, stderr, rc := runNodeDriver(t, nodeRuntime, driver, envNoTrackfw)
+		if rc == 0 {
+			t.Fatalf("arm13: expected D4 throw for write to real opencode.json via symlinked projectDir; got rc=0 stderr=%q", stderr)
+		}
+		// Discriminator: D4 self-protection message, not ENOENT.
+		if !strings.Contains(stderr, "D4 self-protection") {
+			t.Errorf("arm13: expected D4 self-protection in stderr (not ENOENT); got %q", stderr)
+		}
+	})
+
+	t.Run("arm14_symlink_globalconfigdir_throws", func(t *testing.T) {
+		// Conclusion: when OPENCODE_CONFIG_DIR is a symlink (dotfile manager pattern),
+		// selfProtect resolves protectedDirs via realpathOrParent so a write to the REAL
+		// global plugins path is still blocked (N1 fix, Site 2).
+		realConfigDirRaw := t.TempDir()
+		realConfigDir, err := filepath.EvalSymlinks(realConfigDirRaw)
+		if err != nil {
+			t.Fatalf("EvalSymlinks(realConfigDir): %v", err)
+		}
+		symlinkConfigDir := filepath.Join(t.TempDir(), "link-to-cfg")
+		if !symlinkOrSkip(t, realConfigDir, symlinkConfigDir) {
+			return
+		}
+		envNoTrackfw := nodeEnvNoTrackfw(secret)
+		// Add OPENCODE_CONFIG_DIR pointing to the SYMLINK dir.
+		envNoTrackfw = append(envNoTrackfw, "OPENCODE_CONFIG_DIR="+symlinkConfigDir)
+		// Target is the REAL plugins path (not via symlink) — bypasses if protectedDirs not resolved.
+		realTarget := filepath.Join(realConfigDir, "plugins", "evil.js")
+		driver := makeV2Driver(pluginPath, projectDir, "write",
+			fmt.Sprintf(`{ path: %q }`, realTarget))
+		_, stderr, rc := runNodeDriver(t, nodeRuntime, driver, envNoTrackfw)
+		if rc == 0 {
+			t.Fatalf("arm14: expected D4 throw for write to real global plugins via symlinked OPENCODE_CONFIG_DIR; got rc=0 stderr=%q", stderr)
+		}
+		// Discriminator: D4 self-protection message, not ENOENT.
+		if !strings.Contains(stderr, "D4 self-protection") {
+			t.Errorf("arm14: expected D4 self-protection in stderr (not ENOENT); got %q", stderr)
+		}
+	})
+
+	t.Run("arm15_patch_ab_prefix_throws", func(t *testing.T) {
+		// Conclusion: patch with unified diff header "+++ b/.opencode/plugins/evil.js" →
+		// extractPatchTargets strips the b/ prefix, resolves to protected plugin dir →
+		// D4 self-protection throws (N2 fix).
+		envNoTrackfw := nodeEnvNoTrackfw(secret)
+		patchText := "--- /dev/null\n+++ b/.opencode/plugins/evil.js\n@@\n+var evil=1\n"
+		driver := makeV2Driver(pluginPath, projectDir, "patch",
+			fmt.Sprintf(`{ patchText: %q }`, patchText))
+		_, stderr, rc := runNodeDriver(t, nodeRuntime, driver, envNoTrackfw)
+		if rc == 0 {
+			t.Fatalf("arm15: expected D4 throw for patch with b/ prefix targeting plugins; got rc=0 stderr=%q", stderr)
+		}
+		// Discriminator: D4 self-protection, not ENOENT.
+		if !strings.Contains(stderr, "D4 self-protection") {
+			t.Errorf("arm15: expected D4 self-protection in stderr (not ENOENT); got %q", stderr)
+		}
+	})
+
+	t.Run("arm16_patch_ab_prefix_control_ok", func(t *testing.T) {
+		// Conclusion: patch with "+++ b/src/main.go" (innocuous path after prefix strip) →
+		// selfProtect passes, guard called, no throw — N2 fix does not over-block safe patches.
+		captureFile := filepath.Join(t.TempDir(), "captured16.json")
+		envCapture := append(nodeEnv(fakeDir, secret), "TRACKFW_STDIN_CAPTURE="+captureFile)
+		patchText := "--- a/src/main.go\n+++ b/src/main.go\n@@\n-old\n+new\n"
+		driver := makeV2Driver(pluginPath, projectDir, "patch",
+			fmt.Sprintf(`{ patchText: %q }`, patchText))
+		stdout, stderr, rc := runNodeDriver(t, nodeRuntime, driver, envCapture)
+		_ = stdout
+		if rc != 0 {
+			t.Fatalf("arm16: expected no throw for patch with b/src/main.go (innocuous); got rc=%d stderr=%q", rc, stderr)
+		}
+	})
+
+	t.Run("arm17_all_pathfields_checked", func(t *testing.T) {
+		// Conclusion: payload with filePath="innocuous.txt" and path=".opencode/plugins/evil.js" →
+		// selfProtect checks ALL path fields, finds the protected path, throws D4 (F7 fix).
+		envNoTrackfw := nodeEnvNoTrackfw(secret)
+		driver := makeV2Driver(pluginPath, projectDir, "write",
+			fmt.Sprintf(`{ filePath: "innocuous.txt", path: %q }`,
+				filepath.Join(projectDir, ".opencode", "plugins", "evil.js")))
+		_, stderr, rc := runNodeDriver(t, nodeRuntime, driver, envNoTrackfw)
+		if rc == 0 {
+			t.Fatalf("arm17: expected D4 throw for path=protected-plugin; got rc=0 stderr=%q", stderr)
+		}
+		// Discriminator: D4 self-protection (not ENOENT which would happen if filePath-only was checked).
+		if !strings.Contains(stderr, "D4 self-protection") {
+			t.Errorf("arm17: expected D4 self-protection in stderr (pre-fix gives ENOENT); got %q", stderr)
+		}
+	})
+
+	t.Run("arm18_patch_no_header_throws", func(t *testing.T) {
+		// Conclusion: patch/apply_patch with no recognizable patch headers in any string
+		// field → fail-closed: D4 throws with "fail-closed" message (F5 fix).
+		envNoTrackfw := nodeEnvNoTrackfw(secret)
+		// Plain text in patchText — no "***" or "+++"/"---" headers.
+		driver := makeV2Driver(pluginPath, projectDir, "patch",
+			`{ patchText: "line1\nline2\n" }`)
+		_, stderr, rc := runNodeDriver(t, nodeRuntime, driver, envNoTrackfw)
+		if rc == 0 {
+			t.Fatalf("arm18: expected fail-closed throw for patch with no headers; got rc=0 stderr=%q", stderr)
+		}
+		// Discriminator: fail-closed message (not ENOENT which is the pre-fix behavior).
+		if !strings.Contains(stderr, "fail-closed") {
+			t.Errorf("arm18: expected fail-closed in stderr (pre-fix gives ENOENT); got %q", stderr)
+		}
+	})
 }
