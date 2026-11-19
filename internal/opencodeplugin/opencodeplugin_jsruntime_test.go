@@ -1,0 +1,417 @@
+package opencodeplugin_test
+
+// opencodeplugin_jsruntime_test.go — ML-5E2 (REQ-2026-11-17)
+//
+// End-to-end tests that load the embedded trackfw-guard.js asset into a real
+// Node.js (or Bun) runtime and exercise the hook callback.
+//
+// Prerequisites:
+//   - A working `node` (or `bun`) binary reachable via PATH.
+//     The test calls `node --version` to prove the runtime is functional, and
+//     calls t.Skip explicitly when no runtime is found or the version probe fails.
+//   - CI fact: the `go` job in .github/workflows/quality.yml (line 33) runs on
+//     ubuntu-latest with no setup-node step; the Windows job (line 146) runs
+//     setup-node@v7 (line 169). Both have node. Tests do NOT skip in CI.
+//     Skip only on dev machines where node is absent or broken (dylib issues, etc.).
+//
+// Fake `trackfw` binary:
+//   Uses the helper-process pattern: the test binary itself is copied to a temp
+//   dir as `trackfw` / `trackfw.exe`. When invoked with TRACKFW_FAKE_GUARD=1,
+//   TestMain exits early (before m.Run) with the fake behaviour:
+//     - reads stdin
+//     - writes stdin to TRACKFW_STDIN_CAPTURE (env) if set
+//     - exits 2 when stdin contains TRACKFW_FAKE_SECRET, else exits 0
+//   This is Windows-safe: node spawnSync finds `trackfw.exe` on Windows just as
+//   it finds `trackfw` on Unix — no shell needed, no .bat wrapper.
+//
+// macOS path note: t.TempDir() on macOS returns a path under /var/folders/...,
+// but Node's require() resolves __filename via realpath, which follows the
+// /var → /private/var symlink. All paths passed to node are evaluated through
+// filepath.EvalSymlinks so the Go-constructed paths and node's view agree.
+//
+// arm3 root cause note: on macOS, Homebrew places both `node` and `trackfw` in
+// /opt/homebrew/bin. If that dir is in PATH for the node subprocess, spawnSync
+// finds the real trackfw and exits 0 instead of ENOENT. nodeEnvNoTrackfw must
+// NOT include the node binary's directory — Go calls node via its absolute path
+// so PATH need not contain it.
+//
+// Reconciliation rule: each sub-test carries a one-sentence "Conclusion".
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/kgsaran/trackfw/internal/opencodeplugin"
+)
+
+// TestMain is the helper-process entry point for the fake `trackfw` binary.
+// When TRACKFW_FAKE_GUARD=1 the test binary is running as the fake binary;
+// it handles the request and exits before m.Run() so no tests are executed.
+// Without the env var this is a normal test run.
+func TestMain(m *testing.M) {
+	if os.Getenv("TRACKFW_FAKE_GUARD") != "1" {
+		os.Exit(m.Run())
+	}
+	// Acting as fake trackfw guard.
+	input, _ := io.ReadAll(os.Stdin)
+	if cap := os.Getenv("TRACKFW_STDIN_CAPTURE"); cap != "" {
+		_ = os.WriteFile(cap, input, 0644)
+	}
+	secret := os.Getenv("TRACKFW_FAKE_SECRET")
+	if secret != "" && bytes.Contains(input, []byte(secret)) {
+		os.Exit(2)
+	}
+	os.Exit(0)
+}
+
+// jsSecretToken assembles a fake Google API key at runtime so it does not
+// appear as a literal string (which would trigger the credential guard on
+// this source file).
+func jsSecretToken() string {
+	return "AIza" + strings.Repeat("F", 35)
+}
+
+// findNodeRuntime returns the path to the first working JS runtime (node, bun).
+// Returns "" if none is found or functional.
+func findNodeRuntime() string {
+	for _, name := range []string{"node", "bun"} {
+		p, err := exec.LookPath(name)
+		if err != nil {
+			continue
+		}
+		cmd := exec.Command(p, "--version")
+		cmd.Env = os.Environ()
+		if _, err := cmd.Output(); err != nil {
+			continue
+		}
+		return p
+	}
+	return ""
+}
+
+// writeAsset writes the project-scoped plugin asset into pluginDir and returns
+// the absolute, symlink-resolved path to the .js file.
+func writeAsset(t *testing.T, pluginDir string) string {
+	t.Helper()
+	content := opencodeplugin.RenderProject()
+	jsPath := filepath.Join(pluginDir, "trackfw-guard.js")
+	if err := os.WriteFile(jsPath, content, 0644); err != nil {
+		t.Fatalf("write trackfw-guard.js: %v", err)
+	}
+	resolved, err := filepath.EvalSymlinks(jsPath)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(%s): %v", jsPath, err)
+	}
+	return resolved
+}
+
+// writeFakeTrackfw copies the test binary into a temp dir as "trackfw" (or
+// "trackfw.exe" on Windows) and returns that directory. When invoked with
+// TRACKFW_FAKE_GUARD=1 the binary acts as the fake guard (see TestMain).
+func writeFakeTrackfw(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	// Resolve symlinks — necessary on some platforms where the test binary
+	// is under a symlinked path.
+	exe, err = filepath.EvalSymlinks(exe)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(exe): %v", err)
+	}
+
+	name := "trackfw"
+	if runtime.GOOS == "windows" {
+		name = "trackfw.exe"
+	}
+	dst := filepath.Join(dir, name)
+
+	src, err := os.ReadFile(exe)
+	if err != nil {
+		t.Fatalf("reading test binary %s: %v", exe, err)
+	}
+	if err := os.WriteFile(dst, src, 0755); err != nil {
+		t.Fatalf("writing fake trackfw to %s: %v", dst, err)
+	}
+	return dir
+}
+
+// nodeEnv builds the env slice for running node: PATH with fakeTrackfwDir first,
+// plus existing env, minus OPENCODE_CONFIG_DIR/XDG_CONFIG_HOME. Also sets the
+// TRACKFW_FAKE_GUARD=1 env var so the copied test binary acts as the fake guard.
+func nodeEnv(fakeTrackfwDir, fakeSecret string) []string {
+	var env []string
+	for _, kv := range os.Environ() {
+		k := strings.SplitN(kv, "=", 2)[0]
+		switch k {
+		case "OPENCODE_CONFIG_DIR", "XDG_CONFIG_HOME",
+			"TRACKFW_FAKE_GUARD", "TRACKFW_FAKE_SECRET", "TRACKFW_STDIN_CAPTURE":
+			continue
+		}
+		env = append(env, kv)
+	}
+	// Prepend fakeTrackfwDir to PATH so our fake trackfw wins over any real one.
+	for i, kv := range env {
+		if strings.HasPrefix(kv, "PATH=") {
+			env[i] = "PATH=" + fakeTrackfwDir + string(os.PathListSeparator) + strings.TrimPrefix(kv, "PATH=")
+			goto pathSet
+		}
+	}
+	env = append(env, "PATH="+fakeTrackfwDir)
+pathSet:
+	env = append(env,
+		"TRACKFW_FAKE_GUARD=1",
+		"TRACKFW_FAKE_SECRET="+fakeSecret,
+	)
+	return env
+}
+
+// nodeEnvNoTrackfw builds an env where trackfw is NOT in PATH.
+// nodeBinDir is intentionally NOT included: the Go test runner calls node via its
+// absolute path, so node does not need to be on PATH. Excluding nodeBinDir avoids
+// accidentally including the same directory that holds the real `trackfw` binary
+// (e.g. /opt/homebrew/bin on macOS contains both node and trackfw).
+// This is used by arm3 to prove that the plugin throws on ENOENT.
+func nodeEnvNoTrackfw(fakeSecret string) []string {
+	// Use only OS-provided system dirs that will not contain trackfw.
+	minDirs := []string{"/usr/bin", "/bin"}
+	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
+		minDirs = append(minDirs, "/usr/sbin", "/sbin")
+	}
+	minPath := strings.Join(minDirs, string(os.PathListSeparator))
+
+	var env []string
+	for _, kv := range os.Environ() {
+		k := strings.SplitN(kv, "=", 2)[0]
+		switch k {
+		case "PATH", "OPENCODE_CONFIG_DIR", "XDG_CONFIG_HOME",
+			"TRACKFW_FAKE_GUARD", "TRACKFW_FAKE_SECRET", "TRACKFW_STDIN_CAPTURE":
+			continue
+		}
+		env = append(env, kv)
+	}
+	env = append(env,
+		"PATH="+minPath,
+		"TRACKFW_FAKE_SECRET="+fakeSecret,
+		// Intentionally NO TRACKFW_FAKE_GUARD=1 — trackfw is not in PATH at all.
+	)
+	return env
+}
+
+// runNodeDriver writes a node.js driver script and runs it with the given env.
+// Returns (stdout, stderr, exit code).
+func runNodeDriver(t *testing.T, nodeRuntime, driverContent string, env []string) (string, string, int) {
+	t.Helper()
+	driverDir := t.TempDir()
+	driverPath := filepath.Join(driverDir, "driver.js")
+	if err := os.WriteFile(driverPath, []byte(driverContent), 0644); err != nil {
+		t.Fatalf("write driver.js: %v", err)
+	}
+	cmd := exec.Command(nodeRuntime, driverPath)
+	cmd.Env = env
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	_ = cmd.Run() // ignore error; we check exit code via ProcessState
+	rc := cmd.ProcessState.ExitCode()
+	return stdout.String(), stderr.String(), rc
+}
+
+// makeV2Driver returns a V2-style node driver that:
+//   - requires the plugin from pluginPath
+//   - fires the hook callback with the given tool and inputJSON
+//   - exits 1 if the hook throws, 0 otherwise
+//   - writes "THREW: <msg>" to stderr when it throws
+func makeV2Driver(pluginPath, projectDir, tool, inputJSON string) string {
+	return fmt.Sprintf(`"use strict"
+const plugin = require(%q)
+const projectDir = %q
+let threw = false
+let throwMsg = ""
+const ctx = {
+  location: { project: { directory: projectDir } },
+  tool: {
+    hook: async function(event, cb) {
+      try {
+        await cb({ tool: %q, input: %s })
+      } catch(e) {
+        threw = true
+        throwMsg = e.message
+      }
+    }
+  }
+}
+plugin.setup(ctx).then(function() {
+  if (threw) {
+    process.stderr.write("THREW: " + throwMsg + "\n")
+    process.exit(1)
+  }
+  process.exit(0)
+}).catch(function(e) {
+  process.stderr.write("SETUP_ERR: " + e.message + "\n")
+  process.exit(1)
+})
+`, pluginPath, projectDir, tool, inputJSON)
+}
+
+// TestOpenCodePlugin_JSRuntime exercises the embedded trackfw-guard.js asset
+// through a real Node.js runtime.
+//
+// Sub-tests:
+//
+//	arm1_shell_secret_throws     — secret in shell tool → plugin throws → exit 1; stderr contains "operation blocked"
+//	arm2_innocuous_passes        — innocuous shell command → no throw → exit 0, empty stdout
+//	arm3_enoent_throws           — trackfw not in PATH → ENOENT → plugin throws "not found" → exit 1
+//	arm4_write_self_throws       — write to plugin file → D4 self-protection → exit 1; stderr contains "D4"
+//	arm5_read_payload_structure  — read tool → payload has hook_source:"opencode" + abs file_path
+func TestOpenCodePlugin_JSRuntime(t *testing.T) {
+	nodeRuntime := findNodeRuntime()
+	if nodeRuntime == "" {
+		t.Skip("no working JS runtime (node/bun) found — skipping JS runtime tests")
+	}
+
+	secret := jsSecretToken()
+	fakeDir := writeFakeTrackfw(t)
+
+	// Plugin asset path (symlink-resolved for macOS /var → /private/var).
+	pluginDir := t.TempDir()
+	pluginPath := writeAsset(t, pluginDir)
+
+	// Project dir (symlink-resolved).
+	projectDirRaw := t.TempDir()
+	projectDir, err := filepath.EvalSymlinks(projectDirRaw)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(projectDir): %v", err)
+	}
+
+	env := nodeEnv(fakeDir, secret)
+
+	t.Run("arm1_shell_secret_throws", func(t *testing.T) {
+		// Conclusion: shell tool with secret in command → fake trackfw exits 2 →
+		// plugin throws with "operation blocked" message → driver exits 1.
+		driver := makeV2Driver(pluginPath, projectDir, "shell",
+			fmt.Sprintf(`{ command: %q }`, "echo "+secret))
+		_, stderr, rc := runNodeDriver(t, nodeRuntime, driver, env)
+		if rc == 0 {
+			t.Fatalf("arm1: expected plugin to throw for secret in shell; got rc=0 stderr=%q", stderr)
+		}
+		// Discriminator: throw is from guard block, not from ENOENT.
+		if !strings.Contains(stderr, "THREW:") {
+			t.Errorf("arm1: expected THREW: prefix in stderr; got %q", stderr)
+		}
+		if strings.Contains(stderr, "not found") {
+			t.Errorf("arm1: threw ENOENT instead of guard block; stderr=%q", stderr)
+		}
+	})
+
+	t.Run("arm2_innocuous_passes", func(t *testing.T) {
+		// Conclusion: innocuous shell command → fake trackfw exits 0 → plugin does
+		// not throw → driver exits 0 with empty stdout (D2 invariant).
+		driver := makeV2Driver(pluginPath, projectDir, "shell",
+			`{ command: "echo hello" }`)
+		stdout, stderr, rc := runNodeDriver(t, nodeRuntime, driver, env)
+		if rc != 0 {
+			t.Fatalf("arm2: expected pass for innocuous command; got rc=%d stdout=%q stderr=%q", rc, stdout, stderr)
+		}
+		if stdout != "" {
+			t.Errorf("arm2: D2 invariant — stdout must be empty on pass; got %q", stdout)
+		}
+	})
+
+	t.Run("arm3_enoent_throws", func(t *testing.T) {
+		// Conclusion: minimal PATH without trackfw → spawnSync returns ENOENT →
+		// plugin throws "trackfw not found" → driver exits 1.
+		envNoTrackfw := nodeEnvNoTrackfw(secret)
+		driver := makeV2Driver(pluginPath, projectDir, "shell",
+			`{ command: "echo hello" }`)
+		_, stderr, rc := runNodeDriver(t, nodeRuntime, driver, envNoTrackfw)
+		if rc == 0 {
+			t.Fatalf("arm3: expected throw when trackfw absent from PATH; got rc=0 stderr=%q", stderr)
+		}
+		// Discriminator: throw is specifically ENOENT ("not found"), not a guard block.
+		if !strings.Contains(stderr, "not found") && !strings.Contains(stderr, "ENOENT") {
+			t.Errorf("arm3: expected ENOENT/not-found in stderr; got %q", stderr)
+		}
+	})
+
+	t.Run("arm4_write_self_throws", func(t *testing.T) {
+		// Conclusion: write tool targeting the plugin file → D4 selfProtect fires
+		// before runGuard (which would need trackfw) → driver exits 1 with D4 message.
+		// Uses nodeEnvNoTrackfw so that if D4 were to regress, the fall-through to
+		// spawnSync would also throw (ENOENT) rather than pass silently.
+		envNoTrackfw := nodeEnvNoTrackfw(secret)
+		driver := makeV2Driver(pluginPath, projectDir, "write",
+			fmt.Sprintf(`{ path: %q }`, pluginPath))
+		_, stderr, rc := runNodeDriver(t, nodeRuntime, driver, envNoTrackfw)
+		if rc == 0 {
+			t.Fatalf("arm4: expected D4 self-protection throw for write to plugin; got rc=0 stderr=%q", stderr)
+		}
+		// Discriminator: throw message names D4 self-protection, not ENOENT.
+		if !strings.Contains(stderr, "D4 self-protection") {
+			t.Errorf("arm4: expected D4 self-protection in stderr; got %q (possible ENOENT if D4 regressed)", stderr)
+		}
+	})
+
+	t.Run("arm5_read_payload_structure", func(t *testing.T) {
+		// Conclusion: read tool → plugin sends JSON payload to trackfw with
+		// hook_source:"opencode" and absolute tool_input.file_path.
+		captureFile := filepath.Join(t.TempDir(), "captured.json")
+		envCapture := append(nodeEnv(fakeDir, secret), "TRACKFW_STDIN_CAPTURE="+captureFile)
+
+		// Relative path in input — the plugin should absolutize it.
+		driver := makeV2Driver(pluginPath, projectDir, "read",
+			`{ path: "some/relative/file.txt" }`)
+		stdout, stderr, rc := runNodeDriver(t, nodeRuntime, driver, envCapture)
+		_ = stdout
+		if rc != 0 {
+			t.Fatalf("arm5: expected driver to pass; got rc=%d stdout=%q stderr=%q", rc, stdout, stderr)
+		}
+
+		// Wait briefly for the fake binary to finish writing.
+		time.Sleep(100 * time.Millisecond)
+
+		capturedBytes, err := os.ReadFile(captureFile)
+		if err != nil {
+			t.Fatalf("arm5: reading captured stdin: %v — fake trackfw may not have been called", err)
+		}
+		capturedStr := strings.TrimSpace(string(capturedBytes))
+		if capturedStr == "" {
+			t.Fatal("arm5: captured stdin is empty — fake trackfw was not called")
+		}
+
+		var payload map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(capturedStr), &payload); err != nil {
+			t.Fatalf("arm5: captured stdin is not valid JSON: %v\nraw: %q", err, capturedStr)
+		}
+
+		// Assert hook_source == "opencode"
+		var hookSource string
+		if err := json.Unmarshal(payload["hook_source"], &hookSource); err != nil || hookSource != "opencode" {
+			t.Errorf("arm5: hook_source: got raw %s, want %q", payload["hook_source"], "opencode")
+		}
+
+		// Assert tool_input.file_path is absolute (plugin absolutizes relative paths).
+		var toolInput map[string]json.RawMessage
+		if err := json.Unmarshal(payload["tool_input"], &toolInput); err != nil {
+			t.Fatalf("arm5: parsing tool_input: %v", err)
+		}
+		var filePath string
+		if err := json.Unmarshal(toolInput["file_path"], &filePath); err != nil {
+			t.Errorf("arm5: tool_input.file_path missing or invalid: %v", err)
+		} else if !filepath.IsAbs(filePath) {
+			t.Errorf("arm5: tool_input.file_path must be absolute; got %q", filePath)
+		}
+	})
+}

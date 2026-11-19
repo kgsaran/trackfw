@@ -288,24 +288,28 @@ DEBUG` recusado pela 2.x) não mediram nada e foram descartados.
 ### ML-5C — ADR — ✅ Done: `docs/adr/ADR-2026-11-19-guard-do-trackfw-no-opencode-via-plugin.md` (D1–D6). V1 (1.x) declarado
 residual, não medido (decisão do KG em 2026-11-19, opção a).
 
-### ML-5D — Guard em Go: `read` do OpenCode e caminhos congelados (apolo-tf; ADR D3, D4) — 🔄 In progress
+### ML-5D — Guard em Go: `read` do OpenCode e caminhos congelados (apolo-tf; ADR D3, D4) — ✅ Done
 **Files affected:** `internal/guard/credential.go`, `internal/guard/payload.go` (só se preciso), `internal/guard/writescope.go`,
 testes em `internal/guard/` (arquivo novo `opencode_test.go`)
-- [ ] `hook_source=="opencode" && tool_name=="read"` → camada 2 lê `tool_input.file_path` (regular, mesmo limite): segredo → 2
-- [ ] contra-braços: o mesmo payload sem `hook_source`, ou com `tool_name` diferente → o arquivo NÃO é lido
-- [ ] `.opencode/plugins/`, `opencode.json` e `opencode.jsonc` congelados para subagentes
-- [ ] testes de schema das outras CLIs inalterados
+- [x] `hook_source=="opencode" && tool_name=="read"` → camada 2 lê `tool_input.file_path` (regular, mesmo limite): segredo → 2
+- [x] contra-braços: o mesmo payload sem `hook_source`, ou com `tool_name` diferente → o arquivo NÃO é lido
+- [x] `.opencode/plugins/`, `opencode.json` e `opencode.jsonc` congelados para subagentes
+- [x] testes de schema das outras CLIs inalterados (13 testes novos; 3 reprovavam antes)
 
-### ML-5E — Plugin, geração e auditoria (apolo-tf; ADR D1, D2, D4, D5, D6) — 🔄 In progress (∥ 5D, arquivos disjuntos)
+### ML-5E — Plugin, geração e auditoria (apolo-tf; ADR D1, D2, D4, D5, D6) — ✅ Done (+ corretivo ML-5E2)
 **Files affected:** asset novo do plugin em `internal/generators/` (go:embed), `internal/generators/hooks.go`, `agentfiles.go`,
 `update.go`, `antigravity_hooks_test.go` (inverter `contra_opencode_still_skips`), `internal/agentconfig/agentconfig.go`,
 `internal/validator/` (auditoria), `internal/commands/doctor.go`, `internal/integrations/`, `internal/auditsurface/`,
 `scripts/check-update-parity.sh`, `scripts/check-validate-rule-pins.sh` (se houver regra nova), `docs/cli-parity.md`
-- [ ] `init`/`update`/`agents install` com `.opencode/` gravam `.opencode/plugins/trackfw-guard.js`; `update harness
+- [x] `init`/`update`/`agents install` com `.opencode/` gravam `.opencode/plugins/trackfw-guard.js`; `update harness
   --targets opencode-guard` grava o global e reporta `missing` quando ausente
-- [ ] plugin: argv sem shell, `throw` em `error || status !== 0`, mapeamento de ferramentas do D3, autoproteção do D4,
+- [x] plugin: argv sem shell, `throw` em `error || status !== 0`, mapeamento de ferramentas do D3, autoproteção do D4,
   sem log; teste sem modelo (node) para segredo/inócuo/ENOENT/autoproteção
-- [ ] `validate`/`doctor` auditam o mesmo caminho; `doctor` informa projeto sem global (D6)
-- [ ] `make quality` rc=0 (só no fim, depois do 5D)
+- [x] `validate`/`doctor` auditam o mesmo caminho; `doctor` informa projeto sem global (D6)
+- [x] `make quality` rc=0 (zeus, 2026-11-19: 365 OK, 0 FAIL)
+- **Auditoria zeus:** binário isolado — `missing` no dry-run, `update` grava o projeto, `validate` acusa adulterado, `doctor`
+  acusa global ausente, `--install-missing` grava `SCOPE = "global"`. Reprovou 4 itens → **ML-5E2**: teste do contrato antigo
+  (`TestInjectHooksForToolsUnknownNameSkipped`) dividido; remédio do projeto stale era o do global; comentários do asset em
+  PT → EN; testes que faltavam (validator 9, agentconfig 8, runtime JS 5 braços — rodam no Mac, não pulam; update-parity 5c-2/5c-3).
 
 ### ML-5F — Revisão (hefesto-tf) · ML-5G — red team (hades-tf) · ML-5H — prova real com o plugin do produto (KG) — ⬜ Pending

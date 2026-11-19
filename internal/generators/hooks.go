@@ -10,11 +10,8 @@ import (
 // cliDetectors maps CLI target IDs (same strings as the catalog, same as
 // --ai-tools values) to a detection predicate and a hook injector. Shared
 // between InjectHooksDetected (detection-based, brownfield) and
-// InjectHooksForTools (name-based, post-install). Adding a 10th CLI here
+// InjectHooksForTools (name-based, post-install). Adding a new CLI here
 // keeps both paths in sync automatically.
-//
-// CLIs without an Inject*Hooks implementation (opencode) are intentionally
-// absent — callers that pass unknown names get a silent skip.
 //
 // Detection note for "antigravity": the .agents/ directory is shared with
 // Codex project-scope skills (.agents/skills/). InjectHooksDetected firing
@@ -103,6 +100,19 @@ var cliDetectors = map[string]struct {
 			return err == nil
 		},
 	},
+	// opencode (ML-5E, REQ-2026-11-17): dispatches InjectOpenCodePlugin when the
+	// .opencode/ directory is present. InjectOpenCodePlugin writes the
+	// trackfw-guard.js CommonJS plugin (embedded via go:embed) to
+	// .opencode/plugins/trackfw-guard.js — the first hook-based guard for OpenCode.
+	// Prior to this ML, opencode was absent from cliDetectors because no Inject*
+	// implementation existed yet. ADR: ADR-2026-11-19-guard-do-trackfw-no-opencode-via-plugin.md
+	"opencode": {
+		inject: InjectOpenCodePlugin,
+		detect: func(cwd string) bool {
+			info, err := os.Stat(filepath.Join(cwd, ".opencode"))
+			return err == nil && info.IsDir()
+		},
+	},
 }
 
 // InjectHooksDetected detecta quais CLIs estão presentes no cwd e injeta os attention hooks
@@ -136,7 +146,7 @@ func InjectHooksDetected(cwd string) error {
 // Each injector is idempotent (merge semantics for JSON, dedup for credential
 // guard vs global harness). Double-call with InjectHooksDetected is safe.
 //
-// Unknown tool names (e.g. "opencode") are silently skipped.
+// Unknown tool names (e.g. names not in cliDetectors) are silently skipped.
 // Errors are collected; all tools are attempted before returning.
 func InjectHooksForTools(tools []string, cwd string) error {
 	var errs []string

@@ -104,6 +104,17 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
+	// ML-5E (REQ-2026-11-17): same isolation for OPENCODE_CONFIG_DIR and
+	// XDG_CONFIG_HOME — agentconfig.OpenCodeConfigDir honours both env vars;
+	// without the unset, a developer with OPENCODE_CONFIG_DIR or XDG_CONFIG_HOME
+	// set would have tests write to or read from a real user directory.
+	if err := os.Unsetenv("OPENCODE_CONFIG_DIR"); err != nil {
+		panic(err)
+	}
+	if err := os.Unsetenv("XDG_CONFIG_HOME"); err != nil {
+		panic(err)
+	}
+
 	// ML-7D: disable git maintenance auto-scheduling for every git child process
 	// in this test binary. GIT_CONFIG_PARAMETERS stacks with GIT_CONFIG_COUNT
 	// (independent mechanism) and is not stripped by cleanGitEnv() (which strips

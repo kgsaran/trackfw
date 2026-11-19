@@ -291,6 +291,13 @@ func RunCredential(stdin io.Reader, stdout, stderr io.Writer) int {
 		finding = credViewFileScan(toolName, data, shellCwd)
 	}
 
+	// ADR-2026-11-19 D3: OpenCode read tool — scan the file at tool_input.file_path.
+	// Only active when hook_source == "opencode" and tool_name == "read".
+	// Same rules as credViewFileScan: regular file, 1 MiB limit, absolute path required.
+	if finding.typ == "" {
+		finding = credOpenCodeReadScan(data)
+	}
+
 	if finding.typ == "" {
 		return 0
 	}
@@ -397,6 +404,12 @@ func RunCredentialGlobal(stdin io.Reader, stdout, stderr io.Writer) int {
 	// D5 (ADR-2026-11-18): view_file scan (same as RunCredential).
 	if finding.typ == "" {
 		finding = credViewFileScan(toolName, data, shellCwd)
+	}
+
+	// ADR-2026-11-19 D3: OpenCode read tool — scan the file at tool_input.file_path.
+	// Same as RunCredential; global scope also covers OpenCode via --global flag.
+	if finding.typ == "" {
+		finding = credOpenCodeReadScan(data)
 	}
 
 	if finding.typ == "" {
@@ -828,6 +841,58 @@ func credViewFileScan(toolName string, data []byte, shellCwd string) credFinding
 	cleanPath = filepath.Clean(cleanPath)
 	if !filepath.IsAbs(cleanPath) && shellCwd != "" {
 		cleanPath = filepath.Join(shellCwd, cleanPath)
+	}
+	if typ, scanPath := credScanFilePath(cleanPath); typ != "" {
+		return credFinding{typ: typ, path: scanPath}
+	}
+	return credFinding{}
+}
+
+// credOpenCodeReadScan runs a layer-2 file scan for the OpenCode read tool
+// (ADR-2026-11-19 D3). Active only when both conditions are explicitly true:
+//   - hook_source == "opencode"  (checked via isOpenCodePayload; lição F1)
+//   - tool_name  == "read"       (checked directly from root["tool_name"])
+//
+// When both conditions hold, reads tool_input.file_path and calls
+// credScanFilePath on it. The same constraints as credViewFileScan apply:
+// only regular files, same 1 MiB size limit, path must be absolute.
+//
+// Returns a zero credFinding when the conditions are not met, the path is
+// missing, relative, or points to a non-regular file, or when the file
+// contains no credential pattern.
+func credOpenCodeReadScan(data []byte) credFinding {
+	stripped := bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF})
+	var root map[string]json.RawMessage
+	if json.Unmarshal(stripped, &root) != nil {
+		return credFinding{}
+	}
+	if !isOpenCodePayload(root) {
+		return credFinding{}
+	}
+	// Extract tool_name directly from root — do NOT use credExtractCmdAndCwd's
+	// returned toolName which falls back to toolCall.name (F1: explicit schema
+	// check; a crafted payload with toolCall.name="read" must not trigger this).
+	var toolName string
+	if rawTN, ok := root["tool_name"]; ok && !isJSONNull(rawTN) {
+		_ = json.Unmarshal(rawTN, &toolName)
+	}
+	if toolName != "read" {
+		return credFinding{}
+	}
+	// Extract tool_input.file_path (ADR-2026-11-19 D3; contract §8 confirmed:
+	// V2 sends "path" natively; the plugin normalises it to "file_path" in the
+	// payload. table row T-RC in §4.2 uses {"tool_input":{"file_path":"…"}}).
+	filePath, found, _ := extractNested(root, "tool_input", "file_path")
+	if !found || filePath == "" {
+		return credFinding{}
+	}
+	// Require absolute path — do NOT join with cwd.
+	// Unlike credViewFileScan (Antigravity) which may fall back to shellCwd,
+	// the OpenCode contract (ADR D3) mandates an absolute file_path from the plugin.
+	cleanPath := credNormalizeWindowsPath(filePath, runtime.GOOS, toolName)
+	cleanPath = filepath.Clean(cleanPath)
+	if !filepath.IsAbs(cleanPath) {
+		return credFinding{}
 	}
 	if typ, scanPath := credScanFilePath(cleanPath); typ != "" {
 		return credFinding{typ: typ, path: scanPath}

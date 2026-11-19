@@ -29,7 +29,7 @@ import (
 
 // Runtime names in canonical order (matches check-agent-hooks-parity.sh CLIS).
 var canonicalRuntimes = []string{
-	"claude", "codex", "gemini", "copilot", "cursor", "kiro", "windsurf", "amazonq", "antigravity",
+	"claude", "codex", "gemini", "copilot", "cursor", "kiro", "windsurf", "amazonq", "antigravity", "opencode",
 }
 
 // runtimeWiringPath maps each runtime to its project-scope wiring file.
@@ -44,6 +44,11 @@ var runtimeWiringPath = map[string]string{
 	"windsurf":    ".windsurf/hooks.json",
 	"amazonq":     ".amazonq/cli-agents/q_cli_default.json",
 	"antigravity": ".agents/hooks.json",
+	// OpenCode: JS CommonJS plugin (not JSON). The file is tracked by its
+	// presence and by the // trackfw:opencode-guard marker (ADR-2026-11-19 D1).
+	// extractTuples treats this as a single synthetic tuple whose RawCommand
+	// encodes the marker status ("marker-present" / "marker-absent").
+	"opencode": ".opencode/plugins/trackfw-guard.js",
 }
 
 // Instruction file paths that ship in a project and instruct the agent
@@ -522,6 +527,8 @@ func extractTuples(runtime string, content []byte) ([]HookTuple, error) {
 		return extractWindsurfSchema(content)
 	case "antigravity":
 		return extractAntigravitySchema(content)
+	case "opencode":
+		return extractOpenCodePluginSchema(content)
 	default:
 		return nil, fmt.Errorf("unknown runtime: %s", runtime)
 	}
@@ -887,4 +894,51 @@ func FormatText(r *Report) string {
 	lines = append(lines, "")
 	lines = append(lines, body...)
 	return strings.Join(lines, "\n") + "\n"
+}
+
+// openCodePluginMarker is the first-line sentinel of a trackfw-generated
+// OpenCode plugin. Must match opencodeplugin.Marker exactly.
+const openCodePluginMarker = "// trackfw:opencode-guard"
+
+// extractOpenCodePluginSchema extracts a synthetic hook tuple from the
+// OpenCode plugin (a CommonJS JS file, not JSON).
+//
+// The OpenCode plugin has no hook-event/matcher/command tuple in the
+// JSON sense. Instead, the audit surface records its presence and whether
+// the trackfw marker is on the first line (D1, ADR-2026-11-19). The returned
+// tuple uses:
+//
+//   - Event      = "execute.before"  (the OpenCode hook point the plugin wires)
+//   - Matcher    = ""                (OpenCode plugins do not use matchers)
+//   - RawCommand = "trackfw guard"   (marker-confirmed) or
+//                  "marker-absent"   (file exists but is not a trackfw plugin)
+//   - ScriptPath = ""                (the wiring file IS the plugin — no indirection)
+//   - Digest     = resolved by the caller from the wiring file path itself
+//
+// A parse error (empty content) returns an empty slice — this case is already
+// reported as `present=false` by the caller.
+func extractOpenCodePluginSchema(content []byte) ([]HookTuple, error) {
+	if len(content) == 0 {
+		return []HookTuple{}, nil
+	}
+	// Check whether the first line is the marker.
+	firstLine := string(content)
+	if idx := strings.IndexByte(firstLine, '\n'); idx >= 0 {
+		firstLine = firstLine[:idx]
+	}
+	firstLine = strings.TrimRight(firstLine, "\r")
+
+	rawCmd := "marker-absent"
+	if firstLine == openCodePluginMarker {
+		rawCmd = "trackfw guard"
+	}
+
+	return []HookTuple{
+		{
+			Event:      "execute.before",
+			Matcher:    "",
+			RawCommand: rawCmd,
+			ScriptPath: "", // the plugin IS the wiring file
+		},
+	}, nil
 }

@@ -4387,6 +4387,46 @@ simbólico.
 
 - **F1 — P5 requer schema Antigravity:** `ExtractCommand` (`internal/guard/payload.go`) e `credExtractCmdAndCwd` (`internal/guard/credential.go`) agora verificam `isAntigravityPayload(root)` antes de extrair `toolCall.args.CommandLine` (prioridade 5). Sem `hookEventName` presente, P5 retorna vazio — evita que um payload sem schema Antigravity dispare o guard indevidamente. Payloads com `hookEventName` continuam funcionando normalmente.
 
+#### OpenCode guard (`opencode-guard`) — ML-5E (REQ-2026-11-17)
+
+<!-- trackfw-contract: gate=internal/opencodeplugin/opencodeplugin_jsruntime_test.go,internal/validator/validator_opencode_plugin_test.go,internal/agentconfig/agentconfig_test.go,internal/commands/init_guard_hooks_test.go,scripts/check-update-parity.sh partial=TestOpenCodePlugin_JSRuntime/arm1_shell_secret_throws proves shell tool with secret exits 2 and throws "operation blocked" (not ENOENT); TestOpenCodePlugin_JSRuntime/arm2_innocuous_passes proves innocuous command exits 0 with empty stdout (D2 invariant); TestOpenCodePlugin_JSRuntime/arm3_enoent_throws proves spawnSync with no trackfw in PATH throws ENOENT fail-closed; TestOpenCodePlugin_JSRuntime/arm4_write_self_throws proves write to plugin file fires D4 self-protection before spawnSync; TestOpenCodePlugin_JSRuntime/arm5_read_payload_structure proves read tool payload has hook_source:"opencode" and absolute tool_input.file_path; TestOpenCodePlugin_NoOpenCodeDir_Silent proves no .opencode/ dir is silent (D5); TestOpenCodePlugin_PluginAbsent_Warns proves absent plugin warns with remedy "trackfw update" (not "update harness"); TestOpenCodePlugin_Stale_Warns proves stale plugin warns with "trackfw update"; TestOpenCodePlugin_MissingMarker_Warns proves missing marker warns with "trackfw update"; TestOpenCodePlugin_Canonical_Silent proves up-to-date plugin is silent; TestOpenCodePlugin_GlobalAbsent_Warns proves project-present+global-absent warns with "update harness" remedy (D6); TestOpenCodePlugin_GlobalPresent_Silent proves project+global both present is silent (D6); TestOpenCodePlugin_ProjectAbsent_D6Silent proves D6 is silent when project plugin absent; TestOpenCodePlugin_ValidateForTest_Absent_IsWarning proves D5 is routed via applyRuleWarnOnly (warning not violation); TestOpenCodeConfigDir_OPENCODE_CONFIG_DIR_Honoured proves OPENCODE_CONFIG_DIR takes precedence (R-1); TestOpenCodeConfigDir_XDG_CONFIG_HOME_Honoured proves XDG_CONFIG_HOME/opencode fallback; TestOpenCodeConfigDir_Default_JoinsHomeDotConfigOpenCode proves default <home>/.config/opencode; TestOpenCodeConfigDir_Windows_UsesUserprofile proves Windows USERPROFILE path; TestOpenCodeConfigDir_RelativeOPENCODE_CONFIG_DIR_ReturnsError proves relative path rejected; TestOpenCodeConfigDir_SpacesOnlyOPENCODE_CONFIG_DIR_FallsThrough proves spaces-only treated as unset; TestOpenCodeConfigDir_OPENCODE_CONFIG_DIR_TakesPrecedenceOverXDG proves OPENCODE_CONFIG_DIR beats XDG; TestOSCLIHomeResolver_WindowsBranch_OpenCode proves Windows resolver uses USERPROFILE for OpenCode; TestInjectHooksForTools_OpenCodeCreatesPlugin proves InjectHooksForTools(["opencode"]) writes plugin with marker; TestInjectHooksForTools_UnknownToolNoFiles proves unknown tool creates no files; check-update-parity.sh 5c-2 proves state=missing without --install-missing and no file written; check-update-parity.sh 5c-3 proves --install-missing writes file with const SCOPE = "global" -->
+
+**Mechanism.** OpenCode loads CommonJS plugins from two locations: project-scoped
+`.opencode/plugins/trackfw-guard.js` and global `<openCodeConfigDir>/plugins/trackfw-guard.js`.
+Unlike other CLIs, there is no JSON hook file — the guard is a `.js` plugin embedded in the binary
+(`internal/opencodeplugin/trackfw-guard.js`, `go:embed`) and written by
+`InjectOpenCodePlugin` (project) or the global harness target `opencode-guard`.
+
+**Asset contract.** The embedded asset (`internal/opencodeplugin/trackfw-guard.js`) must have:
+- `// trackfw:opencode-guard` on the **first line** — audit sentinel read by both the validator and
+  the update harness.
+- `const SCOPE = "project"` on **exactly one line** — replaced with `"global"` by `Render("global")`
+  for the global variant. `Render` returns `bytes.Clone(assetBytes)` for `"project"` to prevent
+  shared-slice mutation.
+
+**Config dir precedence (OpenCode).** `OPENCODE_CONFIG_DIR` → `XDG_CONFIG_HOME/opencode` →
+`<home>/.config/opencode`. Implemented in `agentconfig.OpenCodeConfigDirWithSource`. Home on
+Windows: `effectiveUserHomeDir()` (same as other CLIs on the same resolver).
+
+**D4 self-protection.** The plugin uses `globalOpenCodeConfigDir()` (env-based precedence, same
+as Go) to protect both the project plugin and the global plugin from being overwritten. Using
+`dirname(dirname(__filename))` would only be correct for the global variant.
+
+**Project injection.** `InjectOpenCodePlugin(rootDir)` writes `.opencode/plugins/trackfw-guard.js`
+with CRLF-normalised idempotency. `cliDetectors["opencode"]` detects `.opencode/` as a directory.
+
+**Global harness target.** `opencode-guard` is added to `buildHarnessTargetIDs` when `tool ==
+"opencode"`. The target writes the global plugin (scope `"global"`) under `<openCodeConfigDir>/
+plugins/trackfw-guard.js`. Absent/no-marker/stale → `missing`/status update. Target count: 38 → 39.
+
+**Audit (D5/D6).**
+- D5 (`validate`): `.opencode/` present → plugin absent/no-marker/stale → `credential_guard_presence_warning` via `applyRuleWarnOnly`. Wired at both emission sites in `validator.go`.
+- D6 (`doctor`): project plugin present (with marker) but global plugin absent → `DoctorOpenCodePluginGlobalAbsent` advisory finding. Recommend `trackfw update harness --targets opencode-guard --install-missing`.
+
+**auditsurface.** `"opencode"` added to `canonicalRuntimes` and `runtimeWiringPath`. Non-JSON file uses `extractOpenCodePluginSchema` (synthetic tuple, `RawCommand="trackfw guard"` when marker present, `"marker-absent"` otherwise).
+
+**ADR residual.** Payload extraction for OpenCode (the Go-side `guard credential` command reading stdin from the plugin's `execa` call) is deferred — the plugin calls `trackfw guard credential` as a subprocess; the guard reads the payload from stdin as in all other CLIs. No new payload extraction path is needed for the OpenCode plugin variant.
+
 #### Suporte por CLI — visão consolidada, escopo DE PROJETO (ML-5A, `ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`)
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
@@ -4853,6 +4893,7 @@ de um roadmap anterior e não relacionado
 | Kiro | `~/.kiro/hooks/trackfw-credential-guard.json` | **Overwrite total** — arquivo dedicado, um-arquivo-por-hook em `~/.kiro/hooks/`, nunca merge — ver "Kiro global-scope wiring (ML-2F)" | Absoluto, mesmo script (hook names `-global-pre`/`-global-post`, distintos dos de projeto) | **v3** (`kiro-cli --v3`) — documentado, sem sonda de subprocesso possível (ver caveat acima) |
 | Windsurf | — | — | — | **Fora de escopo** — sem hook nativo pré-execução, mesma razão da REQ original (PR #141) |
 | Antigravity | `~/.gemini/config/hooks.json` | USERPROFILE via `os.UserHomeDir()` no Windows (medido ML-1B §12 portabilidade doc 2026-11-18; agy lê USERPROFILE, não FOLDERID_Profile) | `antigravity-credential-guard` (ML-3B2) | `antigravity-git-branch-guard` (ML-3B2) |
+| OpenCode | `<openCodeConfigDir>/plugins/trackfw-guard.js` | **Overwrite total** — arquivo dedicado CommonJS (`.js`), sempre idempotente por comparação de conteúdo; `const SCOPE = "global"` para o alvo global — ver "OpenCode guard (`opencode-guard`) — ML-5E" abaixo | `trackfw guard credential` (executado pelo plugin via `execa`) | `opencode-guard` (ML-5E) |
 
 ##### Achados transversais (Waves 1-4 deste roadmap)
 

@@ -112,7 +112,7 @@ run_update() {
   # Clear CLAUDE_CONFIG_DIR so a developer's setting does not redirect writes during tests.
   # ML-4A4: same isolation for CODEX_HOME — a developer with CODEX_HOME set must not have
   # their real Codex hooks.json written by these scenarios.
-  (cd "$project_dir" && HOME="$home_dir" USERPROFILE="$home_dir" CLAUDE_CONFIG_DIR= CODEX_HOME= "$GO_BIN" update "$@") >"$out_file" 2>"$err_file"
+  (cd "$project_dir" && HOME="$home_dir" USERPROFILE="$home_dir" CLAUDE_CONFIG_DIR= CODEX_HOME= OPENCODE_CONFIG_DIR= XDG_CONFIG_HOME= "$GO_BIN" update "$@") >"$out_file" 2>"$err_file"
   UPDATE_EXIT=$?
   set -e
   UPDATE_STDOUT=$(cat "$out_file")
@@ -407,6 +407,99 @@ if [[ -n "${S1_GO_OUT:-}" ]]; then
         "Go declared target list does not contain '${_want_id}' — buildHarnessTargetIDs missing antigravity case (ML-3B2)"
     fi
   done
+fi
+
+# ===========================================================================
+# Scenario 5c — member-explicit check for ML-5E opencode-guard target.
+# Verifies that "opencode-guard" appears by name in the declared target list
+# when the opencode tool is in scope (S1 output covers all tools).
+# ===========================================================================
+if [[ -n "${S1_GO_OUT:-}" ]]; then
+  ids_go_5c=$(target_ids_json "$S1_GO_OUT" 2>/dev/null || echo "PARSE_ERROR")
+  _want_id="opencode-guard"
+  if python3 -c "import json,sys; ids=json.loads(sys.argv[1]); sys.exit(0 if '${_want_id}' in ids else 1)" "$ids_go_5c" 2>/dev/null; then
+    ok "update-harness/target-list/member-explicit/${_want_id}"
+  else
+    diag "update-harness/target-list/member-explicit/${_want_id}" \
+      "Go declared target list does not contain '${_want_id}' — buildHarnessTargetIDs missing opencode case (ML-5E)"
+  fi
+fi
+
+# ===========================================================================
+# Scenario 5c-2 — `update harness --targets opencode-guard` without
+# --install-missing: state must be 'missing' and no file must be written.
+# (ML-5E2 REQ-2026-11-17 A4)
+# ===========================================================================
+S5C2_HOME="$WORK/s5c2-home"
+S5C2_PROJ="$WORK/s5c2-project"
+mkdir -p "$S5C2_HOME" "$S5C2_PROJ"
+S5C2_GLOBAL_PLUGIN="$S5C2_HOME/.config/opencode/plugins/trackfw-guard.js"
+
+run_update "$S5C2_HOME" "$S5C2_PROJ" harness --targets opencode-guard --json
+S5C2_EXIT=$UPDATE_EXIT; S5C2_OUT=$UPDATE_STDOUT
+
+if [[ "$S5C2_EXIT" != "0" ]]; then
+  diag "update-harness/opencode-guard/no-install-missing/exit-zero" \
+    "go exited $S5C2_EXIT — missing without --install-missing must be exit 0"
+fi
+
+# State must be 'missing'
+s5c2_state=$(python3 -c "
+import json, sys
+d = json.loads(sys.argv[1])
+t = next((t for t in d['targets'] if t['id'] == 'opencode-guard'), None)
+print(t['state'] if t else 'TARGET_NOT_FOUND')
+" "$S5C2_OUT" 2>/dev/null | strip_cr || echo "PARSE_ERROR")
+
+if [[ "$s5c2_state" == "missing" ]]; then
+  ok "update-harness/opencode-guard/no-install-missing/state-missing"
+else
+  diag "update-harness/opencode-guard/no-install-missing/state-missing" \
+    "opencode-guard state='${s5c2_state}' (want 'missing') without --install-missing"
+fi
+
+# No file must have been created
+if [[ -e "$S5C2_GLOBAL_PLUGIN" ]]; then
+  diag "update-harness/opencode-guard/no-install-missing/no-file-created" \
+    "trackfw-guard.js was written without --install-missing at $S5C2_GLOBAL_PLUGIN"
+else
+  ok "update-harness/opencode-guard/no-install-missing/no-file-created"
+fi
+
+# ===========================================================================
+# Scenario 5c-3 — `update harness --targets opencode-guard --install-missing`:
+# file must be written and contain `const SCOPE = "global"`.
+# (ML-5E2 REQ-2026-11-17 A4)
+# ===========================================================================
+S5C3_HOME="$WORK/s5c3-home"
+S5C3_PROJ="$WORK/s5c3-project"
+mkdir -p "$S5C3_HOME" "$S5C3_PROJ"
+S5C3_GLOBAL_PLUGIN="$S5C3_HOME/.config/opencode/plugins/trackfw-guard.js"
+
+run_update "$S5C3_HOME" "$S5C3_PROJ" harness --targets opencode-guard --install-missing --json
+S5C3_EXIT=$UPDATE_EXIT; S5C3_OUT=$UPDATE_STDOUT
+
+if [[ "$S5C3_EXIT" != "0" ]]; then
+  diag "update-harness/opencode-guard/install-missing/exit-zero" \
+    "go exited $S5C3_EXIT with --install-missing (expected exit 0)"
+fi
+
+# File must exist
+if [[ -f "$S5C3_GLOBAL_PLUGIN" ]]; then
+  ok "update-harness/opencode-guard/install-missing/file-created"
+else
+  diag "update-harness/opencode-guard/install-missing/file-created" \
+    "trackfw-guard.js was not written at $S5C3_GLOBAL_PLUGIN"
+fi
+
+# File must contain `const SCOPE = "global"` (global-scope asset invariant)
+if [[ -f "$S5C3_GLOBAL_PLUGIN" ]]; then
+  if grep -qF 'const SCOPE = "global"' "$S5C3_GLOBAL_PLUGIN"; then
+    ok "update-harness/opencode-guard/install-missing/global-scope-token"
+  else
+    diag "update-harness/opencode-guard/install-missing/global-scope-token" \
+      "trackfw-guard.js at $S5C3_GLOBAL_PLUGIN does not contain 'const SCOPE = \"global\"' — wrong scope rendered"
+  fi
 fi
 
 # ===========================================================================

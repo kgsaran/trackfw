@@ -288,9 +288,14 @@ func TestInjectAntigravityHooks_NoPSPOSIXForms(t *testing.T) {
 // InjectHooksForTools(["antigravity"], root) now writes .agents/hooks.json —
 // prior to ML-3B (REQ-2026-11-17), "antigravity" was absent from cliDetectors
 // and the call was a silent skip.
-// Contra-arm: InjectHooksForTools(["opencode"], root) still writes nothing.
+// Contra-arm (opencode): InjectHooksForTools(["opencode"], root) now writes
+// .opencode/plugins/trackfw-guard.js — prior to ML-5E (REQ-2026-11-17),
+// "opencode" was absent from cliDetectors and the call was a silent skip.
+// Contra-arm (unknown): a genuinely unknown CLI name is still silently skipped.
 func TestInjectHooksForTools_AntigravityNowWrites(t *testing.T) {
 	t.Setenv("CODEX_HOME", "")
+	t.Setenv("OPENCODE_CONFIG_DIR", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
 
 	t.Run("arm_antigravity_writes", func(t *testing.T) {
 		dir := t.TempDir()
@@ -307,14 +312,43 @@ func TestInjectHooksForTools_AntigravityNowWrites(t *testing.T) {
 		}
 	})
 
-	t.Run("contra_opencode_still_skips", func(t *testing.T) {
+	// Inverted from ML-3B (was "opencode still skips").
+	// Conclusion: InjectHooksForTools(["opencode"], root) now writes
+	// .opencode/plugins/trackfw-guard.js — ML-5E added opencode to cliDetectors.
+	t.Run("arm_opencode_now_writes", func(t *testing.T) {
 		dir := t.TempDir()
 		if err := InjectHooksForTools([]string{"opencode"}, dir); err != nil {
 			t.Fatalf("InjectHooksForTools([opencode]): %v", err)
 		}
+		pluginPath := filepath.Join(dir, ".opencode", "plugins", "trackfw-guard.js")
+		data, readErr := os.ReadFile(pluginPath)
+		if readErr != nil {
+			t.Fatalf(".opencode/plugins/trackfw-guard.js was not created: %v", readErr)
+		}
+		// D1: first line must be the marker.
+		firstLine := string(data)
+		if idx := strings.Index(firstLine, "\n"); idx >= 0 {
+			firstLine = firstLine[:idx]
+		}
+		firstLine = strings.TrimRight(firstLine, "\r")
+		if firstLine != "// trackfw:opencode-guard" {
+			t.Errorf("first line = %q, want %q", firstLine, "// trackfw:opencode-guard")
+		}
+		// SCOPE must be "project" in the project variant.
+		if !strings.Contains(string(data), `const SCOPE = "project"`) {
+			t.Errorf("plugin missing 'const SCOPE = \"project\"'")
+		}
+	})
+
+	// Conclusion: genuinely unknown CLI names are silently skipped — no files written.
+	t.Run("contra_unknown_cli_skips", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := InjectHooksForTools([]string{"nonexistent-cli-do-not-add"}, dir); err != nil {
+			t.Fatalf("InjectHooksForTools([nonexistent-cli]): %v", err)
+		}
 		entries, _ := os.ReadDir(dir)
 		if len(entries) != 0 {
-			t.Errorf("opencode should still be a silent skip; got entries: %v", entries)
+			t.Errorf("unknown cli name should be a silent skip; got entries: %v", entries)
 		}
 	})
 }

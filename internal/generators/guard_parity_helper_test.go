@@ -158,6 +158,14 @@ func TestMain(m *testing.M) {
 	if err := os.Unsetenv("CODEX_HOME"); err != nil {
 		panic(err)
 	}
+	// ML-5E (REQ-2026-11-17): same isolation for OPENCODE_CONFIG_DIR and
+	// XDG_CONFIG_HOME — agentconfig.OpenCodeConfigDir honours both env vars.
+	if err := os.Unsetenv("OPENCODE_CONFIG_DIR"); err != nil {
+		panic(err)
+	}
+	if err := os.Unsetenv("XDG_CONFIG_HOME"); err != nil {
+		panic(err)
+	}
 
 	// ML-7D: disable git maintenance auto-scheduling for every git child process
 	// in this test binary (including the compiled trackfw binary). GIT_CONFIG_PARAMETERS

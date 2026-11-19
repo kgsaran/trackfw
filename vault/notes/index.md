@@ -3,6 +3,7 @@
 > Ponto de entrada de conhecimento do projeto para agentes e pessoas.
 
 ## Índice
+- [jsruntime-test-node-bin-dir-and-windows-bat-trap-2026-11-19](jsruntime-test-node-bin-dir-and-windows-bat-trap-2026-11-19.md) — 🔴 **macOS: Homebrew coloca `node` e `trackfw` em `/opt/homebrew/bin`; não inclua `nodeBinDir` em `nodeEnvNoTrackfw` ou o real trackfw é encontrado; Windows: `.bat` fake não é achado por `spawnSync` sem `shell:true` — use helper-process pattern (TestMain + cópia do `.exe`)** (ML-5E2)
 - [opencode-write-scope-lowercase-e-credential-write-edit-2026-11-19](opencode-write-scope-lowercase-e-credential-write-edit-2026-11-19.md) — 🔴 **OpenCode lowercase tool names bypassam write-scope Step 4; `path`/`filePath` ≠ `file_path` → falso positivo em todas writes; credential guard deve cobrir Bash|PowerShell + Read + Write|Edit** (ML-5-0 Wave 5)
 - [opencode-path-binary-skew-d5-nao-tagueado-2026-11-19](opencode-path-binary-skew-d5-nao-tagueado-2026-11-19.md) — PATH binary (Homebrew 11.5.0) ≠ `bin/trackfw` (11.7.0 HEAD): D5 `credViewFileScan` não tagueado → T-D5=0 no PATH binary é esperado, não defeito; write/shell guards idênticos em ambas versões (ML-5A, M21)
 - [winskips-tagless-switch-false-positive-guard-2026-11-17](winskips-tagless-switch-false-positive-guard-2026-11-17.md) — 🔴 **tagless switch sem case GOOS checava o default (false positive); guard `hasAnyGOOSCase` resolve; afeta qualquer switch de dispatch com `return`/`continue` no default** (ML-FA3)

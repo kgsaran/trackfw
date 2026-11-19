@@ -254,6 +254,29 @@ func extractNested3(root map[string]json.RawMessage, obj1Key, obj2Key, fieldKey 
 	return val, true, nil
 }
 
+// isOpenCodePayload reports whether root is an OpenCode guard payload
+// (ADR-2026-11-19 D3). Returns true when root["hook_source"] is the JSON
+// string "opencode" (exact, case-sensitive). A missing value, null, or
+// non-string hook_source returns false.
+//
+// This is a schema check by explicit field value — it does NOT reuse
+// isAntigravityPayload (lição F1: schema check explícita, não prioridade de campo).
+func isOpenCodePayload(root map[string]json.RawMessage) bool {
+	rawHS, ok := root["hook_source"]
+	if !ok || isJSONNull(rawHS) {
+		return false
+	}
+	trimmed := bytes.TrimLeft(rawHS, " \t\r\n")
+	if len(trimmed) == 0 || trimmed[0] != '"' {
+		return false
+	}
+	var hs string
+	if err := json.Unmarshal(rawHS, &hs); err != nil {
+		return false
+	}
+	return hs == "opencode"
+}
+
 // isAntigravityPayload reports whether root matches the Google Antigravity
 // PreToolUse schema (ADR-2026-11-18 D3, D4):
 //   - "toolCall" is a JSON object (not null, not another type), AND

@@ -144,6 +144,12 @@ const (
 	// IDE is installed, but the global hooks.json lacks a guard. D8 (ADR-2026-11-18, ML-4E):
 	// the IDE ignores project hooks — only the global guard protects it.
 	DoctorAntigravityIDEGlobalGuard DoctorFindingKind = "antigravity-ide-global-guard"
+
+	// DoctorOpenCodePluginGlobalAbsent: the project has an OpenCode plugin
+	// (.opencode/plugins/trackfw-guard.js with the trackfw:opencode-guard marker) but the
+	// global OpenCode config dir does not have the guard plugin. D6 (ML-5E, REQ-2026-11-17):
+	// advisory — run `trackfw update harness --targets opencode-guard`.
+	DoctorOpenCodePluginGlobalAbsent DoctorFindingKind = "opencode-plugin-global-absent"
 )
 
 // DoctorFinding is one artifact requiring the user's attention, plus a

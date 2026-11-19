@@ -46,6 +46,7 @@ const (
 	CLICopilot      = "copilot"
 	CLIWindsurf     = "windsurf"
 	CLIKiro         = "kiro"
+	CLIOpenCode     = "opencode"
 )
 
 // CLIHomeResolver resolves the home directory for a given agent CLI.
@@ -147,6 +148,14 @@ func (OSCLIHomeResolver) HomeFor(cli string) (string, error) {
 		// docs/portabilidade/2026-11-18-antigravity-contrato-de-hooks.md shows
 		// that setting USERPROFILE=C:\agyprobe\altprofile makes agy read the
 		// hooks.json at that path; os.UserHomeDir() returns USERPROFILE on Windows.
+		return effectiveUserHomeDir()
+	}
+	if effectiveGOOS() == "windows" && cli == CLIOpenCode {
+		// OpenCode on Windows reads from USERPROFILE (os.UserHomeDir() in Go).
+		// Measured 2026-11-19 in ADR-2026-11-19-guard-do-trackfw-no-opencode-via-plugin.md §D5:
+		// OpenCode stores its global plugins under %USERPROFILE%\.config\opencode\plugins
+		// on Windows — same mechanism as Antigravity (USERPROFILE env var, not FOLDERID_Profile).
+		// Using os.UserHomeDir() matches the JS plugin's nodeOS.homedir() on win32.
 		return effectiveUserHomeDir()
 	}
 	return homedir.Dir()
@@ -533,4 +542,114 @@ func AntigravityIDEDir(r CLIHomeResolver) (string, error) {
 		return "", err
 	}
 	return filepath.Join(home, ".antigravity-ide"), nil
+}
+
+// Source constants returned by OpenCodeConfigDirWithSource.
+//
+//   - OpenCodeConfigDirSourceEnvVar: resolution came from the OPENCODE_CONFIG_DIR
+//     environment variable (set and non-empty after TrimSpace).
+//   - OpenCodeConfigDirSourceXDG: resolution came from XDG_CONFIG_HOME/opencode.
+//   - OpenCodeConfigDirSourceOSHome: resolution fell through to os.UserHomeDir()
+//     on Windows (USERPROFILE).
+//   - OpenCodeConfigDirSourceHome: resolution fell through to homedir.Dir()
+//     (HOME env var first) on non-Windows platforms.
+const (
+	OpenCodeConfigDirSourceEnvVar = "OPENCODE_CONFIG_DIR"
+	OpenCodeConfigDirSourceXDG    = "XDG_CONFIG_HOME"
+	OpenCodeConfigDirSourceOSHome = "os-home"
+	OpenCodeConfigDirSourceHome   = "home"
+)
+
+// OpenCodeConfigDirWithSource returns the directory for OpenCode's global plugin
+// storage together with a string identifying the source of the resolution
+// (one of the OpenCodeConfigDirSource* constants).
+//
+// OpenCodeConfigDir is a thin wrapper over this function for callers that do not
+// need the source.
+//
+// Resolution order (ADR-2026-11-19 D5, measured OpenCode 2.3.2):
+//
+//  1. If OPENCODE_CONFIG_DIR is set and non-empty after TrimSpace:
+//     - R-1: if the value is not absolute after filepath.Clean, returns a named
+//       error. Spaces-only is treated as "not set" and falls through to step 2.
+//     - Otherwise: returns filepath.Clean(OPENCODE_CONFIG_DIR) and source
+//       OpenCodeConfigDirSourceEnvVar.
+//
+//  2. If XDG_CONFIG_HOME is set and non-empty after TrimSpace:
+//     - R-1: if the value is not absolute, returns a named error.
+//     - Otherwise: returns filepath.Clean(XDG_CONFIG_HOME)/opencode and source
+//       OpenCodeConfigDirSourceXDG.
+//
+//  3. Otherwise: filepath.Join(r.HomeFor(CLIOpenCode), ".config", "opencode").
+//     On Windows (via OSCLIHomeResolver) this uses USERPROFILE (source:
+//     OpenCodeConfigDirSourceOSHome); on other platforms, HOME (source:
+//     OpenCodeConfigDirSourceHome).
+//
+// Callers join "plugins/trackfw-guard.js" to the result:
+//
+//	dir, err := agentconfig.OpenCodeConfigDir(agentconfig.DefaultResolver)
+//	if err != nil { /* emit finding per A7 */ }
+//	path := filepath.Join(dir, "plugins", "trackfw-guard.js")
+func OpenCodeConfigDirWithSource(r CLIHomeResolver) (dir, source string, err error) {
+	raw := os.Getenv("OPENCODE_CONFIG_DIR")
+	if strings.TrimSpace(raw) != "" {
+		cleaned := filepath.Clean(raw)
+		if !filepath.IsAbs(cleaned) {
+			return "", "", fmt.Errorf("OPENCODE_CONFIG_DIR %q is not an absolute path", raw)
+		}
+		return cleaned, OpenCodeConfigDirSourceEnvVar, nil
+	}
+	xdg := os.Getenv("XDG_CONFIG_HOME")
+	if strings.TrimSpace(xdg) != "" {
+		cleanedXDG := filepath.Clean(xdg)
+		if !filepath.IsAbs(cleanedXDG) {
+			return "", "", fmt.Errorf("XDG_CONFIG_HOME %q is not an absolute path", xdg)
+		}
+		return filepath.Join(cleanedXDG, "opencode"), OpenCodeConfigDirSourceXDG, nil
+	}
+	home, err := r.HomeFor(CLIOpenCode)
+	if err != nil {
+		return "", "", err
+	}
+	dir = filepath.Join(home, ".config", "opencode")
+	if effectiveGOOS() == "windows" {
+		return dir, OpenCodeConfigDirSourceOSHome, nil
+	}
+	return dir, OpenCodeConfigDirSourceHome, nil
+}
+
+// OpenCodeConfigDir returns the directory for OpenCode's global plugin storage.
+// It is a wrapper over OpenCodeConfigDirWithSource for callers that do not need
+// the resolution source.
+func OpenCodeConfigDir(r CLIHomeResolver) (string, error) {
+	dir, _, err := OpenCodeConfigDirWithSource(r)
+	return dir, err
+}
+
+// OpenCodePluginDisplayPath returns the human-readable display path for the
+// global OpenCode trackfw-guard.js plugin. When the resolved path is under
+// homedir.Dir(), it is abbreviated with "~/" (e.g.,
+// "~/.config/opencode/plugins/trackfw-guard.js" in the control case).
+// When the resolved path is outside homedir.Dir() (e.g., OPENCODE_CONFIG_DIR
+// or XDG_CONFIG_HOME points outside home, or USERPROFILE ≠ HOME on Windows),
+// the absolute path is returned as-is.
+// Falls back to "~/.config/opencode/plugins/trackfw-guard.js" when dir is empty.
+//
+// Declared in agentconfig so both internal/generators and internal/validator
+// can call the same function (the validator cannot import generators due to
+// circular dependency). Mirrors CodexHooksDisplayPath.
+func OpenCodePluginDisplayPath(dir string) string {
+	if dir == "" {
+		return "~/.config/opencode/plugins/trackfw-guard.js"
+	}
+	p := filepath.Join(dir, "plugins", "trackfw-guard.js")
+	home, err := homedir.Dir()
+	if err != nil {
+		return p
+	}
+	rel, err := filepath.Rel(home, p)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return p
+	}
+	return "~/" + filepath.ToSlash(rel)
 }

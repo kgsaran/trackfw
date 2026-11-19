@@ -1368,6 +1368,15 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 		applyRuleWarnOnly("antigravity_ide_global_guard", ideGlobalGuardMsgs, &warnings)
 	}
 
+	// D5 (ML-5E, REQ-2026-11-17): OpenCode plugin presence warning.
+	// Always-warning, never blockable — routed via applyRuleWarnOnly only.
+	// 🔴 Mirror site in validateUnfilteredTagged below — forgetting it silences the rule from --json.
+	{
+		cwd, _ := os.Getwd()
+		openCodePluginMsgs, _ := validateOpenCodePluginWarnings(cwd)
+		applyRuleWarnOnly("credential_guard_presence_warning", openCodePluginMsgs, &warnings)
+	}
+
 	return violations, warnings, nil
 }
 
@@ -1938,6 +1947,14 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 		cwd, _ := os.Getwd()
 		ideGlobalGuardMsgsT, _ := validateAntigravityIDEGlobalGuardWarnings(cwd)
 		applyRuleWarnOnlyTagged("antigravity_ide_global_guard", ideGlobalGuardMsgsT, &warnings)
+	}
+
+	// D5 (ML-5E, REQ-2026-11-17): mirror of ValidateUnfiltered opencode plugin presence block.
+	// 🔴 Missing this site silences credential_guard_presence_warning (opencode) from --json output.
+	{
+		cwd, _ := os.Getwd()
+		openCodePluginMsgsT, _ := validateOpenCodePluginWarnings(cwd)
+		applyRuleWarnOnlyTagged("credential_guard_presence_warning", openCodePluginMsgsT, &warnings)
 	}
 
 	return violations, warnings, nil

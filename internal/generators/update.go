@@ -19,6 +19,7 @@ import (
 	"github.com/kgsaran/trackfw/internal/guardforms"
 	"github.com/kgsaran/trackfw/internal/identity"
 	"github.com/kgsaran/trackfw/internal/integrations"
+	"github.com/kgsaran/trackfw/internal/opencodeplugin"
 	"github.com/kgsaran/trackfw/internal/pathguard"
 	"github.com/kgsaran/trackfw/internal/validator"
 )
@@ -512,7 +513,7 @@ var harnessCatalogTargetOrder = []string{
 }
 
 // HarnessTargetIDs is the fixed, declared order of `trackfw update harness`
-// targets: 38 ids — "claude-skill", then "claude-credential-guard" and
+// targets: 39 ids — "claude-skill", then "claude-credential-guard" and
 // "claude-git-branch-guard" (global hook wiring for Claude Code — placed
 // immediately after claude-skill since all three are Claude-Code-scoped
 // global artifacts), then for each catalog target in
@@ -538,9 +539,13 @@ var harnessCatalogTargetOrder = []string{
 // "antigravity-git-branch-guard" inserted immediately BEFORE
 // "antigravity-agents"/"antigravity-skills" (ML-3B2, REQ-2026-11-17 — global
 // guard for Google Antigravity at ~/.gemini/config/hooks.json; Windows home
-// is USERPROFILE via os.UserHomeDir(), measured in ML-1B §12). Within each
-// tool, credential-guard always precedes git-branch-guard (where it exists),
-// which always precedes that tool's own agents/skills pair, never follows it.
+// is USERPROFILE via os.UserHomeDir(), measured in ML-1B §12), and
+// "opencode-guard" inserted immediately BEFORE "opencode-agents"/"opencode-skills"
+// (ML-5E, REQ-2026-11-17 — global plugin guard for OpenCode at
+// ~/.config/opencode/plugins/trackfw-guard.js; uses OPENCODE_CONFIG_DIR >
+// XDG_CONFIG_HOME/opencode > <home>/.config/opencode precedence; Windows home
+// is USERPROFILE via os.UserHomeDir()). Within each tool, guard targets always
+// precede that tool's own agents/skills pair, never follow it.
 // Order here is authoritative for both JSON output and iteration — it must
 // never be derived from the filesystem or from what happens to be installed on
 // a given machine (see docs/cli-parity.md, "targets follows the declared
@@ -576,6 +581,9 @@ func buildHarnessTargetIDs() []string {
 		}
 		if tool == "antigravity" {
 			ids = append(ids, "antigravity-credential-guard", "antigravity-git-branch-guard")
+		}
+		if tool == "opencode" {
+			ids = append(ids, "opencode-guard")
 		}
 		ids = append(ids, tool+"-agents", tool+"-skills")
 	}
@@ -650,6 +658,14 @@ func UpdateHarness(opts UpdateOptions) (UpdateReport, error) {
 	antigravityDir, antigravityDirErr := agentconfig.AntigravityConfigDir(agentconfig.DefaultResolver)
 	if antigravityDirErr == nil {
 		antigravityDir = filepath.Clean(antigravityDir)
+	}
+
+	// ML-5E (REQ-2026-11-17): OpenCode global plugin path may differ from
+	// home/.config/opencode when OPENCODE_CONFIG_DIR or XDG_CONFIG_HOME is set,
+	// or on Windows (USERPROFILE ≠ HOME in Git Bash). Same pattern as Claude/Codex/Antigravity.
+	openCodeDir, openCodeDirErr := agentconfig.OpenCodeConfigDir(agentconfig.DefaultResolver)
+	if openCodeDirErr == nil {
+		openCodeDir = filepath.Clean(openCodeDir)
 	}
 
 	// NOTE: the script files are now first-class targets ("git-branch-guard-script",
@@ -761,6 +777,10 @@ func UpdateHarness(opts UpdateOptions) (UpdateReport, error) {
 		}
 		if id == "antigravity-git-branch-guard" {
 			results = append(results, harnessGitBranchGuardTargetAntigravity(antigravityDir, antigravityDirErr, opts))
+			continue
+		}
+		if id == "opencode-guard" {
+			results = append(results, harnessOpenCodeGuardTarget(openCodeDir, openCodeDirErr, opts))
 			continue
 		}
 		tool, kind, ok := splitHarnessCatalogTargetID(id)
@@ -2991,6 +3011,100 @@ func harnessGitBranchGuardTargetAntigravity(antigravityDir string, antigravityDi
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+	}
+	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+}
+
+// harnessOpenCodeGuardTarget evaluates (and, unless DryRun, applies) the
+// global-scope OpenCode plugin guard: ~/.config/opencode/plugins/trackfw-guard.js
+// (or the override via OPENCODE_CONFIG_DIR / XDG_CONFIG_HOME).
+//
+// Design decisions (ADR-2026-11-19 D5):
+//   - The file is wholly trackfw-owned, not merged with existing content.
+//     Like the script targets, equal content means "skipped"; different or absent
+//     means "missing" (or "updated" with --install-missing).
+//   - CRLF normalisation before comparison prevents eternal "stale" on a Windows
+//     checkout with autocrlf enabled.
+//   - Symlink root: the directory two levels above openCodeDir
+//     (HomeFor(CLIOpenCode)) — unless OPENCODE_CONFIG_DIR is set, in which case
+//     there is no "natural" home root; in that case symlinkRoot = filepath.Dir(openCodeDir)
+//     so the check is scoped to the OPENCODE_CONFIG_DIR parent (consistent with
+//     the Codex pattern when CODEX_HOME is set).
+//   - Requires --install-missing (like antigravity guards): missing on a fresh
+//     machine is not an error, just informational.
+func harnessOpenCodeGuardTarget(openCodeDir string, openCodeDirErr error, opts UpdateOptions) TargetResult {
+	const id = "opencode-guard"
+	displayPath := agentconfig.OpenCodePluginDisplayPath(openCodeDir)
+	if openCodeDirErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: "~/.config/opencode/plugins/trackfw-guard.js", Message: fmt.Sprintf("resolving OpenCode config dir: %s", openCodeDirErr)}
+	}
+
+	path := filepath.Join(openCodeDir, "plugins", "trackfw-guard.js")
+
+	// Guard: reject writes through symlinks before any filesystem mutation.
+	// Root is derived from OPENCODE_CONFIG_DIR source or HomeFor(CLIOpenCode).
+	//
+	// When OPENCODE_CONFIG_DIR is set, it may point anywhere, so there is no
+	// parent "home" to use as the guard root. Use filepath.Dir(openCodeDir)
+	// (the OPENCODE_CONFIG_DIR value itself, one level up from "plugins/") as
+	// the root so the guard still catches symlinks inside the dir but doesn't
+	// impose a home-relative constraint.
+	//
+	// Without OPENCODE_CONFIG_DIR the natural root is HomeFor(CLIOpenCode),
+	// which is two directory levels above openCodeDir:
+	//   openCodeDir = <home>/.config/opencode  → dirname(dirname) = <home>
+	//   openCodeDir = <xdg>/opencode           → dirname(dirname) = dirname(xdg)
+	//
+	// The XDG case is less precise but harmless: if XDG_CONFIG_HOME is set to
+	// e.g. /home/user/.config, then dirname(dirname(openCodeDir)) = /home/user,
+	// which is effectively the user's home directory — a correct symlink root.
+	_, isEnvOverride := os.LookupEnv("OPENCODE_CONFIG_DIR")
+	var symlinkRoot string
+	if isEnvOverride && strings.TrimSpace(os.Getenv("OPENCODE_CONFIG_DIR")) != "" {
+		symlinkRoot = filepath.Dir(openCodeDir)
+	} else {
+		symlinkRoot = filepath.Dir(filepath.Dir(openCodeDir))
+	}
+	if result, guarded := rejectHarnessSymlink(symlinkRoot, path, id, displayPath); guarded {
+		return result
+	}
+
+	// Canonical global-scope content.
+	canonical := opencodeplugin.RenderGlobal()
+	canonical = integrations.NormalizeCRLF(canonical)
+
+	raw, err := os.ReadFile(path)
+	switch {
+	case os.IsNotExist(err):
+		if !opts.InstallMissing {
+			return TargetResult{ID: id, State: TargetMissing, Path: displayPath}
+		}
+		if opts.DryRun {
+			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
+		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+		if writeErr := os.WriteFile(path, canonical, 0644); writeErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+		}
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	case err != nil:
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
+	}
+
+	// File exists: compare with CRLF normalisation.
+	if string(integrations.NormalizeCRLF(raw)) == string(canonical) {
+		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
+	}
+	if opts.DryRun {
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+	if writeErr := os.WriteFile(path, canonical, 0644); writeErr != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 	}
 	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
