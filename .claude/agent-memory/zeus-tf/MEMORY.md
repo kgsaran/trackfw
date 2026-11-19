@@ -51,3 +51,4 @@
 - [Comentário em Discussion é bloqueado](project_comentario_em_discussion_bloqueado.md) — sem aprovação explícita é negado; mostrar o texto ao KG e publicar após o "pode publicar"
 - [Ler o log antes de atribuir falha](feedback_ler_o_log_antes_de_atribuir_falha.md) — CI vermelho: abrir o log do job; `go` do #687 não era timeout, era dash -u; make quality antes do push
 - [Sonda no binário, não leitura de fonte](feedback_sonda_no_binario_nao_leitura_de_fonte.md) — Codex: fonte dizia cmd.exe, binário roda powershell -NoProfile; 'guard inerte' era falso
+- [Ler o rc antes de commitar](feedback_ler_rc_antes_de_commitar.md) — exit da notificação é do wrapper `; echo rc=$?`; commitei rc=0 com rc=2 (ML-5I)

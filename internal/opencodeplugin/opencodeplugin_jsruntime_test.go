@@ -282,6 +282,7 @@ plugin.setup(ctx).then(function() {
 //	arm9_patch_header_plugin_throws   — patch with *** Update File targeting plugin → D4 → exit 1
 //	arm10_patch_innocent_no_self_throw — patch targeting innocent file → no self-protection throw
 //	arm11_webfetch_secret_throws      — webfetch URL containing secret → credential guard → exit 1
+//	arm12_websearch_secret_throws     — websearch query containing secret → credential guard → exit 1
 func TestOpenCodePlugin_JSRuntime(t *testing.T) {
 	nodeRuntime := findNodeRuntime()
 	if nodeRuntime == "" {
@@ -467,8 +468,8 @@ func TestOpenCodePlugin_JSRuntime(t *testing.T) {
 		// Conclusion: writing through a symlink that points to the plugin file → realpath
 		// comparison catches the symlink target → D4 fires (F8 fix).
 		symlinkPath := filepath.Join(t.TempDir(), "link-to-plugin.js")
-		if err := os.Symlink(pluginPath, symlinkPath); err != nil {
-			t.Skip("cannot create symlink (Windows without privilege?): " + err.Error())
+		if !symlinkOrSkip(t, pluginPath, symlinkPath) {
+			return
 		}
 		envNoTrackfw := nodeEnvNoTrackfw(secret)
 		driver := makeV2Driver(pluginPath, projectDir, "write",
@@ -530,6 +531,24 @@ func TestOpenCodePlugin_JSRuntime(t *testing.T) {
 		}
 		if strings.Contains(stderr, "not found") {
 			t.Errorf("arm11: threw ENOENT instead of guard block; stderr=%q", stderr)
+		}
+	})
+
+	t.Run("arm12_websearch_secret_throws", func(t *testing.T) {
+		// Conclusion: websearch tool with query containing a fake credential → plugin
+		// routes websearch via WEBFETCH_TOOLS to trackfw guard credential → fake
+		// trackfw sees secret in stdin and exits 2 → plugin throws (ML-5I2 coverage).
+		driver := makeV2Driver(pluginPath, projectDir, "websearch",
+			fmt.Sprintf(`{ query: %q }`, "site:example.com key="+secret))
+		_, stderr, rc := runNodeDriver(t, nodeRuntime, driver, env)
+		if rc == 0 {
+			t.Fatalf("arm12: expected throw for websearch with credential in query; got rc=0 stderr=%q", stderr)
+		}
+		if !strings.Contains(stderr, "THREW:") {
+			t.Errorf("arm12: expected THREW: in stderr; got %q", stderr)
+		}
+		if strings.Contains(stderr, "not found") {
+			t.Errorf("arm12: threw ENOENT instead of guard block; stderr=%q", stderr)
 		}
 	})
 }

@@ -41,8 +41,10 @@ const FILE_WRITE_TOOLS = new Set(["write", "edit", "patch", "apply_patch"])
 // FILE_READ_TOOLS: read and grep tool IDs (ADR D3, D7 F6)
 const FILE_READ_TOOLS = new Set(["read", "grep"])
 
-// WEBFETCH_TOOLS: webfetch tool ID (ADR D3, D7 F6)
-const WEBFETCH_TOOLS = new Set(["webfetch"])
+// WEBFETCH_TOOLS: webfetch and websearch tool IDs (ADR D3, D7 F6).
+// websearch submits a query to a remote service — a secret in the query exfiltrates
+// identically to a secret in a webfetch URL (ML-5I2, REQ-2026-11-17).
+const WEBFETCH_TOOLS = new Set(["webfetch", "websearch"])
 
 // realpathOrParent resolves symlinks via fs.realpathSync. When the target does
 // not exist, it walks up to the nearest existing ancestor, resolves that via
@@ -302,7 +304,7 @@ function runGuard(guardCmd, tool, args, projectDir) {
  * shell/bash:            credential + git-branch.
  * write/edit/patch/apply_patch: credential.
  * read/grep:             credential (hook_source="opencode" enables path check).
- * webfetch:              credential (URL and body may carry secrets; F6).
+ * webfetch/websearch:    credential (URL/query and body may carry secrets; F6, ML-5I2).
  * Other tools: pass through without any call.
  */
 function checkTools(tool, args, projectDir) {

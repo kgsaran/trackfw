@@ -166,7 +166,7 @@ func warnOpenCodeConfigKeys(root string) []string {
 		filepath.Join(root, ".opencode", "opencode.jsonc"),
 	}
 	for _, path := range candidates {
-		raw, err := os.ReadFile(path)
+		raw, err := readRegularFile(path)
 		if err != nil {
 			continue
 		}
