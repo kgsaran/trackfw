@@ -675,4 +675,109 @@ func TestOpenCodePlugin_JSRuntime(t *testing.T) {
 			t.Errorf("arm18: expected fail-closed in stderr (pre-fix gives ENOENT); got %q", stderr)
 		}
 	})
+
+	t.Run("arm19_mixed_patch_rename_to_plugin_throws", func(t *testing.T) {
+		// Conclusion: mixed patch whose unified-diff section targets README.md (innocent)
+		// but whose git rename section targets .opencode/plugins/evil.js → after ML-5I4
+		// fix, diff --git + rename headers are recognized, D4 fires with "D4 self-protection"
+		// (before fix: rename headers not recognized → README candidate passes selfProtect
+		// → ENOENT from guard, stderr contains "not found" but not "D4 self-protection").
+		envNoTrackfw := nodeEnvNoTrackfw(secret)
+		patchText := "--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n-old\n+new\n" +
+			"diff --git a/x b/.opencode/plugins/evil.js\n" +
+			"rename from x\n" +
+			"rename to .opencode/plugins/evil.js\n"
+		driver := makeV2Driver(pluginPath, projectDir, "patch",
+			fmt.Sprintf(`{ patchText: %q }`, patchText))
+		_, stderr, rc := runNodeDriver(t, nodeRuntime, driver, envNoTrackfw)
+		if rc == 0 {
+			t.Fatalf("arm19: expected D4 throw for mixed patch with rename to plugin; got rc=0 stderr=%q", stderr)
+		}
+		// Discriminator: D4 self-protection (before fix: "not found" from ENOENT after selfProtect passes).
+		if !strings.Contains(stderr, "D4 self-protection") {
+			t.Errorf("arm19: expected D4 self-protection in stderr (pre-fix gives ENOENT); got %q", stderr)
+		}
+	})
+
+	t.Run("arm20_rename_only_to_plugin_throws_d4_not_failclosed", func(t *testing.T) {
+		// Conclusion: rename-only patch (diff --git + rename from/to, no +++ header) targeting
+		// .opencode/plugins/evil.js → after ML-5I4 fix, rename headers supply candidates and D4
+		// fires with "D4 self-protection" (before fix: no recognizable headers → F5 fail-closed
+		// throws "fail-closed", which does not contain "D4 self-protection").
+		envNoTrackfw := nodeEnvNoTrackfw(secret)
+		patchText := "diff --git a/.opencode/plugins/trackfw-guard.js b/.opencode/plugins/evil.js\n" +
+			"rename from .opencode/plugins/trackfw-guard.js\n" +
+			"rename to .opencode/plugins/evil.js\n"
+		driver := makeV2Driver(pluginPath, projectDir, "patch",
+			fmt.Sprintf(`{ patchText: %q }`, patchText))
+		_, stderr, rc := runNodeDriver(t, nodeRuntime, driver, envNoTrackfw)
+		if rc == 0 {
+			t.Fatalf("arm20: expected D4 throw for rename-only patch to plugin; got rc=0 stderr=%q", stderr)
+		}
+		// Discriminator: D4 self-protection — not the generic fail-closed (pre-fix) message.
+		if !strings.Contains(stderr, "D4 self-protection") {
+			t.Errorf("arm20: expected D4 self-protection in stderr (pre-fix gives fail-closed); got %q", stderr)
+		}
+		if strings.Contains(stderr, "fail-closed") {
+			t.Errorf("arm20: got fail-closed message — means ML-5I4 fix did not add candidates from rename headers; stderr=%q", stderr)
+		}
+	})
+
+	t.Run("arm21_rename_innocent_control_ok", func(t *testing.T) {
+		// Conclusion: rename patch from src/a.go to src/b.go (both innocent) → selfProtect
+		// passes, guard called, fake trackfw exits 0 → no throw (ML-5I4 fix does not over-block).
+		captureFile := filepath.Join(t.TempDir(), "captured21.json")
+		envCapture := append(nodeEnv(fakeDir, secret), "TRACKFW_STDIN_CAPTURE="+captureFile)
+		patchText := "diff --git a/src/a.go b/src/b.go\n" +
+			"rename from src/a.go\n" +
+			"rename to src/b.go\n"
+		driver := makeV2Driver(pluginPath, projectDir, "patch",
+			fmt.Sprintf(`{ patchText: %q }`, patchText))
+		stdout, stderr, rc := runNodeDriver(t, nodeRuntime, driver, envCapture)
+		_ = stdout
+		if rc != 0 {
+			t.Fatalf("arm21: expected no throw for rename of innocent files; got rc=%d stderr=%q", rc, stderr)
+		}
+	})
+
+	t.Run("arm22_copy_to_plugin_throws", func(t *testing.T) {
+		// Conclusion: copy-to patch whose copy-to target is .opencode/plugins/evil.js →
+		// ML-5I4 fix recognizes copy from/to headers as candidates → D4 fires with
+		// "D4 self-protection" (before fix: no recognizable headers → F5 fail-closed).
+		envNoTrackfw := nodeEnvNoTrackfw(secret)
+		patchText := "diff --git a/src/template.js b/.opencode/plugins/evil.js\n" +
+			"copy from src/template.js\n" +
+			"copy to .opencode/plugins/evil.js\n"
+		driver := makeV2Driver(pluginPath, projectDir, "patch",
+			fmt.Sprintf(`{ patchText: %q }`, patchText))
+		_, stderr, rc := runNodeDriver(t, nodeRuntime, driver, envNoTrackfw)
+		if rc == 0 {
+			t.Fatalf("arm22: expected D4 throw for copy-to plugin; got rc=0 stderr=%q", stderr)
+		}
+		// Discriminator: D4 self-protection (before fix gives fail-closed).
+		if !strings.Contains(stderr, "D4 self-protection") {
+			t.Errorf("arm22: expected D4 self-protection in stderr (pre-fix gives fail-closed); got %q", stderr)
+		}
+	})
+
+	t.Run("arm23_quoted_octal_header_throws", func(t *testing.T) {
+		// Conclusion: +++ header with C-string-quoted path containing \056 (octal for '.')
+		// decodes to .opencode/plugins/evil.js → ML-5I4 unquoteGitPath decodes octal →
+		// D4 fires with "D4 self-protection" (before fix: quoted token not decoded, resolves
+		// to a path with literal backslash/digits → not in protected dir → ENOENT from guard).
+		envNoTrackfw := nodeEnvNoTrackfw(secret)
+		// \056 is octal for '.'; the quoted path decodes to b/.opencode/plugins/evil.js.
+		patchText := "--- /dev/null\n+++ \"b/\\056opencode/plugins/evil.js\"\n@@\n+var evil=1\n"
+		driver := makeV2Driver(pluginPath, projectDir, "patch",
+			fmt.Sprintf(`{ patchText: %q }`, patchText))
+		_, stderr, rc := runNodeDriver(t, nodeRuntime, driver, envNoTrackfw)
+		if rc == 0 {
+			t.Fatalf("arm23: expected D4 throw for quoted octal path targeting plugin; got rc=0 stderr=%q", stderr)
+		}
+		// Discriminator: D4 self-protection (before fix: "not found" from ENOENT because
+		// the unquoted/undecoded token does not resolve to a protected path).
+		if !strings.Contains(stderr, "D4 self-protection") {
+			t.Errorf("arm23: expected D4 self-protection in stderr (pre-fix gives ENOENT or fail-closed); got %q", stderr)
+		}
+	})
 }

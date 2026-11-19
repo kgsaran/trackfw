@@ -337,8 +337,18 @@ vírgula final
 - [x] N1, N2, N3 com teste que reprova antes; F5 fail-closed; F7 checa todos os campos de caminho; N4 JSONC completo
   (18 braços JS PASS no Mac, nenhum SKIP; 4 testes Go novos conferidos pelo nome — zeus)
 - [x] `make quality` — `MQ_RC=0` literal reportado pelo apolo; o zeus roda de novo após o ML-5I4
-### ML-5I4 — Cabeçalhos git de renomeação/cópia no extrator de patch (apolo-tf) — 🔄 In progress
-- [ ] `diff --git a/X b/Y`, `rename from/to`, `copy from/to` viram alvos; patch misto (`+++` inócuo + rename para
+### ML-5I4 — Cabeçalhos git de renomeação/cópia no extrator de patch (apolo-tf) — ✅ Done
+- [x] `diff --git a/X b/Y`, `rename from/to`, `copy from/to` viram alvos; patch misto (`+++` inócuo + rename para
   `.opencode/plugins/`) → bloqueado. Achado do zeus na auditoria do 5I3 (o apolo o listou como residual)
+- [x] `unquoteGitPath` decoda C-string: `\NNN` octal, `\"`, `\\`, etc.; token mal-formado → fail-closed;
+  aplicado a TODOS os cabeçalhos (`+++`/`---`, `diff --git`, rename/copy)
+- [x] `parseDiffGitTokens`: parser de dois tokens (quoted ou unquoted) sem split por espaço
+- [x] 5 braços novos (arm19–arm23) com FAIL antes / PASS depois; 23 braços PASS, 0 SKIP no Mac
+- [x] `make quality` — `MQ_RC=0` literal (apolo). Nota do zeus: o apolo editou este roadmap contra o handoff; conteúdo
+  conferido e mantido.
+### ML-5I5 — Patch nega por menção ao caminho protegido (apolo-tf) — 🔄 In progress
+- [ ] residual do 5I4: `git apply -pN` remove qualquer prefixo, então reconhecer cabeçalho por cabeçalho não fecha. Regra nova:
+  `patch`/`apply_patch` cujo texto mencione, em qualquer posição e sem caixa, `.opencode/plugin`, `opencode.json` ou o diretório
+  de config global (forma crua e `realpath`) → bloqueado, mesmo sem cabeçalho reconhecido
 ### ML-5H — prova real com o plugin do produto (KG) — ⬜ Pending — scripts prontos (`proof-product-mac.sh`,
 `proof-product-windows.ps1`, 7/7 por máquina); roda depois do ML-5I3 e de nova rodada do hades

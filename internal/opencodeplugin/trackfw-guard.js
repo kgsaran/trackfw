@@ -88,6 +88,92 @@ function pathsEqual(a, b) {
   return a === normB
 }
 
+// unquoteGitPath decodes a git C-string-quoted path token. If the token is not
+// surrounded by double-quotes it is returned as-is (trimmed). When quoted, the
+// C-style escape sequences used by git are decoded:
+//   \\ \" \a \b \f \n \r \t \v — single-char escapes
+//   \NNN                       — three-digit octal (N in [0-3][0-7][0-7])
+// A malformed quoted token (unterminated, unknown escape, truncated octal)
+// throws fail-closed rather than being skipped — skipping would allow a mixed
+// patch to supply an innocent candidate that bypasses F5 (ML-5I4).
+function unquoteGitPath(s) {
+  s = s.trim()
+  if (s.length === 0 || s[0] !== '"') { return s }
+  if (s[s.length - 1] !== '"') {
+    throw new Error(
+      "trackfw-guard: blocked — patch with malformed quoted path header " +
+      "cannot be verified and is not permitted (D4 fail-closed F5)"
+    )
+  }
+  var inner = s.slice(1, s.length - 1)
+  var bytes = []
+  for (var i = 0; i < inner.length; i++) {
+    if (inner[i] !== '\\') {
+      bytes.push(inner.charCodeAt(i))
+      continue
+    }
+    i++
+    if (i >= inner.length) {
+      throw new Error(
+        "trackfw-guard: blocked — patch with malformed quoted path header " +
+        "cannot be verified and is not permitted (D4 fail-closed F5)"
+      )
+    }
+    var c = inner[i]
+    // Three-digit octal: \[0-3][0-7][0-7]
+    if (c >= '0' && c <= '3' && i + 2 < inner.length) {
+      var oct = c + inner[i + 1] + inner[i + 2]
+      if (/^[0-3][0-7]{2}$/.test(oct)) {
+        bytes.push(parseInt(oct, 8))
+        i += 2
+        continue
+      }
+    }
+    var ESC = { 'a': 7, 'b': 8, 'f': 12, 'n': 10, 'r': 13, 't': 9, 'v': 11, '\\': 92, '"': 34 }
+    if (!(c in ESC)) {
+      throw new Error(
+        "trackfw-guard: blocked — patch with malformed quoted path header " +
+        "cannot be verified and is not permitted (D4 fail-closed F5)"
+      )
+    }
+    bytes.push(ESC[c])
+  }
+  return Buffer.from(bytes).toString("utf8")
+}
+
+// parseDiffGitTokens parses the two path tokens from a "diff --git A B" line.
+// Each token may be a C-string-quoted path ("...") or an unquoted path with
+// no spaces. Returns [rawA, rawB] or null if the line does not start with
+// "diff --git ".
+function parseDiffGitTokens(line) {
+  if (!line.startsWith("diff --git ")) { return null }
+  var rest = line.slice("diff --git ".length)
+  var tokens = []
+  var i = 0
+  while (i < rest.length && tokens.length < 2) {
+    while (i < rest.length && rest[i] === ' ') { i++ }
+    if (i >= rest.length) { break }
+    if (rest[i] === '"') {
+      // Quoted token: scan to the matching closing quote (respecting escapes).
+      var j = i + 1
+      while (j < rest.length) {
+        if (rest[j] === '\\') { j += 2; continue }
+        if (rest[j] === '"') { j++; break }
+        j++
+      }
+      tokens.push(rest.slice(i, j))
+      i = j
+    } else {
+      // Unquoted token: ends at the next space or end of string.
+      var j = i
+      while (j < rest.length && rest[j] !== ' ') { j++ }
+      tokens.push(rest.slice(i, j))
+      i = j
+    }
+  }
+  return tokens.length === 2 ? tokens : null
+}
+
 // extractPatchTargets parses OpenAI-patch and unified-diff headers to extract
 // target file paths (A7/F5). Relative paths are resolved against projectDir.
 // Recognized headers:
@@ -97,11 +183,19 @@ function pathsEqual(a, b) {
 //   *** Move to:     <path>
 //   +++ <path>[\t<date>]
 //   --- <path>[\t<date>]   (skipped for /dev/null)
+//   diff --git <a-path> <b-path>  (git format; N4-ML5I4)
+//   rename from <path>            (git rename; N4-ML5I4)
+//   rename to   <path>            (git rename; N4-ML5I4)
+//   copy from   <path>            (git copy; N4-ML5I4)
+//   copy to     <path>            (git copy; N4-ML5I4)
 //
 // N2: unified diff headers may carry an "a/" or "b/" prefix (git diff default).
 // Both the prefixed form and the stripped form are added as candidates — this
 // avoids overblocking patches targeting a real directory literally named "a/"
 // or "b/" while ensuring the stripped form is always checked.
+// N4 (ML-5I4): git rename/copy headers and diff --git lines are now recognized.
+// Paths in any header may be C-string-quoted (git quoting for paths with
+// special chars or bytes); unquoteGitPath decodes them, including \NNN octal.
 function extractPatchTargets(patchText, projectDir) {
   var targets = []
   var lines = patchText.split(/\r?\n/)
@@ -112,8 +206,9 @@ function extractPatchTargets(patchText, projectDir) {
     if ((m = line.match(/^\*\*\* (?:Update File|Add File|Delete File|Move to):\s+(.+)$/))) {
       targets.push(nodePath.resolve(projectDir, m[1].trim()))
     } else if ((m = line.match(/^(?:\+\+\+|---)\s+(.+?)(?:\t.*)?$/))) {
-      // Unified diff header — skip /dev/null
-      var p = m[1].trim()
+      // Unified diff header — skip /dev/null; unquote C-string-quoted paths (N4).
+      var rawP = m[1].trim()
+      var p = unquoteGitPath(rawP)
       if (p !== "/dev/null" && p !== "dev/null") {
         // N2: add the raw form (handles real dirs named "a/" or "b/")
         targets.push(nodePath.resolve(projectDir, p))
@@ -121,6 +216,24 @@ function extractPatchTargets(patchText, projectDir) {
         if (/^[ab]\//.test(p)) {
           targets.push(nodePath.resolve(projectDir, p.slice(2)))
         }
+      }
+    } else {
+      // N4 (ML-5I4): git diff --git and rename/copy headers.
+      var gitTokens = parseDiffGitTokens(line)
+      if (gitTokens) {
+        // diff --git a/X b/Y — add both paths (and their a/b-stripped forms).
+        var pathA = unquoteGitPath(gitTokens[0])
+        var pathB = unquoteGitPath(gitTokens[1])
+        targets.push(nodePath.resolve(projectDir, pathA))
+        if (/^a\//.test(pathA)) { targets.push(nodePath.resolve(projectDir, pathA.slice(2))) }
+        targets.push(nodePath.resolve(projectDir, pathB))
+        if (/^b\//.test(pathB)) { targets.push(nodePath.resolve(projectDir, pathB.slice(2))) }
+      } else if ((m = line.match(/^(?:rename|copy) (?:from|to)\s+("(?:[^"\\]|\\.)*"|.+)$/))) {
+        // rename from/to or copy from/to — literal path (no a/b prefix in practice).
+        var rawRename = m[1].trim()
+        var pRename = unquoteGitPath(rawRename)
+        targets.push(nodePath.resolve(projectDir, pRename))
+        if (/^[ab]\//.test(pRename)) { targets.push(nodePath.resolve(projectDir, pRename.slice(2))) }
       }
     }
   }
