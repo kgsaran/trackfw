@@ -278,7 +278,9 @@ Achado: `read` com caminho → guard sai 0 (sem extrator), mesma causa do D5 `vi
   produto ou outro?
 - [x] itens que só o binário responde, listados para o ML-5B
 
-### ML-5B — Medição no binário real (KG + zeus-tf) — ✅ Done
+### ML-5B — Medição no binário real (KG + zeus-tf) — 🔄 In progress (falta C7: git-branch)
+- [ ] C7 `git commit` cru sob o OpenCode → bloqueado, commits iguais (Mac e Windows, 1/1 cada). Sem modelo, o payload do
+  plugin já dá rc=2 no `guard git-branch` para `git commit`, `git add -A` e `git push` (rc=0 para `ls`) — zeus, 2026-11-19.
 opencode 2.3.2, Mac e Windows iguais, 6/6 cada (contrato §8): chave em `shell` bloqueada; inócuo liberado com o hook
 disparando; `trackfw` ausente → bloqueado (ENOENT); `read` com segredo liberado (gap); `OPENCODE_CONFIG_PROJECT_DISABLE=1`
 desliga o plugin de projeto; plugin global bloqueia sozinho. Dois runs anteriores no Mac (LM Studio desligado; `--log-level
