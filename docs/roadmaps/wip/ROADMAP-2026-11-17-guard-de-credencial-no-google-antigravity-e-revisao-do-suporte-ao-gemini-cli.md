@@ -278,6 +278,10 @@ Achado: `read` com caminho → guard sai 0 (sem extrator), mesma causa do D5 `vi
   produto ou outro?
 - [x] itens que só o binário responde, listados para o ML-5B
 
-### ML-5B — Medição no binário real (KG + zeus-tf) — ⬜ Pending
+### ML-5B — Medição no binário real (KG + zeus-tf) — ✅ Done
+opencode 2.3.2, Mac e Windows iguais, 6/6 cada (contrato §8): chave em `shell` bloqueada; inócuo liberado com o hook
+disparando; `trackfw` ausente → bloqueado (ENOENT); `read` com segredo liberado (gap); `OPENCODE_CONFIG_PROJECT_DISABLE=1`
+desliga o plugin de projeto; plugin global bloqueia sozinho. Dois runs anteriores no Mac (LM Studio desligado; `--log-level
+DEBUG` recusado pela 2.x) não mediram nada e foram descartados.
 ### ML-5C — ADR (adendo ao ADR-2026-11-18 ou ADR próprio) — ⬜ Pending
 ### ML-5D… — implementação, revisão (hefesto) e red team (hades) — ⬜ Pending, detalhados após o ML-5C

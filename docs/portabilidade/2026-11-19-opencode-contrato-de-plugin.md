@@ -975,3 +975,22 @@ Como KG usa 1.19.5 (> 1.18.29), o formato objeto V1 está coberto.
 - **Possíveis bypass em V1:** `acp/tool.ts@v1.19.5` também chama `plugin.trigger("tool.execute.before")` — o guard dispara nesse path. `cli/cmd/run/tool.ts@v1.19.5` não chama diretamente (confirmado por grep); `task.ts` cria subtasks que passam por `session/tools.ts`. A cobertura parece completa, mas a medir no ML-5B.
 - **M21** (§7): PATH binary skew — Mac KG: 11.5.0 (PATH) vs 11.7.0 (bin/). T-S/T-WV1/T-WV2 idênticos em ambos. T-D5=0 em 11.5.0 (D5 não-tagueada, sem regressão). D4 root-`cwd` fallback em 11.5.0 e Windows a medir no ML-5B.
 - **Contrato do guard** (fonte: `internal/commands/guard.go`, `internal/guardforms/guard_generations.go`, `internal/guard/payload.go`): confirmado por código local. Exit 0 = allow, exit 2 = block. Payload: `command` em raiz (priority 2 de `ExtractCommand`). Binário: `trackfw guard credential` / `trackfw guard git-branch`.
+
+## 8. Medido no binário real (ML-5B, 2026-11-19, KG) — opencode v2.3.2, `anthropic/claude-haiku-5-5`
+
+Plugin de sonda `opencode-sondas/guard-probe-plugin.js` (spawnSync com argv, sem shell; `throw` se
+`result.error || status !== 0`), trackfw 11.7.0 da branch, `--standalone` em todos os braços, 6/6 chamadas por máquina.
+macOS (Homebrew `opencode` 2.3.2) e Windows 11 ARM64 (npm `@opencode/cli` 2.3.2; shell da ferramenta = `cmd.exe`)
+deram o **mesmo** resultado:
+
+| Braço | Resultado (Mac = Windows) |
+|---|---|
+| C1 chave fake em `shell` | **bloqueado** — log do plugin `status=2`, marker ausente |
+| C2 `echo hello` | liberado — credential e git-branch `status=0`, marker criado (prova que o hook dispara) |
+| C3 `trackfw` fora do PATH | **bloqueado** — `error_code=ENOENT`, marker ausente (fail-closed) |
+| C4 `read` de arquivo com a chave | liberado — `status=0`, args só com caminho (gap T-RV, mesma causa do D5 `view_file`) |
+| C5 `OPENCODE_CONFIG_PROJECT_DISABLE=1` | o comando com a chave **executou**; plugin de projeto não carregou (residual T6) |
+| C6 só plugin global | **bloqueado** — `status=2`; global em `~/.config/opencode/plugins/` (Windows: `%USERPROFILE%\.config\opencode\plugins\`) |
+
+Nomes medidos das ferramentas em V2: `shell` e `read` (args `path`; a sonda acrescentou `file_path` absoluto).
+Não medido: V1 (1.19.x) no binário (o run do Mac em 1.19.6 não chegou ao modelo), `write`/`edit`/`patch`, MCP e `task`.
