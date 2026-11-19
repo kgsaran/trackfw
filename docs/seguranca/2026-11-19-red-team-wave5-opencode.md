@@ -439,3 +439,202 @@ write {filePath: '.opencode/plugins/trackfw-guard.js'} (apenas filePath)
 - Global `OPENCODE_CONFIG_DIR` relativo: aceito como R-1 na ADR (pathguard usa o mesmo valor que Go usou ao gravar).
 - Credential split entre tool calls: não medível sem modelo real. Não declarado na ADR.
 - Bun: F4 não medido com Bun (não disponível nesta máquina). Argumento teórico: semântica CommonJS idêntica ao Node.
+
+---
+
+## Rodada 2 (ML-5G2)
+
+> Data: 2026-11-19 | Revisor: hades-tf | Commits auditados: `00edda30` (ML-5I) · `a52bf0f8` (ML-5I2)
+> Escopo: fechar achados F1–F8 e A7 da Rodada 1 contra os corretivos; exercitar vetores de bypass novos do brief.
+
+### Binário auditado
+
+Branch build em `bin5g2/trackfw` (go build da HEAD `a52bf0f8`). `go build ./...` rc=0. `go test ./internal/guard/ ./internal/opencodeplugin/ ./internal/validator/` → todos verdes (12/12 arms do `TestOpenCodePlugin_JSRuntime` PASS).
+
+**git diff --cached:** vazio. Nenhuma operação git executada. Nenhum `opencode` com chamada de modelo. Nenhum arquivo de chave fake escrito — gerado em runtime via `python3 -c "print('AIza'+'F'*35)"`.
+
+### Tabela de verificação — Rodada 1 (F1–F8, A7)
+
+| ID | Resultado | Evidência |
+|----|-----------|-----------|
+| F1 | FECHADO | write-scope rc=2 com agent_id; rc=0 sem agent_id; paths `.opencode/opencode.json[c]` em `writeScopeSubagentFrozenRelPaths` |
+| F2 | FECHADO | arm7 PASS; `OPENCODE.JSON` → BLOCK medido via JS driver; `toLowerCase()` em `selfProtect` |
+| F3 | FECHADO | write-scope rc=2 para `.opencode/plugin/evil.js` com agent_id |
+| F4 (write-tools) | FECHADO | arm6 PASS; `.opencode/plugins/evil.js` via `write` → BLOCK; shell-write ainda ALLOW — residual declarado (ADR D7 L133). Sibling detectado por validate/doctor no **escopo de projeto** |
+| F4 (global sibling) | ABERTO | validate/doctor **não** detectam sibling em `$OPENCODE_CONFIG_DIR/plugins/`. ADR D7 L110 afirma cobertura global — falso. Ver N3 |
+| F5/A7 (OpenAI format) | FECHADO | arm9 PASS para `*** Update File:`; espaços extras, CRLF, absoluto, multi-seção — todos BLOCK |
+| F5 (fail-open sem headers) | ABERTO | linhas 182–184: `candidates.length === 0 → return` — ALLOW para patch sem cabeçalho reconhecido; patchText em campo diferente (`diff`) também fail-open. Não implementado como fail-closed |
+| F5/A7 (a/b prefix) | ABERTO | `+++ b/.opencode/plugins/evil.js` → `extractPatchTargets` captura `b/.opencode/plugins/evil.js`, resolve para `realProj/b/.opencode/plugins/` — fora do dir protegido → ALLOW. apply_patch strip `b/` → escrita em `.opencode/plugins/evil.js`. Ver N2 |
+| F6 | FECHADO | arm11/arm12 PASS; `webfetch`/`websearch` em `WEBFETCH_TOOLS`; grep em Go `credOpenCodeReadScan`; websearch com segredo em campo não-`query` → BLOCK |
+| F7 (order mismatch) | FECHADO | `selfProtect` agora usa `filePath ?? path`; `runGuard` também; para payloads reais (V1 tem só `filePath`, V2 tem só `path`) não há desalinhamento |
+| F7 (reversed, artificial) | ABERTO (LOW) | `{filePath: "normal.txt", path: "plugin"}` → selfProtect checa `filePath=normal.txt` → PASS; se V2 lê `path`, escrita vai para plugin. Requer payload não-padrão com dois campos |
+| F8 (candidato via realpathOrParent) | FECHADO | arm8 PASS; `realpathOrParent` resolve symlink no lado do alvo |
+| F8 (lado protegido não resolvido) | ABERTO | `protectedDirs` e `protectedFiles` construídos com `nodePath.resolve(projectDir,...)` — não segue symlinks. Ver N1 |
+| VS | ABERTO (declarado) | Residual declarado ADR D7 L136 — versão Homebrew 11.7.0 sem `credOpenCodeReadScan` |
+
+### Sumário executivo — Rodada 2
+
+| ID | Superfície | Severidade | Bloqueante | ADR? |
+|----|-----------|-----------|------------|------|
+| N1 | `protectedDirs/Files` não resolve symlinks — bypass projeto e global | MEDIUM | Sim | Não |
+| N2 | `extractPatchTargets` não strip `a/`/`b/` prefix | MEDIUM | Sim | Não |
+| N3 | `validate`/`doctor` não verificam global plugins/ — ADR D7 falso | MEDIUM | Sim | Não |
+| F5 fail-open | Patch sem headers reconhecidos falha aberto | LOW | Não | Não |
+| F7 reversed | `{filePath:innocuous, path:plugin}` PASS | LOW | Não | Não |
+| N4 | Validator: `/* */` e trailing comma → silent skip | LOW | Não | Não |
+
+**Veredito: REPROVA**
+
+Três achados bloqueantes: **N1** (symlink nos diretórios protegidos), **N2** (prefixo `a/`/`b/` em patch), **N3** (global sibling não detectado). Todos são undeclared; nenhum requer precondição bloqueante no ataque de maior impacto (N3 requer apenas shell-write, que é o exato cenário que o validate/doctor devem detectar por design).
+
+---
+
+### N1 — Protectedirs/Files não resolve symlinks em selfProtect (MEDIUM, bloqueante)
+
+**Superfície:** `internal/opencodeplugin/trackfw-guard.js`, `selfProtect`.
+
+**Root cause:** A função `selfProtect` resolve o candidato (alvo) via `realpathOrParent` (fix do arm8), mas constrói `protectedDirs` e `protectedFiles` com `nodePath.resolve(projectDir, ...)` e `nodePath.resolve(globalDir, ...)`, ambos sem seguir symlinks. `isUnderDir` compara `realpathOrParent(candidato)` contra `nodePath.resolve(dir)` → mismatch quando `projectDir` ou `globalDir` é symlink.
+
+**Site 1 — projectDir como symlink (projeto):**
+Medido com `projectDir=LINK → REAL`: write para `REAL/opencode.json` → ALLOW. Config T1 da Rodada 1 reproduzido sem mudança.
+
+**Site 2 — OPENCODE_CONFIG_DIR como symlink (global, dotfile managers):**
+```
+# OPENCODE_CONFIG_DIR = cfg_link/opencode (symlink → cfg_real/opencode)
+# Target: cfg_real/opencode/plugins/evil.js
+
+realpathOrParent(target) = cfg_real/opencode/plugins/evil.js
+protectedDirs[3]         = cfg_link/opencode/plugins   (nodePath.resolve, sem realpath)
+isUnderDir               = false → ALLOW
+
+# Mesmo para cfg_link/opencode/plugins/evil.js (target via link):
+realpathOrParent(target) = cfg_real/opencode/plugins/evil.js
+protectedDirs[3]         = cfg_link/opencode/plugins
+→ ALLOW (mismatch REAL vs LINK)
+```
+
+**Impacto:** dotfile managers (`chezmoi`, `stow`, `homesick`) comumente fazem `~/.config → /data/config`. Nesse caso, `globalOpenCodeConfigDir()` = `~/.config/opencode` = `LINK/opencode`. Um write para o path real bypassa selfProtect em todos os projetos do usuário.
+
+**Fix:** antes do loop de comparação, resolver os entries de `protectedDirs` e `protectedFiles` via `realpathOrParent`:
+```js
+var resolvedDirs = protectedDirs.map(function(d) { return realpathOrParent(d) })
+// usar resolvedDirs[di] em isUnderDir e realpathOrParent
+```
+
+**Responsável:** `internal/opencodeplugin/trackfw-guard.js`, `selfProtect`.
+
+---
+
+### N2 — extractPatchTargets não strip prefixo a/b de unified diff (MEDIUM, bloqueante)
+
+**Superfície:** `internal/opencodeplugin/trackfw-guard.js`, `extractPatchTargets`.
+
+**Mecanismo:** O regex `^(?:\+\+\+|---)\s+(.+?)(?:\t.*)?$` captura o path incluindo o prefixo `a/` ou `b/`. `nodePath.resolve(projectDir, 'b/.opencode/plugins/evil.js')` = `projectDir/b/.opencode/plugins/evil.js`, que não está sob `projectDir/.opencode/plugins/`. Guard retorna ALLOW. `apply_patch` strip o prefixo ao aplicar → escrita real em `.opencode/plugins/evil.js`.
+
+**Medição:**
+```
+Input: "--- /dev/null\n+++ b/.opencode/plugins/evil.js"
+extractPatchTargets → [ "realProj/b/.opencode/plugins/evil.js" ]
+isUnderDir(.../b/.opencode/plugins/, .../opencode/plugins/) = false → PASS
+
+apply_patch strip b/ → real write: realProj/.opencode/plugins/evil.js
+Guard checked: realProj/b/.opencode/plugins/evil.js (diferente) → MATCH? false
+```
+
+**Exploitabilidade:** `git diff`, `git format-patch` e `git show` usam `a/`/`b/` por default. Qualquer patch obtido de operações git padrão tem esses prefixos. Um modelo que instrui o OpenCode a aplicar um patch de diff real bypassa silenciosamente o guard.
+
+**ADR D7 L104–105** afirma que `+++ `/ `--- ` estão cobertos — não declara `a/`/`b/` como residual.
+
+**Fix:** em `extractPatchTargets`, após `.trim()`, strip o prefixo `a/` ou `b/`:
+```js
+if (/^[ab]\//.test(p)) p = p.slice(2)
+```
+
+**Responsável:** `internal/opencodeplugin/trackfw-guard.js`, `extractPatchTargets`.
+
+---
+
+### N3 — validate/doctor não verificam global plugins dir (MEDIUM, bloqueante)
+
+**Superfície:** `internal/validator/validator_opencode_plugin.go`, `warnSiblingPluginFiles` e `warnOpenCodeConfigKeys`.
+
+**Root cause:** `validateOpenCodePluginWarningsWith(root string, _ agentconfig.CLIHomeResolver)` descarta o resolver. `warnSiblingPluginFiles` e `warnOpenCodeConfigKeys` só inspecionam `root` (projeto). Nenhuma verifica `$OPENCODE_CONFIG_DIR/plugins/` ou `$XDG_CONFIG_HOME/opencode/plugins/`.
+
+**ADR D7 L110–111:**
+> "o `validate`/`doctor` acusam qualquer arquivo `.js`/`.ts` nos diretórios de plugin do projeto e do global que não seja o `trackfw-guard.js`, e qualquer chave `plugin`/`plugins` em `opencode.json(c)`"
+
+**Medição:**
+```bash
+echo "var evil=1" > $OPENCODE_CONFIG_DIR/plugins/evil.js
+printf '{"plugins":["/tmp/evil.js"]}' > $OPENCODE_CONFIG_DIR/opencode.json
+cd $PROJ && OPENCODE_CONFIG_DIR=... trackfw validate
+→ zero warnings sobre evil.js ou chave plugins   # FAIL D7
+trackfw doctor
+→ opencode-plugin-global-absent = 0 (plugin presente), zero sobre sibling  # FAIL D7
+```
+
+**Impacto:** shell-write para o global dir cria sibling invisível. `validate` e `doctor` ficam verdes. O atacante compromete todos os projetos do usuário sem nenhuma detecção.
+
+**Interação com N4:** `opencode.jsonc` com `/* */` ou trailing comma é silenciosamente ignorado → mesmo gap para global `opencode.json(c)`.
+
+**Fix:** `warnSiblingPluginFiles` e `warnOpenCodeConfigKeys` devem receber o resolver, resolver o `globalDir`, e inspecionar os diretórios globais.
+
+**Responsável:** `internal/validator/validator_opencode_plugin.go`.
+
+---
+
+### F5 fail-open (LOW, não bloqueante)
+
+Linhas 182–184: `if (candidates.length === 0) return`. Quando `patch`/`apply_patch` chegam sem headers reconhecidos (leading space, patchText em campo `diff` ao invés de `patchText`/`patch`), `candidates` fica vazio → ALLOW. A round-1 recomendava fail-closed para esse caso; não implementado.
+
+**Medição:**
+```
+{patchText: " *** Update File: .../evil.js\n..."} → candidates=0 → ALLOW
+{diff: "*** Update File: .../evil.js\n..."}         → candidates=0 → ALLOW
+```
+
+**Fix parcial recomendado:** manter `return` quando nenhum dos campos conhecidos contém texto de patch, mas documentar como residual na ADR que patches com campos não padrão são fail-open.
+
+---
+
+### F7 reversed (LOW, não bloqueante)
+
+Payload artificial `{filePath: "normal.txt", path: ".opencode/plugins/evil.js"}` → `selfProtect` usa `filePath ?? path` = "normal.txt" → PASS. V2 lê `path` → escrita em plugin. Requer payload não-padrão (nenhuma versão real do OpenCode envia ambos os campos).
+
+**Contrato:** V1 usa `filePath` only; V2 usa `path` only (confirmado em `docs/portabilidade/2026-11-19-opencode-contrato-de-plugin.md` L53–55). Round-1 recomendava verificar TODOS os campos; a correção implementada unificou apenas a ORDEM.
+
+---
+
+### N4 — Validator: /* */ e trailing comma → silent skip (LOW)
+
+`stripJSONCLineComments` remove apenas `//`. Um `/* */` block comment ou trailing comma faz `json.Unmarshal` falhar → `continue` → sem warning para a chave `plugins`. OpenCode (JSONC) aceita ambas as formas. Medido:
+
+```
+opencode.jsonc = {"plugins": ["/tmp/evil.js"], }   (trailing comma) → zero warnings
+opencode.jsonc = {/* c */\n"plugins": [...]}        (block comment)  → zero warnings
+```
+
+Baixo impacto isolado (a rota para escrever este arquivo por subagente Claude já está bloqueada por F1). Combinado com N3, agrava a detecção de global `opencode.jsonc` via shell.
+
+---
+
+### Vetores verificados e passados
+
+| Vetor | Resultado |
+|-------|-----------|
+| `realpathOrParent`: alvo inexistente sob symlink dir | PASS — resolve via ancestor |
+| `realpathOrParent`: `..` após symlink | PASS — resolve absoluto correto |
+| `isUnderDir`: prefixo sem separador (`.opencode/plugins-evil/`) | PASS — sep enforced |
+| `extractPatchTargets`: espaços extras no header | PASS — `.trim()` nos grupos |
+| `extractPatchTargets`: CRLF | PASS — `split(/\r?\n/)` |
+| `extractPatchTargets`: caminho absoluto | PASS |
+| `extractPatchTargets`: várias seções | PASS — todos targets coletados |
+| `websearch` com segredo em campo não-`query` | PASS — toolInput spread completo |
+| `webfetch` com segredo no body | PASS |
+| Validator: `.mjs`, `.cjs`, `.TS` sibling (projeto) | PASS — detectados via `strings.ToLower` |
+| Validator: subdiretório dentro de `plugins/` | PASS — `IsDir()` skip; correto |
+| `grep` path relativo (guard Go) | PASS — `!filepath.IsAbs` → rc=0 silencioso (design: plugin absolutiza) |
+| `grep` FIFO / diretório | PASS — `IsRegular()` → rc=0, sem hang/crash |
+| `grep` arquivo com credencial (abs) | PASS — warning emitido |
+| ADR D7 residuais (rm via shell, grep sobre dir, `--pure`, `task`, `execute.after`) | Confirmados |
+

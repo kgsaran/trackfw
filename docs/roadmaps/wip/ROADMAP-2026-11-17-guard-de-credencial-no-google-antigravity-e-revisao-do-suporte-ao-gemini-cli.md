@@ -329,4 +329,12 @@ guard); F1, F3, F5, F7 baixos; VS residual
 - [x] **ML-5I2** ✅ (`readRegularFile`; `websearch` no guard com arm12; arm8 com `symlinkOrSkip`; tabela de cobertura no
   cli-parity — só `glob` residual, devolve nomes): corrigir a leitura crua acima e pôr `websearch` (lista do contrato, l. 387) no guard — a consulta exfiltra
   como a URL do `webfetch`
-### ML-5H — prova real com o plugin do produto (KG) — ⬜ Pending
+### ML-5G2 — Red team rodada 2 (hades-tf) — ✅ Done — **REPROVA**: F1, F2, F3, F6, F7, F8-alvo e F4-write fechados; novos
+N1 (diretórios protegidos sem `realpath` — symlink de dotfiles), N2 (`a/`/`b/` do diff git escapa), N3 (`validate` não olha o
+global — o D7 do ADR afirmava que olhava); baixos: F5 patch sem cabeçalho libera, F7 campos invertidos, N4 JSONC `/* */` e
+vírgula final
+### ML-5I3 — Corretivo da rodada 2 (apolo-tf) — 🔄 In progress
+- [ ] N1, N2, N3 com teste que reprova antes; F5 fail-closed; F7 checa todos os campos de caminho; N4 JSONC completo
+- [ ] `make quality` rc=0 lido no log
+### ML-5H — prova real com o plugin do produto (KG) — ⬜ Pending — scripts prontos (`proof-product-mac.sh`,
+`proof-product-windows.ps1`, 7/7 por máquina); roda depois do ML-5I3 e de nova rodada do hades
