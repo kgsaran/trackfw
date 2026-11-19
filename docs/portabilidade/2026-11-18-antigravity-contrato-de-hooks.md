@@ -1026,7 +1026,7 @@ interativa (por SSH o `agy` não acessa o Gerenciador de Credenciais e pede logi
   `agentconfig.HomeFor(CLIAntigravity)` = `USERPROFILE` no Windows e `HOME` nos demais.
 - Os hooks de projeto e global somam, e qualquer `deny` (ou exit ≠ 0) vence. Um hook de projeto não desliga o
   guard global.
-- **Ainda não medido:** App e IDE (PATH e shell do hook quando abertos pela interface gráfica).
+- App e IDE: medidos no macOS em §13.
 
 ## 13. App e IDE no macOS (medido em 2026-11-18/19, KG; ML-1B)
 
