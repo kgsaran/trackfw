@@ -616,3 +616,84 @@ func TestOpenCodePlugin_JSONCTrailingComma_Warns(t *testing.T) {
 		t.Errorf("expected trailing-comma JSONC warning for plugins key; got: %v", msgs)
 	}
 }
+
+// --------------------------------------------------------------------------
+// N3-cond: global checks run even when .opencode/ is absent (ML-5I7)
+// --------------------------------------------------------------------------
+
+// TestOpenCodePlugin_GlobalSiblingJS_NoOpenCodeDir_Warns asserts that an unexpected
+// .js file in the GLOBAL OpenCode plugins directory triggers a warning even when
+// the project has no .opencode/ directory (N3-cond fix, ML-5I7).
+//
+// Before the N3-cond fix, validateOpenCodePluginWarningsWith returned nil as soon
+// as .opencode/ was absent, discarding all global checks. This meant a global evil.js
+// was invisible to validate when the project had not yet installed the project plugin.
+//
+// Conclusion: global sibling check runs unconditionally; .opencode/ absent does not
+// silence a global evil.js warning (N3-cond fix).
+func TestOpenCodePlugin_GlobalSiblingJS_NoOpenCodeDir_Warns(t *testing.T) {
+	// Project has NO .opencode/ directory.
+	projectDir := t.TempDir()
+
+	globalConfigDir := t.TempDir()
+	t.Setenv("OPENCODE_CONFIG_DIR", globalConfigDir)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	// Write an unexpected .js sibling in the global plugins dir.
+	globalPluginDir := filepath.Join(globalConfigDir, "plugins")
+	if err := os.MkdirAll(globalPluginDir, 0755); err != nil {
+		t.Fatalf("MkdirAll global plugins dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(globalPluginDir, "evil_global.js"), []byte("var evil=1"), 0644); err != nil {
+		t.Fatalf("write evil_global.js: %v", err)
+	}
+
+	r := isolatedResolver(t)
+	msgs := validator.ValidateOpenCodePluginWarningsWithForTest(projectDir, r)
+	found := false
+	for _, m := range msgs {
+		if strings.Contains(m, "evil_global.js") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		// Before N3-cond fix: early return for missing .opencode/ discards global checks → len=0.
+		t.Errorf("N3-cond: expected global sibling warning for evil_global.js even without .opencode/; got: %v", msgs)
+	}
+}
+
+// TestOpenCodePlugin_GlobalConfigKey_NoOpenCodeDir_Warns asserts that a "plugins" key
+// in the GLOBAL opencode.json triggers a warning even when the project has no .opencode/
+// directory (N3-cond fix, ML-5I7).
+//
+// Conclusion: global config-key check runs unconditionally; .opencode/ absent does not
+// silence a global opencode.json "plugins" key warning (N3-cond fix).
+func TestOpenCodePlugin_GlobalConfigKey_NoOpenCodeDir_Warns(t *testing.T) {
+	// Project has NO .opencode/ directory.
+	projectDir := t.TempDir()
+
+	globalConfigDir := t.TempDir()
+	t.Setenv("OPENCODE_CONFIG_DIR", globalConfigDir)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	// Write global opencode.json with a "plugins" key.
+	cfg := `{"plugins": ["/tmp/evil.js"]}`
+	if err := os.WriteFile(filepath.Join(globalConfigDir, "opencode.json"), []byte(cfg), 0644); err != nil {
+		t.Fatalf("write global opencode.json: %v", err)
+	}
+
+	r := isolatedResolver(t)
+	msgs := validator.ValidateOpenCodePluginWarningsWithForTest(projectDir, r)
+	found := false
+	for _, m := range msgs {
+		if strings.Contains(m, "plugins") && strings.Contains(m, "opencode.json") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		// Before N3-cond fix: early return for missing .opencode/ discards global checks → len=0.
+		t.Errorf("N3-cond: expected global opencode.json plugins-key warning even without .opencode/; got: %v", msgs)
+	}
+}

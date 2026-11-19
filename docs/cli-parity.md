@@ -4508,6 +4508,22 @@ plugins/trackfw-guard.js`. Absent/no-marker/stale → `missing`/status update. T
 
 **Payload extraction (D3/D4).** The plugin calls `trackfw guard credential` as a subprocess via `spawnSync` (not `execa`). The guard reads the JSON payload from stdin via `credOpenCodeReadScan`: when `hook_source="opencode"` and `tool_name="read"` or `"grep"`, the guard reads the file at `tool_input.file_path` (with `tool_input.path` as fallback for `grep`) and scans its content. Directory paths are not read. This is the only path where `guard credential` performs a filesystem read on behalf of the plugin (D7 F6, REQ-2026-11-17 ML-5I).
 
+**D8 — Límite da autoproteção por caminho (ML-5I7, ADR D8).** The self-protection layer (D4/D7) compares resolved paths and patch text. It is a defence-in-depth layer, not the primary control. The primary control against a foreign plugin is detection: `validate`/`doctor` warn on any `.js`/`.ts` file in plugin dirs other than `trackfw-guard.js`, and on any `plugin`/`plugins` key in `opencode.json(c)`, in the project and in the global config (N3; N3-cond: runs even without `.opencode/`).
+
+What is **denied** (ML-5I7 fixes, corrigidos após Rodada 3 do red team):
+- `patch`/`apply_patch` containing `new file mode 120000` or `new mode 120000` — symlink creation via patch is blocked before header extraction (N7a).
+- Write to a dangling symlink whose resolved target is under a protected directory — `realpathOrParent` now follows the symlink via `lstatSync`/`readlinkSync` with a depth cap of 40 (fail-closed N7b).
+- Write path whose unicode form (NFD) differs from the stored form (NFC) of a protected directory on macOS APFS — `isUnderDir` and `pathsEqual` apply `.normalize('NFC')` before case-folding on darwin and win32 (N8).
+- `patch`/`apply_patch` whose candidate is an ancestor of a protected directory (e.g. `*** Delete File: .opencode`) — the reverse-containment check `isUnderDir(protectedDir, candidate)` is applied alongside the forward check (N9).
+- N3-cond: global sibling and config-key checks run unconditionally — even when `.opencode/` is absent in the project — so a global `evil.js` is always detected.
+
+**Declared residual** (from ADR D8):
+- Patch that mounts the target path via an intermediate symlink chain or two separate patches is not blocked; the same residual as write via `shell`.
+- Write via `shell` (`rm`, etc.) inside the plugin directory is not blocked by selfProtect — only detected by `validate`/`doctor`.
+- `grep` over a directory (not a file) is not scanned.
+
+**Accepted false positive** (from ADR D8): a `patch` whose text body mentions `opencode.json` or `.opencode/plugins` (e.g. documentation) is blocked by the mention scan; use `write`/`edit` for those files.
+
 **Tool coverage (V2 native tools — `opencode.ai/docs/tools.md`).** Each tool from the V2 native list is classified as mapped (routed to `trackfw guard credential` and/or `git-branch`) or residual (passes through without a guard call), with the reason (ML-5I2, REQ-2026-11-17).
 
 | Tool | Guard routing | Reason / residual note |

@@ -289,6 +289,10 @@ plugin.setup(ctx).then(function() {
 //	arm27_octal_zprefix_throws        — +++ "z/\056opencode/plugins/x.js" (octal-encoded dot, z/ prefix) → D4 self-protection → exit 1
 //	arm28_octal_in_body_throws        — octal \056opencode in patch body (innocent header) → D4 from mention scan octal decode → exit 1
 //	arm29_global_dir_mention_throws   — patch body mentioning <OPENCODE_CONFIG_DIR>/plugins/x.js → global-dir pattern in mention scan → exit 1
+//	arm30_mode120000_throws           — patch with "new file mode 120000" (symlink creation) → D4 self-protection → exit 1 (N7a-ML5I7)
+//	arm31_dangling_symlink_write_throws — write to dangling symlink targeting protected dir → D4 via realpathOrParent fix → exit 1 (N7b-ML5I7)
+//	arm32_nfd_unicode_throws          — write via NFD path to NFC protected dir → D4 after NFC normalisation → exit 1; darwin only (N8-ML5I7)
+//	arm33_delete_opencode_patch_throws — patch deleting .opencode ancestor → D4 reverse-containment check → exit 1 (N9-ML5I7)
 func TestOpenCodePlugin_JSRuntime(t *testing.T) {
 	nodeRuntime := findNodeRuntime()
 	if nodeRuntime == "" {
@@ -918,6 +922,136 @@ func TestOpenCodePlugin_JSRuntime(t *testing.T) {
 		// selfProtect fires first; arm exercises the global-dir needle added in N5-ML5I5).
 		if !strings.Contains(stderr, "D4 self-protection") {
 			t.Errorf("arm29: expected D4 self-protection in stderr (global-dir pattern); got %q", stderr)
+		}
+	})
+
+	t.Run("arm30_mode120000_throws", func(t *testing.T) {
+		// Conclusion: patch/apply_patch containing "new file mode 120000" (symlink-creation
+		// declaration) is denied by D4 self-protection before header extraction can supply
+		// any candidate — after the N7a fix (ML-5I7). Before fix: mention scan misses the
+		// target because "./" in the body breaks the needle match, candidates are non-plugin
+		// paths from "diff --git a/p b/p" and "+++ b/p", selfProtect passes, guard is
+		// called → ENOENT ("not found") instead of "D4 self-protection".
+		envNoTrackfw := nodeEnvNoTrackfw(secret)
+		// Patch declares a symlink via "new file mode 120000"; body has .opencode/./plugins/
+		// (the "./" segment breaks the mention-scan needle .opencode/plugin → no match
+		// without the mode-120000 fix).
+		patchText := "diff --git a/p b/p\nnew file mode 120000\n--- /dev/null\n+++ b/p\n@@\n+.opencode/./plugins/evil3.js\n"
+		driver := makeV2Driver(pluginPath, projectDir, "patch",
+			fmt.Sprintf(`{ patchText: %q }`, patchText))
+		_, stderr, rc := runNodeDriver(t, nodeRuntime, driver, envNoTrackfw)
+		if rc == 0 {
+			t.Fatalf("arm30: expected D4 throw for patch with new file mode 120000; got rc=0 (bypass)")
+		}
+		// Discriminator: D4 self-protection from mode-120000 check (before fix: "not found"
+		// from ENOENT because selfProtect passes when mode-120000 check absent).
+		if !strings.Contains(stderr, "D4 self-protection") {
+			t.Errorf("arm30: expected D4 self-protection in stderr (pre-fix gives ENOENT); got %q", stderr)
+		}
+	})
+
+	t.Run("arm31_dangling_symlink_write_throws", func(t *testing.T) {
+		// Conclusion: write through a dangling symlink whose target is under a protected
+		// directory is blocked after the N7b fix to realpathOrParent (ML-5I7). Before fix:
+		// realpathSync throws for the dangling target, the ancestor walk resolves to the
+		// link file itself (not the target), isUnderDir returns false → selfProtect passes
+		// → ENOENT from guard instead of "D4 self-protection".
+		//
+		// Setup: create a dangling symlink inside projectDir pointing to a path under
+		// .opencode/plugins/ that does not exist yet.
+		danglingLink := filepath.Join(projectDir, "n7_dangling_link")
+		// Target is under .opencode/plugins/ — does not exist (dangling).
+		symlinkTarget := ".opencode/plugins/evil_via_dangling.js"
+		if !symlinkOrSkip(t, symlinkTarget, danglingLink) {
+			return
+		}
+		t.Cleanup(func() { os.Remove(danglingLink) })
+		envNoTrackfw := nodeEnvNoTrackfw(secret)
+		driver := makeV2Driver(pluginPath, projectDir, "write",
+			fmt.Sprintf(`{ path: %q }`, danglingLink))
+		_, stderr, rc := runNodeDriver(t, nodeRuntime, driver, envNoTrackfw)
+		if rc == 0 {
+			t.Fatalf("arm31: expected D4 throw for write through dangling symlink to protected dir; got rc=0 (bypass)")
+		}
+		// Discriminator: D4 self-protection from N7b realpath fix (before fix: "not found"
+		// from ENOENT because ancestor walk returns link file path, not target path).
+		if !strings.Contains(stderr, "D4 self-protection") {
+			t.Errorf("arm31: expected D4 self-protection in stderr (pre-fix gives ENOENT); got %q", stderr)
+		}
+	})
+
+	t.Run("arm32_nfd_unicode_throws", func(t *testing.T) {
+		// Conclusion: on macOS APFS a write target whose path uses NFD normalization of a
+		// component that the protected-dir path has in NFC is blocked after the N8 fix that
+		// applies .normalize('NFC') before case folding (ML-5I7). Before fix: toLowerCase()
+		// alone does not normalise NFC vs NFD → isUnderDir returns false → ALLOW.
+		// APFS is normalization-insensitive (NFC and NFD resolve to the same inode) but
+		// normalization-preserving (realpathSync returns the input form without canonicalising).
+		if runtime.GOOS != "darwin" {
+			t.Skip("N8 NFD/NFC bypass only applies on macOS APFS (normalization-insensitive/preserving FS)")
+		}
+
+		// Create a parent dir under which both NFC and NFD forms resolve to the same inode.
+		parentRaw := t.TempDir()
+		parentDir, err := filepath.EvalSymlinks(parentRaw)
+		if err != nil {
+			t.Fatalf("EvalSymlinks(parentDir): %v", err)
+		}
+
+		// NFC form: é (U+00E9, 2 bytes: C3 A9).  NFD form: e + combining-acute (U+0301, 3 bytes: 65 CC 81).
+		nfcSuffix := "éproj" // "éproj" in NFC
+		nfdSuffix := "éproj" // NFD form of "é" followed by "proj"
+
+		nfcProjDir := filepath.Join(parentDir, nfcSuffix)
+		nfdProjDir := filepath.Join(parentDir, nfdSuffix)
+
+		// Create .opencode/plugins/ under the NFC directory.
+		nfcPluginsDir := filepath.Join(nfcProjDir, ".opencode", "plugins")
+		if err := os.MkdirAll(nfcPluginsDir, 0755); err != nil {
+			t.Fatalf("MkdirAll(nfcPluginsDir): %v", err)
+		}
+		nfcPluginPath := writeAsset(t, nfcPluginsDir)
+
+		// Write target: NFD form of projectDir + .opencode/plugins/evil_nfd.js.
+		// On macOS APFS this resolves to the same dir as the NFC form; on Linux it
+		// is a distinct (non-existent) directory and this test is skipped above.
+		nfdEvil := filepath.Join(nfdProjDir, ".opencode", "plugins", "evil_nfd.js")
+
+		envNoTrackfw := nodeEnvNoTrackfw(secret)
+		// projectDir passed in NFC form; write target in NFD form of same path.
+		driver := makeV2Driver(nfcPluginPath, nfcProjDir, "write",
+			fmt.Sprintf(`{ path: %q }`, nfdEvil))
+		_, stderr, rc := runNodeDriver(t, nodeRuntime, driver, envNoTrackfw)
+		if rc == 0 {
+			t.Fatalf("arm32: N8 bypass — expected D4 throw for NFD write target when protected dir is NFC; got rc=0 (bypass)")
+		}
+		// Discriminator: D4 self-protection after NFC normalisation (before fix: "not found"
+		// from ENOENT because isUnderDir(NFD, NFC) returns false without .normalize('NFC')).
+		if !strings.Contains(stderr, "D4 self-protection") {
+			t.Errorf("arm32: expected D4 self-protection in stderr (pre-fix gives ENOENT, NFD≠NFC in string cmp); got %q", stderr)
+		}
+	})
+
+	t.Run("arm33_delete_opencode_patch_throws", func(t *testing.T) {
+		// Conclusion: a patch that deletes or renames the .opencode ancestor directory is
+		// blocked by the N9 reverse-containment check (ML-5I7): isUnderDir(protectedDir,
+		// candidate) fires when the candidate (.opencode) contains the protected dir
+		// (.opencode/plugins/). Before fix: only the forward check isUnderDir(candidate,
+		// protectedDir) is performed; since .opencode is NOT under .opencode/plugins/,
+		// selfProtect passes → ENOENT from guard instead of "D4 self-protection".
+		envNoTrackfw := nodeEnvNoTrackfw(secret)
+		// Patch declares deletion of the .opencode directory (ancestor of plugins/).
+		patchText := "*** Begin Patch\n*** Delete File: .opencode\n*** End Patch"
+		driver := makeV2Driver(pluginPath, projectDir, "patch",
+			fmt.Sprintf(`{ patchText: %q }`, patchText))
+		_, stderr, rc := runNodeDriver(t, nodeRuntime, driver, envNoTrackfw)
+		if rc == 0 {
+			t.Fatalf("arm33: expected D4 throw for patch deleting .opencode ancestor; got rc=0 (bypass)")
+		}
+		// Discriminator: D4 self-protection from reverse-containment check (before fix:
+		// "not found" from ENOENT because forward isUnderDir(.opencode, .opencode/plugins/)=false).
+		if !strings.Contains(stderr, "D4 self-protection") {
+			t.Errorf("arm33: expected D4 self-protection in stderr (pre-fix gives ENOENT); got %q", stderr)
 		}
 	})
 }

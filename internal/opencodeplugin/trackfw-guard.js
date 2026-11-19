@@ -21,6 +21,19 @@
 //   plugins/x" extracts a candidate "<projectDir>/z/.opencode/plugins/x" that is
 //   NOT under the protected dir after resolution, defeating the second layer.
 //   N6 (ML-5I6): two additional closures on top of N5:
+//   N7a (ML-5I7): patch/apply_patch with "new file mode 120000" (symlink creation)
+//     is denied before header extraction — blocks the first step of the dangling-
+//     symlink bypass regardless of the target path.
+//   N7b (ML-5I7): realpathOrParent now follows dangling symlinks via lstatSync +
+//     readlinkSync with a depth limit of 40 (fail-closed). Closes the second step:
+//     write through a dangling symlink whose target is under a protected dir.
+//   N8 (ML-5I7): isUnderDir and pathsEqual apply .normalize('NFC') on darwin/win32
+//     before case-folding so NFD-form paths (macOS APFS normalization-preserving)
+//     compare equal to their NFC-stored equivalents.
+//   N9 (ML-5I7): the candidates loop also checks isUnderDir(protectedDir, candidate)
+//     — denies patches whose candidate is an ancestor of a protected dir (e.g.,
+//     "*** Delete File: .opencode").
+//   N6 (ML-5I6): two additional closures on top of N5:
 //     (a) The mention scan now checks a SECOND haystack with octal \NNN sequences
 //         decoded before the \ → / pass, so "+++ \"z/\056opencode/plugins/x\""
 //         matches ".opencode/plugin" after decoding \056 → '.' even though the
@@ -68,8 +81,36 @@ const WEBFETCH_TOOLS = new Set(["webfetch", "websearch"])
 // not exist, it walks up to the nearest existing ancestor, resolves that via
 // realpathSync, and reattaches the unresolved tail — preserving the original
 // case of path components that could not be resolved (F2/F8).
-function realpathOrParent(p) {
+//
+// N7b (ML-5I7): when p is a dangling symlink (lstatSync succeeds, isSymbolicLink=true,
+// but realpathSync throws because the target does not exist), the link target is read
+// via readlinkSync and resolved against the REAL parent of the link (not the lexical
+// parent) using recursive realpathOrParent calls. The recursion is guarded by a depth
+// counter that THROWS at >40 levels (fail-closed). The recursive calls are placed
+// OUTSIDE any try/catch so the depth-limit throw propagates to the caller.
+function realpathOrParent(p, _depth) {
+  if (_depth === undefined) { _depth = 0 }
+  if (_depth > 40) {
+    throw new Error("trackfw-guard: blocked — symlink chain too deep or cycle detected (D4 self-protection)")
+  }
   try { return fs.realpathSync(p) } catch (e1) {}
+  // N7b: p might be a dangling symlink — detect and follow it before the ancestor walk.
+  var linkTarget = null
+  try {
+    var lst = fs.lstatSync(p)
+    if (lst.isSymbolicLink()) {
+      linkTarget = fs.readlinkSync(p)
+    }
+  } catch (e2) {}
+  // IMPORTANT: recursive calls are OUTSIDE the try/catch above so that a depth-limit
+  // throw from the recursion propagates to the caller (fail-closed for deep chains).
+  if (linkTarget !== null) {
+    // Resolve the link target relative to the REAL parent of the link so that relative
+    // symlinks (e.g. ".opencode/plugins/evil.js") expand correctly even when the
+    // link's lexical parent is itself a symlink.
+    var realBase = realpathOrParent(nodePath.dirname(p), _depth + 1)
+    return realpathOrParent(nodePath.resolve(realBase, linkTarget), _depth + 1)
+  }
   var abs = nodePath.resolve(p)
   var parts = abs.split(nodePath.sep)
   for (var len = parts.length - 1; len >= 1; len--) {
@@ -78,19 +119,25 @@ function realpathOrParent(p) {
       var resolved = fs.realpathSync(ancestor)
       var tail = parts.slice(len).join(nodePath.sep)
       return nodePath.join(resolved, tail)
-    } catch (e2) {}
+    } catch (e3) {}
   }
   return abs
 }
 
 // isUnderDir returns true when resolvedTarget is strictly under dir
 // (separator-boundary check). Case-insensitive on darwin and win32 (F2/F4).
+//
+// N8 (ML-5I7): on darwin and win32, both sides are normalised to NFC before
+// case-folding. macOS APFS is normalisation-insensitive (NFC and NFD resolve to
+// the same inode) but normalisation-preserving (fs.realpathSync returns the input
+// form without canonicalising). Without NFC normalisation, isUnderDir(NFD, NFC)
+// returns false even though they refer to the same directory.
 function isUnderDir(resolvedTarget, dir) {
   var normalDir = nodePath.resolve(dir)
   var sep = nodePath.sep
   var prefix = normalDir.endsWith(sep) ? normalDir : normalDir + sep
   if (process.platform === "darwin" || process.platform === "win32") {
-    return resolvedTarget.toLowerCase().startsWith(prefix.toLowerCase())
+    return resolvedTarget.normalize('NFC').toLowerCase().startsWith(prefix.normalize('NFC').toLowerCase())
   }
   return resolvedTarget.startsWith(prefix)
 }
@@ -98,10 +145,13 @@ function isUnderDir(resolvedTarget, dir) {
 // pathsEqual compares two paths for equality. a is expected to be a
 // realpathOrParent-resolved path; b is normalized with nodePath.resolve.
 // Case-insensitive on darwin and win32 (F2).
+//
+// N8 (ML-5I7): on darwin and win32, both sides are normalised to NFC before
+// case-folding for the same reason as isUnderDir (APFS normalization-preserving).
 function pathsEqual(a, b) {
   var normB = nodePath.resolve(b)
   if (process.platform === "darwin" || process.platform === "win32") {
-    return a.toLowerCase() === normB.toLowerCase()
+    return a.normalize('NFC').toLowerCase() === normB.normalize('NFC').toLowerCase()
   }
   return a === normB
 }
@@ -395,6 +445,20 @@ function selfProtect(tool, args, projectDir) {
       }
     }
 
+    // N7a (ML-5I7): block patches that declare symlink creation (mode 120000).
+    // A symlink created under a protected directory could be used to escape the
+    // directory-containment check via a dangling-symlink write in a second step
+    // (N7b). Blocking mode 120000 closes the first step independently of the N7b
+    // realpathOrParent fix, providing defence in depth.
+    // The check runs against n5Text (all string-valued args, \ → /, lowercased) to
+    // catch the declaration regardless of which field carries it.
+    if (/^(new file mode|new mode)\s+120000\s*$/m.test(n5Text)) {
+      throw new Error(
+        "trackfw-guard: blocked — patch creates a symbolic link (mode 120000) " +
+        "which cannot be safely verified (D4 self-protection)"
+      )
+    }
+
     var scannedKeys = {}
     var patchText = args.patchText != null ? args.patchText
       : (args.patch != null ? args.patch : null)
@@ -479,6 +543,15 @@ function selfProtect(tool, args, projectDir) {
     // Check protected directories (F4)
     for (var di = 0; di < resolvedDirs.length; di++) {
       if (isUnderDir(realC, resolvedDirs[di])) {
+        throw new Error(
+          "trackfw-guard: blocked — write to opencode plugin file is not permitted (D4 self-protection)"
+        )
+      }
+      // N9 (ML-5I7): also deny when a protected dir is UNDER the candidate — covers
+      // patches that delete or rename an ancestor directory such as "*** Delete File:
+      // .opencode" or "rename from .opencode". If .opencode is deleted, the plugin
+      // files it contains are also deleted.
+      if (isUnderDir(resolvedDirs[di], realC)) {
         throw new Error(
           "trackfw-guard: blocked — write to opencode plugin file is not permitted (D4 self-protection)"
         )

@@ -48,15 +48,34 @@ const openCodeDirRelPath = ".opencode"
 // It checks the project-scoped plugin under root using the given CLIHomeResolver.
 // N3: the resolver is now used (not discarded) to also inspect the global
 // OpenCode config directory for sibling plugin files and plugin config keys.
+// N3-cond (ML-5I7): global checks run unconditionally — even when .opencode/ is absent
+// in the project — so that a global evil.js or config-key is always detected.
 func validateOpenCodePluginWarningsWith(root string, r agentconfig.CLIHomeResolver) ([]string, error) {
-	// Condition: .opencode/ must be a directory — otherwise OpenCode is not in use here.
+	// N3-cond: resolve globalDir before the .opencode/ early return so that the global
+	// sibling and config-key checks run even when the project has no .opencode/ directory.
+	// "" means unresolvable — skip global dirs.
+	globalDir, _ := agentconfig.OpenCodeConfigDir(r)
+
+	var warns []string
+
+	// F4 fix b + N3 + N3-cond: warn on sibling JS/TS/MJS/CJS files in project and global
+	// plugin dirs. Project dirs are silently skipped by os.ReadDir when absent (no .opencode/).
+	warns = append(warns, warnSiblingPluginFiles(root, globalDir)...)
+
+	// F4 fix b + N3 + N3-cond: warn on "plugin"/"plugins" keys in project and global
+	// opencode.json(c). Project files silently skipped by readRegularFile when absent.
+	warns = append(warns, warnOpenCodeConfigKeys(root, globalDir)...)
+
+	// Condition: .opencode/ must be a directory — otherwise project-side checks are skipped.
+	// Global warns (if any) are still returned.
 	opencodeDir := filepath.Join(root, openCodeDirRelPath)
 	fi, err := os.Stat(opencodeDir)
 	if err != nil || !fi.IsDir() {
-		return nil, nil // OpenCode not in use — silent
+		if len(warns) == 0 {
+			return nil, nil // OpenCode not in use and no global warnings — silent
+		}
+		return warns, nil
 	}
-
-	var warns []string
 
 	// Main plugin presence / marker / staleness check.
 	pluginPath := filepath.Join(root, opencodeplugin.PluginRelPath)
@@ -102,15 +121,6 @@ func validateOpenCodePluginWarningsWith(root string, r agentconfig.CLIHomeResolv
 			}
 		}
 	}
-
-	// N3: resolve the global OpenCode config directory; "" means unresolvable — skip.
-	globalDir, _ := agentconfig.OpenCodeConfigDir(r)
-
-	// F4 fix b + N3: warn on sibling JS/TS/MJS/CJS files in project and global plugin dirs.
-	warns = append(warns, warnSiblingPluginFiles(root, globalDir)...)
-
-	// F4 fix b + N3: warn on "plugin" or "plugins" keys in project and global opencode.json(c).
-	warns = append(warns, warnOpenCodeConfigKeys(root, globalDir)...)
 
 	if len(warns) == 0 {
 		return nil, nil

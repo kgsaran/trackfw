@@ -356,7 +356,8 @@ decodificados e com octal decodificado — fecha `+++ "z/\056opencode/plugins/x.
 symlink pendurado), N8 (NFD/NFC no macOS), N3-cond (global só checado com `.opencode/`), N9 (apagar/renomear `.opencode`);
 FP-A/FP-B falsos positivos. Decisão do zeus (ADR D8): corrigir os baratos e declarar a classe de truque de caminho em patch
 como residual equivalente ao `shell`, com a detecção como controle — sem rodada 4 para essa classe
-### ML-5I7 — Corretivo da rodada 3 (apolo-tf; ADR D8) — 🔄 In progress
-- [ ] N7 (a) e (b), N8, N3-cond, N9 com teste que reprova antes; `make quality` MQ_RC=0 lido pelo zeus
+### ML-5I7 — Corretivo da rodada 3 (apolo-tf; ADR D8) — ✅ Done
+- [x] N7 (a) e (b), N8, N3-cond, N9 com teste que reprova antes (33 braços JS PASS no Mac, 0 SKIP; 2 testes Go novos);
+  `make quality` MQ_RC=0 lido pelo zeus no log (365 OK)
 ### ML-5H — prova real com o plugin do produto (KG) — ⬜ Pending — scripts prontos (`proof-product-mac.sh`,
 `proof-product-windows.ps1`, 7/7 por máquina); roda depois do ML-5I3 e de nova rodada do hades
