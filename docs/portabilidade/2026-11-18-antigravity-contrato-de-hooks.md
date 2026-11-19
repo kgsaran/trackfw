@@ -1027,3 +1027,25 @@ interativa (por SSH o `agy` não acessa o Gerenciador de Credenciais e pede logi
 - Os hooks de projeto e global somam, e qualquer `deny` (ou exit ≠ 0) vence. Um hook de projeto não desliga o
   guard global.
 - **Ainda não medido:** App e IDE (PATH e shell do hook quando abertos pela interface gráfica).
+
+## 13. App e IDE no macOS (medido em 2026-11-18/19, KG; ML-1B)
+
+Projeto de prova `~/agyprobe/proof` com `.agents/hooks.json` gerado pelo `agents install` e `credential_guard.mode: block`.
+App e IDE fechados com Cmd+Q e abertos pelo Finder. Windows App/IDE fora (decisão do KG, opção b).
+
+| Superfície | Versão | `$PATH` do agente | Chave falsa, só hook de projeto | Chave falsa, só hook global |
+|---|---|---|---|---|
+| Antigravity App | 2.29.0 | herda o PATH do login shell (`~/.local/bin`, `/opt/homebrew/bin`) | **bloqueada** (com 11.7.0 no PATH) | não medido |
+| Antigravity IDE | 2.6.0 | igual ao do App | **passou** (`ide_secret.txt` criado, 11.7.0 primeiro no PATH) | **bloqueada** (`jsonhook__trackfw_PreToolUse_0_0`) |
+
+Leituras:
+
+- **PATH:** os dois herdam o PATH do login shell mesmo abertos pelo Finder. O fail-closed por `trackfw` ausente
+  (ADR, Escopo da medição) não aconteceu no Mac.
+- **IDE 2.6.0 não lê `.agents/hooks.json`.** O bundle da IDE cita `.gemini/config` e nenhuma vez `.agents/hooks`; o
+  `language_server` do App cita `.agents/hooks.json`. Para a IDE nessa versão, só o guard global protege
+  (`trackfw update harness --targets antigravity-credential-guard`). A IDE mostrava "Restart to Update" durante o teste;
+  uma versão nova pode passar a ler o hook de projeto — não medido.
+- **Binário antigo no PATH vaza em silêncio.** Com o `trackfw` 11.5.0 do Homebrew primeiro no PATH, o App executou o
+  comando com a chave: o 11.5.0 sai 0 para o payload do Antigravity (medido fora do App: 11.5.0 rc=0, 11.7.0 rc=2,
+  mesmo payload, cwd `.agents/`). O hook só protege com trackfw ≥ a versão desta REQ.

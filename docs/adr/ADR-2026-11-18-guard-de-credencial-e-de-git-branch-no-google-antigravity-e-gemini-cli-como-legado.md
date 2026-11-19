@@ -96,6 +96,10 @@ frágil.
 **Residual:**
 - `manage_task` com `send_input` carrega texto, não `CommandLine`. A camada 1 vê o segredo, mas o guard de
   git-branch não vê o comando.
+- **IDE do Antigravity 2.6.0 (macOS) não lê `.agents/hooks.json`; só o global protege** (medido, contrato §13). O App
+  2.29.0 lê o do projeto. Quem usa a IDE precisa do `update harness --targets antigravity-credential-guard`.
+- Um `trackfw` anterior a esta REQ primeiro no PATH sai 0 para o payload do Antigravity: o hook existe e não protege
+  (medido no App com 11.5.0).
 - App e IDE do Antigravity no **Windows** não foram medidos (decisão do KG em 2026-11-18, opção b): a VM não tem
   App/IDE e o `trackfw` não está no PATH do usuário. Sem `trackfw` no PATH, a linha do D1 fecha (9009 → exit 2) e
   bloqueia todo comando; o `doctor` deve ser o aviso. Só o CLI `agy` tem prova real no Windows.

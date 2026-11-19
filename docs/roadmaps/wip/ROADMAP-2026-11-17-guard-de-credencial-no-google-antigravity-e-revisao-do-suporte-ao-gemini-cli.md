@@ -113,9 +113,10 @@ test -s docs/portabilidade/2026-11-18-antigravity-contrato-de-hooks.md
   §12: os dois níveis somam e deny vence
 - [x] Windows: com `USERPROFILE` apontando para um diretório temporário, qual `hooks.json` global o `agy` carrega
   (`USERPROFILE` × `FOLDERID_Profile` — o caso que o Codex revelou no ML-4A da REQ-2026-11-15) — §12: **`USERPROFILE`**
-- [ ] App e IDE (Mac e Windows): um braço allow com leitura de PATH e do shell do hook; macOS App aberto pelo Finder
+- [x] App e IDE (Mac e Windows): um braço allow com leitura de PATH e do shell do hook; macOS App aberto pelo Finder
   acha o `trackfw` no PATH?
-  — Windows App/IDE fora (KG, 2026-11-18, opção b: VM sem App/IDE; residual no ADR); Mac App e IDE pendentes
+  — Windows App/IDE fora (KG, 2026-11-18, opção b: VM sem App/IDE; residual no ADR); Mac medido (contrato §13): PATH herdado nos dois; App 2.29.0 bloqueia pelo hook de projeto; **IDE 2.6.0 ignora o
+  de projeto e bloqueia só pelo global**
 - [ ] Gemini CLI: o binário instalado executa shell com chave de API? (contra-braço: sem chave)
 
 ## Wave 2 — ADR
@@ -203,7 +204,7 @@ sem BOM.
     `raw git commit blocked` no ndjson (Mac commits=1; no Windows o contador saiu vazio porque a VM não tinha identidade
     git — corrigido no script, a evidência é o ndjson); B4 só o global `update harness` → segredo bloqueado. Nota: o
     braço real foi `git commit`, não `git push`; o bloqueio de push para branch protegida tem teste de payload no ML-3A.
-  - **App e IDE ⬜** — pendente (item do ML-1B).
+  - **App e IDE (Mac) ✅** — contrato §13: App bloqueia pelo hook de projeto; IDE 2.6.0 só pelo global.
 - ML-4B — revisão de qualidade (hefesto-tf)
 - ML-4B — revisão do hefesto ✅ — APROVA COM NOTAS (`docs/qualidade/2026-11-18-ml-4b-antigravity-review.md`); A1 bloqueante
 - ML-4C — corretivo A1–A7 ✅ — `view_file` usa `AbsolutePath` literal (apóstrofo no nome dava falso negativo; o teste
