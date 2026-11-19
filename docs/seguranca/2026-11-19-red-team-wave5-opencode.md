@@ -638,3 +638,332 @@ Baixo impacto isolado (a rota para escrever este arquivo por subagente Claude j�
 | `grep` arquivo com credencial (abs) | PASS — warning emitido |
 | ADR D7 residuais (rm via shell, grep sobre dir, `--pure`, `task`, `execute.after`) | Confirmados |
 
+---
+
+## Rodada 3 (ML-5G3)
+
+> Data: 2026-11-19 | Revisor: hades-tf | Commits auditados: `aafbcf59` (ML-5I3) · `4329413f` (ML-5I4) · `e8e1b2e7` (ML-5I5, ML-5I6)
+> Escopo: fechar achados N1–N3, F5 fail-open, F7 reversed, N4 da Rodada 2 contra os corretivos ML-5I3–5I6; exercitar vetores novos do brief.
+
+### Binário auditado
+
+Branch build em `bin5g3/trackfw` (go build da HEAD `e8e1b2e7`). `go build ./...` rc=0. `go test ./internal/guard/ ./internal/opencodeplugin/ ./internal/validator/ -run OpenCode` → todos verdes (29 arms do `TestOpenCodePlugin_JSRuntime` PASS, validator/guard: PASS).
+
+**git diff --cached:** vazio. Nenhuma operação git executada. Nenhum `opencode` com chamada de modelo. Nenhum arquivo de chave fake escrito — os vetores desta rodada são de path e unicode, não de credencial.
+
+**Ambiente:** `PATH=$SCRATCH/bin5g3:$PATH`; `bin5g3/trackfw` é o binário real da branch (não o helper-process de teste); `TRACKFW_FAKE_GUARD=1` não é relevante para este binário. `OPENCODE_CONFIG_DIR` e `XDG_CONFIG_HOME` não definidos exceto nos testes que os precisam. Drivers JS carregados via `require()` no Node.js v26.13.1. Guard JS: `$PROJ/.opencode/plugins/trackfw-guard.js` (cópia literal do asset embarcado).
+
+---
+
+### Tabela de verificação — Rodada 2 (N1–N4, F5, F7)
+
+| ID | Resultado | Evidência |
+|----|-----------|-----------|
+| N1 (protectedDirs/Files não resolve symlinks) | FECHADO | arm13/arm14 PASS + live symlink test: write para `REAL/opencode.json` com `projectDir=LINK` → BLOCK; write para `REAL/.opencode/plugins/evil.js` → BLOCK |
+| N2 (a/b prefix não stripped) | FECHADO | `+++ b/.opencode/plugins/evil.js` → mention scan BLOCK (`.opencode/plugin` presente no patchText) |
+| N3 (validate/doctor não verificam global) | PARCIAL — sítio remanescente N3-cond | `TestOpenCodePlugin_GlobalSiblingJS_Warns` PASS; `TestOpenCodePlugin_GlobalConfigPluginsKey_Warns` PASS; `TestOpenCodePlugin_JSONCBlockComment_Warns` PASS; `TestOpenCodePlugin_JSONCTrailingComma_Warns` PASS |
+| N3 condicionado a `.opencode/` existir | ABERTO (LOW) | Projeto sem `.opencode/` + global `evil.js` → `validate --json` retorna 0 opencode warnings. Early return em `validateOpenCodePluginWarningsWith` descarta N3 checks quando `.opencode/` ausente. ADR D7 não menciona esta condição. Ver achado N3-cond abaixo |
+| F5 (fail-open sem headers) | FECHADO | `patch` com `patchText:""` → BLOCK "no recognizable target headers"; campo `diff` sem headers → BLOCK; F5 é agora fail-closed |
+| F7 reversed (artificial) | FECHADO | `{filePath:"innocuous.txt", path:".opencode/plugins/evil.js"}` → BLOCK. ML-5I3+ mudou de `filePath ?? path` para verificar TODOS os campos presentes em `pathFieldNames`; o comentário confirma explicitamente o caso F7 |
+| N4 (block comment e trailing comma) | FECHADO | `TestOpenCodePlugin_JSONCBlockComment_Warns` PASS; `TestOpenCodePlugin_JSONCTrailingComma_Warns` PASS |
+| N1 Site 2 (OPENCODE_CONFIG_DIR como symlink) | FECHADO | write para `REAL/plugins/evil.js` com `OPENCODE_CONFIG_DIR=LINK` → BLOCK; `realpathOrParent(resolvedDirs)` resolve ambos lados |
+
+---
+
+### Sumário executivo — Rodada 3
+
+| ID | Superfície | Severidade | Bloqueante | Ação |
+|----|-----------|-----------|------------|------|
+| N7 | `realpathOrParent` não segue symlink dangling; mention scan não bloqueia mode 120000 | MEDIUM | Sim | CORRIGIR |
+| N8 | NFD/NFC unicode bypass — macOS APFS, inodes idênticos, strings diferentes | MEDIUM | Sim | CORRIGIR |
+| N3-cond | N3 silencioso em projetos sem `.opencode/` — mesma causa que N3 | LOW | Não bloqueia o veredito; bloqueia o merge (Regra Dura) | CORRIGIR (mesma REQ que N3) |
+| N9 | `*** Delete File: .opencode` / `rename from .opencode` via patch — ALLOW; expõe guard plugin | LOW | Não altera veredito | CORRIGIR condicional a M17 |
+| FP-A | Mention scan bloqueia patches com "opencode.json" no corpo do conteúdo | LOW | Não | Residual proposto (ADR D7) |
+| FP-B | Mention scan bloqueia paths com ".opencode/plugin" como substring | LOW | Não | Residual proposto (ADR D7) |
+
+**Veredito: REPROVA**
+
+**N7** (bloqueante): bypass D4 de dois passos sem shell, confirmado ao vivo.
+
+1. `patch` com `new file mode 120000` e corpo `+.opencode/./plugins/evil3.js` → guard ALLOW. O segmento `./` quebra o match da needle `.opencode/plugin` no mention scan (`indexOf = -1` medido).
+2. `write {path: "n7_link"}` onde `n7_link` é symlink dangling para `.opencode/./plugins/evil3.js` → guard ALLOW. `realpathSync(n7_link)` lança (target não existe); o ancestor walk retorna `realProjectDir/n7_link` sem seguir o symlink; `isUnderDir` não casa.
+3. O write aterra em `.opencode/plugins/evil3.js` (conteúdo verificado: `// N7 evil content`).
+
+O mesmo bypass funciona para o diretório global: `$OPENCODE_CONFIG_DIR/./plugins/evil.js` → mention scan ALLOW (medido: `indexOf = -1`), write to dangling symlink ALLOW.
+
+**N8** (bloqueante): bypass D4 via NFD/NFC unicode, confirmado ao vivo em macOS APFS.
+
+macOS APFS mapeia NFC e NFD para o mesmo inode (`ação` NFC = U+00E7 U+00E3; `ação` NFD = c U+0327 a U+0303 — inode idêntico confirmado). `realpathSync` preserva a forma de entrada sem normalizar. `resolvedDirs` = NFC form; path enviado ao guard em NFD form → `isUnderDir(NFD, NFC)` = false (comparação de string falha) → ALLOW. Write aterra no mesmo diretório protegido.
+
+Dois achados. Para N7: (b) realpathOrParent é necessário (Step 2 é explorável mesmo sem o Step 1); (a) modo 120000 é complementar e fecha o Step 1 independentemente. Para N8: normalizar para NFC antes de comparar é o único fix.
+
+**FP-A**, **FP-B** não bloqueiam: são falsos positivos de usabilidade. Proposta de texto de residual na seção final. **N3-cond** é CORRIGIR (mesma REQ que N3), não residual.
+
+---
+
+### N7 — Dangling-symlink via `./` evade mention scan e `realpathOrParent` (MEDIUM, bloqueante)
+
+**Superfície:** `internal/opencodeplugin/trackfw-guard.js`, `selfProtect` + mention scan N5.
+
+**Root cause — dois gaps que se combinam:**
+
+**Gap A (mention scan):** o haystack N5 é o patchText com `\\ → /` e lowercase, mas sem normalização de segmentos de caminho. A sequência `/./` não é colapsada. Portanto `.opencode/./plugins/evil.js` não contém a needle `.opencode/plugin` como substring (`indexOf = -1` medido).
+
+**Gap B (`realpathOrParent`):** quando `realpathSync(p)` lança — situação de dangling symlink — a função faz o ancestor walk a partir do caminho absoluto `abs = nodePath.resolve(p)`. O walk resolve o ancestor (`projectDir`) mas reanexa o tail original `p` sem verificar se `p` é um symlink. Um symlink dangling em `projectDir/n7_link → .opencode/./plugins/evil3.js` retorna `realProjectDir/n7_link`, não o alvo.
+
+**Medição:**
+
+```
+# mention scan
+indexOf('.opencode/plugin' in '+.opencode/./plugins/evil3.js') = -1  ← ALLOW
+
+# Step 1 — patch cria symlink
+Payload: {tool:"patch", patchText:"diff --git a/p b/p\nnew file mode 120000\n---\n+++ b/p\n@@\n+.opencode/./plugins/evil3.js\n"}
+Guard: ALLOW
+
+# Criar symlink manualmente (simula o que apply_patch executaria):
+ln -s .opencode/./plugins/evil3.js n7_link
+realpathSync(n7_link) → THROWS (target não existe)
+ancestor walk → realProjectDir/n7_link
+isUnderDir(realProjectDir/n7_link, .opencode/plugins/) = false
+
+# Step 2 — write ao dangling symlink
+Payload: {tool:"write", path:"n7_link"}
+Guard: ALLOW
+
+# Efeito real (confirmado):
+writeFileSync('n7_link', '// N7 evil content')
+target-after: true ← .opencode/plugins/evil3.js criado
+target-content: // N7 evil content   ← BYPASS CONFIRMADO
+```
+
+**Pré-condição Step 1:** `apply_patch` precisa criar o symlink. Se o OpenCode não suportar `new file mode 120000`, o Step 1 não cria o symlink via essa ferramenta — mas o Step 2 (write to dangling) permanece aberto se o symlink for criado por qualquer outro mecanismo (bash via o residual declarado, ou qualquer escrita anterior). O guard não pode assumir que apply_patch rejeitará mode 120000; a defesa deve ser no guard. O shape de `apply_patch` para mode 120000 não está documentado na portabilidade (M17 aberto, `docs/portabilidade/2026-11-19-opencode-contrato-de-plugin.md` L816–817).
+
+**Escopo global (medido):** o mesmo bypass funciona para o diretório global. Needle global no mention scan: `n5GlobalNorm + "/plugin"` onde `n5GlobalNorm` = `OPENCODE_CONFIG_DIR` sem barras inversas. Um patchText com corpo `+$OPENCODE_CONFIG_DIR/./plugins/evil.js` → `indexOf = -1` → ALLOW (confirmado ao vivo).
+
+**Correção proposta (sítio a — mention scan):**
+
+A normalização `/./` → `/` no haystack é **insuficiente como único fix**: não cobre `//` nem `/../subdir/..`. O fix estrutural correto é bloquear patches que declaram `new file mode 120000` ou `new mode 120000` — a criação de symlink como entidade é a primitiva que o guard deve recusar, independente do target.
+
+```js
+// dentro do bloco patch/apply_patch, após o loop de mention scan (n5 patterns):
+var modeSymlinkRe = /^(new file mode|new mode)\s+120000\s*$/m
+if (modeSymlinkRe.test(n5Text)) {  // n5Text cobre todos os campos string, não só patchText
+  throw new Error("trackfw-guard: blocked — patch creates a symbolic link (mode 120000)")
+}
+```
+
+A normalização `/./` pode ser aplicada como defesa em profundidade adicional mas não substitui o bloqueio de mode 120000. Um symlink criado em `plugins/` seria seguido pelo V1 loader (`symlink: true` em `docs/portabilidade/2026-11-19-opencode-contrato-de-plugin.md` L137), o que reforça a necessidade de bloquear mode 120000 independente do target.
+
+**Correção proposta (sítio b — `realpathOrParent`):**
+
+```js
+function realpathOrParent(p, _depth) {
+  _depth = _depth || 0
+  if (_depth > 40) throw new Error("trackfw-guard: blocked — symlink chain too deep or cycle detected")
+  try { return fs.realpathSync(p) } catch (e1) {}
+  // N7: se p é symlink (mesmo dangling), segui-lo manualmente antes do ancestor walk
+  // IMPORTANTE: a chamada recursiva deve ficar FORA do try/catch — para que o throw
+  // do limite de profundidade (linha 2) não seja engolido pelo catch(e2).
+  var linkTarget = null
+  try {
+    var lst = fs.lstatSync(p)
+    if (lst.isSymbolicLink()) {
+      linkTarget = fs.readlinkSync(p)   // ← captura só o alvo; resolve abaixo, fora do catch
+    }
+  } catch (e2) {}
+  if (linkTarget !== null) {
+    // Resolver o alvo relativo ao REAL parent do link (não ao parent lexical) para que
+    // `../` no alvo seja expandido corretamente mesmo quando dirname(p) é um symlink.
+    var base = realpathOrParent(nodePath.dirname(p), _depth + 1)
+    return realpathOrParent(nodePath.resolve(base, linkTarget), _depth + 1)
+  }
+  // ... ancestor walk (inalterado)
+```
+
+O parâmetro `_depth` limita a recursão a 40 níveis; no limite, **lança um erro** — fail-closed. As chamadas recursivas ficam fora do `catch (e2)` para que o throw se propague. Verificação de call sites: todos os 4 call sites de `realpathOrParent` em `selfProtect` estão fora de qualquer `try/catch` — o throw do depth-cap se propaga corretamente para `checkTools` e bloqueia a operação. Cobertura: o fix cobre symlinks *folha* dangling. Uma *cadeia intermediária* de symlinks (`dlink → evil/`, `x.js` escrito em `dlink/x.js`) não é coberta pelo fix da folha — Rodada 4 deve exercitar esse caso.
+
+---
+
+### N8 — NFD/NFC unicode bypass em macOS APFS (MEDIUM, bloqueante)
+
+**Superfície:** `internal/opencodeplugin/trackfw-guard.js`, `isUnderDir` + `realpathOrParent`.
+
+**Root cause:** macOS APFS é normalization-*insensitive* no lookup (NFC e NFD resolvem para o mesmo inode) e normalization-*preserving* no nome armazenado (`fs.realpathSync` devolve a forma que foi passada, não uma forma canônica). Se `resolvedDirs` foi construído com a forma NFC e o agente envia o caminho em forma NFD, `isUnderDir` chama `.toLowerCase()` em ambos os lados (proteção de case — correta) mas não normaliza NFC/NFD — strings ainda divergem e `startsWith` retorna `false`.
+
+A precondição é simples: o project dir ou global config dir deve conter ao menos um caractere composto com representação NFC≠NFD — cedilhas, acentos, etc. Um caminho ASCII puro não tem forma NFD alternativa.
+
+**Medição (ao vivo em macOS APFS):**
+
+```
+# NFC: a + U+00E7(ç) + U+00E3(ã) + o  → bytes 61 c3a7 c3a3 6f
+# NFD: a + c + U+0327(combining-cedilla) + a + U+0303(combining-tilde) + o → bytes 61 63 cca7 61 cc83 6f
+# projectDir = NFC_PROJ (NFC-form path, NFC inode)
+
+stat -f "%i" NFC_PROJ  → 441500607
+stat -f "%i" NFD_PROJ  → 441500607   ← mesmo inode confirmado
+
+Buffer.from(fs.realpathSync(NFC_DIR).slice(-6)).toString('hex') → 332f61c3a7c3a36f  (NFC suffix)
+Buffer.from(fs.realpathSync(NFD_DIR).slice(-6)).toString('hex') → 6163cca761cc836f  (NFD suffix)
+realpathSync(NFC) === realpathSync(NFD) → false   ← formas preservadas, strings diferentes
+
+# V1 server hook, projectDir = NFC_PROJ
+Control (write via NFC path, NFC projectDir): BLOCK ✓   ← guard funciona com mesma forma
+N8 (write via NFD path, NFC projectDir):      ALLOW     ← BYPASS CONFIRMADO
+file landed via NFC path: true | content: // N8 evil content
+
+# Case bypass (diagnóstico de cobertura)
+Case bypass (.OPENCODE/ vs .opencode/):  BLOCK ✓   ← toLowerCase() já cobre case; N8 é bypass distinto
+```
+
+**Escopo global (por leitura — mesma `isUnderDir`, não medido ao vivo):** o mesmo bypass se aplica ao global config dir se ele contiver caracteres compostos. Um `OPENCODE_CONFIG_DIR` ASCII puro não tem forma NFD alternativa.
+
+**Correção proposta:** a função `isUnderDir` já faz `.toLowerCase()` em ambos os lados no darwin/win32. O fix é adicionar `.normalize('NFC')` ao mesmo ramo, como delta:
+
+```js
+// antes (darwin/win32 branch):
+return resolvedTarget.toLowerCase().startsWith(prefix.toLowerCase())
+// depois:
+return resolvedTarget.normalize('NFC').toLowerCase().startsWith(prefix.normalize('NFC').toLowerCase())
+```
+
+Aplicar `.normalize('NFC')` também em `pathsEqual` pelo mesmo motivo. A normalização é **inerte no Linux** (NFC e NFD têm inodes distintos em ext4/xfs — sem bypass e operação no-op para strings ASCII puras). Responsável: `internal/opencodeplugin/trackfw-guard.js`.
+
+
+---
+
+### N3-cond — global sibling check condicional a `.opencode/` existir (LOW — não altera veredito; bloqueia merge deste PR sob a Regra Dura)
+
+**Superfície:** `internal/validator/validator_opencode_plugin.go`.
+
+**Mecanismo:** `validateOpenCodePluginWarningsWith` retorna `nil, nil` imediatamente quando `.opencode/` não existe no projeto. As verificações de sibling global (N3) ficam abaixo dessa guarda.
+
+**Medição:**
+
+```bash
+# OPENCODE_CONFIG_DIR=$SCRATCH/global_evil  (contém plugins/evil.js e opencode.json com "plugins" key)
+
+# Positivo control: proj5g3 TEM .opencode/plugins/trackfw-guard.js
+cd $SCRATCH/proj5g3 && OPENCODE_CONFIG_DIR=$SCRATCH/global_evil trackfw validate --json
+→ opencode warnings: 2
+   credential_guard_presence_warning: unexpected plugin script in global opencode
+     plugins/evil.js — only trackfw-guard.js is expected; remove or verify this file is intentional
+   credential_guard_presence_warning: $SCRATCH/global_evil/opencode.json contains a "plugins" key — plugin
+     loading should use the trackfw-managed .opencode/plugins/trackfw-guard.js
+
+# Negativo: $SCRATCH/no-oc SEM .opencode/ — mesma OPENCODE_CONFIG_DIR
+cd $SCRATCH/no-oc && OPENCODE_CONFIG_DIR=$SCRATCH/global_evil trackfw validate --json
+→ opencode warnings: 0   ← early return, checks globais não executados
+```
+
+**Classificação:** CORRIGIR, mesma REQ que N3 (Regra Dura de Causa Raiz). A causa é idêntica — os checks globais de N3 foram acrescentados abaixo da guarda de early return sem mover essa guarda. O fix é uma cirurgia de uma linha: mover `warnSiblingPluginFiles` global e `warnOpenCodeConfigKeys` global para **antes** do early return por `.opencode/` ausente. O check de projeto-side permanece condicional; apenas a parte global é promovida. Não é residual porque o fix não exige primitiva nova.
+
+**ADR D7** afirma cobertura de projeto e global sem mencionar esta condição — imprecisão da documentação que o fix corrige junto. Responsável: `internal/validator/validator_opencode_plugin.go`.
+
+---
+
+### FP-A — Mention scan bloqueia patches com "opencode.json" no corpo do conteúdo (LOW)
+
+**Superfície:** mention scan N5, needle `"opencode.json"`.
+
+**Mecanismo:** o haystack N5 inclui todo o patchText, inclusive as linhas de conteúdo adicionado (após `@@`). A needle `"opencode.json"` é uma substring simples, sem âncora de path. Um patch que adiciona uma linha documentando a configuração dispara o bloqueio.
+
+**Medição:**
+
+```
+# FP: patch adiciona linha "Configure opencode.json for settings" ao README.md
+{tool:"patch", patchText:"+++ README.md\n@@ -0,0 +1 @@\n+Configure opencode.json for settings\n"}
+→ BLOCK "patch mentions a protected opencode path"   ← FALSO POSITIVO
+
+# TP: write para README.md
+{tool:"write", path:"README.md"}
+→ ALLOW   ← mesma operação via write funciona
+```
+
+Outros casos confirmados: `docs/opencode.json.example` (header contém `opencode.json`); `myopencode.json` (sufixo `opencode.json`).
+
+**Impacto:** o usuário não pode usar `patch`/`apply_patch` para editar arquivos que mencionen "opencode.json" no conteúdo adicionado. Pode usar `write`. O bloqueio é ruidoso mas não é um bypass de segurança.
+
+**Proposta de residual (ADR D7):** declarar que a needle `"opencode.json"` no mention scan é aplicada ao patchText inteiro, incluindo linhas de conteúdo. Patches que adicionam documentação sobre `opencode.json` são bloqueados; a mitigação é usar `write` ou `edit` para esses arquivos.
+
+---
+
+### FP-B — Mention scan bloqueia paths com ".opencode/plugin" como substring (LOW)
+
+**Superfície:** mention scan N5, needle `".opencode/plugin"`.
+
+**Mecanismo:** a needle `".opencode/plugin"` é uma substring — não é ancorada a um separador de início. Qualquer path que contenha `.opencode/plugin` em posição não-inicial dispara o bloqueio.
+
+**Casos medidos:**
+
+```
+"+++ .opencode/plugins-backup/readme.txt"  → BLOCK (prefix: .opencode/plugin ⊂ .opencode/plugins-backup)
+"+++ not.opencode/plugins/x.js"             → BLOCK (.opencode/plugin aparece na posição 3)
+"+++ myopencode.json"                        → BLOCK (opencode.json aparece como sufixo)
+```
+
+**Impacto:** LOW — diretorios como `.opencode/plugins-backup/` ou `not.opencode/` são incomuns. A operação pode ser feita via `write` em vez de `patch`.
+
+**Proposta de residual (ADR D7):** declarar que o mention scan usa substring matching sem âncora; paths cujos componentes contenham `.opencode/plugin` ou `opencode.json` como parte do nome são bloqueados mesmo quando o alvo real não é um diretório protegido.
+
+---
+
+### N9 — `*** Delete File: .opencode` e `rename from .opencode` via patch (LOW, condicional a M17)
+
+**Superfície:** `internal/opencodeplugin/trackfw-guard.js`, `selfProtect`.
+
+**Mecanismo:** um `apply_patch` com `*** Delete File: .opencode` ou `rename from .opencode` produz um candidate `projectDir/.opencode` (a pasta inteira). Esse candidate não está *sob* `.opencode/plugins/` — está *acima* dela. `isUnderDir(.opencode, .opencode/plugins/)` = false → ALLOW. Se `apply_patch` suportar exclusão de diretórios, a operação removeria `trackfw-guard.js`.
+
+**Medição:**
+```
+# *** Delete File: .opencode
+candidate = realpathOrParent(projectDir + "/.opencode") = realProjectDir/.opencode
+isUnderDir(realProjectDir/.opencode, realProjectDir/.opencode/plugins/) → false → ALLOW
+
+# rename from .opencode
+candidate = idem → ALLOW
+```
+
+Se `apply_patch` não suporta exclusão de diretórios (M17 aberto, `docs/portabilidade/2026-11-19-opencode-contrato-de-plugin.md` L816–817), o gap fecha automaticamente no executor. Se suportar, o guard precisa do fix.
+
+**Correção proposta:** no loop de candidates, além de checar `isUnderDir(candidate, protectedDir)`, checar o inverso: `isUnderDir(protectedDir, candidate)` — nega quando um caminho protegido está *sob* o candidato. Intervenção de path sem primitiva nova; mesmo critério de N7/N8. Responsável: `internal/opencodeplugin/trackfw-guard.js`.
+
+---
+
+### Vetores exercitados — Rodada 3
+
+| Vetor | Resultado |
+|-------|-----------|
+| N2 `a/b` prefix — FECHADO | `+++ b/.opencode/plugins/evil.js` → mention scan BLOCK ✓ |
+| F5 fail-closed — FECHADO | patch sem headers → BLOCK ✓ |
+| F7 reversed — FECHADO | todos os campos path verificados → BLOCK ✓ |
+| N1 Site 2 OPENCODE_CONFIG_DIR como symlink — FECHADO | write via real path → BLOCK ✓ |
+| NFD/NFC: write para NFC dir via NFC path | write para NFC dir via NFC path → BLOCK ✓ (mesma forma, sem bypass) |
+| `\t` em header de patch | `+++ b/\t.opencode/plugins/evil.js` → mention scan vê `\t.opencode` que contém `.opencode/plugin` → BLOCK ✓ |
+| `\"` em path git-quoted | `+++ "z/.opencode/plugins/evil.js"` → mention scan vê string raw com `.opencode/plugin` → BLOCK ✓ |
+| `%2e` em path de patch | `+++ %2eopencode/plugins/evil.js` → não é codificação de caminho (filesystem literal); ALLOW correto; write não aterra em `.opencode/plugins/` |
+| Zero-width char em `.opencode` (`​`) | `.open​code/plugins/evil.js` → não contém `.opencode/plugin`; ALLOW correto (path diferente no filesystem) |
+| Homoglifo U+FF0E em `.opencode` | `．opencode/plugins/evil.js` → ALLOW correto; write aterra em diretório diferente |
+| Dot-segment z prefix (`z/.opencode/./plugins/x`) | N6-b: candidate string contém `.opencode/plugin` → BLOCK ✓ |
+| Dois patches em um patchText | ambos headers processados por `extractPatchTargets`; segundo target catch mention → BLOCK ✓ |
+| `*** Delete File: .opencode` | candidate = `projectDir/.opencode`; não está sob `.opencode/plugins/`; ALLOW — **N9** (ver acima) |
+| `rename from .opencode` | candidate = `projectDir/.opencode`; mesmo argumento → ALLOW — **N9** |
+| `new file mode 120000` com target direto `.opencode/plugins/evil.js` | mention scan vê `.opencode/plugin` → BLOCK ✓ |
+| `new file mode 120000` com target `./` bypass | **N7 — ALLOW → REPROVA** (ver acima) |
+| Symlink não-dangling para `plugins/` | `realpathSync` segue o link → real path → BLOCK ✓ |
+| Symlink dangling para `.opencode/plugins/evil2.js` (sem `./`) | Step 1: mention scan vê `.opencode/plugins` → BLOCK ✓; mas Step 2 (write ao dangling) = **N7 Gap B — ALLOW** (mesmo mecanismo de N7, não é vetor independente fechado) |
+| NFD form de projDir em path de write | **N8 — ALLOW → REPROVA** (ver acima) |
+
+---
+
+### Proposta de texto de residual para ADR D7
+
+Acrescentar à seção **Residual** do ADR `ADR-2026-11-19-guard-do-trackfw-no-opencode-via-plugin.md`:
+
+> - O mention scan (N5) aplica as needles ao patchText inteiro, incluindo linhas de conteúdo (`+linha`). Patches que adicionam texto com "opencode.json" ou ".opencode/plugins" em qualquer posição são bloqueados mesmo quando o alvo do patch é um arquivo não protegido (ex.: README.md documentando `opencode.json`). A mitigação é usar `write` ou `edit` para esses arquivos.
+> - O mention scan usa correspondência de substring sem âncora de início de componente. Paths cujos componentes contenham `.opencode/plugin` ou `opencode.json` como substring (ex.: `.opencode/plugins-backup/`, `myopencode.json`) são bloqueados mesmo sem ameaça real.
+> - (Patches que removem ou renomeiam `.opencode/` são tratados no achado N9 abaixo.)
+
+**N7, N8 e N9 NÃO devem ser declarados como residuais** — todos têm correções de path sem primitiva nova. N3-cond não deve ser declarado como residual — tem a mesma causa que N3 e o fix é uma mudança de ordem de chamadas.
+
+

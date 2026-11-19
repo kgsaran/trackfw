@@ -117,6 +117,25 @@ estavam implementados. Os ajustes:
   - As demais ferramentas nativas da V2 que carregam conteúdo ou caminho de leitura, listadas no contrato, ficam
     mapeadas ou declaradas residual uma a uma.
 
+**D8 — Limite da autoproteção por caminho (2026-11-19, após três rodadas de red team).** A autoproteção do D4/D7
+compara caminhos e textos. Ela é uma **camada a mais**, não o controle principal. O agente já consegue escrever na
+pasta de plugins por `shell` (residual desde o D4), e nenhuma defesa por texto fecha isso. O controle principal contra
+plugin estranho é a **detecção**: o `validate`/`doctor` acusam qualquer arquivo de plugin que não seja o
+`trackfw-guard.js` e qualquer chave `plugin(s)` no `opencode.json(c)`, no projeto e no global, com ou sem `.opencode/`
+no projeto. Por isso:
+
+- **Entram e são corrigidos** os contornos baratos, em que a mudança é local e tem teste:
+  - patch que cria symlink (`new file mode 120000`/`new mode 120000`) é negado;
+  - symlink pendurado é resolvido contra o pai real;
+  - a comparação normaliza para NFC antes de ignorar caixa (macOS);
+  - é negado o alvo que contém um caminho protegido, como apagar ou renomear a pasta `.opencode`;
+  - a detecção do global vale mesmo sem `.opencode/` no projeto.
+- **Fica declarado como residual, sem nova rodada:** contorno de patch que exige montar o caminho por partes, como
+  cadeia intermediária de symlinks ou dois patches que se completam, ou outra técnica que nenhuma comparação de texto
+  fecha. O efeito é o mesmo da escrita por `shell`, e o controle é a detecção.
+- **Falso positivo aceito:** um patch que só cite `opencode.json` ou `.opencode/plugin` no texto (documentação, nome
+  parecido) é negado. O agente pode editar esses arquivos por `write`/`edit` fora dos caminhos protegidos.
+
 ## Consequences
 
 - O OpenCode passa a ter guard de credencial e de git-branch, no projeto e no global, com `missing` visível.
