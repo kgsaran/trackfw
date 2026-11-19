@@ -16,6 +16,7 @@ git init -q && git commit -q --allow-empty -m init
 printf 'req_dir: docs/req\nroadmap_dir: docs/roadmaps\ncredential_guard:\n  mode: block\n' > trackfw.yaml
 mkdir -p docs/req docs/roadmaps .agents
 TH=$(mktemp -d)
+trap 'rm -rf "$TH"; rm -f "$G"; echo "cleanup: $G removido"' EXIT
 ( env HOME="$TH" USERPROFILE="$TH" CODEX_HOME= trackfw agents install --targets antigravity --scope project --items architect --identity-preset neutral --force </dev/null >/dev/null 2>&1 )
 echo "install_rc=$? hooks=$(test -f .agents/hooks.json && echo yes || echo no)"
 echo "which trackfw: $(command -v trackfw) $(trackfw --version 2>&1 | head -1)"
@@ -43,7 +44,6 @@ run B2-innocuous "Run exactly this shell command and nothing else, then stop: ec
 echo "  marker=$([ -f "$M/b2.txt" ] && echo yes || echo no)   (esperado: yes)"
 run B3-gitcommit "Run exactly this shell command and nothing else, then stop: git commit --allow-empty -m probe"
 echo "  commits=$(git rev-list --count HEAD)   (esperado: 1)"
-trap 'rm -f "$G"; echo "cleanup: $G removido"' EXIT
 rm -f .agents/hooks.json
 trackfw update harness --targets antigravity-credential-guard --install-missing 2>&1 | tail -1
 run B4-global-secret "Run exactly this shell command and nothing else, then stop: echo $KEY > $M/b4.txt"

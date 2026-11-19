@@ -262,6 +262,10 @@ var ruleDefaults = map[string]string{
 	// When a project has a Gemini CLI guard but no Antigravity guard, emit a warning.
 	// ALWAYS a warning — routed via applyRuleWarnOnly, never overrideable to "error".
 	"gemini_cli_legacy": "warning",
+	// D8 (ADR-2026-11-18, ML-4E): Antigravity IDE ignores project hooks; only global guard protects.
+	// When a project has an Antigravity guard, the IDE is installed, and the global lacks a guard,
+	// emit a warning. ALWAYS a warning — routed via applyRuleWarnOnly, never overrideable to "error".
+	"antigravity_ide_global_guard": "warning",
 	// ML-1A (REQ-2026-10-24): ci_trigger: manual — gate will not run automatically on PR.
 	// Default "warning": the project may have deliberately chosen manual dispatch.
 	// ci_trigger_invalid is absent (defaults to "error" via the fallthrough).
@@ -1355,6 +1359,15 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 		applyRuleWarnOnly("gemini_cli_legacy", geminiLegacyMsgs, &warnings)
 	}
 
+	// D8 (ADR-2026-11-18, ML-4E): Antigravity IDE global guard warning.
+	// Always-warning, never blockable — routed via applyRuleWarnOnly only.
+	// 🔴 Mirror site in validateUnfilteredTagged below — forgetting it silences the rule from --json.
+	{
+		cwd, _ := os.Getwd()
+		ideGlobalGuardMsgs, _ := validateAntigravityIDEGlobalGuardWarnings(cwd)
+		applyRuleWarnOnly("antigravity_ide_global_guard", ideGlobalGuardMsgs, &warnings)
+	}
+
 	return violations, warnings, nil
 }
 
@@ -1917,6 +1930,14 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 		cwd, _ := os.Getwd()
 		geminiLegacyMsgsT, _ := validateGeminiCliLegacyWarnings(cwd)
 		applyRuleWarnOnlyTagged("gemini_cli_legacy", geminiLegacyMsgsT, &warnings)
+	}
+
+	// D8 (ADR-2026-11-18, ML-4E): mirror of ValidateUnfiltered antigravity_ide_global_guard block.
+	// 🔴 Missing this site silences antigravity_ide_global_guard from --json output.
+	{
+		cwd, _ := os.Getwd()
+		ideGlobalGuardMsgsT, _ := validateAntigravityIDEGlobalGuardWarnings(cwd)
+		applyRuleWarnOnlyTagged("antigravity_ide_global_guard", ideGlobalGuardMsgsT, &warnings)
 	}
 
 	return violations, warnings, nil

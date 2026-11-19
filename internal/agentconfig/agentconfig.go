@@ -512,3 +512,25 @@ func AntigravityHooksDisplayPath(antigravityDir string) string {
 	}
 	return "~/" + filepath.ToSlash(rel)
 }
+
+// AntigravityIDEDir returns the path to the Google Antigravity IDE installation
+// directory (<home>/.antigravity-ide). Used by the antigravity_ide_global_guard
+// rule to detect whether the IDE is installed.
+//
+// Measured on macOS (2.6.0 and 2.7.0): the IDE installs to ~/.antigravity-ide/extensions.
+// NOT measured on Windows — treat as potentially inaccurate on that platform.
+//
+// Callers check whether the returned path is a directory on disk:
+//
+//	ideDir, err := agentconfig.AntigravityIDEDir(agentconfig.DefaultResolver)
+//	if err == nil {
+//	    fi, statErr := os.Stat(ideDir)
+//	    installed := statErr == nil && fi.IsDir()
+//	}
+func AntigravityIDEDir(r CLIHomeResolver) (string, error) {
+	home, err := r.HomeFor(CLIAntigravity)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".antigravity-ide"), nil
+}

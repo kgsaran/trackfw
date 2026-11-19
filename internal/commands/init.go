@@ -18,6 +18,7 @@ import (
 	"github.com/kgsaran/trackfw/internal/identity"
 	"github.com/kgsaran/trackfw/internal/integrations"
 	"github.com/kgsaran/trackfw/internal/pathguard"
+	"github.com/kgsaran/trackfw/internal/validator"
 	"github.com/spf13/cobra"
 )
 
@@ -670,6 +671,13 @@ func installAITools(aiTools []string, cwd string, scope string) error {
 	// the same non-fatal call in Scaffold, scaffold.go:197).
 	if err := generators.InjectHooksForTools(aiTools, cwd); err != nil {
 		fmt.Fprintf(os.Stderr, "  ⚠ agent hooks: %v\n", err)
+	}
+	// D8 (ADR-2026-11-18, ML-4E): warn if Antigravity was just installed in the project
+	// but the IDE is present and the global hook lacks a credential guard. Non-fatal.
+	if containsAntigravityTarget(aiTools) {
+		for _, msg := range validator.ValidateAntigravityIDEGlobalGuardWarningsForDoctor(cwd) {
+			fmt.Fprintf(os.Stderr, "  ⚠ %s\n", msg)
+		}
 	}
 	return nil
 }

@@ -8,7 +8,7 @@
 # specific rule names, message substrings, exit codes.  Nothing here invokes
 # `node npm/bin/trackfw` or `python3 -m trackfw`.
 #
-# Pin inventory (42 pins across 9 blocks):
+# Pin inventory (45 pins across 10 blocks):
 #   Block 1 — ADR/REQ rule-set:         {adr_accepted_when_req_done, blocked_by_draft_adr}
 #   Block 2 — branch_has_wip_roadmap:    nomatch/diff message markers + --agent guidance
 #                                        + the ML-3A matcher: token overlap accepts (PIN6),
@@ -26,6 +26,9 @@
 #                                         GOOS == windows + sh present → rule silent (PIN33)
 #   Block 9 — gemini_cli_legacy:         Gemini guard + no Antigravity → warning (PIN34),
 #                                         both guards present → silent (PIN35)
+#   Block 10 — antigravity_ide_global_guard: 3 conditions met → warning (PIN36),
+#                                            no IDE dir → silent (PIN37),
+#                                            global with guard → silent (PIN38)
 #
 # Falsification evidence is recorded after `make quality` run.
 set -euo pipefail
@@ -1445,7 +1448,150 @@ if gcl_items:
 print("OK [validate-rule-pins/pin35-gcl-both-guards-silent]  both guards present → gemini_cli_legacy silent")
 PY
 
-echo "validate-rule-pins: all 42 pins pass"
+# BLOCK 10: antigravity_ide_global_guard pins (D8, ADR-2026-11-18, ML-4E REQ-2026-11-17)
+#
+# Pins:
+#   PIN36 — all 3 conditions (project guard + IDE dir + no global guard) → warning
+#   PIN37 — no IDE directory → rule silent
+#   PIN38 — global hook has guard → rule silent
+# ---------------------------------------------------------------------------
+AIG_TMP=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-aig-pins.XXXXXX")
+trap 'rm -rf "$TMP_DIR" "${FENCE_TMP:-}" "${WSM_TMP:-}" "${GCL_TMP:-}" "${AIG_TMP:-}"' EXIT
+
+# Minimal fixture: trackfw.yaml + .agents/hooks.json with credential guard (Antigravity schema)
+mkdir -p \
+  "$AIG_TMP/proj/docs/roadmaps/wip" \
+  "$AIG_TMP/proj/.agents" \
+  "$AIG_TMP/home"
+
+cat >"$AIG_TMP/proj/trackfw.yaml" <<'EOF'
+roadmap_dir: docs/roadmaps
+EOF
+
+# .agents/hooks.json with credential guard subcommand marker (hookCmdSchemaAntigravity)
+cat >"$AIG_TMP/proj/.agents/hooks.json" <<'EOF'
+{
+  "trackfw": {
+    "PreToolUse": [
+      {
+        "matcher": "run_command|manage_task",
+        "hooks": [{"type": "command", "command": "trackfw guard credential || exit 2"}]
+      }
+    ]
+  }
+}
+EOF
+
+# Create the IDE directory: <home>/.antigravity-ide
+mkdir -p "$AIG_TMP/home/.antigravity-ide"
+
+# PIN36: all 3 conditions → warning (no global guard yet)
+set +e
+(cd "$AIG_TMP/proj" && HOME="$AIG_TMP/home" "$GO_BIN" validate --json) >"$AIG_TMP/aig.json" 2>"$AIG_TMP/aig.stderr"
+AIG_RC=$?
+set -e
+
+python3 - "$AIG_TMP/aig.json" "$AIG_RC" <<'PY'
+import json, sys
+path, rc = sys.argv[1], int(sys.argv[2])
+AIG_RULE = "antigravity_ide_global_guard"
+AIG_MSG  = "Antigravity IDE ignores the project hook"
+
+with open(path, encoding="utf-8") as f:
+    payload = json.load(f)
+
+warnings   = payload.get("warnings", [])
+violations = payload.get("violations", [])
+
+aig_violations = [v for v in violations if v.get("rule") == AIG_RULE]
+aig_warnings   = [w for w in warnings   if w.get("rule") == AIG_RULE]
+
+if aig_violations:
+    raise SystemExit(
+        f"PIN36: antigravity_ide_global_guard must be a warning, never a violation; got: {aig_violations!r}"
+    )
+if not aig_warnings:
+    raise SystemExit(
+        f"PIN36: expected antigravity_ide_global_guard warning when 3 conditions hold; "
+        f"warnings={warnings!r}"
+    )
+if not any(AIG_MSG in w.get("message", "") for w in aig_warnings):
+    raise SystemExit(
+        f"PIN36: warning message must contain {AIG_MSG!r}; got: {aig_warnings!r}"
+    )
+print("OK [validate-rule-pins/pin36-aig-all-conditions-warns]  3 conditions → antigravity_ide_global_guard warning")
+PY
+
+# PIN37: no IDE directory → rule silent
+# Remove the IDE dir
+rm -rf "$AIG_TMP/home/.antigravity-ide"
+
+set +e
+(cd "$AIG_TMP/proj" && HOME="$AIG_TMP/home" "$GO_BIN" validate --json) >"$AIG_TMP/aig2.json" 2>"$AIG_TMP/aig2.stderr"
+AIG2_RC=$?
+set -e
+
+python3 - "$AIG_TMP/aig2.json" "$AIG2_RC" <<'PY'
+import json, sys
+path, rc = sys.argv[1], int(sys.argv[2])
+AIG_RULE = "antigravity_ide_global_guard"
+
+with open(path, encoding="utf-8") as f:
+    payload = json.load(f)
+
+all_items = payload.get("violations", []) + payload.get("warnings", [])
+aig_items = [item for item in all_items if item.get("rule") == AIG_RULE]
+
+if aig_items:
+    raise SystemExit(
+        f"PIN37: antigravity_ide_global_guard must be silent when IDE dir absent; "
+        f"got: {aig_items!r}"
+    )
+print("OK [validate-rule-pins/pin37-aig-no-ide-silent]  no IDE dir → antigravity_ide_global_guard silent")
+PY
+
+# PIN38: global hook has guard → rule silent
+# Restore IDE dir and add global guard
+mkdir -p "$AIG_TMP/home/.antigravity-ide"
+mkdir -p "$AIG_TMP/home/.gemini/config"
+cat >"$AIG_TMP/home/.gemini/config/hooks.json" <<'EOF'
+{
+  "trackfw": {
+    "PreToolUse": [
+      {
+        "matcher": "run_command|manage_task",
+        "hooks": [{"type": "command", "command": "trackfw guard credential || exit 2"}]
+      }
+    ]
+  }
+}
+EOF
+
+set +e
+(cd "$AIG_TMP/proj" && HOME="$AIG_TMP/home" "$GO_BIN" validate --json) >"$AIG_TMP/aig3.json" 2>"$AIG_TMP/aig3.stderr"
+AIG3_RC=$?
+set -e
+
+python3 - "$AIG_TMP/aig3.json" "$AIG3_RC" <<'PY'
+import json, sys
+path, rc = sys.argv[1], int(sys.argv[2])
+AIG_RULE = "antigravity_ide_global_guard"
+
+with open(path, encoding="utf-8") as f:
+    payload = json.load(f)
+
+all_items = payload.get("violations", []) + payload.get("warnings", [])
+aig_items = [item for item in all_items if item.get("rule") == AIG_RULE]
+
+if aig_items:
+    raise SystemExit(
+        f"PIN38: antigravity_ide_global_guard must be silent when global guard present; "
+        f"got: {aig_items!r}"
+    )
+print("OK [validate-rule-pins/pin38-aig-global-guard-silent]  global guard present → antigravity_ide_global_guard silent")
+PY
+
+echo "validate-rule-pins: all 45 pins pass"
 echo "  Block 1 (rule-set):          pin1"
 echo "  Block 2 (bhr-messages):      pin2-pin5 + pin2b/pin2c/pin2d (ML-3A matcher)"
 echo "  Block 3 (credential-guard):  pin6-pin20 + pin20b/pin20c (ML-4C Windows migration warning)"
@@ -1455,3 +1601,4 @@ echo "  Block 6 (adr-without-prefix): pin28-pin29"
 echo "  Block 7 (adr-req-has-content): pin30-pin31"
 echo "  Block 8 (windows-sh-missing): pin32-pin33"
 echo "  Block 9 (gemini-cli-legacy):  pin34-pin35"
+echo "  Block 10 (antigravity-ide-global-guard): pin36-pin38"

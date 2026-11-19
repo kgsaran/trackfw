@@ -10272,3 +10272,51 @@ Severity default registrada em `defaultSeverities` como `"warning"` (linha ~264)
 - Projetos que nunca tiveram guard do Gemini CLI nem do Antigravity — sem aviso (intencionalmente).
 - Falha de leitura de arquivo → tratada como "ausente" → silêncio.
 - Guard do Gemini CLI no escopo global (`~/.gemini/settings.json`) — só o escopo de projeto é verificado.
+
+---
+
+## Regra `antigravity_ide_global_guard` — aviso quando a IDE está instalada sem guard global (D8, ADR-2026-11-18, ML-4E)
+
+<!-- trackfw-contract: gate=internal/validator/validator_antigravity_ide_global_guard_test.go partial=TestAntigravityIDEGlobalGuard_AllThreeConditions_Warns (arm warn), TestAntigravityIDEGlobalGuard_NoIDEDir_Silent (arm silêncio sem IDE), TestAntigravityIDEGlobalGuard_IDEDirIsFile_Silent (arm IDE como arquivo), TestAntigravityIDEGlobalGuard_GlobalGuardPresent_Silent (arm silêncio com global), TestAntigravityIDEGlobalGuard_NoProjectGuard_Silent (arm silêncio sem projeto), TestAntigravityIDEGlobalGuard_ValidateForTest_Warns (arm applyRuleWarnOnly), TestAntigravityIDEGlobalGuard_StrictMode_StillWarning (arm always-warning) exercem cada braço; a regra é roteada via applyRuleWarnOnly (nunca applyRule), garantindo que escalação via trackfw.yaml não converte em violation -->
+
+> REQ: `docs/req/REQ-2026-11-17-guard-de-credencial-no-google-antigravity-e-revisao-do-suporte-ao-gemini-cli.md`
+> ADR: `docs/adr/ADR-2026-11-18-guard-de-credencial-e-de-git-branch-no-google-antigravity-e-gemini-cli-como-legado.md` (D8)
+
+### O que a regra faz
+
+<!-- trackfw-contract: none reason=comportamento coberto pela anotação de contrato da seção pai (## Regra antigravity_ide_global_guard) acima — os gates exercem os sete braços via ValidateForTest e ValidateAntigravityIDEGlobalGuardWarningsWithForTest -->
+
+`antigravity_ide_global_guard` (severity padrão `warning`, **nunca** `error` — D8, sempre via `applyRuleWarnOnly`):
+
+Dispara quando **as três condições** valem:
+
+1. O projeto tem guard de credencial em `.agents/hooks.json`.
+2. A IDE está instalada: `<HomeFor(CLIAntigravity)>/.antigravity-ide` é diretório (medido no macOS 2.6.0 e 2.7.0; Windows não medido).
+3. O `hooks.json` global (`~/.gemini/config/hooks.json`) **não** tem guard de credencial.
+
+Mensagem emitida:
+
+```
+Antigravity IDE ignores the project hook .agents/hooks.json (measured on 2.6.0 and 2.7.0, ADR-2026-11-18 D8); only the global guard protects it — run `trackfw update harness --targets antigravity-credential-guard --install-missing` (<display-path>)
+```
+
+**Lógica de silêncio:**
+- Projeto não tem guard → silêncio (condição 1 não atendida).
+- IDE não instalada (`~/.antigravity-ide` ausente ou não-diretório) → silêncio.
+- Global tem guard → silêncio (usuário já protegido).
+- Home irresolvível → silêncio.
+
+**Esta regra é ALWAYS warning.** `applyRuleWarnOnly` impede que `rules: antigravity_ide_global_guard: error` no `trackfw.yaml` converta o aviso em violation — testado em `TestAntigravityIDEGlobalGuard_StrictMode_StillWarning`. O `doctor` repete o mesmo aviso via `ValidateAntigravityIDEGlobalGuardWarningsForDoctor`. O `agents install` e o `init` imprimem o aviso em stderr quando o hook de projeto é gravado.
+
+**Implementação:** `internal/validator/validator_antigravity_ide_global_guard.go` (ML-4E, REQ-2026-11-17).
+Wiring em `ValidateUnfiltered` e `validateUnfilteredTagged` em `internal/validator/validator.go`.
+Severity default registrada em `defaultSeverities` como `"warning"`.
+
+### O que ela NÃO cobre
+
+<!-- trackfw-contract: none reason=autodeclaração de limites; nenhuma afirmação de comportamento verificável por gate -->
+
+- IDE do Antigravity no Windows — caminho `~/.antigravity-ide` não foi medido nessa plataforma.
+- Projetos sem guard do Antigravity em `.agents/hooks.json` — sem aviso (condição 1 não atendida).
+- Falha de leitura do global hooks.json → tratada como "ausente" → condição 3 atendida → warning emitido (conservador: prefere avisar).
+- Guard do Antigravity no escopo global apenas (sem `.agents/hooks.json`) — sem aviso (a regra exige guard de projeto como pré-condição).

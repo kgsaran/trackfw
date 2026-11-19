@@ -147,6 +147,15 @@ func runDoctor(remote bool) ([]integrations.DoctorFinding, error) {
 			Remedy:      msg,
 		})
 	}
+	// D8 (ADR-2026-11-18, ML-4E): Antigravity IDE global guard advisory — project has
+	// Antigravity guard, IDE installed, but global lacks guard. Always advisory.
+	for _, msg := range validator.ValidateAntigravityIDEGlobalGuardWarningsForDoctor(manager.ProjectRoot) {
+		findings = append(findings, integrations.DoctorFinding{
+			FindingKind: integrations.DoctorAntigravityIDEGlobalGuard,
+			Destination: ".agents/hooks.json",
+			Remedy:      msg,
+		})
+	}
 	// Remote modality (ADR-2026-09-02, ML-3A): opt-in only — never runs without --remote, so
 	// doctor's offline default is unchanged.
 	if remote {
@@ -325,6 +334,7 @@ func printDoctorReport(cmd *cobra.Command, findings []integrations.DoctorFinding
 	var strayAgentMemory int
 	var windowsShMissing int
 	var geminiCliLegacy int
+	var antigravityIDEGlobalGuard int
 	for _, finding := range findings {
 		switch finding.FindingKind {
 		case integrations.DoctorUnregisteredWrite:
@@ -355,10 +365,12 @@ func printDoctorReport(cmd *cobra.Command, findings []integrations.DoctorFinding
 			windowsShMissing++
 		case integrations.DoctorGeminiCliLegacy:
 			geminiCliLegacy++
+		case integrations.DoctorAntigravityIDEGlobalGuard:
+			antigravityIDEGlobalGuard++
 		}
 	}
-	fmt.Fprintf(out, "trackfw doctor: %d finding(s) -- %d unregistered-write, %d hand-modified, %d unknown-content, %d scaffold-divergent, %d scaffold-missing, %d scaffold-wrong-mode, %d required-status-checks-missing, %d enforce-admins-disabled, %d hooks-path-neutralized, %d not-evaluated, %d scaffold-workflow-duplicated, %d stray-agent-memory, %d windows-sh-missing, %d gemini-cli-legacy\n\n",
-		len(findings), unregistered, handModified, unknownContent, scaffoldDivergent, scaffoldMissing, scaffoldWrongMode, requiredChecksMissing, enforceAdminsDisabled, hooksPathNeutralized, notEvaluated, workflowDuplicated, strayAgentMemory, windowsShMissing, geminiCliLegacy)
+	fmt.Fprintf(out, "trackfw doctor: %d finding(s) -- %d unregistered-write, %d hand-modified, %d unknown-content, %d scaffold-divergent, %d scaffold-missing, %d scaffold-wrong-mode, %d required-status-checks-missing, %d enforce-admins-disabled, %d hooks-path-neutralized, %d not-evaluated, %d scaffold-workflow-duplicated, %d stray-agent-memory, %d windows-sh-missing, %d gemini-cli-legacy, %d antigravity-ide-global-guard\n\n",
+		len(findings), unregistered, handModified, unknownContent, scaffoldDivergent, scaffoldMissing, scaffoldWrongMode, requiredChecksMissing, enforceAdminsDisabled, hooksPathNeutralized, notEvaluated, workflowDuplicated, strayAgentMemory, windowsShMissing, geminiCliLegacy, antigravityIDEGlobalGuard)
 	// One blank line BETWEEN findings, none trailing after the last one — matches Node's
 	// `lines.join('\n').replace(/\n$/, '')` and Python's `"\n".join(lines).rstrip("\n")`
 	// (npm/src/commands/doctor.js, pypi/trackfw/commands/doctor.py). A naive per-finding

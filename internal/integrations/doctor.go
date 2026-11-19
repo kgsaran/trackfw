@@ -139,6 +139,11 @@ const (
 	// DoctorGeminiCliLegacy: the project has a Gemini CLI credential guard but no Antigravity
 	// credential guard. D7 (ADR-2026-11-18, ML-3C): advisory, never automatic remedy.
 	DoctorGeminiCliLegacy DoctorFindingKind = "gemini-cli-legacy"
+
+	// DoctorAntigravityIDEGlobalGuard: the project has an Antigravity credential guard, the
+	// IDE is installed, but the global hooks.json lacks a guard. D8 (ADR-2026-11-18, ML-4E):
+	// the IDE ignores project hooks — only the global guard protects it.
+	DoctorAntigravityIDEGlobalGuard DoctorFindingKind = "antigravity-ide-global-guard"
 )
 
 // DoctorFinding is one artifact requiring the user's attention, plus a
