@@ -92,13 +92,32 @@ exit -1 vem do caminho PowerShell (`runInteractive`, sinal), não do POSIX; a ca
 - [x] Regra de Reconciliação: uma frase por teste novo ou alterado
 
 ### ML-1C — Job temporário de estresse no CI para AC3/AC4 (ares-tf; decisão do KG em 2026-11-20)
-**Status:** 🔄 In progress
+**Status:** ✅ Done — run 44826888100 (PR #694), `ubuntu-latest` com 4 núcleos, 4 shards por braço:
+
+| braço | `Text file busy` | `obteve -1` | `--- FAIL` |
+|---|---|---|---|
+| before (`origin/main`) | 1 (shard 3) | 105 (shard 1) | 10 |
+| after (HEAD) | 0 | 46 (shard 2) | 5 |
+
+O ETXTBSY reproduziu no `before` e sumiu no `after`, com amostra pequena (1 em 4 contra 0 em 4). O exit -1 aparece
+**nos dois braços**, então é outra causa: o `pwsh` aborta na inicialização com `System.IO.FileLoadException: The given
+assembly name was invalid`, e os nomes de assembly vêm embaralhados (`'System.Linq, Version=10.0.0.System.Runtime...'`).
+A falha restante do `after` (`PSInheritedState ... guard não rodou`) é da mesma família `pwsh`.
 > O Docker local tem 1 CPU e não reproduz. A medição vai para o `ubuntu-latest`, onde a falha apareceu.
 **Files affected:** `.github/workflows/tmp-etxtbsy-stress.yml` (novo; **removido antes do merge**)
-- [ ] braço `before` (árvore de `origin/main`) e braço `after` (HEAD), no mesmo tipo de runner, com contagem de
+- [x] braço `before` (árvore de `origin/main`) e braço `after` (HEAD), no mesmo tipo de runner, com contagem de
   `Text file busy`, `obteve -1` e FAIL por braço
-- [ ] o `before` reproduz pelo menos uma falha; se não reproduzir, isso fica escrito e o AC3 não é marcado por ausência
+- [x] o `before` reproduz pelo menos uma falha; se não reproduzir, isso fica escrito e o AC3 não é marcado por ausência
 - [ ] o arquivo sai da branch antes do merge (ML-FB confere)
+
+### ML-1D — `pwsh` abortando na inicialização sob paralelismo (artemis-tf) — causa do exit -1 (AC4)
+**Status:** 🔄 In progress
+> Mesmo sintoma, causa medida diferente do ETXTBSY. Pela Regra Dura, fica neste roadmap.
+> Hipótese: as instâncias paralelas de `pwsh` compartilham o cache de perfil de inicialização (`StartupProfileData-*` sob
+> `$XDG_CACHE_HOME/powershell` ou `~/.cache/powershell`), e uma delas lê o arquivo enquanto outra o grava.
+- [ ] hipótese confirmada ou refutada com medição: onde o `pwsh` grava o cache e se os testes isolam `HOME`/`XDG_CACHE_HOME`
+- [ ] correção só nos testes (por exemplo, cache por invocação), sem retry, skip nem perda de paralelismo
+- [ ] job de estresse rodado de novo: `obteve -1` = 0 e `Unhandled exception` = 0 em todos os shards do `after`
 
 ## Wave 2 — Revisão (hefesto-tf)
 ### ML-2A — Revisão de qualidade do diff da Wave 1
