@@ -34,7 +34,9 @@ Issue: #690 (o PR usa `Closes #690`).
 > Dependências: nenhuma. Bloqueia a Wave 1.
 
 ### ML-0A — Threat model e enumeração
-**Status:** ⬜ Pending
+**Status:** ✅ Done — auditado pelo zeus: tetos = `Makefile:11`, `quality.yml:40`, `release.yml:43`; ETXTBSY: S1 confirmado
+(`makeFakeTrackfw`), S2–S4 sem `t.Parallel()` (conferido); `RLock` no escritor correto (fork toma `Lock`, `forkpipe2.go:45`).
+Residual R1 (escrita de produto exec'd por teste paralelo) vira item de medição do ML-1B, pela Regra de Causa Raiz
 **Files affected:** `docs/seguranca/2026-11-20-wave0-estabilidade-job-go-threat-model.md` (novo, único arquivo escrito)
 **Actions:**
 1. Enumeração dos tetos: todo `-timeout` de `go test` em `.github/`, `Makefile` e `scripts/`, dizendo qual entra e qual fica
@@ -46,8 +48,8 @@ Issue: #690 (o PR usa `Closes #690`).
    testa menos pacotes que `./...`; proteção que serializa a suíte inteira; `t.Skip` ou retry que mascara falha real.
 4. Alvos de falsificação nas duas direções para AC1–AC3, e o residual declarado.
 **Acceptance criteria:**
-- [ ] as quatro seções respondidas com evidência (comando e saída), não com afirmação
-- [ ] nenhuma linha de implementação
+- [x] as quatro seções respondidas com evidência (comando e saída), não com afirmação
+- [x] nenhuma linha de implementação
 
 **Wave gates:**
 ```bash
