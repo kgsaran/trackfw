@@ -91,6 +91,15 @@ exit -1 vem do caminho PowerShell (`runInteractive`, sinal), não do POSIX; a ca
 - [x] nenhum teste removido, pulado ou desparalelizado
 - [x] Regra de Reconciliação: uma frase por teste novo ou alterado
 
+### ML-1C — Job temporário de estresse no CI para AC3/AC4 (ares-tf; decisão do KG em 2026-11-20)
+**Status:** 🔄 In progress
+> O Docker local tem 1 CPU e não reproduz. A medição vai para o `ubuntu-latest`, onde a falha apareceu.
+**Files affected:** `.github/workflows/tmp-etxtbsy-stress.yml` (novo; **removido antes do merge**)
+- [ ] braço `before` (árvore de `origin/main`) e braço `after` (HEAD), no mesmo tipo de runner, com contagem de
+  `Text file busy`, `obteve -1` e FAIL por braço
+- [ ] o `before` reproduz pelo menos uma falha; se não reproduzir, isso fica escrito e o AC3 não é marcado por ausência
+- [ ] o arquivo sai da branch antes do merge (ML-FB confere)
+
 ## Wave 2 — Revisão (hefesto-tf)
 ### ML-2A — Revisão de qualidade do diff da Wave 1
 **Status:** ⬜ Pending
