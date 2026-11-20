@@ -278,8 +278,9 @@ Achado: `read` com caminho → guard sai 0 (sem extrator), mesma causa do D5 `vi
   produto ou outro?
 - [x] itens que só o binário responde, listados para o ML-5B
 
-### ML-5B — Medição no binário real (KG + zeus-tf) — 🔄 In progress (falta C7: git-branch)
-- [ ] C7 `git commit` cru sob o OpenCode → bloqueado, commits iguais (Mac e Windows, 1/1 cada). Sem modelo, o payload do
+### ML-5B — Medição no binário real (KG + zeus-tf) — ✅ Done (C7 coberto pelo P3 do ML-5H)
+- [x] C7 `git commit` cru sob o OpenCode → bloqueado, commits iguais (Mac e Windows). Medido com o plugin do produto no P3 do
+  ML-5H (2026-11-20), em vez da sonda. Sem modelo, o payload do
   plugin já dá rc=2 no `guard git-branch` para `git commit`, `git add -A` e `git push` (rc=0 para `ls`) — zeus, 2026-11-19.
 opencode 2.3.2, Mac e Windows iguais, 6/6 cada (contrato §8): chave em `shell` bloqueada; inócuo liberado com o hook
 disparando; `trackfw` ausente → bloqueado (ENOENT); `read` com segredo liberado (gap); `OPENCODE_CONFIG_PROJECT_DISABLE=1`
@@ -359,5 +360,15 @@ como residual equivalente ao `shell`, com a detecção como controle — sem rod
 ### ML-5I7 — Corretivo da rodada 3 (apolo-tf; ADR D8) — ✅ Done
 - [x] N7 (a) e (b), N8, N3-cond, N9 com teste que reprova antes (33 braços JS PASS no Mac, 0 SKIP; 2 testes Go novos);
   `make quality` MQ_RC=0 lido pelo zeus no log (365 OK)
-### ML-5H — prova real com o plugin do produto (KG) — ⬜ Pending — scripts prontos (`proof-product-mac.sh`,
-`proof-product-windows.ps1`, 7/7 por máquina); roda depois do ML-5I3 e de nova rodada do hades
+### ML-5H — prova real com o plugin do produto (KG) — ✅ Done (2026-11-20)
+opencode 2.3.2, `anthropic/claude-haiku-5-5`, trackfw da branch em d3bcc446 (hash do `.exe` na VM conferido), 7/7 por
+máquina, Mac e Windows 11 ARM64 iguais (contrato §8.1). Rodou depois do ML-5I7; a rodada 4 do hades foi dispensada pelo D8
+(decisão do KG em 2026-11-20, opção a).
+- [x] P1 chave em `shell` → bloqueado, marker ausente
+- [x] P2 `echo hello` → liberado, marker criado
+- [x] P3 `git commit --allow-empty` → bloqueado, commits antes=1 depois=1
+- [x] P4 `read` de arquivo com a chave → bloqueado (o gap do C4 está fechado)
+- [x] P5 `write` de `.opencode/plugins/evil.js` → bloqueado pela autoproteção D4, arquivo ausente
+- [x] P6 `webfetch` com a chave na URL → bloqueado
+- [x] P7 plugin de projeto removido + `update harness --targets opencode-guard` → global instalado, chave bloqueada; global
+  removido ao final nas duas máquinas

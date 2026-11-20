@@ -29,7 +29,8 @@ Medido no opencode **2.3.2**, no macOS e no Windows 11 ARM64, com o resultado ig
 - o payload no formato `{tool_name, tool_input, cwd}` já é reconhecido pelos dois guards: rc=2 para chave fake,
   `git commit`, `git add -A` e `git push`, e rc=0 para `ls` (medido sem modelo).
 
-**Pendente:** o braço C7, `git commit` real sob o OpenCode.
+**Medido depois (ML-5H, 2026-11-20):** o plugin do produto bloqueia `shell` com segredo, `git commit`, `read` de arquivo
+com segredo, `write` na pasta de plugins e `webfetch` com segredo, no projeto e no global (contrato §8.1).
 
 ## Decision
 
@@ -145,7 +146,7 @@ no projeto. Por isso:
 **Residual:**
 - OpenCode 1.x (`opencode-ai`, API V1) não foi medido no binário.
 - MCP, `task` (subagente) e ferramentas de plugin de terceiro podem não passar pelo `execute.before` (T9, não medido).
-- `write`, `edit` e `patch` não foram medidos no binário.
+- `edit` e `patch` não foram medidos no binário (`write` foi, no P5 do ML-5H).
 - `--pure` (1.x) e `OPENCODE_CONFIG_PROJECT_DISABLE=1` desligam o plugin de projeto. A proteção nesse caso é o global.
 - O `execute.after` não bloqueia na V2, então não há redação de saída.
 - O agente pode apagar o plugin por `shell`.
