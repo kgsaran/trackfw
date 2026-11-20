@@ -32,14 +32,14 @@ REQ: docs/req/REQ-2026-11-17-guard-de-credencial-no-google-antigravity-e-revisao
   Antigravity. Vai para a ADR da Wave 2.
 
 ## Acceptance Criteria
-- [ ] AC1 — contrato de hook do Antigravity medido em fonte primária e no binário (Mac e Windows)
+- [x] AC1 — contrato de hook do Antigravity medido em fonte primária e no binário (Mac e Windows)
 - [ ] AC2 — status do Gemini CLI medido com contra-braço
-- [ ] AC3 — ADR com o contrato do Antigravity e a decisão de legado do Gemini
-- [ ] AC4 — `init`/`update` gravam guard de credencial e de git-branch para o Antigravity (projeto e global) e
+- [x] AC3 — ADR com o contrato do Antigravity e a decisão de legado do Gemini
+- [x] AC4 — `init`/`update` gravam guard de credencial e de git-branch para o Antigravity (projeto e global) e
   `doctor`/`validate` auditam no mesmo caminho
 - [x] AC5 — Antigravity real bloqueia um segredo fake e libera um comando inócuo, no Mac e no Windows (CLI `agy`; App/IDE no ML-1B)
-- [ ] AC6 — aviso de legado do Gemini CLI no `doctor`/`validate`
-- [ ] AC7 — `docs/cli-parity.md` e catálogo refletem o medido; `make quality` e CI verdes
+- [x] AC6 — aviso de legado do Gemini CLI no `doctor`/`validate`
+- [x] AC7 — `docs/cli-parity.md` e catálogo refletem o medido; `make quality` e CI verdes
 
 ## Status Legend
 ⬜ Pending · 🔄 In progress · ✅ Done · ❌ Blocked
@@ -92,7 +92,7 @@ test -s docs/portabilidade/2026-11-18-antigravity-contrato-de-hooks.md
 > Dependências: Wave 0 auditada.
 
 ### ML-1A — Antigravity no Mac e na VM Windows
-**Status:** ⬜ Pending
+**Status:** ✅ Done
 **Squad:** zeus-tf + KG (comandos rodados pelo KG; o classificador bloqueia o agente de rodar CLI de terceiro com bypass)
 **Files affected:** `docs/portabilidade/2026-11-18-antigravity-contrato-de-hooks.md` (seção "Medido"),
 `docs/portabilidade/antigravity-sondas/run-arms-mac.sh`, `docs/portabilidade/antigravity-sondas/run-arms-windows.ps1`
@@ -104,7 +104,7 @@ test -s docs/portabilidade/2026-11-18-antigravity-contrato-de-hooks.md
   do threat model não se materializa no `agy` 1.5.11
 
 ### ML-1B — Hook global, home efetivo e App/IDE (bloqueia o ML-3B2)
-**Status:** ⬜ Pending — aguarda autorização do KG para escrever em `~/.gemini/config/`
+**Status:** 🔄 In progress — falta só o braço do Gemini CLI (M12 do contrato), que fecha o AC2
 **Squad:** zeus-tf + KG
 **Files affected:** `docs/portabilidade/2026-11-18-antigravity-contrato-de-hooks.md` (§11),
 `docs/portabilidade/antigravity-sondas/` (runners do ML-1B)
@@ -245,14 +245,14 @@ sem BOM.
       sem global → aviso no install, `validate`, `validate --json` (`rule: antigravity_ide_global_guard`) e `doctor`;
       após `update harness` → silêncio. 7 testes conferidos por nome (`-run ^TestAntigravityIDEGlobalGuard_`). Pins 42→45.
       Desvio aceito: `proof-mac.sh` ganhou trap do `mktemp -d` (gate `check-mktemp-cleanup`).
-- ML-FB — `make quality` com a máquina ociosa e CI verde
-- ML-FB2 — Testes da Wave 4 que reprovam no Windows do CI (apolo-tf) — 🔄 In progress
+- ML-FB — `make quality` com a máquina ociosa e CI verde — ✅ Done: CI 24/24 verde em 82947751 (PR #692), MQ_RC=0
+- ML-FB2 — Testes da Wave 4 que reprovam no Windows do CI (apolo-tf) — ✅ Done
   > `windows-full-suites` reprova desde o 1º run do PR #692 (44533169241). Na run 44757700242, o ratchet ML-2A acusa
   > 3 falhas novas; as outras 5 estão em `.github/windows-known-failures.json`. Causa única: os testes põem o diretório
   > do IDE ou o esperado sob `HOME`, mas no Windows o resolvedor lê `USERPROFILE`, que o `main_test.go` aponta para outro
   > temp. É o mesmo mecanismo do D8 do ADR-2026-11-18.
   **Files affected:** `internal/agentconfig/agentconfig_test.go`, `internal/validator/validator_antigravity_ide_global_guard_test.go`
-  - [ ] `TestAntigravityConfigDir_Default_JoinsHomeDotGeminiConfig`, `TestAntigravityIDEGlobalGuard_ValidateForTest_Warns` e
+  - [x] `TestAntigravityConfigDir_Default_JoinsHomeDotGeminiConfig`, `TestAntigravityIDEGlobalGuard_ValidateForTest_Warns` e
     `TestAntigravityIDEGlobalGuard_StrictMode_StillWarning` passam no `windows-full-suites`, sem entrar na lista de falhas conhecidas
   - [x] nenhum código de produto alterado; `go test ./internal/agentconfig/ ./internal/validator/` verde no Mac. Correção:
     `t.Setenv("USERPROFILE", homeDir)` junto do `HOME` nos 3 testes (8 linhas). Os 3 passam por nome; `make quality`

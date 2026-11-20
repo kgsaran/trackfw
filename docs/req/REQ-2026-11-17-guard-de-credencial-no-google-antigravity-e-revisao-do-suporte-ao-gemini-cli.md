@@ -32,15 +32,15 @@ agente novo, e não comportamento de plataforma.
 ## Acceptance Criteria
 - [ ] Medido, em fonte primária (documentação oficial e binário instalado): o Gemini CLI atual ainda executa shell/ferramentas?
   Se não, desde qual versão. A medição tem um contra-braço.
-- [ ] Medido: o Antigravity tem mecanismo de hook ou interceptação antes de executar comando (nome do evento, formato, arquivo,
+- [x] Medido: o Antigravity tem mecanismo de hook ou interceptação antes de executar comando (nome do evento, formato, arquivo,
   escopo projeto/global, shell usado no Windows e no macOS). Se não tiver, isso fica escrito com a fonte, e a REQ define o que o
   trackfw entrega no lugar (por exemplo, um aviso no `doctor`/`validate` de que o Antigravity roda sem guard).
-- [ ] Se houver hook: `trackfw init`/`update` gravam o guard de credencial para o Antigravity, e o `doctor` audita no mesmo
+- [x] Se houver hook: `trackfw init`/`update` gravam o guard de credencial para o Antigravity, e o `doctor` audita no mesmo
   caminho. Teste e medição real no Antigravity com um segredo fake bloqueado e um comando inócuo liberado.
-- [ ] Decisão registrada em ADR sobre o Gemini CLI: manter, marcar como legado ou remover os hooks. Se a decisão for remover,
+- [x] Decisão registrada em ADR sobre o Gemini CLI: manter, marcar como legado ou remover os hooks. Se a decisão for remover,
   ela inclui a migração das instalações existentes.
-- [ ] `docs/cli-parity.md` e o catálogo refletem o estado medido.
-- [ ] OpenCode (Wave 5): plugin medido no binário real. Se ele bloquear, `init`/`update`/`agents install` gravam o guard de
+- [x] `docs/cli-parity.md` e o catálogo refletem o estado medido.
+- [x] OpenCode (Wave 5): plugin medido no binário real. Se ele bloquear, `init`/`update`/`agents install` gravam o guard de
   credencial e de git-branch, o `validate`/`doctor` auditam e o `update harness` reporta `missing`. Se não bloquear, a
   limitação fica medida e escrita no ADR.
 
