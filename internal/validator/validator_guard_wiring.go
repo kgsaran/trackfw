@@ -34,6 +34,7 @@ import (
 	"strings"
 
 	"github.com/kgsaran/trackfw/internal/guardforms"
+	"github.com/kgsaran/trackfw/internal/hookschema"
 )
 
 // wiringTuple is one guard hook entry: the event name, the matcher pattern, and the guard type.
@@ -77,6 +78,15 @@ const (
 	// D16 (ADR-2026-10-04): only "bash" entries count as wiring for Copilot global; a guard marker
 	// in any other field is NOT wiring and must not be recognized as such.
 	hookCmdSchemaFlatBash
+	// hookCmdSchemaAntigravity: the top-level key is a GROUP NAME (not "hooks").
+	// Format: {groupName: {event: [{matcher, hooks:[{type, command}]}]}}.
+	// Generator function: InjectAntigravityHooks (agentfiles.go) — group name is "trackfw".
+	// D6 (ADR-2026-11-18): extraction iterates all top-level group names, then events, then
+	// entries within each event — the executable command lives at
+	// root[groupName][event][i]["hooks"][j]["command"] (same nested shape as hookCmdSchemaNested
+	// once you skip the group-name indirection).
+	// CLIs: Google Antigravity (.agents/hooks.json).
+	hookCmdSchemaAntigravity
 )
 
 // guardWiringHookLayout maps each hook file path to its command-extraction schema.
@@ -96,6 +106,9 @@ var guardWiringHookLayout = map[string]hookCmdSchemaKind{
 	".cursor/hooks.json":                     hookCmdSchemaFlat,
 	".windsurf/hooks.json":                   hookCmdSchemaFlat,
 	".kiro/hooks/trackfw-attention.json":     hookCmdSchemaKiro,
+	// D6 (ADR-2026-11-18): Antigravity uses group-name top-level keys (hookCmdSchemaAntigravity).
+	// guardWiringExtractTuples handles this schema BEFORE the root["hooks"] lookup.
+	".agents/hooks.json": hookCmdSchemaAntigravity,
 }
 
 // disableKeyKind classifies the hook disable mechanism for a given CLI.
@@ -312,6 +325,34 @@ func guardWiringParseTuples(content []byte, hf credentialGuardHookFile) ([]wirin
 // R-1 (ML-2C): command extraction is schema-specific (not recursive). schema must be the value
 // from guardWiringHookLayout[hf.path] for the file being parsed.
 func guardWiringExtractTuples(parsed map[string]any, schema hookCmdSchemaKind, family guardShellFamily) []wiringTuple {
+	// D6 (ADR-2026-11-18): Antigravity uses {groupName:{event:[...]}} at the top level — there is
+	// no "hooks" key. Handle this schema BEFORE the root["hooks"] lookup to avoid a silent nil.
+	// Traversal delegated to hookschema.WalkAntigravityEntries (A3, ML-4C REQ-2026-11-17).
+	if schema == hookCmdSchemaAntigravity {
+		var tuples []wiringTuple
+		seen := make(map[string]bool)
+		addTuple := func(event, matcher, guardType string) {
+			key := event + "\x00" + matcher + "\x00" + guardType
+			if !seen[key] {
+				seen[key] = true
+				tuples = append(tuples, wiringTuple{event: event, matcher: matcher, guardType: guardType})
+			}
+		}
+		// ML-4C2 (REQ-2026-11-17): restore the R-2 filter that existed in ML-3C before
+		// WalkAntigravityEntries replaced the inline traversal. Only "type":"command"
+		// entries are executed by the Antigravity runtime; other types (e.g.
+		// "notification") must not count as live wiring.
+		hookschema.WalkAntigravityEntries(parsed, func(_, event, matcher, cmd, typeStr string) {
+			if typeStr != "command" {
+				return
+			}
+			if gt := guardWiringTypeFromCmd(cmd, family); gt != "" {
+				addTuple(event, matcher, gt)
+			}
+		})
+		return tuples
+	}
+
 	hooksRaw, ok := parsed["hooks"]
 	if !ok {
 		return nil
@@ -465,7 +506,12 @@ func guardWiringExtractCommandsFromEntry(entry map[string]any, schema hookCmdSch
 			return []string{cmd}
 		}
 		return nil
+
 	}
+	// ML-4C2 (REQ-2026-11-17): hookCmdSchemaAntigravity is no longer handled here.
+	// guardWiringExtractTuples returns early for Antigravity (line ~331) before any
+	// call to this function; the outer group/event traversal is performed by
+	// hookschema.WalkAntigravityEntries. This case was dead code after ML-4C.
 	return nil
 }
 

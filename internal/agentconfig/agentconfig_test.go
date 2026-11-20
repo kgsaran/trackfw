@@ -520,3 +520,277 @@ func TestCodexHooksDisplayPath_OutsideHome_UsesAbsolute(t *testing.T) {
 		t.Errorf("CodexHooksDisplayPath outside HOME: got %q, want %q", got, want)
 	}
 }
+
+// TestOSCLIHomeResolver_WindowsBranch_Antigravity exercises OSCLIHomeResolver's
+// Windows branch for Antigravity (agy) via SetPlatformForTest on macOS/Linux.
+//
+// Conclusion (ML-3B2 REQ-2026-11-17): on Windows (simulated), HomeFor(CLIAntigravity)
+// returns os.UserHomeDir() (USERPROFILE), NOT homedir.Dir() (HOME). Measured in
+// ML-1B §12 of docs/portabilidade/2026-11-18-antigravity-contrato-de-hooks.md.
+// This test FAILS without the CLIAntigravity case in the Windows branch of
+// OSCLIHomeResolver.HomeFor.
+func TestOSCLIHomeResolver_WindowsBranch_Antigravity(t *testing.T) {
+	userprofileDir := t.TempDir()
+	homeDir := t.TempDir()
+
+	restore := agentconfig.SetPlatformForTest("windows", func() (string, error) {
+		return userprofileDir, nil
+	})
+	defer restore()
+
+	t.Setenv("HOME", homeDir)
+	t.Setenv("CODEX_HOME", "")
+
+	r := agentconfig.OSCLIHomeResolver{}
+	got, err := r.HomeFor(agentconfig.CLIAntigravity)
+	if err != nil {
+		t.Fatalf("HomeFor(CLIAntigravity): unexpected error: %v", err)
+	}
+	if got != userprofileDir {
+		t.Errorf("HomeFor(CLIAntigravity) on simulated Windows: got %q, want %q (USERPROFILE)",
+			got, userprofileDir)
+	}
+}
+
+// TestAntigravityConfigDir_Default_JoinsHomeDotGeminiConfig confirms that
+// AntigravityConfigDir returns <home>/.gemini/config on non-Windows.
+//
+// Conclusion (ML-3B2 REQ-2026-11-17): AntigravityConfigDir appends .gemini/config
+// to the user's home dir; this test FAILS if the path suffix is wrong.
+func TestAntigravityConfigDir_Default_JoinsHomeDotGeminiConfig(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir) // Windows: os.UserHomeDir() reads USERPROFILE; set equal to HOME so both channels agree
+	t.Setenv("CODEX_HOME", "")
+
+	dir, err := agentconfig.AntigravityConfigDir(agentconfig.DefaultResolver)
+	if err != nil {
+		t.Fatalf("AntigravityConfigDir: unexpected error: %v", err)
+	}
+	want := filepath.Join(homeDir, ".gemini", "config")
+	if dir != want {
+		t.Errorf("AntigravityConfigDir: got %q, want %q", dir, want)
+	}
+}
+
+// TestAntigravityConfigDir_Windows_UsesUserprofile confirms that on Windows (simulated)
+// AntigravityConfigDir appends .gemini/config to USERPROFILE, not HOME.
+//
+// Conclusion (ML-3B2 REQ-2026-11-17): on Windows AntigravityConfigDir uses
+// USERPROFILE via os.UserHomeDir(); FAILS without the CLIAntigravity Windows branch.
+func TestAntigravityConfigDir_Windows_UsesUserprofile(t *testing.T) {
+	userprofileDir := t.TempDir()
+	homeDir := t.TempDir()
+
+	restore := agentconfig.SetPlatformForTest("windows", func() (string, error) {
+		return userprofileDir, nil
+	})
+	defer restore()
+
+	t.Setenv("HOME", homeDir)
+	t.Setenv("CODEX_HOME", "")
+
+	dir, err := agentconfig.AntigravityConfigDir(agentconfig.DefaultResolver)
+	if err != nil {
+		t.Fatalf("AntigravityConfigDir on simulated Windows: unexpected error: %v", err)
+	}
+	want := filepath.Join(userprofileDir, ".gemini", "config")
+	if dir != want {
+		t.Errorf("AntigravityConfigDir on simulated Windows: got %q, want %q (USERPROFILE/.gemini/config)",
+			dir, want)
+	}
+}
+
+// TestAntigravityHooksDisplayPath_InsideHome_UsesRelative confirms that a
+// dir inside HOME returns "~/.gemini/config/hooks.json".
+//
+// Conclusion (ML-3B2 REQ-2026-11-17): path inside HOME is abbreviated; FAILS
+// if the function always returns the absolute path.
+func TestAntigravityHooksDisplayPath_InsideHome_UsesRelative(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("CODEX_HOME", "")
+
+	antigravityDir := filepath.Join(homeDir, ".gemini", "config")
+	got := agentconfig.AntigravityHooksDisplayPath(antigravityDir)
+	if got != "~/.gemini/config/hooks.json" {
+		t.Errorf("AntigravityHooksDisplayPath inside HOME: got %q, want %q", got, "~/.gemini/config/hooks.json")
+	}
+}
+
+// OpenCodeConfigDir tests (ML-5E2, ADR-2026-11-19 D5)
+
+// TestOSCLIHomeResolver_WindowsBranch_OpenCode confirms that on simulated Windows
+// HomeFor(CLIOpenCode) returns os.UserHomeDir() (USERPROFILE), not HOME.
+//
+// Conclusion (ML-5E2): CLIOpenCode has its own Windows branch; FAILS without it.
+func TestOSCLIHomeResolver_WindowsBranch_OpenCode(t *testing.T) {
+	userprofileDir := t.TempDir()
+	homeDir := t.TempDir() // different from userprofileDir — proves USERPROFILE wins
+
+	restore := agentconfig.SetPlatformForTest("windows", func() (string, error) {
+		return userprofileDir, nil
+	})
+	defer restore()
+
+	t.Setenv("HOME", homeDir)
+	t.Setenv("OPENCODE_CONFIG_DIR", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	r := agentconfig.OSCLIHomeResolver{}
+	got, err := r.HomeFor(agentconfig.CLIOpenCode)
+	if err != nil {
+		t.Fatalf("HomeFor(CLIOpenCode): unexpected error: %v", err)
+	}
+	if got != userprofileDir {
+		t.Errorf("HomeFor(CLIOpenCode) on simulated Windows: got %q, want %q (USERPROFILE)",
+			got, userprofileDir)
+	}
+}
+
+// TestOpenCodeConfigDir_OPENCODE_CONFIG_DIR_Honoured confirms that when OPENCODE_CONFIG_DIR
+// is set to an absolute path, OpenCodeConfigDir returns it directly (no .config/opencode suffix).
+//
+// Conclusion (ML-5E2): OPENCODE_CONFIG_DIR is the highest-priority override; FAILS if ignored.
+func TestOpenCodeConfigDir_OPENCODE_CONFIG_DIR_Honoured(t *testing.T) {
+	customDir := t.TempDir()
+	t.Setenv("OPENCODE_CONFIG_DIR", customDir)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	got, err := agentconfig.OpenCodeConfigDir(agentconfig.DefaultResolver)
+	if err != nil {
+		t.Fatalf("OpenCodeConfigDir: unexpected error: %v", err)
+	}
+	if got != customDir {
+		t.Errorf("OpenCodeConfigDir with OPENCODE_CONFIG_DIR=%q: got %q, want %q", customDir, got, customDir)
+	}
+}
+
+// TestOpenCodeConfigDir_XDG_CONFIG_HOME_Honoured confirms that when OPENCODE_CONFIG_DIR is
+// absent but XDG_CONFIG_HOME is set, OpenCodeConfigDir returns <XDG_CONFIG_HOME>/opencode.
+//
+// Conclusion (ML-5E2): XDG_CONFIG_HOME is the second-priority override; FAILS if ignored.
+func TestOpenCodeConfigDir_XDG_CONFIG_HOME_Honoured(t *testing.T) {
+	xdgDir := t.TempDir()
+	t.Setenv("OPENCODE_CONFIG_DIR", "")
+	t.Setenv("XDG_CONFIG_HOME", xdgDir)
+
+	got, err := agentconfig.OpenCodeConfigDir(agentconfig.DefaultResolver)
+	if err != nil {
+		t.Fatalf("OpenCodeConfigDir: unexpected error: %v", err)
+	}
+	want := filepath.Join(xdgDir, "opencode")
+	if got != want {
+		t.Errorf("OpenCodeConfigDir with XDG_CONFIG_HOME=%q: got %q, want %q", xdgDir, got, want)
+	}
+}
+
+// TestOpenCodeConfigDir_Default_JoinsHomeDotConfigOpenCode confirms that the default path
+// is <HOME>/.config/opencode when no env override is set and platform is not Windows.
+//
+// Conclusion (ML-5E2): default fall-through appends .config/opencode to home; FAILS if suffix wrong.
+func TestOpenCodeConfigDir_Default_JoinsHomeDotConfigOpenCode(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("OPENCODE_CONFIG_DIR", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	restore := agentconfig.SetPlatformForTest("linux", nil)
+	defer restore()
+
+	got, err := agentconfig.OpenCodeConfigDir(agentconfig.FixedCLIHomeResolver{Home: homeDir})
+	if err != nil {
+		t.Fatalf("OpenCodeConfigDir: unexpected error: %v", err)
+	}
+	want := filepath.Join(homeDir, ".config", "opencode")
+	if got != want {
+		t.Errorf("OpenCodeConfigDir default: got %q, want %q", got, want)
+	}
+}
+
+// TestOpenCodeConfigDir_Windows_UsesUserprofile confirms that on simulated Windows
+// OpenCodeConfigDir appends .config/opencode to USERPROFILE, not HOME.
+//
+// Conclusion (ML-5E2): on Windows OpenCodeConfigDir uses USERPROFILE via os.UserHomeDir();
+// FAILS without the CLIOpenCode Windows branch in OSCLIHomeResolver.HomeFor.
+func TestOpenCodeConfigDir_Windows_UsesUserprofile(t *testing.T) {
+	userprofileDir := t.TempDir()
+	homeDir := t.TempDir() // different — proves USERPROFILE wins
+
+	restore := agentconfig.SetPlatformForTest("windows", func() (string, error) {
+		return userprofileDir, nil
+	})
+	defer restore()
+
+	t.Setenv("HOME", homeDir)
+	t.Setenv("OPENCODE_CONFIG_DIR", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	dir, err := agentconfig.OpenCodeConfigDir(agentconfig.DefaultResolver)
+	if err != nil {
+		t.Fatalf("OpenCodeConfigDir on simulated Windows: unexpected error: %v", err)
+	}
+	want := filepath.Join(userprofileDir, ".config", "opencode")
+	if dir != want {
+		t.Errorf("OpenCodeConfigDir on simulated Windows: got %q, want %q (USERPROFILE/.config/opencode)",
+			dir, want)
+	}
+}
+
+// TestOpenCodeConfigDir_RelativeOPENCODE_CONFIG_DIR_ReturnsError confirms that a
+// relative OPENCODE_CONFIG_DIR value returns a named error (R-1).
+//
+// Conclusion (ML-5E2): relative OPENCODE_CONFIG_DIR returns a non-nil error; FAILS if accepted.
+func TestOpenCodeConfigDir_RelativeOPENCODE_CONFIG_DIR_ReturnsError(t *testing.T) {
+	t.Setenv("OPENCODE_CONFIG_DIR", "relative/path")
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	_, err := agentconfig.OpenCodeConfigDir(agentconfig.DefaultResolver)
+	if err == nil {
+		t.Error("expected error for relative OPENCODE_CONFIG_DIR; got nil")
+	}
+}
+
+// TestOpenCodeConfigDir_SpacesOnlyOPENCODE_CONFIG_DIR_FallsThrough confirms that an
+// OPENCODE_CONFIG_DIR value that is only whitespace is treated as "not set" and falls
+// through to the XDG / home fallback.
+//
+// Conclusion (ML-5E2): whitespace-only OPENCODE_CONFIG_DIR is ignored; FAILS if treated as set.
+func TestOpenCodeConfigDir_SpacesOnlyOPENCODE_CONFIG_DIR_FallsThrough(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("OPENCODE_CONFIG_DIR", "   ")
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	restore := agentconfig.SetPlatformForTest("linux", nil)
+	defer restore()
+
+	got, err := agentconfig.OpenCodeConfigDir(agentconfig.FixedCLIHomeResolver{Home: homeDir})
+	if err != nil {
+		t.Fatalf("OpenCodeConfigDir spaces-only: unexpected error: %v", err)
+	}
+	want := filepath.Join(homeDir, ".config", "opencode")
+	if got != want {
+		t.Errorf("OpenCodeConfigDir spaces-only OPENCODE_CONFIG_DIR: got %q, want %q", got, want)
+	}
+}
+
+// TestOpenCodeConfigDir_OPENCODE_CONFIG_DIR_TakesPrecedenceOverXDG confirms the
+// priority ordering: OPENCODE_CONFIG_DIR beats XDG_CONFIG_HOME.
+//
+// Conclusion (ML-5E2): OPENCODE_CONFIG_DIR has higher priority than XDG_CONFIG_HOME;
+// FAILS if XDG_CONFIG_HOME overrides it.
+func TestOpenCodeConfigDir_OPENCODE_CONFIG_DIR_TakesPrecedenceOverXDG(t *testing.T) {
+	ocDir := t.TempDir()
+	xdgDir := t.TempDir()
+	t.Setenv("OPENCODE_CONFIG_DIR", ocDir)
+	t.Setenv("XDG_CONFIG_HOME", xdgDir)
+
+	got, err := agentconfig.OpenCodeConfigDir(agentconfig.DefaultResolver)
+	if err != nil {
+		t.Fatalf("OpenCodeConfigDir: unexpected error: %v", err)
+	}
+	if got != ocDir {
+		t.Errorf("OPENCODE_CONFIG_DIR should beat XDG_CONFIG_HOME: got %q, want %q", got, ocDir)
+	}
+}

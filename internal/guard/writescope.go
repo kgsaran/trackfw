@@ -71,7 +71,14 @@ var writeScopeSubagentFrozenRelPaths = []string{
 	".github/hooks/",                  // prevent hook removal (directory)
 	".kiro/hooks/",                    // prevent hook removal (directory)
 	".amazonq/cli-agents/",            // prevent hook removal (directory)
+	".agents/hooks.json",              // prevent hook removal (Antigravity; ADR-2026-11-18 F5 ML-FA2)
 	".trackfw/leases/",                // prevent editing own permission (D4-D)
+	".opencode/plugins/",             // prevent guard plugin removal (ADR-2026-11-19 D4)
+	".opencode/plugin/",              // V1 singular form — same protection (ADR-2026-11-19 D7 F3)
+	".opencode/opencode.json",        // .opencode/ override has higher precedence (D7 F1)
+	".opencode/opencode.jsonc",       // .opencode/ override has higher precedence (D7 F1)
+	"opencode.json",                  // prevent OpenCode config modification (ADR-2026-11-19 D4)
+	"opencode.jsonc",                 // prevent OpenCode config modification (ADR-2026-11-19 D4)
 }
 
 // RunWriteScope implements the write-scope guard.

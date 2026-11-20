@@ -138,6 +138,33 @@ func runDoctor(remote bool) ([]integrations.DoctorFinding, error) {
 			Remedy:      "sh not found in PATH — install a POSIX shell (e.g. Git Bash, WSL) to evaluate gates; gates that use sh -c (trackfw barrier) will not execute",
 		})
 	}
+	// D7 (ADR-2026-11-18, ML-3C): Gemini CLI legacy advisory — project has Gemini guard but
+	// no Antigravity guard. Always advisory, never automatic remedy.
+	for _, msg := range validator.ValidateGeminiCliLegacyWarningsForDoctor(manager.ProjectRoot) {
+		findings = append(findings, integrations.DoctorFinding{
+			FindingKind: integrations.DoctorGeminiCliLegacy,
+			Destination: ".gemini/settings.json",
+			Remedy:      msg,
+		})
+	}
+	// D8 (ADR-2026-11-18, ML-4E): Antigravity IDE global guard advisory — project has
+	// Antigravity guard, IDE installed, but global lacks guard. Always advisory.
+	for _, msg := range validator.ValidateAntigravityIDEGlobalGuardWarningsForDoctor(manager.ProjectRoot) {
+		findings = append(findings, integrations.DoctorFinding{
+			FindingKind: integrations.DoctorAntigravityIDEGlobalGuard,
+			Destination: ".agents/hooks.json",
+			Remedy:      msg,
+		})
+	}
+	// D6 (ML-5E, REQ-2026-11-17): OpenCode global plugin absent advisory — project has
+	// OpenCode guard plugin but global config dir lacks the guard. Always advisory.
+	for _, msg := range validator.ValidateOpenCodePluginGlobalAbsentForDoctor(manager.ProjectRoot) {
+		findings = append(findings, integrations.DoctorFinding{
+			FindingKind: integrations.DoctorOpenCodePluginGlobalAbsent,
+			Destination: ".opencode/plugins/trackfw-guard.js",
+			Remedy:      msg,
+		})
+	}
 	// Remote modality (ADR-2026-09-02, ML-3A): opt-in only — never runs without --remote, so
 	// doctor's offline default is unchanged.
 	if remote {
@@ -315,6 +342,9 @@ func printDoctorReport(cmd *cobra.Command, findings []integrations.DoctorFinding
 	var workflowDuplicated int
 	var strayAgentMemory int
 	var windowsShMissing int
+	var geminiCliLegacy int
+	var antigravityIDEGlobalGuard int
+	var openCodePluginGlobalAbsent int
 	for _, finding := range findings {
 		switch finding.FindingKind {
 		case integrations.DoctorUnregisteredWrite:
@@ -343,10 +373,16 @@ func printDoctorReport(cmd *cobra.Command, findings []integrations.DoctorFinding
 			strayAgentMemory++
 		case integrations.DoctorWindowsShMissing:
 			windowsShMissing++
+		case integrations.DoctorGeminiCliLegacy:
+			geminiCliLegacy++
+		case integrations.DoctorAntigravityIDEGlobalGuard:
+			antigravityIDEGlobalGuard++
+		case integrations.DoctorOpenCodePluginGlobalAbsent:
+			openCodePluginGlobalAbsent++
 		}
 	}
-	fmt.Fprintf(out, "trackfw doctor: %d finding(s) -- %d unregistered-write, %d hand-modified, %d unknown-content, %d scaffold-divergent, %d scaffold-missing, %d scaffold-wrong-mode, %d required-status-checks-missing, %d enforce-admins-disabled, %d hooks-path-neutralized, %d not-evaluated, %d scaffold-workflow-duplicated, %d stray-agent-memory, %d windows-sh-missing\n\n",
-		len(findings), unregistered, handModified, unknownContent, scaffoldDivergent, scaffoldMissing, scaffoldWrongMode, requiredChecksMissing, enforceAdminsDisabled, hooksPathNeutralized, notEvaluated, workflowDuplicated, strayAgentMemory, windowsShMissing)
+	fmt.Fprintf(out, "trackfw doctor: %d finding(s) -- %d unregistered-write, %d hand-modified, %d unknown-content, %d scaffold-divergent, %d scaffold-missing, %d scaffold-wrong-mode, %d required-status-checks-missing, %d enforce-admins-disabled, %d hooks-path-neutralized, %d not-evaluated, %d scaffold-workflow-duplicated, %d stray-agent-memory, %d windows-sh-missing, %d gemini-cli-legacy, %d antigravity-ide-global-guard, %d opencode-plugin-global-absent\n\n",
+		len(findings), unregistered, handModified, unknownContent, scaffoldDivergent, scaffoldMissing, scaffoldWrongMode, requiredChecksMissing, enforceAdminsDisabled, hooksPathNeutralized, notEvaluated, workflowDuplicated, strayAgentMemory, windowsShMissing, geminiCliLegacy, antigravityIDEGlobalGuard, openCodePluginGlobalAbsent)
 	// One blank line BETWEEN findings, none trailing after the last one — matches Node's
 	// `lines.join('\n').replace(/\n$/, '')` and Python's `"\n".join(lines).rstrip("\n")`
 	// (npm/src/commands/doctor.js, pypi/trackfw/commands/doctor.py). A naive per-finding

@@ -23,24 +23,33 @@ import (
 	"path"
 	"sort"
 	"strings"
+
+	"github.com/kgsaran/trackfw/internal/hookschema"
+	"github.com/kgsaran/trackfw/internal/opencodeplugin"
 )
 
 // Runtime names in canonical order (matches check-agent-hooks-parity.sh CLIS).
 var canonicalRuntimes = []string{
-	"claude", "codex", "gemini", "copilot", "cursor", "kiro", "windsurf", "amazonq",
+	"claude", "codex", "gemini", "copilot", "cursor", "kiro", "windsurf", "amazonq", "antigravity", "opencode",
 }
 
 // runtimeWiringPath maps each runtime to its project-scope wiring file.
 // These are the ONLY paths this package ever opens — no grep, no content scan.
 var runtimeWiringPath = map[string]string{
-	"claude":   ".claude/settings.json",
-	"codex":    ".codex/hooks.json",
-	"gemini":   ".gemini/settings.json",
-	"copilot":  ".github/hooks/trackfw-attention.json",
-	"cursor":   ".cursor/hooks.json",
-	"kiro":     ".kiro/hooks/trackfw-attention.json",
-	"windsurf": ".windsurf/hooks.json",
-	"amazonq":  ".amazonq/cli-agents/q_cli_default.json",
+	"claude":      ".claude/settings.json",
+	"codex":       ".codex/hooks.json",
+	"gemini":      ".gemini/settings.json",
+	"copilot":     ".github/hooks/trackfw-attention.json",
+	"cursor":      ".cursor/hooks.json",
+	"kiro":        ".kiro/hooks/trackfw-attention.json",
+	"windsurf":    ".windsurf/hooks.json",
+	"amazonq":     ".amazonq/cli-agents/q_cli_default.json",
+	"antigravity": ".agents/hooks.json",
+	// OpenCode: JS CommonJS plugin (not JSON). The file is tracked by its
+	// presence and by the // trackfw:opencode-guard marker (ADR-2026-11-19 D1).
+	// extractTuples treats this as a single synthetic tuple whose RawCommand
+	// encodes the marker status ("marker-present" / "marker-absent").
+	"opencode": opencodeplugin.PluginRelPath,
 }
 
 // Instruction file paths that ship in a project and instruct the agent
@@ -112,7 +121,7 @@ func RunAuditSurface(opts Options) (*Report, error) {
 		Base: opts.Base,
 	}
 
-	// 1. Hook wiring — 8 runtimes in canonical order.
+	// 1. Hook wiring — 9 runtimes in canonical order.
 	for _, runtime := range canonicalRuntimes {
 		wiringPath := runtimeWiringPath[runtime]
 		content, err := gitShow(opts.Ref, wiringPath, opts.GitRoot)
@@ -245,7 +254,7 @@ func auditLifecycleHooks(ref, gitRoot string) []LifecycleHook {
 		hooks = append(hooks, LifecycleHook{File: ".husky/pre-commit", Key: "pre-commit", Present: false})
 	}
 
-	// .vscode/tasks.json — presence/absence only (not parsed; same rationale as the 8
+	// .vscode/tasks.json — presence/absence only (not parsed; same rationale as the 9
 	// absent runtime wiring files: absence is information, not exclusion — AC13 pattern).
 	_, vsErr := gitShow(ref, ".vscode/tasks.json", gitRoot)
 	hooks = append(hooks, LifecycleHook{
@@ -517,6 +526,10 @@ func extractTuples(runtime string, content []byte) ([]HookTuple, error) {
 		return extractCursorSchema(content)
 	case "windsurf":
 		return extractWindsurfSchema(content)
+	case "antigravity":
+		return extractAntigravitySchema(content)
+	case "opencode":
+		return extractOpenCodePluginSchema(content)
 	default:
 		return nil, fmt.Errorf("unknown runtime: %s", runtime)
 	}
@@ -702,6 +715,68 @@ func extractCursorSchema(content []byte) ([]HookTuple, error) {
 	return tuples, nil
 }
 
+// extractAntigravitySchema parses Antigravity wiring:
+// {"GROUP": {"EVENT": [{"matcher": "...", "hooks": [{"type": "command", "command": "..."}]}]}}
+//
+// The top level is a map of group names to event maps. All groups are iterated
+// (not just "trackfw") so that third-party groups are included in the audit —
+// they are part of the attack surface too (Threat model §1.9).
+//
+// Traversal is delegated to hookschema.WalkAntigravityEntries (A3, ML-4C
+// REQ-2026-11-17). Unlike the previous typed-unmarshal approach, per-entry
+// processing means a malformed sibling key (e.g. "enabled": false) in a
+// group no longer hides valid hook entries in that same group.
+//
+// Output is sorted for determinism: groups and events alphabetically, then
+// entries stably by matcher within each event (preserving document order
+// for equal matchers), keeping the tuple fingerprint byte-identical to the
+// previous implementation for well-formed inputs.
+//
+// Conclusion: extractAntigravitySchema yields one HookTuple per
+// (event, matcher, command) triple across all groups, skipping hooks whose
+// "type" is not "command"; tuples from third-party groups are included —
+// all hooks are attack surface.
+func extractAntigravitySchema(content []byte) ([]HookTuple, error) {
+	var root map[string]any
+	if err := json.Unmarshal(content, &root); err != nil {
+		return nil, err
+	}
+
+	// Collect all raw tuples via the shared walker.
+	type rawTuple struct {
+		group, event, matcher, cmd, typeStr string
+	}
+	var raw []rawTuple
+	hookschema.WalkAntigravityEntries(root, func(group, event, matcher, cmd, typeStr string) {
+		if typeStr != "command" {
+			return
+		}
+		raw = append(raw, rawTuple{group, event, matcher, cmd, typeStr})
+	})
+
+	// Sort for deterministic output: group → event → matcher.
+	sort.SliceStable(raw, func(i, j int) bool {
+		if raw[i].group != raw[j].group {
+			return raw[i].group < raw[j].group
+		}
+		if raw[i].event != raw[j].event {
+			return raw[i].event < raw[j].event
+		}
+		return raw[i].matcher < raw[j].matcher
+	})
+
+	tuples := make([]HookTuple, 0, len(raw))
+	for _, r := range raw {
+		tuples = append(tuples, HookTuple{
+			Event:      r.event,
+			Matcher:    r.matcher,
+			RawCommand: r.cmd,
+			ScriptPath: normalizeCommand(r.cmd),
+		})
+	}
+	return tuples, nil
+}
+
 // extractWindsurfSchema parses Windsurf wiring:
 // {"hooks": {"pre_run_command": [{"command": "...", "show_output": true}]}}
 func extractWindsurfSchema(content []byte) ([]HookTuple, error) {
@@ -820,4 +895,51 @@ func FormatText(r *Report) string {
 	lines = append(lines, "")
 	lines = append(lines, body...)
 	return strings.Join(lines, "\n") + "\n"
+}
+
+// openCodePluginMarker is the first-line sentinel of a trackfw-generated
+// OpenCode plugin. Defined as opencodeplugin.Marker (A4).
+var openCodePluginMarker = opencodeplugin.Marker
+
+// extractOpenCodePluginSchema extracts a synthetic hook tuple from the
+// OpenCode plugin (a CommonJS JS file, not JSON).
+//
+// The OpenCode plugin has no hook-event/matcher/command tuple in the
+// JSON sense. Instead, the audit surface records its presence and whether
+// the trackfw marker is on the first line (D1, ADR-2026-11-19). The returned
+// tuple uses:
+//
+//   - Event      = "execute.before"  (the OpenCode hook point the plugin wires)
+//   - Matcher    = ""                (OpenCode plugins do not use matchers)
+//   - RawCommand = "trackfw guard"   (marker-confirmed) or
+//                  "marker-absent"   (file exists but is not a trackfw plugin)
+//   - ScriptPath = ""                (the wiring file IS the plugin — no indirection)
+//   - Digest     = resolved by the caller from the wiring file path itself
+//
+// A parse error (empty content) returns an empty slice — this case is already
+// reported as `present=false` by the caller.
+func extractOpenCodePluginSchema(content []byte) ([]HookTuple, error) {
+	if len(content) == 0 {
+		return []HookTuple{}, nil
+	}
+	// Check whether the first line is the marker.
+	firstLine := string(content)
+	if idx := strings.IndexByte(firstLine, '\n'); idx >= 0 {
+		firstLine = firstLine[:idx]
+	}
+	firstLine = strings.TrimRight(firstLine, "\r")
+
+	rawCmd := "marker-absent"
+	if firstLine == openCodePluginMarker {
+		rawCmd = "trackfw guard"
+	}
+
+	return []HookTuple{
+		{
+			Event:      "execute.before",
+			Matcher:    "",
+			RawCommand: rawCmd,
+			ScriptPath: "", // the plugin IS the wiring file
+		},
+	}, nil
 }

@@ -278,18 +278,48 @@ func TestAgentsInstallInjectsGuardHooks(t *testing.T) {
 	assertGuardInHookFile(t, hookPath)
 }
 
-// TestInjectHooksForToolsUnknownNameSkipped verifies that InjectHooksForTools
-// silently skips unknown CLI names (e.g. "opencode", "antigravity") without
-// error and without writing any hook files.
+// TestInjectHooksForTools_OpenCodeCreatesPlugin verifies that InjectHooksForTools
+// writes .opencode/plugins/trackfw-guard.js when "opencode" is in the tool list.
+// Prior to ML-5E (REQ-2026-11-17) "opencode" was absent from cliDetectors and was
+// a silent skip. ML-5E added it; this test asserts the new contract.
 //
-// Reconciliation: asserts the silent-skip contract of InjectHooksForTools for
-// CLIs that have no Inject*Hooks implementation.
-func TestInjectHooksForToolsUnknownNameSkipped(t *testing.T) {
+// Reconciliation: InjectHooksForTools(["opencode"], dir) creates
+// .opencode/plugins/trackfw-guard.js whose first line is the Marker — ML-5E added
+// opencode to cliDetectors with InjectOpenCodePlugin as its injector.
+func TestInjectHooksForTools_OpenCodeCreatesPlugin(t *testing.T) {
+	t.Setenv("OPENCODE_CONFIG_DIR", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
 	dir := t.TempDir()
-	if err := generators.InjectHooksForTools([]string{"opencode", "antigravity", "unknown-tool"}, dir); err != nil {
-		t.Fatalf("expected no error for unknown tool names, got: %v", err)
+	if err := generators.InjectHooksForTools([]string{"opencode"}, dir); err != nil {
+		t.Fatalf("InjectHooksForTools([opencode]): %v", err)
 	}
-	// No files should have been created.
+	pluginPath := filepath.Join(dir, ".opencode", "plugins", "trackfw-guard.js")
+	data, err := os.ReadFile(pluginPath)
+	if err != nil {
+		t.Fatalf(".opencode/plugins/trackfw-guard.js was not created: %v", err)
+	}
+	firstLine := string(data)
+	if idx := strings.IndexByte(firstLine, '\n'); idx >= 0 {
+		firstLine = firstLine[:idx]
+	}
+	firstLine = strings.TrimRight(firstLine, "\r")
+	const wantMarker = "// trackfw:opencode-guard"
+	if firstLine != wantMarker {
+		t.Errorf("first line = %q, want %q", firstLine, wantMarker)
+	}
+}
+
+// TestInjectHooksForTools_UnknownToolNoFiles verifies that InjectHooksForTools
+// silently skips genuinely unknown CLI names without error and without writing any
+// files.
+//
+// Reconciliation: InjectHooksForTools(["truly-unknown-cli"], dir) leaves the
+// directory empty — unknown names have no entry in cliDetectors and are skipped.
+func TestInjectHooksForTools_UnknownToolNoFiles(t *testing.T) {
+	dir := t.TempDir()
+	if err := generators.InjectHooksForTools([]string{"truly-unknown-cli-do-not-add"}, dir); err != nil {
+		t.Fatalf("expected no error for unknown tool name, got: %v", err)
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatalf("reading dir: %v", err)

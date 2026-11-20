@@ -18,6 +18,7 @@ import (
 	"github.com/kgsaran/trackfw/internal/i18n"
 	"github.com/kgsaran/trackfw/internal/identity"
 	"github.com/kgsaran/trackfw/internal/integrations"
+	"github.com/kgsaran/trackfw/internal/validator"
 	"github.com/spf13/cobra"
 )
 
@@ -286,6 +287,13 @@ func executeIntegrationMutation(cmd *cobra.Command, kind integrations.ItemKind, 
 		// the install (mirrors installAITools in init.go).
 		if err := generators.InjectHooksForTools(opts.targets, manager.ProjectRoot); err != nil {
 			fmt.Fprintf(os.Stderr, "  ⚠ agent hooks: %v\n", err)
+		}
+		// D8 (ADR-2026-11-18, ML-4E): warn if Antigravity was just installed in the project
+		// but the IDE is present and the global hook lacks a credential guard. Non-fatal.
+		if containsAntigravityTarget(opts.targets) {
+			for _, msg := range validator.ValidateAntigravityIDEGlobalGuardWarningsForDoctor(manager.ProjectRoot) {
+				fmt.Fprintf(os.Stderr, "  ⚠ %s\n", msg)
+			}
 		}
 	}
 	// AC1-AC3, AC8 (ML-2A): register installed agents in trackfw.yaml agents: list
@@ -587,6 +595,17 @@ func promptAmbiguousSurfaces(catalog *integrations.Catalog, kind integrations.It
 		}
 	}
 	return nil
+}
+
+// containsAntigravityTarget reports whether "antigravity" appears in targets.
+// Used to gate the D8 IDE global guard warning to installs that include the Antigravity hook.
+func containsAntigravityTarget(targets []string) bool {
+	for _, t := range targets {
+		if t == "antigravity" {
+			return true
+		}
+	}
+	return false
 }
 
 func surfaceCapability(target integrations.Target, surfaceID string, kind integrations.ItemKind) (integrations.Surface, integrations.Capability) {

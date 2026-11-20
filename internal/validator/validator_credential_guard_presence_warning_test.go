@@ -591,3 +591,99 @@ func TestCredentialGuardPresenceWarning_AC2_ValidateStrictRoteiaParaWarnings(t *
 	// O invariante crítico acima (sem credential guard em violations) é o que importa.
 	_ = violations // aceito: zero violations de outras regras é OK nesse projeto mínimo
 }
+
+// ---------------------------------------------------------------------------
+// F3 (ML-FA2 REQ-2026-11-17): enabled:false on "trackfw" Antigravity group
+// ---------------------------------------------------------------------------
+
+// hasEnabledFalseWarning returns true if any message mentions enabled:false for
+// the Antigravity .agents/hooks.json.
+func hasEnabledFalseWarning(msgs []string) bool {
+	for _, m := range msgs {
+		if strings.Contains(m, ".agents/hooks.json") &&
+			strings.Contains(m, `"enabled":false`) {
+			return true
+		}
+	}
+	return false
+}
+
+// TestCredentialGuardPresenceWarning_Antigravity_EnabledFalseInTrackfwGroup
+// asserts that when .agents/hooks.json has the "trackfw" group with
+// "enabled":false (and all 4 required entries present), validateCredentialGuardPresenceWarnings
+// emits a warning for each required event — same count as the absent-entries case.
+//
+// Before the ML-FA2 fix, the walker found all 4 entries and reported no warnings
+// even though the guard was silently disabled (F3). After the fix the validator
+// detects enabled:false on the trackfw group and reports warnings per event.
+//
+// Conclusion asserted: enabled:false on the trackfw group triggers per-event
+// warnings from validateCredentialGuardPresenceWarnings even when entries are
+// present, because the Antigravity runtime suppresses the whole group.
+func TestCredentialGuardPresenceWarning_Antigravity_EnabledFalseInTrackfwGroup(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	cred := guardforms.CredentialCurrentCmdExe
+	gitBranch := guardforms.GitBranchCurrentCmdExe
+
+	// .agents/hooks.json with trackfw group, enabled:false, and all 4 D5 entries.
+	hooksContent := `{
+  "trackfw": {
+    "enabled": false,
+    "PreToolUse": [
+      {"matcher":"run_command|manage_task","hooks":[{"type":"command","command":"` + cred + `"}]},
+      {"matcher":"write_to_file|replace_file_content|multi_replace_file_content","hooks":[{"type":"command","command":"` + cred + `"}]},
+      {"matcher":"view_file","hooks":[{"type":"command","command":"` + cred + `"}]},
+      {"matcher":"run_command","hooks":[{"type":"command","command":"` + gitBranch + `"}]}
+    ]
+  }
+}`
+	writeFile(t, dir, ".agents/hooks.json", hooksContent)
+
+	msgs, err := validateCredentialGuardPresenceWarnings()
+	if err != nil {
+		t.Fatalf("validateCredentialGuardPresenceWarnings: %v", err)
+	}
+
+	if !hasEnabledFalseWarning(msgs) {
+		t.Errorf("expected warning about enabled:false in .agents/hooks.json; msgs=%v", msgs)
+	}
+}
+
+// TestCredentialGuardPresenceWarning_Antigravity_EnabledAbsent_NoExtraWarning
+// asserts that when the "trackfw" group has no "enabled" key (normal case),
+// validateCredentialGuardPresenceWarnings does NOT emit the enabled:false warning.
+//
+// Conclusion asserted: enabled absent (default true) is the correct state;
+// no "enabled:false" warning is emitted.
+func TestCredentialGuardPresenceWarning_Antigravity_EnabledAbsent_NoExtraWarning(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	cred := guardforms.CredentialCurrentCmdExe
+	gitBranch := guardforms.GitBranchCurrentCmdExe
+
+	hooksContent := `{
+  "trackfw": {
+    "PreToolUse": [
+      {"matcher":"run_command|manage_task","hooks":[{"type":"command","command":"` + cred + `"}]},
+      {"matcher":"write_to_file|replace_file_content|multi_replace_file_content","hooks":[{"type":"command","command":"` + cred + `"}]},
+      {"matcher":"view_file","hooks":[{"type":"command","command":"` + cred + `"}]},
+      {"matcher":"run_command","hooks":[{"type":"command","command":"` + gitBranch + `"}]}
+    ]
+  }
+}`
+	writeFile(t, dir, ".agents/hooks.json", hooksContent)
+
+	msgs, err := validateCredentialGuardPresenceWarnings()
+	if err != nil {
+		t.Fatalf("validateCredentialGuardPresenceWarnings: %v", err)
+	}
+
+	if hasEnabledFalseWarning(msgs) {
+		t.Errorf("expected NO enabled:false warning when key is absent; msgs=%v", msgs)
+	}
+}

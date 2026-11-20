@@ -24,6 +24,7 @@ func TestInjectHooksDetected_SkipsAbsent(t *testing.T) {
 		filepath.Join(dir, ".kiro", "hooks", "trackfw-attention.json"),
 		filepath.Join(dir, ".github", "hooks", "trackfw-attention.json"),
 		filepath.Join(dir, ".cursor", "hooks.json"),
+		filepath.Join(dir, ".agents", "hooks.json"),
 	}
 	for _, p := range absent {
 		if _, err := os.Stat(p); err == nil {

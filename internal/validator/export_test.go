@@ -272,6 +272,8 @@ func CredentialGuardPresenceWarnOnlyEntriesForTest() []PresenceWarnOnlyEntryForT
 				schema = "flat"
 			case hookCmdSchemaKiro:
 				schema = "kiro"
+			case hookCmdSchemaAntigravity:
+				schema = "antigravity"
 			default:
 				schema = "unknown"
 			}

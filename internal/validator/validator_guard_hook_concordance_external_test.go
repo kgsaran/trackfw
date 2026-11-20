@@ -583,15 +583,16 @@ func TestGuardHookConcordance_D17_Kiro_PresenceWarning(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // TestCredentialGuardPresence_AC5_EntryTableCount afirma que credentialGuardRequiredEntries
-// tem exatamente 6 entradas warnOnly=true (os 6 CLIs sem violation-grade) e exatamente 2
-// entradas warnOnly=false (Windsurf e Amazon Q).
-// Reconciliação (AC5, #619 ML-1A): a tabela é o ponto único compartilhado entre a regra de
-// violation e a de aviso; um developer que adiciona um CLI novo sem entrada nessa tabela faz
-// este teste falhar.
+// tem exatamente 7 entradas warnOnly=true (os 7 CLIs sem violation-grade: Claude, Codex,
+// Gemini, Cursor, GitHub Copilot, Kiro, Antigravity) e exatamente 2 entradas warnOnly=false
+// (Windsurf e Amazon Q).
+// Reconciliação (AC5, #619 ML-1A; ML-3C REQ-2026-11-17): a tabela é o ponto único
+// compartilhado entre a regra de violation e a de aviso; um developer que adiciona um CLI
+// novo sem entrada nessa tabela faz este teste falhar.
 func TestCredentialGuardPresence_AC5_EntryTableCount(t *testing.T) {
 	got := validator.CredentialGuardPresenceWarnOnlyCountForTest()
-	if got != 6 {
-		t.Errorf("AC5: esperado 6 entradas warnOnly=true em credentialGuardRequiredEntries, obteve %d", got)
+	if got != 7 {
+		t.Errorf("AC5: esperado 7 entradas warnOnly=true em credentialGuardRequiredEntries, obteve %d", got)
 	}
 	gotViol := validator.CredentialGuardPresenceViolationCountForTest()
 	if gotViol != 2 {
@@ -620,6 +621,9 @@ func blockingEventsForCLI(hookPath string) map[string]bool {
 	case ".github/hooks/trackfw-attention.json":
 		return map[string]bool{"preToolUse": true}
 	case ".kiro/hooks/trackfw-attention.json":
+		return map[string]bool{"PreToolUse": true}
+	case ".agents/hooks.json":
+		// D5 (ADR-2026-11-18): Antigravity uses PreToolUse only; PostToolUse does not block.
 		return map[string]bool{"PreToolUse": true}
 	}
 	return nil
@@ -752,10 +756,52 @@ func extractGeneratedBlockingPairs(t *testing.T, dir, hookPath, schema string, r
 		return extractBlockingPairsFlat(parsed, blocking, requiresCommandType)
 	case "kiro":
 		return extractBlockingPairsKiro(parsed, blocking, requiresCommandType)
+	case "antigravity":
+		return extractBlockingPairsAntigravity(parsed, blocking, requiresCommandType)
 	default:
 		t.Fatalf("unknown schema %q for %s", schema, hookPath)
 		return nil
 	}
+}
+
+// extractBlockingPairsAntigravity walks a hookCmdSchemaAntigravity JSON
+// ({groupName:{event:[{matcher,hooks:[{type,command}]}]}}) and returns all (event, matcher)
+// pairs in blocking events whose inner hooks contain the credential guard marker.
+func extractBlockingPairsAntigravity(parsed map[string]interface{}, blocking map[string]bool, requiresCommandType bool) map[guardPairKey]bool {
+	out := make(map[guardPairKey]bool)
+	for _, groupRaw := range parsed {
+		groupObj, ok := groupRaw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		for event := range blocking {
+			arr, _ := groupObj[event].([]interface{})
+			for _, groupEntryRaw := range arr {
+				group, _ := groupEntryRaw.(map[string]interface{})
+				if group == nil {
+					continue
+				}
+				matcher, _ := group["matcher"].(string)
+				innerHooks, _ := group["hooks"].([]interface{})
+				for _, ih := range innerHooks {
+					innerObj, ok := ih.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					typeStr, _ := innerObj["type"].(string)
+					cmd, _ := innerObj["command"].(string)
+					if !containsGuardMarker(cmd) {
+						continue
+					}
+					if requiresCommandType && typeStr != "command" {
+						continue
+					}
+					out[guardPairKey{event, matcher}] = true
+				}
+			}
+		}
+	}
+	return out
 }
 
 // inject function table for each of the 6 CLIs (path → inject function).
@@ -775,6 +821,8 @@ func injectFnFor(hookPath string) injectFn {
 		return generators.InjectCopilotHooks
 	case ".kiro/hooks/trackfw-attention.json":
 		return generators.InjectKiroHooks
+	case ".agents/hooks.json":
+		return generators.InjectAntigravityHooks
 	}
 	return nil
 }
@@ -975,5 +1023,251 @@ func TestCredentialGuardPresence_AC2_ValidateForTest_RoteiaWarningsNaoViolations
 	}
 	if !found {
 		t.Errorf("AC2 ValidateForTest: esperado aviso 'has no credential guard entry' em warnings; violations=%v warnings=%v", violations, warnings)
+	}
+}
+
+// --------------------------------------------------------------------------
+// Antigravity — ML-3C (REQ-2026-11-17)
+// --------------------------------------------------------------------------
+
+// TestGuardHookConcordance_Antigravity_Credential afirma que InjectAntigravityHooks emite a
+// linha de credential-guard que credential_guard_hook_resolvable reconhece como válida (zero
+// violations).
+// Reconciliação (ML-3C): valida que a forma CredentialCurrentCmdExe escrita pelo gerador é
+// reconhecida pelo validator como credential guard válido para a família cmd.exe.
+func TestGuardHookConcordance_Antigravity_Credential(t *testing.T) {
+	dir := setupConcordanceDir(t)
+	t.Setenv("CODEX_HOME", "")
+	if err := generators.InjectAntigravityHooks(dir); err != nil {
+		t.Fatalf("InjectAntigravityHooks: %v", err)
+	}
+	assertZeroCredentialViolations(t)
+}
+
+// TestGuardHookConcordance_Antigravity_GitBranch afirma que InjectAntigravityHooks emite a
+// linha de git-branch-guard que git_branch_guard_hook_resolvable reconhece como válida (zero
+// violations).
+// Reconciliação (ML-3C): valida que a forma GitBranchCurrentCmdExe escrita pelo gerador é
+// reconhecida pelo validator como git-branch guard válido para a família cmd.exe.
+func TestGuardHookConcordance_Antigravity_GitBranch(t *testing.T) {
+	dir := setupConcordanceDir(t)
+	t.Setenv("CODEX_HOME", "")
+	if err := generators.InjectAntigravityHooks(dir); err != nil {
+		t.Fatalf("InjectAntigravityHooks: %v", err)
+	}
+	assertZeroGitBranchViolations(t)
+}
+
+// TestGuardHookConcordance_D17_Antigravity_PresenceWarning afirma que InjectAntigravityHooks
+// emite os 3 pares de credential guard que a regra credential_guard_presence_warning reconhece
+// como presentes (zero warnings para .agents/hooks.json após inject).
+// Reconciliação (ML-3C): matcher exato da lista coincide com o que InjectAntigravityHooks escreve.
+func TestGuardHookConcordance_D17_Antigravity_PresenceWarning(t *testing.T) {
+	dir := setupConcordanceDir(t)
+	t.Setenv("CODEX_HOME", "")
+	if err := generators.InjectAntigravityHooks(dir); err != nil {
+		t.Fatalf("InjectAntigravityHooks: %v", err)
+	}
+	assertZeroPresenceWarningsForPath(t, ".agents/hooks.json")
+}
+
+// TestGuardHookConcordance_D17_Antigravity_PresenceWarning_CounterArm afirma que quando
+// .agents/hooks.json existe mas não tem o guard de credencial no matcher "run_command|manage_task",
+// credential_guard_presence_warning emite um warning nomeando .agents/hooks.json.
+// Reconciliação (ML-3C): garante que o contra-braço detecta ausência do guard — um arquivo de
+// hook presente mas sem guard deve acusar, não silenciar.
+func TestGuardHookConcordance_D17_Antigravity_PresenceWarning_CounterArm(t *testing.T) {
+	dir := setupConcordanceDir(t)
+	t.Setenv("CODEX_HOME", "")
+
+	// Write .agents/hooks.json without credential guard.
+	if err := os.MkdirAll(filepath.Join(dir, ".agents"), 0755); err != nil {
+		t.Fatalf("mkdir .agents: %v", err)
+	}
+	// Minimal hooks.json with the trackfw group but no guard command.
+	noGuard := `{"trackfw":{"PreToolUse":[{"matcher":"run_command|manage_task","hooks":[{"type":"command","command":"echo hello"}]}]}}`
+	if err := os.WriteFile(filepath.Join(dir, ".agents", "hooks.json"), []byte(noGuard), 0644); err != nil {
+		t.Fatalf("write .agents/hooks.json: %v", err)
+	}
+
+	msgs, err := validator.ValidateCredentialGuardPresenceWarningsForTest()
+	if err != nil {
+		t.Fatalf("ValidateCredentialGuardPresenceWarnings: %v", err)
+	}
+	found := false
+	for _, m := range msgs {
+		if strings.Contains(m, ".agents/hooks.json") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("counter-arm: expected credential_guard_presence_warning for .agents/hooks.json; got %v", msgs)
+	}
+}
+
+// --------------------------------------------------------------------------
+// gemini_cli_legacy tests — ML-3C (REQ-2026-11-17, D7, ADR-2026-11-18)
+// --------------------------------------------------------------------------
+
+// TestGeminiCliLegacy_GeminiGuardNoAntigravity_Warns afirma que quando o projeto tem guard do
+// Gemini CLI mas não tem guard do Antigravity, a regra gemini_cli_legacy emite um warning.
+// Reconciliação (ML-3C): a regra dispara quando Gemini tem guard E Antigravity não tem — o
+// cenário de migração que o usuário precisa ser avisado.
+func TestGeminiCliLegacy_GeminiGuardNoAntigravity_Warns(t *testing.T) {
+	dir := setupConcordanceDir(t)
+	t.Setenv("CODEX_HOME", "")
+
+	// Inject Gemini hooks (has credential guard).
+	if err := generators.InjectGeminiHooks(dir); err != nil {
+		t.Fatalf("InjectGeminiHooks: %v", err)
+	}
+	// No .agents/hooks.json — Antigravity not installed.
+
+	violations, warnings, err := validator.ValidateForTest()
+	if err != nil {
+		t.Fatalf("ValidateForTest: %v", err)
+	}
+
+	// gemini_cli_legacy must be a warning, never a violation.
+	// Message check uses the English substring (A7, ML-4C REQ-2026-11-17).
+	const geminiLegacyMarker = "Gemini CLI is legacy"
+	for _, v := range violations {
+		if strings.Contains(v, geminiLegacyMarker) {
+			t.Errorf("gemini_cli_legacy must be a warning, not a violation; got: %q", v)
+		}
+	}
+	found := false
+	for _, w := range warnings {
+		if strings.Contains(w, geminiLegacyMarker) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected gemini_cli_legacy warning; warnings=%v violations=%v", warnings, violations)
+	}
+}
+
+// TestGeminiCliLegacy_BothPresent_Silent afirma que quando o projeto tem guard do Gemini CLI
+// E guard do Antigravity, a regra gemini_cli_legacy é silenciosa.
+// Reconciliação (ML-3C): a regra só dispara quando Antigravity está ausente — com ambos
+// instalados o usuário já migrou e não precisa de aviso.
+func TestGeminiCliLegacy_BothPresent_Silent(t *testing.T) {
+	dir := setupConcordanceDir(t)
+	t.Setenv("CODEX_HOME", "")
+
+	if err := generators.InjectGeminiHooks(dir); err != nil {
+		t.Fatalf("InjectGeminiHooks: %v", err)
+	}
+	if err := generators.InjectAntigravityHooks(dir); err != nil {
+		t.Fatalf("InjectAntigravityHooks: %v", err)
+	}
+
+	_, warnings, err := validator.ValidateForTest()
+	if err != nil {
+		t.Fatalf("ValidateForTest: %v", err)
+	}
+	// Message check uses the English substring (A7, ML-4C REQ-2026-11-17).
+	const geminiLegacyMarker2 = "Gemini CLI is legacy"
+	for _, w := range warnings {
+		if strings.Contains(w, geminiLegacyMarker2) {
+			t.Errorf("gemini_cli_legacy must be silent when both guards present; got: %q", w)
+		}
+	}
+}
+
+// TestGeminiCliLegacy_NeitherPresent_Silent afirma que quando o projeto não tem nenhum dos dois
+// guards (Gemini nem Antigravity), a regra gemini_cli_legacy é silenciosa.
+// Reconciliação (ML-3C): a regra requer Gemini guard como pré-condição — sem ele não há aviso.
+func TestGeminiCliLegacy_NeitherPresent_Silent(t *testing.T) {
+	dir := setupConcordanceDir(t)
+	t.Setenv("CODEX_HOME", "")
+	_ = dir // empty dir — no hook files
+
+	_, warnings, err := validator.ValidateForTest()
+	if err != nil {
+		t.Fatalf("ValidateForTest: %v", err)
+	}
+	// Message check uses the English substring (A7, ML-4C REQ-2026-11-17).
+	const geminiLegacyMarker3 = "Gemini CLI is legacy"
+	for _, w := range warnings {
+		if strings.Contains(w, geminiLegacyMarker3) {
+			t.Errorf("gemini_cli_legacy must be silent when neither guard present; got: %q", w)
+		}
+	}
+}
+
+// TestGeminiCliLegacy_GeminiNoGuard_Silent afirma que quando .gemini/settings.json existe mas
+// não tem o guard de credencial, a regra gemini_cli_legacy é silenciosa.
+// Reconciliação (ML-3C): a regra só dispara quando Gemini TEM guard — um arquivo de hook
+// existente mas sem guard não é o cenário de migração.
+func TestGeminiCliLegacy_GeminiNoGuard_Silent(t *testing.T) {
+	dir := setupConcordanceDir(t)
+	t.Setenv("CODEX_HOME", "")
+
+	// Write .gemini/settings.json without credential guard.
+	if err := os.MkdirAll(filepath.Join(dir, ".gemini"), 0755); err != nil {
+		t.Fatalf("mkdir .gemini: %v", err)
+	}
+	noGuard := `{"hooks":{"BeforeTool":[{"matcher":"run_shell_command","hooks":[{"type":"command","command":"echo hello"}]}]}}`
+	if err := os.WriteFile(filepath.Join(dir, ".gemini", "settings.json"), []byte(noGuard), 0644); err != nil {
+		t.Fatalf("write .gemini/settings.json: %v", err)
+	}
+
+	_, warnings, err := validator.ValidateForTest()
+	if err != nil {
+		t.Fatalf("ValidateForTest: %v", err)
+	}
+	// Message check uses the English substring (A7, ML-4C REQ-2026-11-17).
+	const geminiLegacyMarker4 = "Gemini CLI is legacy"
+	for _, w := range warnings {
+		if strings.Contains(w, geminiLegacyMarker4) {
+			t.Errorf("gemini_cli_legacy must be silent when Gemini has no guard; got: %q", w)
+		}
+	}
+}
+
+// TestGeminiCliLegacy_StrictMode_StillWarning afirma que a regra gemini_cli_legacy é sempre
+// um warning mesmo quando rules.gemini_cli_legacy: error estiver definido no trackfw.yaml.
+// Reconciliação (ML-3C): applyRuleWarnOnly garante que a regra nunca vira violation — a
+// severidade fixa é invariante por design (D7, ADR-2026-11-18).
+func TestGeminiCliLegacy_StrictMode_StillWarning(t *testing.T) {
+	dir := setupConcordanceDir(t)
+	t.Setenv("CODEX_HOME", "")
+
+	// Write trackfw.yaml trying to escalate gemini_cli_legacy to error.
+	trackfwYAML := "rules:\n  gemini_cli_legacy: error\n"
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte(trackfwYAML), 0644); err != nil {
+		t.Fatalf("write trackfw.yaml: %v", err)
+	}
+
+	// Inject Gemini hooks but no Antigravity — rule should fire as warning.
+	if err := generators.InjectGeminiHooks(dir); err != nil {
+		t.Fatalf("InjectGeminiHooks: %v", err)
+	}
+
+	violations, warnings, err := validator.ValidateForTest()
+	if err != nil {
+		t.Fatalf("ValidateForTest: %v", err)
+	}
+
+	// Must never be a violation even with rules.gemini_cli_legacy: error.
+	// Message check uses the English substring (A7, ML-4C REQ-2026-11-17).
+	const geminiLegacyMarker5 = "Gemini CLI is legacy"
+	for _, v := range violations {
+		if strings.Contains(v, geminiLegacyMarker5) {
+			t.Errorf("gemini_cli_legacy must be a warning even with rules: error; got violation: %q", v)
+		}
+	}
+	found := false
+	for _, w := range warnings {
+		if strings.Contains(w, geminiLegacyMarker5) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected gemini_cli_legacy warning in strict mode; warnings=%v", warnings)
 	}
 }

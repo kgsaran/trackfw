@@ -129,6 +129,7 @@ func DrainStdin(r io.Reader, idleTimeout time.Duration) ([]byte, bool) {
 //  2. command (root-level)
 //  3. tool_info.command_line
 //  4. hook_input.command
+//  5. toolCall.args.CommandLine  (Google Antigravity schema; ADR-2026-11-18 D3)
 //
 // Rules (ADR-2026-10-02 D2, D2-bis, D2-ter):
 //   - map[string]json.RawMessage is used for ALL levels so key matching is
@@ -195,7 +196,107 @@ func ExtractCommand(data []byte) (string, error) {
 		return checkNUL(cmd)
 	}
 
+	// Priority 5: toolCall.args.CommandLine (Google Antigravity; ADR-2026-11-18 D3).
+	// PascalCase key — not found by priorities 1-4 (case-sensitive map).
+	// Only extracted when the payload matches the Antigravity schema (hookEventName present).
+	// Without this gate, any payload that happens to carry toolCall.args.CommandLine
+	// (e.g. a crafted payload without hookEventName) would trigger P5 — a false positive
+	// that the redteam confirmed in F1 (ML-FA2 REQ-2026-11-17).
+	if isAntigravityPayload(root) {
+		if cmd, found, err := extractNested3(root, "toolCall", "args", "CommandLine"); err != nil {
+			return "", err
+		} else if found {
+			return checkNUL(cmd)
+		}
+	}
+
 	return "", nil // no command key found
+}
+
+// extractNested3 looks up obj1Key in root, then obj2Key in that object, then
+// fieldKey in the second object (three levels deep).
+// All the same rules as extractNested apply at each level:
+//   - null → absent
+//   - non-object for the intermediate level → absent (graceful skip)
+//   - non-string for fieldKey → absent
+//   - string with NUL → ErrNULInCommand (via callers calling checkNUL)
+//
+// Used for toolCall.args.CommandLine (Antigravity; ADR-2026-11-18 D3).
+func extractNested3(root map[string]json.RawMessage, obj1Key, obj2Key, fieldKey string) (string, bool, error) {
+	rawObj1, ok := root[obj1Key]
+	if !ok || isJSONNull(rawObj1) {
+		return "", false, nil
+	}
+	var obj1 map[string]json.RawMessage
+	if err := json.Unmarshal(rawObj1, &obj1); err != nil {
+		return "", false, nil
+	}
+	rawObj2, ok := obj1[obj2Key]
+	if !ok || isJSONNull(rawObj2) {
+		return "", false, nil
+	}
+	var obj2 map[string]json.RawMessage
+	if err := json.Unmarshal(rawObj2, &obj2); err != nil {
+		return "", false, nil
+	}
+	rawField, ok := obj2[fieldKey]
+	if !ok || isJSONNull(rawField) {
+		return "", false, nil
+	}
+	trimmedRaw := bytes.TrimLeft(rawField, " \t\r\n")
+	if len(trimmedRaw) == 0 || trimmedRaw[0] != '"' {
+		return "", false, nil
+	}
+	var val string
+	if err := json.Unmarshal(rawField, &val); err != nil {
+		return "", false, fmt.Errorf("%w: %s.%s.%s: %s", ErrIndecodeable, obj1Key, obj2Key, fieldKey, err)
+	}
+	return val, true, nil
+}
+
+// isOpenCodePayload reports whether root is an OpenCode guard payload
+// (ADR-2026-11-19 D3). Returns true when root["hook_source"] is the JSON
+// string "opencode" (exact, case-sensitive). A missing value, null, or
+// non-string hook_source returns false.
+//
+// This is a schema check by explicit field value — it does NOT reuse
+// isAntigravityPayload (lição F1: schema check explícita, não prioridade de campo).
+func isOpenCodePayload(root map[string]json.RawMessage) bool {
+	rawHS, ok := root["hook_source"]
+	if !ok || isJSONNull(rawHS) {
+		return false
+	}
+	trimmed := bytes.TrimLeft(rawHS, " \t\r\n")
+	if len(trimmed) == 0 || trimmed[0] != '"' {
+		return false
+	}
+	var hs string
+	if err := json.Unmarshal(rawHS, &hs); err != nil {
+		return false
+	}
+	return hs == "opencode"
+}
+
+// isAntigravityPayload reports whether root matches the Google Antigravity
+// PreToolUse schema (ADR-2026-11-18 D3, D4):
+//   - "toolCall" is a JSON object (not null, not another type), AND
+//   - "hookEventName" is present (any value).
+//
+// Used to narrow layer-1 scanning to toolCall bytes only (D4: lastUserInput
+// is excluded because scanning it generates false positives without protection).
+// Also used to select the project root from the payload "cwd" field when the
+// hook process runs from <project>/.agents (D3).
+func isAntigravityPayload(root map[string]json.RawMessage) bool {
+	_, hasHookEventName := root["hookEventName"]
+	if !hasHookEventName {
+		return false
+	}
+	rawTC, ok := root["toolCall"]
+	if !ok || isJSONNull(rawTC) {
+		return false
+	}
+	trimmedTC := bytes.TrimLeft(rawTC, " \t\r\n")
+	return len(trimmedTC) > 0 && trimmedTC[0] == '{'
 }
 
 // extractNested looks up objKey in root, parses it as a JSON object, then

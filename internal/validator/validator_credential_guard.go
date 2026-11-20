@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/kgsaran/trackfw/internal/agentconfig"
+	"github.com/kgsaran/trackfw/internal/hookschema"
 	"github.com/kgsaran/trackfw/internal/pathanchor"
 )
 
@@ -106,6 +107,13 @@ var credentialGuardHookFiles = []credentialGuardHookFile{
 	//   requiresCommandType=false (schema has no "type" discriminant in inner command objects);
 	//   family=cmd.exe: ADR-2026-10-04 D2 — Amazon Q invokes hooks without a shell suffix.
 	{".amazonq/cli-agents/q_cli_default.json", "Amazon Q", false, false, guardShellFamilyCmdExe},
+	// Antigravity (Google): {groupName:{event:[{matcher,hooks:[{type,command}]}]}}.
+	//   D1 (ADR-2026-11-18): uses CredentialCurrentCmdExe / GitBranchCurrentCmdExe — the cmd.exe
+	//   form without shell suffix, valid in both sh -c (macOS) and cmd /s /c (Windows).
+	//   requiresCommandType=true: inner hook objects carry "type":"command".
+	//   requiresVarOrShellPrefix=false: the cmd.exe form is an inline subcommand, not a path.
+	//   family=cmd.exe: matches the form written by InjectAntigravityHooks.
+	{".agents/hooks.json", "Antigravity", true, false, guardShellFamilyCmdExe},
 }
 
 // hookAnchorageClass classifica a semântica de ancoragem de um valor de comando de hook.
@@ -353,6 +361,20 @@ func collectCommandsWithMarkerBySchema(parsed interface{}, schema hookCmdSchemaK
 	if !ok {
 		return
 	}
+
+	// D6 (ADR-2026-11-18): Antigravity uses {groupName:{event:[...]}} at the top level — no
+	// "hooks" key. Handle this schema BEFORE the root["hooks"] lookup to avoid a silent return.
+	// Traversal delegated to hookschema.WalkAntigravityEntries (A3, ML-4C REQ-2026-11-17).
+	if schema == hookCmdSchemaAntigravity {
+		// Convert map[string]interface{} to map[string]any (identical underlying type).
+		hookschema.WalkAntigravityEntries(root, func(_, _, _, cmd, typeStr string) {
+			if strings.Contains(cmd, marker) {
+				*out = append(*out, guardCommandMatch{raw: cmd, typeIsCommand: typeStr == "command"})
+			}
+		})
+		return
+	}
+
 	hooksRaw, ok := root["hooks"]
 	if !ok {
 		return
@@ -912,6 +934,18 @@ var credentialGuardRequiredEntries = []credentialGuardRequiredEntry{
 		warnOnly: true,
 		schema:   hookCmdSchemaKiro,
 	},
+	// D6/D7 (ADR-2026-11-18, ML-3C): Antigravity — 3 PreToolUse matchers from D5.
+	// warnOnly=true: absence is advisory, same as the other 6 non-violation CLIs.
+	{
+		hookFile: credentialGuardHookFile{".agents/hooks.json", "Antigravity", true, false, guardShellFamilyCmdExe},
+		events: []credentialGuardRequiredEvent{
+			{hookEvent: "PreToolUse", matcher: "run_command|manage_task"},
+			{hookEvent: "PreToolUse", matcher: "write_to_file|replace_file_content|multi_replace_file_content"},
+			{hookEvent: "PreToolUse", matcher: "view_file"},
+		},
+		warnOnly: true,
+		schema:   hookCmdSchemaAntigravity,
+	},
 }
 
 // extractCredentialGuardCommandsFromEvent extracts all command strings from a single event slot.
@@ -1138,6 +1172,28 @@ func extractPresenceCommandsD17(parsed interface{}, event credentialGuardRequire
 			out = append(out, guardCommandMatch{raw: cmd, typeIsCommand: typeStr == "command"})
 		}
 		return out
+
+	case hookCmdSchemaAntigravity:
+		// D6 (ADR-2026-11-18): {groupName:{event:[{matcher,hooks:[{type,command}]}]}}
+		// Iterate all group names → find event.hookEvent → filter by event.matcher → read inner hooks.
+		// Traversal delegated to hookschema.WalkAntigravityEntries (A3, ML-4C REQ-2026-11-17).
+		var out []guardCommandMatch
+		hookschema.WalkAntigravityEntries(root, func(_, evName, matcher, cmd, typeStr string) {
+			if evName != event.hookEvent {
+				return
+			}
+			if event.matcher != "" && matcher != event.matcher {
+				return
+			}
+			if !containsMarker(cmd) {
+				return
+			}
+			if requiresCommandType && typeStr != "command" {
+				return
+			}
+			out = append(out, guardCommandMatch{raw: cmd, typeIsCommand: typeStr == "command"})
+		})
+		return out
 	}
 	return nil
 }
@@ -1175,6 +1231,35 @@ func validateCredentialGuardPresenceWarnings() ([]string, error) {
 		if json.Unmarshal(content, &parsed) != nil {
 			// Invalid JSON: already reported by validateGuardHookResolvable.
 			continue
+		}
+
+		// F3 (ML-FA2 REQ-2026-11-17): when the Antigravity schema is detected, check if the
+		// "trackfw" group has enabled:false. If so, the guard is inactive even when entries
+		// are present — the Antigravity runtime suppresses the whole group. Emit one warning
+		// per required event (same severity and format as "entries absent") and skip the
+		// per-event extraction loop, which would otherwise find the entries and produce a
+		// false green.
+		//
+		// enabled:false is a boolean per the doc (§5.3); string "false" is not treated as
+		// disabled (non-boolean values are outside the documented contract and not measured).
+		//
+		// Contra-arm: enabled absent or true → no extra warning; fall through to per-event
+		// check below.
+		if entry.schema == hookCmdSchemaAntigravity {
+			if rootMap, ok := parsed.(map[string]any); ok && hookschema.AntigravityGroupDisabled(rootMap, "trackfw") {
+				for _, ev := range entry.events {
+					eventDesc := ev.hookEvent
+					if ev.matcher != "" {
+						eventDesc = ev.hookEvent + "[" + ev.matcher + "]"
+					}
+					msgs = append(msgs, fmt.Sprintf(
+						"%s (%s) trackfw group has \"enabled\":false — guard is inactive"+
+							" in event %s; run `trackfw update` to re-enable",
+						hf.path, hf.cli, eventDesc,
+					))
+				}
+				continue
+			}
 		}
 
 		for _, ev := range entry.events {

@@ -3931,6 +3931,8 @@ matcher-merge parity with Go/Node.)
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
+> **Status de legado (D7, ADR-2026-11-18):** o Gemini CLI é **legado para contas individuais** desde 2026-06-18; o fluxo do Google migrou para o Antigravity. O trackfw continua gerando e auditando os guards do Gemini CLI (quem tem chave de API paga segue usando), mas a regra `gemini_cli_legacy` emite um warning quando o projeto tem guard do Gemini CLI e nenhum guard do Antigravity — ver [Regra `gemini_cli_legacy`](#regra-gemini_cli_legacy--aviso-de-migração-do-gemini-cli-para-o-antigravity-d7-adr-2026-11-18-ml-3c) no final deste documento.
+
 
 `InjectGeminiHooks` (Go: `internal/generators/agentfiles.go`; Node.js:
 `npm/src/generators/hooks.js:injectGeminiHooks`; Python:
@@ -4316,6 +4318,226 @@ this shape.
 (`PostToolUse`/`matcher: "*"`) entries, in the same `hooks` array. Idempotent: the file is always fully
 regenerated with the same four entries, so re-running the injector never duplicates or drifts.
 
+#### Antigravity wiring (ML-3B) — `.agents/hooks.json`, grupo `trackfw`, só `PreToolUse`
+
+<!-- trackfw-contract: gate=internal/generators/antigravity_hooks_test.go,internal/validator/validator_guard_hook_concordance_external_test.go partial=TestInjectAntigravityHooks cobre create/idempotente/symlink-rejeição/sem-BOM/sem-PSPOSIX/migração-git-branch; os testes de concordância ML-3C exercem os matchers e a linha CmdExe via ValidateUnfiltered -->
+
+`InjectAntigravityHooks` (`internal/generators/agentfiles.go`) escreve `.agents/hooks.json` com
+um único grupo nomeado `"trackfw"`. Terceiros podem ter outros grupos no mesmo arquivo — são preservados
+intactos via round-trip JSON (`map[string]interface{}`).
+
+**Arquivo e esquema.** O Antigravity usa o formato `{groupName: {event: [{matcher, hooks:[{type,command}]}]}}` —
+o nível raiz é um mapa de nome-de-grupo → mapa de eventos. Dentro do grupo `"trackfw"` há só `"PreToolUse"`:
+`PostToolUse` não bloqueia no Antigravity (medido no `agy` 1.5.11, §11 do contrato de hooks). O evento de atenção
+(`Notification`) não existe no Antigravity — o hook de atenção do board não tem equivalente e permanece residual.
+
+**Linha de hook e família de shell.** O comando emitido é a forma **cmd.exe** (D1, ADR-2026-11-18):
+```
+trackfw guard credential || exit 2
+trackfw guard git-branch || exit 2
+```
+Esta forma é válida tanto em `sh -c` (macOS, medido) quanto em `cmd /s /c` (Windows, medido) — os dois
+shells que o `agy` 1.5.11 usa ao executar hooks. A forma PSPOSIX não serve: `cmd.exe` não a interpreta.
+Se o `trackfw` não estiver no PATH, a linha sai com 127 (`sh`) ou 9009 (`cmd`) e vira `exit 2`: fail-closed.
+
+**Matchers (D5, ADR-2026-11-18).** Quatro entradas em `PreToolUse`:
+
+| Matcher | Guard | Motivo |
+|---|---|---|
+| `run_command\|manage_task` | `trackfw guard credential` | Shell (`run_command`) e gerenciamento de tarefa (`manage_task`) — camada 1 varre `toolCall` raw; inclui `CommandLine` de `run_command` e `Input` de `manage_task` |
+| `write_to_file\|replace_file_content\|multi_replace_file_content` | `trackfw guard credential` | Ferramentas de escrita/substituição de arquivo — equivalente das pernas de escrita do Gemini CLI |
+| `view_file` | `trackfw guard credential` | Leitura de arquivo — camada 2 lê `toolCall.args.AbsolutePath` (D5); não é decorativa: o guard inspeciona o conteúdo do arquivo referenciado |
+| `run_command` | `trackfw guard git-branch` | Só `run_command` — `manage_task` carrega `Input`, não `CommandLine`; o git-branch guard extrairia string vazia e a entrada seria decorativa |
+
+**Contrato de saída (D2, ADR-2026-11-18).** Exit ≠ 0 bloqueia; exit 0 com stdout vazio libera.
+Stdout não-JSON com exit 0 bloqueia — portanto **o guard nunca escreve no stdout ao liberar**.
+
+**Payload (D3, ADR-2026-11-18).** O Antigravity entrega:
+- `toolCall.args.CommandLine` — o comando a ser executado (prioridade 5 de `ExtractCommand` e `credExtractCmdAndCwd`; ver [Contrato de payload do script](#contrato-de-payload-do-script-gitbranchguardscript))
+- `cwd` — raiz do workspace (o cwd do hook é `.agents/`, não a raiz; o guard sobe o `trackfw.yaml` a partir daí)
+- `lastUserInput` — presente em TODOS os payloads; a camada 1 do guard de credencial **não** varre este campo em payloads Antigravity (D4) — só varre os bytes de `toolCall`, prevenindo falso positivo quando o prompt do usuário contém um segredo
+- `toolCall.args.AbsolutePath` — extraído pela camada 2 do guard de credencial quando `toolName == "view_file"`
+
+**Detecção de schema Antigravity.** A função `isAntigravityPayload` (`internal/guard/payload.go`) classifica um
+payload como Antigravity quando `toolCall` é um objeto JSON **e** `hookEventName` está presente. Ambas as
+condições são necessárias (case-sensitive).
+
+**cwd e HOME no Windows.** No Windows, `HOME` chega vazio ao hook; `USERPROFILE` está disponível.
+O cwd do processo de hook é `<projeto>/.agents` — a busca de `trackfw.yaml` sobe a árvore e encontra a raiz.
+
+**Dedup e migração.** A versão anterior desta branch (pré-ML-3B-corretivo) registrava o guard de
+git-branch no matcher `run_command|manage_task`. A passagem de migração de `InjectAntigravityHooks`
+remove qualquer entrada de git-branch do matcher amplo e re-registra no matcher correto `run_command`.
+
+**Guard global (ML-3B2 REQ-2026-11-17).** `antigravity-credential-guard` e `antigravity-git-branch-guard` (alvos de `trackfw update harness`) implementados em ML-3B2. Caminho global: `~/.gemini/config/hooks.json`. Home no Windows: `USERPROFILE` via `os.UserHomeDir()` (medido ML-1B §12 de `docs/portabilidade/2026-11-18-antigravity-contrato-de-hooks.md` — agy lê `USERPROFILE`, não `FOLDERID_Profile`). Formato Antigravity (grupo `trackfw`, só `PreToolUse`). Credential guard: três matchers D5 (run_command|manage_task, write_to_file|..., view_file), comando `"trackfw guard credential --global || exit 2"`. Git-branch guard: matcher `run_command`, mesmo comando de projeto (`"trackfw guard git-branch || exit 2"`). Leg-independence: cada alvo chama só o seu helper (`antigravityInjectCredential` / `antigravityInjectGitBranch`) — rodar só um alvo não perturba o outro. Idempotente, sem BOM, proteção de symlink (`rejectHarnessSymlink`, raiz = `HomeFor(CLIAntigravity)`). `enabled:false` removido com aviso (ML-FA2). Auditado via `globalGuardConfigFiles` / `guardGlobalHookLayout` (schema `hookCmdSchemaAntigravity`) nas 6 funções de validação global.
+
+**Merge e idempotência.** Segue o mesmo padrão dos outros CLIs: terceiros preservados, entradas trackfw
+deduplicadas. A proteção de symlink (`pathguard.RejectAndReport`) impede escrita através de `.agents/`
+simbólico.
+
+**Correções ML-FA2 (REQ-2026-11-17) — red-team F1/F2/F3/F5:**
+
+- **F5 — write-scope:** `.agents/hooks.json` foi adicionado a `writeScopeSubagentFrozenRelPaths` (`internal/guard/writescope.go`). Um subagente Claude Code (com `agent_id`) não pode sobrescrever esse arquivo; `agent_id` ausente (sessão principal) continua podendo escrever. Outros arquivos em `.agents/` (ex. `.agents/skills/`) não são afetados.
+
+- **F2 — `InjectAntigravityHooks` e `enabled:false`:** quando o grupo `"trackfw"` em `.agents/hooks.json` já existe com `"enabled":false`, o injector remove a chave e emite um aviso em stderr:
+  `trackfw: warning: .agents/hooks.json trackfw group had "enabled":false — guard was disabled; re-enabling (ML-FA2 REQ-2026-11-17)`
+  Grupos de terceiros com `"enabled":false` não são tocados. Valor não-booleano (incluindo a string `"false"`) é ignorado — a doc §5.3 define o campo como booleano e valores fora do contrato não são tratados.
+
+- **F3 — `validate` detecta `enabled:false`:** `validateCredentialGuardPresenceWarnings` agora verifica se o grupo `"trackfw"` em `.agents/hooks.json` tem `"enabled":false` (booleano). Quando sim, emite um aviso por evento obrigatório (mesma severidade que ausência de entradas) mesmo com as entradas D5 presentes, pois o Antigravity suprime o grupo inteiro. Implementado via `hookschema.AntigravityGroupDisabled` (`internal/hookschema/hookschema.go`) — único ponto de verificação de `enabled` por grupo. `WalkAntigravityEntries` não foi alterado: o auditsurface continua enxergando entradas em grupos desabilitados (hook hostil escondido por `enabled:false` deve ser auditável). String `"false"` não é tratada como desabilitado.
+
+- **F1 — P5 requer schema Antigravity:** `ExtractCommand` (`internal/guard/payload.go`) e `credExtractCmdAndCwd` (`internal/guard/credential.go`) agora verificam `isAntigravityPayload(root)` antes de extrair `toolCall.args.CommandLine` (prioridade 5). Sem `hookEventName` presente, P5 retorna vazio — evita que um payload sem schema Antigravity dispare o guard indevidamente. Payloads com `hookEventName` continuam funcionando normalmente.
+
+#### OpenCode guard (`opencode-guard`) — ML-5E (REQ-2026-11-17)
+
+<!-- trackfw-contract: gate=internal/opencodeplugin/opencodeplugin_jsruntime_test.go,internal/validator/validator_opencode_plugin_test.go,internal/agentconfig/agentconfig_test.go,internal/commands/init_guard_hooks_test.go,scripts/check-update-parity.sh partial=TestOpenCodePlugin_JSRuntime/arm1_shell_secret_throws proves shell tool with secret exits 2 and throws "operation blocked" (not ENOENT); TestOpenCodePlugin_JSRuntime/arm2_innocuous_passes proves innocuous command exits 0 with empty stdout (D2 invariant); TestOpenCodePlugin_JSRuntime/arm3_enoent_throws proves spawnSync with no trackfw in PATH throws ENOENT fail-closed; TestOpenCodePlugin_JSRuntime/arm4_write_self_throws proves write to plugin file fires D4 self-protection before spawnSync; TestOpenCodePlugin_JSRuntime/arm5_read_payload_structure proves read tool payload has hook_source:"opencode" and absolute tool_input.file_path; TestOpenCodePlugin_JSRuntime/arm11_webfetch_secret_throws proves webfetch URL with credential routes to guard and throws; TestOpenCodePlugin_JSRuntime/arm12_websearch_secret_throws proves websearch query with credential routes to guard and throws (ML-5I2); TestOpenCodePlugin_JSRuntime/arm13_symlink_projectdir_throws proves symlinked projectDir does not bypass D4 self-protection for config files (N1 fix); TestOpenCodePlugin_JSRuntime/arm14_symlink_globalconfigdir_throws proves symlinked OPENCODE_CONFIG_DIR does not bypass D4 for global plugins dir (N1 fix); TestOpenCodePlugin_JSRuntime/arm15_patch_ab_prefix_throws proves "+++ b/.opencode/plugins/evil.js" header is blocked after a/b prefix strip (N2 fix); TestOpenCodePlugin_JSRuntime/arm16_patch_ab_prefix_control_ok proves "+++ b/src/main.go" header is not blocked — N2 fix does not over-block safe patches; TestOpenCodePlugin_JSRuntime/arm17_all_pathfields_checked proves {filePath:innocuous, path:protected} both checked — reversed-field bypass closed (F7 fix); TestOpenCodePlugin_JSRuntime/arm18_patch_no_header_throws proves patch/apply_patch with no recognizable headers is fail-closed (F5 fix); TestOpenCodePlugin_JSRuntime/arm19_mixed_patch_rename_to_plugin_throws proves mixed patch (unified section innocent + git rename to plugin) fires D4 self-protection not ENOENT (N4-ML5I4 diff --git + rename); TestOpenCodePlugin_JSRuntime/arm20_rename_only_to_plugin_throws_d4_not_failclosed proves rename-only patch targeting plugin fires D4 self-protection not fail-closed (N4-ML5I4 rename recognized); TestOpenCodePlugin_JSRuntime/arm21_rename_innocent_control_ok proves rename of innocent files does not over-block (N4-ML5I4 control); TestOpenCodePlugin_JSRuntime/arm22_copy_to_plugin_throws proves copy-to patch targeting plugin fires D4 self-protection not fail-closed (N4-ML5I4 copy from/to recognized); TestOpenCodePlugin_JSRuntime/arm23_quoted_octal_header_throws proves C-string-quoted +++ header with \\056 octal decoded to .opencode/plugins/evil.js fires D4 self-protection (N4-ML5I4 unquoteGitPath); TestOpenCodePlugin_JSRuntime/arm24_mention_zpfx_throws proves "+++ z/.opencode/plugins/x.js" header fires D4 self-protection from mention scan before second-layer extraction (N5-ML5I5 git-apply -pN bypass closed); TestOpenCodePlugin_JSRuntime/arm25_mention_mixedcase_throws proves "+++ z/.OpenCode/Plugins/x.js" mixed-case header fires D4 self-protection from mention scan via lowercasing (N5-ML5I5 case bypass closed on all platforms); TestOpenCodePlugin_JSRuntime/arm26_opencode_notes_no_throw proves patch touching src/opencode-notes.md ("opencode" substring, not a protected pattern) does not trigger mention scan and passes (N5-ML5I5 control); TestOpenCodePlugin_JSRuntime/arm27_octal_zprefix_throws proves '+++ "z/\056opencode/plugins/x.js"' (octal-encoded dot, z/ prefix) is denied by either N6-a octal-decode mention or N6-b candidate needle scan — before fix rc=0 bypass (N6-ML5I6); TestOpenCodePlugin_JSRuntime/arm28_octal_in_body_throws proves octal \\056opencode in patch body (innocent header) fires D4 from N6-a mention octal-decode haystack — before fix rc=0 bypass (N6-ML5I6); TestOpenCodePlugin_JSRuntime/arm29_global_dir_mention_throws proves patch body mentioning <OPENCODE_CONFIG_DIR>/plugins/x.js fires D4 from global-dir-qualified needle in mention scan — always passes on ML-5I5+, adds coverage (N6-ML5I6); TestOpenCodePlugin_NoOpenCodeDir_Silent proves no .opencode/ dir is silent (D5); TestOpenCodePlugin_PluginAbsent_Warns proves absent plugin warns with remedy "trackfw update" (not "update harness"); TestOpenCodePlugin_Stale_Warns proves stale plugin warns with "trackfw update"; TestOpenCodePlugin_MissingMarker_Warns proves missing marker warns with "trackfw update"; TestOpenCodePlugin_Canonical_Silent proves up-to-date plugin is silent; TestOpenCodePlugin_GlobalAbsent_Warns proves project-present+global-absent warns with "update harness" remedy (D6); TestOpenCodePlugin_GlobalPresent_Silent proves project+global both present is silent (D6); TestOpenCodePlugin_ProjectAbsent_D6Silent proves D6 is silent when project plugin absent; TestOpenCodePlugin_ValidateForTest_Absent_IsWarning proves D5 is routed via applyRuleWarnOnly (warning not violation); TestOpenCodePlugin_GlobalSiblingJS_Warns proves unexpected .js in global plugins/ triggers warning (N3 fix); TestOpenCodePlugin_GlobalConfigPluginsKey_Warns proves "plugins" key in global opencode.json triggers warning (N3 fix); TestOpenCodePlugin_JSONCBlockComment_Warns proves /* */ block comment in opencode.jsonc is stripped before parse (N4 fix); TestOpenCodePlugin_JSONCTrailingComma_Warns proves trailing comma before } in opencode.jsonc is removed before parse (N4 fix); TestOpenCodeConfigDir_OPENCODE_CONFIG_DIR_Honoured proves OPENCODE_CONFIG_DIR takes precedence (R-1); TestOpenCodeConfigDir_XDG_CONFIG_HOME_Honoured proves XDG_CONFIG_HOME/opencode fallback; TestOpenCodeConfigDir_Default_JoinsHomeDotConfigOpenCode proves default <home>/.config/opencode; TestOpenCodeConfigDir_Windows_UsesUserprofile proves Windows USERPROFILE path; TestOpenCodeConfigDir_RelativeOPENCODE_CONFIG_DIR_ReturnsError proves relative path rejected; TestOpenCodeConfigDir_SpacesOnlyOPENCODE_CONFIG_DIR_FallsThrough proves spaces-only treated as unset; TestOpenCodeConfigDir_OPENCODE_CONFIG_DIR_TakesPrecedenceOverXDG proves OPENCODE_CONFIG_DIR beats XDG; TestOSCLIHomeResolver_WindowsBranch_OpenCode proves Windows resolver uses USERPROFILE for OpenCode; TestInjectHooksForTools_OpenCodeCreatesPlugin proves InjectHooksForTools(["opencode"]) writes plugin with marker; TestInjectHooksForTools_UnknownToolNoFiles proves unknown tool creates no files; check-update-parity.sh 5c-2 proves state=missing without --install-missing and no file written; check-update-parity.sh 5c-3 proves --install-missing writes file with const SCOPE = "global" -->
+
+**Mechanism.** OpenCode loads CommonJS plugins from two locations: project-scoped
+`.opencode/plugins/trackfw-guard.js` and global `<openCodeConfigDir>/plugins/trackfw-guard.js`.
+Unlike other CLIs, there is no JSON hook file — the guard is a `.js` plugin embedded in the binary
+(`internal/opencodeplugin/trackfw-guard.js`, `go:embed`) and written by
+`InjectOpenCodePlugin` (project) or the global harness target `opencode-guard`.
+
+**Asset contract.** The embedded asset (`internal/opencodeplugin/trackfw-guard.js`) must have:
+- `// trackfw:opencode-guard` on the **first line** — audit sentinel read by both the validator and
+  the update harness.
+- `const SCOPE = "project"` on **exactly one line** — replaced with `"global"` by `Render("global")`
+  for the global variant. `Render` returns `bytes.Clone(assetBytes)` for `"project"` to prevent
+  shared-slice mutation.
+
+**Config dir precedence (OpenCode).** `OPENCODE_CONFIG_DIR` → `XDG_CONFIG_HOME/opencode` →
+`<home>/.config/opencode`. Implemented in `agentconfig.OpenCodeConfigDirWithSource`. Home on
+Windows: `effectiveUserHomeDir()` (same as other CLIs on the same resolver).
+
+**D4 self-protection.** The plugin uses `globalOpenCodeConfigDir()` (env-based precedence, same
+as Go) to protect both the project plugin and the global plugin from being overwritten. Using
+`dirname(dirname(__filename))` would only be correct for the global variant.
+
+**D4 self-protection — ML-5I3 fixes (N1/N2/F5/F7).**
+- **N1 (symlink bypass closed):** `protectedDirs` and `protectedFiles` are now resolved via
+  `realpathOrParent` before comparison, so a symlinked `projectDir` or `OPENCODE_CONFIG_DIR`
+  (e.g. dotfile managers: `~/.config → /data/config`) no longer creates a bypass.
+- **N2 (a/b prefix closed):** `extractPatchTargets` adds both the raw form and the `a/`-`b/`-stripped
+  form of `+++`/`---` headers as candidates, closing the `git diff` default-prefix bypass.
+- **F7 (reversed-field bypass closed):** `selfProtect` now checks ALL present path fields
+  (`filePath`, `path`, `file_path`, `file`) as candidates, not just the first non-null one.
+- **F5 (fail-closed):** `patch`/`apply_patch` with no recognizable headers in any string field
+  throws fail-closed with an explicit "fail-closed F5" message; previously returned (ALLOW).
+
+**D4 self-protection — ML-5I4 fix (N4-ML5I4): git rename/copy headers and C-string quoting.**
+- **`diff --git a/X b/Y` recognized:** both paths (and their `a/`-`b/`-stripped forms) are added as
+  candidates. Handles both unquoted and C-string-quoted tokens (see below).
+- **`rename from/to` and `copy from/to` recognized:** the literal path in each header is added as a
+  candidate; this closes the mixed-patch bypass where a unified-diff section contributes an innocent
+  candidate that prevents F5 from firing while the rename/copy target escapes detection.
+- **C-string quoting decoded (`unquoteGitPath`):** git quotes paths that contain special bytes using
+  C-string escaping (`\"`, `\\`, `\NNN` octal). `unquoteGitPath` is applied to ALL header tokens
+  (`+++`/`---`, `diff --git`, rename/copy). A malformed quoted token (unterminated, unknown escape,
+  truncated octal) throws fail-closed rather than being skipped — skipping would recreate the
+  mixed-patch bypass. Octal `\056` (`.`) in `+++ "b/\056opencode/plugins/evil.js"` decodes to
+  `.opencode/plugins/evil.js` and is blocked by D4 (arm23).
+- **Helper `parseDiffGitTokens`** parses the `diff --git` line handling both quoted and unquoted
+  tokens without splitting on the intermediate space (quoted tokens may contain spaces).
+
+**D4 self-protection — ML-5I5 fix (N5-ML5I5): mention scan for patch/apply_patch.**
+- **Mention scan (first layer, before header extraction):** for `patch`/`apply_patch`, ALL
+  string-valued args are concatenated (separated by `\n`), backslash-normalized to `/`, and
+  lowercased. The resulting text is searched for any of: `.opencode/plugin` (matches both
+  `plugin/` and `plugins/`), `opencode.json` (matches `.jsonc` as a prefix), and the global
+  config dir in both its raw form and its `realpathSync` form (when different — covers symlinked
+  config dirs), each followed by `/plugin` or `/opencode.json`. A match throws immediately with
+  a "D4 self-protection" message before any header extraction takes place.
+- **Closes `git apply -pN` bypass (arm24):** `+++ z/.opencode/plugins/x.js` feeds
+  candidate `<projectDir>/z/.opencode/plugins/x.js` into the second-layer directory check; that
+  candidate is NOT under `.opencode/plugins/` after resolution, so the check passes. The mention
+  layer catches `.opencode/plugin` in the raw text and denies before extraction runs.
+- **Closes mixed-case + prefix bypass on Linux (arm25):** `+++ z/.OpenCode/Plugins/x.js`
+  similarly escapes second-layer detection (z/ prefix + case-sensitive comparison on Linux). The
+  mention layer lowercases the haystack and matches `.opencode/plugin` on all platforms.
+- **Control arm26:** a patch whose headers and body mention `opencode` only as part of a filename
+  (`src/opencode-notes.md`) does not trigger the mention scan — the patterns require the full
+  `.opencode/plugin` or `opencode.json` substring.
+- `extractPatchTargets` + F5 fail-closed remain as the second layer.
+
+**D4 self-protection — ML-5I6 fix (N6-ML5I6): octal-decode second haystack and candidate needle scan.**
+- **N6-a — second mention haystack (octal decoded):** the mention scan now checks a second
+  haystack (`n5LowOct`) in which `\NNN` octal sequences are decoded (same range as
+  `unquoteGitPath`) _before_ the `\` → `/` pass. This catches `+++ "z/\056opencode/plugins/x.js"`
+  (octal-encoded `.`): the original pass converts `\056` to `/056` (no match), but `n5LowOct`
+  decodes `\056` → `.` first, so `.opencode/plugin` is found and throws D4 (arm27, arm28).
+  The original `n5Low` haystack is kept so that Windows paths with literal backslash-digit
+  sequences (e.g. `C:\Users\100x`) continue to match the global-dir needle without false
+  negative from octal misinterpretation.
+- **N6-b — decoded-candidate needle scan:** after `extractPatchTargets` populates `candidates`
+  (resolved paths), each candidate string is scanned with the same mention needles (`\` → `/`,
+  lowercase). This catches candidates decoded by `unquoteGitPath` whose resolved path contains
+  `.opencode/plugin` but whose `z/` prefix defeated the directory-containment check (arm27 is
+  caught by both N6-a and N6-b). It also catches dot-segment bypasses such as
+  `+++ z/.opencode/./plugins/x.js`: the raw text does not contain `.opencode/plugin` verbatim
+  (the mention scan misses it), but `nodePath.resolve` normalises `.` away, so the resolved
+  candidate `<projectDir>/z/.opencode/plugins/x.js` does contain it.
+- **arm27** (`+++ "z/\056opencode/plugins/x.js"`): denied by _either_ N6-a or N6-b;
+  before fix rc=0 (bypass), after fix D4 self-protection.
+- **arm28** (octal `\056opencode` in patch body, innocent header): denied by N6-a only
+  (body lines are not extracted by `extractPatchTargets`); before fix rc=0, after fix D4.
+- **arm29** (`<OPENCODE_CONFIG_DIR>/plugins/x.js` in patch body, innocent header):
+  exercises the global-dir-qualified needle (`n5GlobalNorm + "/plugin"`) that was present
+  since ML-5I5 but had no dedicated arm; always passes on ML-5I5 or later code.
+- **Unexercised remaining contours:** `+++ z/.opencode/./plugins/x.js` (dot-segment) and
+  `+++ z/.opencode//plugins/x.js` (double-slash) are caught by N6-b (resolved candidate scan)
+  but have no dedicated arms in this ML.
+
+**D7 (N3/N4 fixes, ML-5I3).** `validate`/`doctor` now also inspect the global OpenCode config
+directory for sibling plugin files (`plugins/`, `plugin/`) and `plugin`/`plugins` keys in
+`opencode.json(c)`. The resolver previously passed to `validateOpenCodePluginWarningsWith` was
+discarded; it is now used to resolve `agentconfig.OpenCodeConfigDir`. `stripJSONCLineComments`
+was enhanced (N4) to strip `/* */` block comments and trailing commas before `}`/`]`, so
+JSONC files using those forms are parsed correctly instead of being silently skipped.
+
+**Project injection.** `InjectOpenCodePlugin(rootDir)` writes `.opencode/plugins/trackfw-guard.js`
+with CRLF-normalised idempotency. `cliDetectors["opencode"]` detects `.opencode/` as a directory.
+
+**Global harness target.** `opencode-guard` is added to `buildHarnessTargetIDs` when `tool ==
+"opencode"`. The target writes the global plugin (scope `"global"`) under `<openCodeConfigDir>/
+plugins/trackfw-guard.js`. Absent/no-marker/stale → `missing`/status update. Target count: 38 → 39.
+
+**Audit (D5/D6).**
+- D5 (`validate`): `.opencode/` present → plugin absent/no-marker/stale → `credential_guard_presence_warning` via `applyRuleWarnOnly`. Wired at both emission sites in `validator.go`.
+- D6 (`doctor`): project plugin present (with marker) but global plugin absent → `DoctorOpenCodePluginGlobalAbsent` advisory finding. Recommend `trackfw update harness --targets opencode-guard --install-missing`.
+
+**auditsurface.** `"opencode"` added to `canonicalRuntimes` and `runtimeWiringPath`. Non-JSON file uses `extractOpenCodePluginSchema` (synthetic tuple, `RawCommand="trackfw guard"` when marker present, `"marker-absent"` otherwise).
+
+**Payload extraction (D3/D4).** The plugin calls `trackfw guard credential` as a subprocess via `spawnSync` (not `execa`). The guard reads the JSON payload from stdin via `credOpenCodeReadScan`: when `hook_source="opencode"` and `tool_name="read"` or `"grep"`, the guard reads the file at `tool_input.file_path` (with `tool_input.path` as fallback for `grep`) and scans its content. Directory paths are not read. This is the only path where `guard credential` performs a filesystem read on behalf of the plugin (D7 F6, REQ-2026-11-17 ML-5I).
+
+**D8 — Límite da autoproteção por caminho (ML-5I7, ADR D8).** The self-protection layer (D4/D7) compares resolved paths and patch text. It is a defence-in-depth layer, not the primary control. The primary control against a foreign plugin is detection: `validate`/`doctor` warn on any `.js`/`.ts` file in plugin dirs other than `trackfw-guard.js`, and on any `plugin`/`plugins` key in `opencode.json(c)`, in the project and in the global config (N3; N3-cond: runs even without `.opencode/`).
+
+What is **denied** (ML-5I7 fixes, corrigidos após Rodada 3 do red team):
+- `patch`/`apply_patch` containing `new file mode 120000` or `new mode 120000` — symlink creation via patch is blocked before header extraction (N7a).
+- Write to a dangling symlink whose resolved target is under a protected directory — `realpathOrParent` now follows the symlink via `lstatSync`/`readlinkSync` with a depth cap of 40 (fail-closed N7b).
+- Write path whose unicode form (NFD) differs from the stored form (NFC) of a protected directory on macOS APFS — `isUnderDir` and `pathsEqual` apply `.normalize('NFC')` before case-folding on darwin and win32 (N8).
+- `patch`/`apply_patch` whose candidate is an ancestor of a protected directory (e.g. `*** Delete File: .opencode`) — the reverse-containment check `isUnderDir(protectedDir, candidate)` is applied alongside the forward check (N9).
+- N3-cond: global sibling and config-key checks run unconditionally — even when `.opencode/` is absent in the project — so a global `evil.js` is always detected.
+
+**Declared residual** (from ADR D8):
+- Patch that mounts the target path via an intermediate symlink chain or two separate patches is not blocked; the same residual as write via `shell`.
+- Write via `shell` (`rm`, etc.) inside the plugin directory is not blocked by selfProtect — only detected by `validate`/`doctor`.
+- `grep` over a directory (not a file) is not scanned.
+
+**Accepted false positive** (from ADR D8): a `patch` whose text body mentions `opencode.json` or `.opencode/plugins` (e.g. documentation) is blocked by the mention scan; use `write`/`edit` for those files.
+
+**Tool coverage (V2 native tools — `opencode.ai/docs/tools.md`).** Each tool from the V2 native list is classified as mapped (routed to `trackfw guard credential` and/or `git-branch`) or residual (passes through without a guard call), with the reason (ML-5I2, REQ-2026-11-17).
+
+| Tool | Guard routing | Reason / residual note |
+|---|---|---|
+| `shell` | `credential` + `git-branch` | Shell execution; command string carries both credential and branch-mutation risk |
+| `write` | `credential` | File content written to disk — Layer 1 scans raw payload bytes |
+| `edit` | `credential` | Partial file write — same Layer 1 scan |
+| `patch` / `apply_patch` | `credential` | Diff may embed secrets; patch headers parsed for D4 self-protection |
+| `read` | `credential` | `hook_source="opencode"` enables D7 F6 file-content scan at `tool_input.file_path` |
+| `grep` | `credential` | Same D7 F6 scan via `tool_input.path` fallback |
+| `webfetch` | `credential` | URL and body may carry secrets (F6) |
+| `websearch` | `credential` | Query submitted to remote service — exfiltration risk identical to webfetch URL (ML-5I2) |
+| `glob` | — (residual) | Returns only file-name lists; no secret content is transmitted or written; no credential or branch risk |
+
 #### Suporte por CLI — visão consolidada, escopo DE PROJETO (ML-5A, `ROADMAP-2026-08-05-hooks-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`)
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
@@ -4340,8 +4562,9 @@ documenta com a fonte primária (doc oficial do CLI) e o teste que o comprova.
 | Cursor ([ML-2E](#cursor-wiring-ml-2e--cursorhooksjson-hooksbeforeshellexecutionhooksaftershellexecution)) | `beforeShellExecution` | `afterShellExecution` | nenhum — evento já é shell-specific (o guard precisa ver todo comando) | `exit 2` = `deny` (ou JSON `{"permission": "deny", ...}`) | **Sim** — ML-4A |
 | Kiro ([ML-2F](#kiro-wiring-ml-2f--kirohookstrackfw-attentionjson-format-correction--pretoolusepostotooluse-matcher-shell)) | `PreToolUse` | `PostToolUse` | `matcher: "shell"` (categoria de tool, alcança todo tool de shell built-in) | qualquer exit ≠ 0 bloqueia `PreToolUse` — mais estrito que os demais CLIs (não só `exit 2`) | **Sim** — ML-4A |
 | Windsurf | — | — | — | **Fora de escopo** — sem hook nativo pré-execução no CLI real, confirmado por `REQ-2026-06-20-attention-hooks-agent-clis.md` e pelo comentário já existente em `internal/generators/agentfiles.go` | N/A |
+| Antigravity ([ML-3B](#antigravity-wiring-ml-3b--agentshooksjson-grupo-trackfw-só-pretooluse)) | `PreToolUse` | — (sem pós-execução que bloqueia) | `run_command\|manage_task`, `write_to_file\|replace_file_content\|multi_replace_file_content`, `view_file` (cred); `run_command` (git-branch) | exit ≠ 0 bloqueia; stdout não-JSON com exit 0 bloqueia; stdout vazio + exit 0 libera (medido agy 1.5.11, §11) | Não — payload de runtime confirmado em ML-1A, não em sabotagem e2e dedicada |
 
-**Cobertura de sabotagem end-to-end: 3 de 6 CLIs** (Claude Code, Cursor, Kiro). Codex, Gemini CLI e
+**Cobertura de sabotagem end-to-end: 3 de 7 CLIs** (Claude Code, Cursor, Kiro). Codex, Gemini CLI e
 GitHub Copilot ficaram sem teste de sabotagem — não por omissão, mas porque a documentação oficial
 recuperada para cada um deles (citada nas seções "wiring" respectivas) não expõe, com confiança
 suficiente, um exemplo completo do payload JSON que chega via **stdin em runtime** ao hook (distinto do
@@ -4780,6 +5003,8 @@ de um roadmap anterior e não relacionado
 | GitHub Copilot | `~/.copilot/settings.json` | Merge — inline `hooks.preToolUse`/`hooks.postToolUse[matcher:"bash"]` num arquivo de config geral compartilhado, **não** dedicado (diverge do escopo de projeto, que usa `.github/hooks/*.json` dedicado) — ver "GitHub Copilot global-scope wiring (ML-2E)" | Absoluto, mesmo script | Nenhum |
 | Kiro | `~/.kiro/hooks/trackfw-credential-guard.json` | **Overwrite total** — arquivo dedicado, um-arquivo-por-hook em `~/.kiro/hooks/`, nunca merge — ver "Kiro global-scope wiring (ML-2F)" | Absoluto, mesmo script (hook names `-global-pre`/`-global-post`, distintos dos de projeto) | **v3** (`kiro-cli --v3`) — documentado, sem sonda de subprocesso possível (ver caveat acima) |
 | Windsurf | — | — | — | **Fora de escopo** — sem hook nativo pré-execução, mesma razão da REQ original (PR #141) |
+| Antigravity | `~/.gemini/config/hooks.json` | USERPROFILE via `os.UserHomeDir()` no Windows (medido ML-1B §12 portabilidade doc 2026-11-18; agy lê USERPROFILE, não FOLDERID_Profile) | `antigravity-credential-guard` (ML-3B2) | `antigravity-git-branch-guard` (ML-3B2) |
+| OpenCode | `<openCodeConfigDir>/plugins/trackfw-guard.js` | **Overwrite total** — arquivo dedicado CommonJS (`.js`), sempre idempotente por comparação de conteúdo; `const SCOPE = "global"` para o alvo global — ver "OpenCode guard (`opencode-guard`) — ML-5E" abaixo | `trackfw guard credential` (executado pelo plugin via `spawnSync`) | `opencode-guard` (ML-5E) |
 
 ##### Achados transversais (Waves 1-4 deste roadmap)
 
@@ -6861,7 +7086,7 @@ todo CLI de agente), via subcomando Go `trackfw guard`:
 | Família de shell | Linha de hook emitida (REQ-2026-11-13 / D18 ML-2I) |
 |---|---|
 | PS/POSIX (Claude Code, Codex, Gemini CLI, Cursor, Copilot, Windsurf) | `set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set ConfirmPreference None -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE` |
-| cmd.exe (Kiro, Amazon Q) | `trackfw guard git-branch \|\| exit 2` |
+| cmd.exe (Kiro, Amazon Q, **Antigravity**) | `trackfw guard git-branch \|\| exit 2` |
 | Idem para credential-guard | `set ErrorActionPreference Continue -Force -WhatIf:0 -Confirm:0; set ConfirmPreference None -Force -WhatIf:0 -Confirm:0; set +eu; null=/dev/null; Set-StrictMode -Off 2>$null; emulate -R sh 2>$null; $LASTEXITCODE=2 2>$null; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>$null; exit $LASTEXITCODE` / `trackfw guard credential \|\| exit 2` |
 
 **REQ-2026-10-20 — correção de falha do hook sob zsh (ADR-2026-10-04, 2026-10-21):**
@@ -7302,6 +7527,14 @@ O contrato de payload do `gitBranchGuardScript` (seção acima) também foi ajus
 `tool_info.command_line` (formato real do payload `pre_run_command` do Windsurf) foi adicionado à
 cadeia de tentativas de extração do comando via stdin JSON, ao lado dos campos genéricos já
 existentes (`.tool_input.command`, `.command`, `.hook_input.command`).
+
+**Prioridade 5: `toolCall.args.CommandLine` (Google Antigravity, ML-3A, ADR-2026-11-18 D3).** O Antigravity
+entrega o comando em `toolCall.args.CommandLine` — PascalCase, case-sensitive, não reconhecido pelas
+prioridades 1–4. Adicionado como prioridade 5 em `ExtractCommand` e `credExtractCmdAndCwd`
+(`internal/guard/payload.go` e `internal/guard/credential.go`), via `extractNested3(root, "toolCall", "args", "CommandLine")`.
+A detecção de schema Antigravity (`isAntigravityPayload`: `toolCall` é objeto + `hookEventName` presente)
+é usada pela camada 1 do guard de credencial para restringir o scan aos bytes de `toolCall` — excluindo
+`lastUserInput` para evitar falso positivo (D4, ADR-2026-11-18).
 
 ### Campos mínimos do custom agent Amazon Q — Go como canônico (2026-08-20, ML-1A-bis)
 
@@ -10097,7 +10330,7 @@ Quando `agent_id` está presente no payload (subagente) e `agent_type` é um slu
 - Escrita fora de qualquer projeto trackfw (sem `trackfw.yaml` ancestral) não é bloqueada pela D4.
 - Escrita por Bash (`echo >>`, `sed -i`, `cp`) escapa da D3 e da D4; só a D2 (`trackfw barrier ml_scope`) a detecta na auditoria de commit.
 
-## Regra `credential_guard_presence_warning` — aviso de presença do guard nos 6 CLIs sem exigência de violation (D17, REQ-2026-10-25 #619)
+## Regra `credential_guard_presence_warning` — aviso de presença do guard nos 7 CLIs sem exigência de violation (D17, REQ-2026-10-25 #619; Antigravity adicionado em ML-3C, REQ-2026-11-17)
 
 <!-- trackfw-contract: gate=internal/validator/validator_credential_guard_presence_warning_test.go,internal/validator/validator_guard_hook_concordance_external_test.go partial=os testes AC1 (par-por-par para os 6 CLIs), AC2 (roteamento para warnings via ValidateUnfiltered), AC4 (red-team PostToolUse e Kiro command-raiz) e AC5 (contagem da tabela de entradas) cobrem o comportamento especificado aqui; o Cenário 47 de check-gates-falsify.sh usa o gerador de fixture atualizado com os 3 pares modernos; NÃO há teste de integração via CLI (parity-rest) neste ML -->
 
@@ -10111,7 +10344,7 @@ Quando `agent_id` está presente no payload (subagente) e `agent_type` é um slu
 
 `credential_guard_presence_warning` (severity default `warning`, never `error` — D17 decision by KG):
 
-Para cada um dos 6 CLIs sem violation-grade (Claude Code, Codex CLI, Gemini CLI, Cursor, GitHub Copilot CLI, Kiro), quando o arquivo de hook de **projeto** **existir** no disco, verifica se o campo executável de cada par `(evento, matcher)` esperado contém o marcador do credential guard (`trackfw-credential-guard.sh` ou `trackfw guard credential`).
+Para cada um dos 7 CLIs sem violation-grade (Claude Code, Codex CLI, Gemini CLI, Cursor, GitHub Copilot CLI, Kiro, **Antigravity**), quando o arquivo de hook de **projeto** **existir** no disco, verifica se o campo executável de cada par `(evento, matcher)` esperado contém o marcador do credential guard (`trackfw-credential-guard.sh` ou `trackfw guard credential`).
 
 **Lista de entradas (`credentialGuardRequiredEntries` em `validator_credential_guard.go`):**
 
@@ -10123,6 +10356,7 @@ Para cada um dos 6 CLIs sem violation-grade (Claude Code, Codex CLI, Gemini CLI,
 | Cursor | `.cursor/hooks.json` | schemaFlat | `beforeShellExecution` (sem matcher), preToolUse+`Read`, preToolUse+`Write` |
 | GitHub Copilot CLI | `.github/hooks/trackfw-attention.json` | schemaFlat | preToolUse+`bash`, preToolUse+`view`, preToolUse+`create\|edit` |
 | Kiro | `.kiro/hooks/trackfw-attention.json` | schemaKiro | PreToolUse+`shell`, PreToolUse+`read`, PreToolUse+`write` |
+| Antigravity | `.agents/hooks.json` | schemaAntigravity | PreToolUse+`run_command\|manage_task`, PreToolUse+`write_to_file\|replace_file_content\|multi_replace_file_content`, PreToolUse+`view_file` |
 
 Windsurf e Amazon Q **permanecem com violation-grade** (`warnOnly=false` na mesma tabela).
 
@@ -10133,7 +10367,7 @@ Windsurf e Amazon Q **permanecem com violation-grade** (`warnOnly=false` na mesm
 
 **Comportamento de silêncio:** arquivo ausente → silêncio (guard global pode estar instalado). Arquivo presente mas JSON inválido → silêncio (já reportado por `credential_guard_hook_resolvable`).
 
-**Ponto único:** `credentialGuardRequiredEntries` é a tabela compartilhada entre `validateCredentialGuardPresenceRequired` (violations, `warnOnly=false`) e `validateCredentialGuardPresenceWarnings` (warnings, `warnOnly=true`). AC5 pina os contadores: 2 violation-grade e 6 warning-grade.
+**Ponto único:** `credentialGuardRequiredEntries` é a tabela compartilhada entre `validateCredentialGuardPresenceRequired` (violations, `warnOnly=false`) e `validateCredentialGuardPresenceWarnings` (warnings, `warnOnly=true`). AC5 pina os contadores: 2 violation-grade e 7 warning-grade (Antigravity adicionado em ML-3C, REQ-2026-11-17).
 
 ### O que ela NÃO cobre
 
@@ -10152,3 +10386,89 @@ Windsurf e Amazon Q **permanecem com violation-grade** (`warnOnly=false` na mesm
     `internal/validator/validator.go:287-296` (case `originAnchorOK` de `ruleSeverity`). Este é o comportamento
     da maioria dos projetos reais (que rodaram `trackfw init` e têm remote configurado).
 - Não transforma o aviso em violation em nenhum CLI novo — essa decisão está reservada para uma próxima versão major.
+
+## Regra `gemini_cli_legacy` — aviso de migração do Gemini CLI para o Antigravity (D7, ADR-2026-11-18, ML-3C)
+
+<!-- trackfw-contract: gate=internal/validator/validator_guard_hook_concordance_external_test.go partial=TestGeminiCliLegacy_GeminiGuardNoAntigravity_Warns (arm warn), TestGeminiCliLegacy_NeitherPresent_Silent (arm silêncio), TestGeminiCliLegacy_BothPresent_Silent (arm silêncio), TestGeminiCliLegacy_GeminiNoGuard_Silent (arm silêncio), TestGeminiCliLegacy_StrictMode_StillWarning (arm always-warning) exercem cada braço; a regra é roteada via applyRuleWarnOnly (nunca applyRule), garantindo que escalação via trackfw.yaml não converte em violation -->
+
+> REQ: `docs/req/REQ-2026-11-17-guard-de-credencial-no-google-antigravity-e-revisao-do-suporte-ao-gemini-cli.md`
+> ADR: `docs/adr/ADR-2026-11-18-guard-de-credencial-e-de-git-branch-no-google-antigravity-e-gemini-cli-como-legado.md` (D7)
+
+### O que a regra faz
+
+<!-- trackfw-contract: none reason=comportamento coberto pela anotação de contrato da seção pai (## Regra gemini_cli_legacy) acima — os gates exercem os cinco braços via ValidateUnfiltered -->
+
+`gemini_cli_legacy` (severity padrão `warning`, **nunca** `error` — D7, sempre via `applyRuleWarnOnly`):
+
+Quando o projeto tem guard do Gemini CLI (`.gemini/settings.json` com marcador de credential guard) mas **nenhum** guard do Antigravity (`.agents/hooks.json` com marcador de credential guard), emite um warning:
+
+```
+Gemini CLI is legacy for individual accounts since 2026-06-18 (D7, ADR-2026-11-18): project has Gemini CLI guard (.gemini/settings.json) but no Antigravity guard (.agents/hooks.json); run `trackfw agents install --targets antigravity`
+```
+
+**Lógica de silêncio:**
+- Gemini tem guard **e** Antigravity tem guard → silêncio.
+- Gemini não tem guard (ausente ou ilegível) → silêncio (sem alvo, sem aviso).
+- Nenhum tem guard → silêncio.
+
+**Esta regra é ALWAYS warning.** `applyRuleWarnOnly` impede que `rules: gemini_cli_legacy: error` no `trackfw.yaml` converta o aviso em violation — testado em `TestGeminiCliLegacy_StrictMode_StillWarning`. O `doctor` repete o mesmo aviso via `ValidateGeminiCliLegacyWarningsForDoctor`.
+
+**Implementação:** `internal/validator/validator_gemini_cli_legacy.go` (ML-3C, REQ-2026-11-17).
+Wiring em `ValidateUnfiltered` e `ValidateTagged` em `internal/validator/validator.go`.
+Severity default registrada em `defaultSeverities` como `"warning"` (linha ~264).
+
+### O que ela NÃO cobre
+
+<!-- trackfw-contract: none reason=autodeclaração de limites; nenhuma afirmação de comportamento verificável por gate -->
+
+- Projetos que nunca tiveram guard do Gemini CLI nem do Antigravity — sem aviso (intencionalmente).
+- Falha de leitura de arquivo → tratada como "ausente" → silêncio.
+- Guard do Gemini CLI no escopo global (`~/.gemini/settings.json`) — só o escopo de projeto é verificado.
+
+---
+
+## Regra `antigravity_ide_global_guard` — aviso quando a IDE está instalada sem guard global (D8, ADR-2026-11-18, ML-4E)
+
+<!-- trackfw-contract: gate=internal/validator/validator_antigravity_ide_global_guard_test.go partial=TestAntigravityIDEGlobalGuard_AllThreeConditions_Warns (arm warn), TestAntigravityIDEGlobalGuard_NoIDEDir_Silent (arm silêncio sem IDE), TestAntigravityIDEGlobalGuard_IDEDirIsFile_Silent (arm IDE como arquivo), TestAntigravityIDEGlobalGuard_GlobalGuardPresent_Silent (arm silêncio com global), TestAntigravityIDEGlobalGuard_NoProjectGuard_Silent (arm silêncio sem projeto), TestAntigravityIDEGlobalGuard_ValidateForTest_Warns (arm applyRuleWarnOnly), TestAntigravityIDEGlobalGuard_StrictMode_StillWarning (arm always-warning) exercem cada braço; a regra é roteada via applyRuleWarnOnly (nunca applyRule), garantindo que escalação via trackfw.yaml não converte em violation -->
+
+> REQ: `docs/req/REQ-2026-11-17-guard-de-credencial-no-google-antigravity-e-revisao-do-suporte-ao-gemini-cli.md`
+> ADR: `docs/adr/ADR-2026-11-18-guard-de-credencial-e-de-git-branch-no-google-antigravity-e-gemini-cli-como-legado.md` (D8)
+
+### O que a regra faz
+
+<!-- trackfw-contract: none reason=comportamento coberto pela anotação de contrato da seção pai (## Regra antigravity_ide_global_guard) acima — os gates exercem os sete braços via ValidateForTest e ValidateAntigravityIDEGlobalGuardWarningsWithForTest -->
+
+`antigravity_ide_global_guard` (severity padrão `warning`, **nunca** `error` — D8, sempre via `applyRuleWarnOnly`):
+
+Dispara quando **as três condições** valem:
+
+1. O projeto tem guard de credencial em `.agents/hooks.json`.
+2. A IDE está instalada: `<HomeFor(CLIAntigravity)>/.antigravity-ide` é diretório (medido no macOS 2.6.0 e 2.7.0; Windows não medido).
+3. O `hooks.json` global (`~/.gemini/config/hooks.json`) **não** tem guard de credencial.
+
+Mensagem emitida:
+
+```
+Antigravity IDE ignores the project hook .agents/hooks.json (measured on 2.6.0 and 2.7.0, ADR-2026-11-18 D8); only the global guard protects it — run `trackfw update harness --targets antigravity-credential-guard --install-missing` (<display-path>)
+```
+
+**Lógica de silêncio:**
+- Projeto não tem guard → silêncio (condição 1 não atendida).
+- IDE não instalada (`~/.antigravity-ide` ausente ou não-diretório) → silêncio.
+- Global tem guard → silêncio (usuário já protegido).
+- Home irresolvível → silêncio.
+
+**Esta regra é ALWAYS warning.** `applyRuleWarnOnly` impede que `rules: antigravity_ide_global_guard: error` no `trackfw.yaml` converta o aviso em violation — testado em `TestAntigravityIDEGlobalGuard_StrictMode_StillWarning`. O `doctor` repete o mesmo aviso via `ValidateAntigravityIDEGlobalGuardWarningsForDoctor`. O `agents install` e o `init` imprimem o aviso em stderr quando o hook de projeto é gravado.
+
+**Implementação:** `internal/validator/validator_antigravity_ide_global_guard.go` (ML-4E, REQ-2026-11-17).
+Wiring em `ValidateUnfiltered` e `validateUnfilteredTagged` em `internal/validator/validator.go`.
+Severity default registrada em `defaultSeverities` como `"warning"`.
+
+### O que ela NÃO cobre
+
+<!-- trackfw-contract: none reason=autodeclaração de limites; nenhuma afirmação de comportamento verificável por gate -->
+
+- IDE do Antigravity no Windows — caminho `~/.antigravity-ide` não foi medido nessa plataforma.
+- Projetos sem guard do Antigravity em `.agents/hooks.json` — sem aviso (condição 1 não atendida).
+- Falha de leitura do global hooks.json → tratada como "ausente" → condição 3 atendida → warning emitido (conservador: prefere avisar).
+- Guard do Antigravity no escopo global apenas (sem `.agents/hooks.json`) — sem aviso (a regra exige guard de projeto como pré-condição).

@@ -3259,3 +3259,312 @@ func TestUpdate_AgentRulesBlockContainsENLifecycleMarkers(t *testing.T) {
 		t.Error("user content below the managed block was lost after Update")
 	}
 }
+
+// --- Antigravity global guard tests (ML-3B2 REQ-2026-11-17) ---
+
+// TestHarnessAntigravityCredentialGuard_MemberExplicit asserts that
+// HarnessTargetIDs contains "antigravity-credential-guard" explicitly.
+//
+// Conclusion (ML-3B2): "antigravity-credential-guard" is a declared member
+// of HarnessTargetIDs; FAILS if buildHarnessTargetIDs does not add it for
+// the "antigravity" tool.
+func TestHarnessAntigravityCredentialGuard_MemberExplicit(t *testing.T) {
+	for _, id := range HarnessTargetIDs {
+		if id == "antigravity-credential-guard" {
+			return
+		}
+	}
+	t.Fatalf("HarnessTargetIDs does not contain %q; full list: %v", "antigravity-credential-guard", HarnessTargetIDs)
+}
+
+// TestHarnessAntigravityGitBranchGuard_MemberExplicit asserts that
+// HarnessTargetIDs contains "antigravity-git-branch-guard" explicitly.
+//
+// Conclusion (ML-3B2): "antigravity-git-branch-guard" is a declared member
+// of HarnessTargetIDs; FAILS if buildHarnessTargetIDs does not add it for
+// the "antigravity" tool.
+func TestHarnessAntigravityGitBranchGuard_MemberExplicit(t *testing.T) {
+	for _, id := range HarnessTargetIDs {
+		if id == "antigravity-git-branch-guard" {
+			return
+		}
+	}
+	t.Fatalf("HarnessTargetIDs does not contain %q; full list: %v", "antigravity-git-branch-guard", HarnessTargetIDs)
+}
+
+// TestHarnessAntigravityCredentialGuard_InstallMissing_WritesHooksJSON asserts
+// that the credential guard target installs ~/.gemini/config/hooks.json with
+// the Antigravity group format and the global credential command.
+//
+// Conclusion (ML-3B2): harnessCredentialGuardTargetAntigravity writes a valid
+// Antigravity group-format file at $HOME/.gemini/config/hooks.json containing
+// the global credential guard command on the three D5 matchers; FAILS without
+// the new target function.
+func TestHarnessAntigravityCredentialGuard_InstallMissing_WritesHooksJSON(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("CODEX_HOME", "")
+
+	report, err := UpdateHarness(UpdateOptions{
+		Targets:        []string{"antigravity-credential-guard"},
+		InstallMissing: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetUpdated {
+		t.Fatalf("state = %q, want updated", report.Targets[0].State)
+	}
+
+	hooksPath := filepath.Join(home, ".gemini", "config", "hooks.json")
+	data, err := os.ReadFile(hooksPath)
+	if err != nil {
+		t.Fatalf("hooks.json not written at %s: %v", hooksPath, err)
+	}
+	var root map[string]interface{}
+	if err := json.Unmarshal(data, &root); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	tfGroup, ok := root["trackfw"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("root[\"trackfw\"] not a map; root keys: %v", root)
+	}
+	preToolUse, ok := tfGroup["PreToolUse"].([]interface{})
+	if !ok || len(preToolUse) == 0 {
+		t.Fatalf("trackfw[\"PreToolUse\"] missing or empty")
+	}
+	// The credential guard command must appear on all three D5 matchers.
+	cmd := guardCredentialGlobalCmdCmdExe
+	if !antigravityPreToolUseHasCommand(preToolUse, antigravityMatcherRunCmd, cmd) {
+		t.Errorf("missing credential guard on matcher %q", antigravityMatcherRunCmd)
+	}
+	if !antigravityPreToolUseHasCommand(preToolUse, antigravityMatcherWrite, cmd) {
+		t.Errorf("missing credential guard on matcher %q", antigravityMatcherWrite)
+	}
+	if !antigravityPreToolUseHasCommand(preToolUse, antigravityMatcherView, cmd) {
+		t.Errorf("missing credential guard on matcher %q", antigravityMatcherView)
+	}
+}
+
+// TestHarnessAntigravityGitBranchGuard_InstallMissing_WritesHooksJSON asserts
+// that the git-branch guard target installs ~/.gemini/config/hooks.json with
+// the global git-branch command on the run_command matcher.
+//
+// Conclusion (ML-3B2): harnessGitBranchGuardTargetAntigravity writes a valid
+// Antigravity group-format file containing the global git-branch guard command;
+// FAILS without the new target function.
+func TestHarnessAntigravityGitBranchGuard_InstallMissing_WritesHooksJSON(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("CODEX_HOME", "")
+
+	report, err := UpdateHarness(UpdateOptions{
+		Targets:        []string{"antigravity-git-branch-guard"},
+		InstallMissing: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State != TargetUpdated {
+		t.Fatalf("state = %q, want updated", report.Targets[0].State)
+	}
+
+	hooksPath := filepath.Join(home, ".gemini", "config", "hooks.json")
+	data, err := os.ReadFile(hooksPath)
+	if err != nil {
+		t.Fatalf("hooks.json not written at %s: %v", hooksPath, err)
+	}
+	var root map[string]interface{}
+	if err := json.Unmarshal(data, &root); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	tfGroup, ok := root["trackfw"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("root[\"trackfw\"] not a map; root keys: %v", root)
+	}
+	preToolUse, ok := tfGroup["PreToolUse"].([]interface{})
+	if !ok || len(preToolUse) == 0 {
+		t.Fatalf("trackfw[\"PreToolUse\"] missing or empty")
+	}
+	cmd := guardGitBranchCmdCmdExe
+	if !antigravityPreToolUseHasCommand(preToolUse, antigravityMatcherGitBranch, cmd) {
+		t.Errorf("missing git-branch guard on matcher %q", antigravityMatcherGitBranch)
+	}
+}
+
+// TestHarnessAntigravityCredentialGuard_Idempotent asserts that running the
+// credential guard target twice on the same file results in TargetSkipped the
+// second time (idempotency).
+//
+// Conclusion (ML-3B2): a second run with an already-canonical file returns
+// TargetSkipped; FAILS if the target appends duplicate entries.
+func TestHarnessAntigravityCredentialGuard_Idempotent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("CODEX_HOME", "")
+
+	run := func() TargetResult {
+		report, err := UpdateHarness(UpdateOptions{
+			Targets:        []string{"antigravity-credential-guard"},
+			InstallMissing: true,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return report.Targets[0]
+	}
+	first := run()
+	if first.State != TargetUpdated {
+		t.Fatalf("first run: state = %q, want updated", first.State)
+	}
+	second := run()
+	if second.State != TargetSkipped {
+		t.Fatalf("second run: state = %q, want skipped (idempotent)", second.State)
+	}
+}
+
+// TestHarnessAntigravityLegIndependence asserts that running the credential guard
+// and git-branch guard targets independently does not corrupt each other's matchers.
+//
+// Conclusion (ML-3B2): running credential-guard alone produces exactly the three
+// credential matchers; running git-branch-guard alone on the existing file adds
+// only the git-branch matcher without touching the credential matchers. FAILS if
+// the helpers bleed into each other's matcher sets.
+func TestHarnessAntigravityLegIndependence(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("CODEX_HOME", "")
+
+	runTarget := func(id string) {
+		t.Helper()
+		report, err := UpdateHarness(UpdateOptions{
+			Targets:        []string{id},
+			InstallMissing: true,
+		})
+		if err != nil {
+			t.Fatalf("UpdateHarness(%q): %v", id, err)
+		}
+		if report.Targets[0].State == TargetFailed {
+			t.Fatalf("UpdateHarness(%q) failed: %s", id, report.Targets[0].Message)
+		}
+	}
+
+	runTarget("antigravity-credential-guard")
+	runTarget("antigravity-git-branch-guard")
+
+	hooksPath := filepath.Join(home, ".gemini", "config", "hooks.json")
+	data, err := os.ReadFile(hooksPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var root map[string]interface{}
+	if err := json.Unmarshal(data, &root); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	tfGroup, _ := root["trackfw"].(map[string]interface{})
+	preToolUse, _ := tfGroup["PreToolUse"].([]interface{})
+
+	credCmd := guardCredentialGlobalCmdCmdExe
+	gitCmd := guardGitBranchCmdCmdExe
+
+	// credential matchers must be present
+	for _, m := range []string{antigravityMatcherRunCmd, antigravityMatcherWrite, antigravityMatcherView} {
+		if !antigravityPreToolUseHasCommand(preToolUse, m, credCmd) {
+			t.Errorf("credential guard missing on matcher %q after leg-independence run", m)
+		}
+	}
+	// git-branch matcher must be present
+	if !antigravityPreToolUseHasCommand(preToolUse, antigravityMatcherGitBranch, gitCmd) {
+		t.Errorf("git-branch guard missing on matcher %q after leg-independence run", antigravityMatcherGitBranch)
+	}
+	// git-branch command must NOT appear on write/view matchers (credential-only matchers)
+	if antigravityPreToolUseHasCommand(preToolUse, antigravityMatcherWrite, gitCmd) {
+		t.Errorf("git-branch guard leaked onto write matcher %q (leg independence violated)", antigravityMatcherWrite)
+	}
+	if antigravityPreToolUseHasCommand(preToolUse, antigravityMatcherView, gitCmd) {
+		t.Errorf("git-branch guard leaked onto view matcher %q (leg independence violated)", antigravityMatcherView)
+	}
+}
+
+// TestHarnessAntigravityCredentialGuard_EnabledFalseRemoved asserts that an
+// existing hooks.json with "enabled":false in the trackfw group gets the flag
+// removed (ML-FA2 / F2 fix) and the credential guard still takes effect.
+//
+// Conclusion (ML-3B2): antigravityHandleEnabledFalse removes "enabled":false from
+// the global file's trackfw group; FAILS if the global target does not call the helper.
+func TestHarnessAntigravityCredentialGuard_EnabledFalseRemoved(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("CODEX_HOME", "")
+
+	configDir := filepath.Join(home, ".gemini", "config")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	existing := `{"trackfw":{"enabled":false,"PreToolUse":[]}}` + "\n"
+	if err := os.WriteFile(filepath.Join(configDir, "hooks.json"), []byte(existing), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var warnBuf strings.Builder
+	report, err := UpdateHarness(UpdateOptions{
+		Targets:        []string{"antigravity-credential-guard"},
+		InstallMissing: true,
+		ErrWriter:      &warnBuf,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Targets[0].State == TargetFailed {
+		t.Fatalf("state = failed: %s", report.Targets[0].Message)
+	}
+
+	data, err := os.ReadFile(filepath.Join(configDir, "hooks.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var root map[string]interface{}
+	if err := json.Unmarshal(data, &root); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	tfGroup, _ := root["trackfw"].(map[string]interface{})
+	if _, hasEnabled := tfGroup["enabled"]; hasEnabled {
+		t.Error("\"enabled\" key still present after target run — antigravityHandleEnabledFalse not called")
+	}
+	if !strings.Contains(warnBuf.String(), "enabled\":false") {
+		t.Errorf("expected warning about enabled:false, got %q", warnBuf.String())
+	}
+}
+
+// antigravityPreToolUseHasCommand is a test helper that checks whether the
+// PreToolUse array contains an entry with the given matcher and command.
+func antigravityPreToolUseHasCommand(preToolUse []interface{}, matcher, cmd string) bool {
+	for _, rawEntry := range preToolUse {
+		entry, ok := rawEntry.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if entry["matcher"] != matcher {
+			continue
+		}
+		hooks, ok := entry["hooks"].([]interface{})
+		if !ok {
+			continue
+		}
+		for _, rawHook := range hooks {
+			hook, ok := rawHook.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if hook["command"] == cmd {
+				return true
+			}
+		}
+	}
+	return false
+}

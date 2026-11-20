@@ -10,11 +10,13 @@ import (
 // cliDetectors maps CLI target IDs (same strings as the catalog, same as
 // --ai-tools values) to a detection predicate and a hook injector. Shared
 // between InjectHooksDetected (detection-based, brownfield) and
-// InjectHooksForTools (name-based, post-install). Adding a 9th CLI here
+// InjectHooksForTools (name-based, post-install). Adding a new CLI here
 // keeps both paths in sync automatically.
 //
-// CLIs without an Inject*Hooks implementation (opencode, antigravity) are
-// intentionally absent — callers that pass unknown names get a silent skip.
+// Detection note for "antigravity": the .agents/ directory is shared with
+// Codex project-scope skills (.agents/skills/). InjectHooksDetected firing
+// for a Codex-skills-only project is accepted (the write is idempotent and
+// harmless); see ADR D6 (REQ-2026-11-17).
 var cliDetectors = map[string]struct {
 	inject func(string) error
 	detect func(string) bool
@@ -71,6 +73,13 @@ var cliDetectors = map[string]struct {
 			return err == nil
 		},
 	},
+	"antigravity": {
+		inject: InjectAntigravityHooks,
+		detect: func(cwd string) bool {
+			info, err := os.Stat(filepath.Join(cwd, ".agents"))
+			return err == nil && info.IsDir()
+		},
+	},
 	// amazonq (ROADMAP-2026-08-14 ML-3A, path fixed 2026-08-14 by apolo-tf):
 	// dispatches InjectAmazonQHooks (git branch guard,
 	// .amazonq/cli-agents/q_cli_default.json) whenever the existing
@@ -89,6 +98,19 @@ var cliDetectors = map[string]struct {
 		detect: func(cwd string) bool {
 			_, err := os.Stat(filepath.Join(cwd, ".amazonq"))
 			return err == nil
+		},
+	},
+	// opencode (ML-5E, REQ-2026-11-17): dispatches InjectOpenCodePlugin when the
+	// .opencode/ directory is present. InjectOpenCodePlugin writes the
+	// trackfw-guard.js CommonJS plugin (embedded via go:embed) to
+	// .opencode/plugins/trackfw-guard.js — the first hook-based guard for OpenCode.
+	// Prior to this ML, opencode was absent from cliDetectors because no Inject*
+	// implementation existed yet. ADR: ADR-2026-11-19-guard-do-trackfw-no-opencode-via-plugin.md
+	"opencode": {
+		inject: InjectOpenCodePlugin,
+		detect: func(cwd string) bool {
+			info, err := os.Stat(filepath.Join(cwd, ".opencode"))
+			return err == nil && info.IsDir()
 		},
 	},
 }
@@ -116,7 +138,7 @@ func InjectHooksDetected(cwd string) error {
 // Use this after writing the CLI's own files (GEMINI.md, .kiro/, etc.) so
 // the injector finds or creates its target directory — it closes the ordering
 // gap in `trackfw init` where Scaffold runs InjectHooksDetected BEFORE
-// installAITools creates the detection signals, leaving 7 of 8 CLIs without
+// installAITools creates the detection signals, leaving 7 of 9 CLIs without
 // guard hooks on the first run. InjectKiroHooks calls MkdirAll(.kiro/hooks/)
 // itself, so Kiro cause (b) — global scope never creating .kiro/ in the
 // project — is also closed here.
@@ -124,7 +146,7 @@ func InjectHooksDetected(cwd string) error {
 // Each injector is idempotent (merge semantics for JSON, dedup for credential
 // guard vs global harness). Double-call with InjectHooksDetected is safe.
 //
-// Unknown tool names (e.g. "opencode", "antigravity") are silently skipped.
+// Unknown tool names (e.g. names not in cliDetectors) are silently skipped.
 // Errors are collected; all tools are attempted before returning.
 func InjectHooksForTools(tools []string, cwd string) error {
 	var errs []string

@@ -1784,6 +1784,114 @@ func TestGuardWiringRemoved_TypeDiferenteDeCommand_Dispara(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------
+// ML-4C2: R-2 Antigravity — type diferente de "command" não conta como fiação
+// --------------------------------------------------------------------------
+
+// TestGuardWiringRemoved_Antigravity_TypeNaoCommand_Dispara afirma: quando uma
+// entrada Antigravity tem o comando de guard na chave "command" mas com
+// "type":"notification" (ou qualquer valor != "command"), o runtime não executa
+// o hook — a entrada NÃO conta como fiação viva — a regra guard_wiring_removed
+// deve emitir violação nomeando o arquivo .agents/hooks.json.
+//
+// Conclusão afirmada (Regra Dura de Reconciliação, ML-4C2):
+//
+//	guardWiringExtractTuples filtra tuples pelo campo "type":"command" no walker
+//	do Antigravity; entradas com type != "command" são ignoradas.
+//
+// Prova de mordida: sem o filtro em typeStr no callback de WalkAntigravityEntries
+// em guardWiringExtractTuples, a entrada com type:"notification" é aceita como
+// tuple de disk — equal ao tuple de origin → zero violations → teste falha em
+// hasViolation.
+func TestGuardWiringRemoved_Antigravity_TypeNaoCommand_Dispara(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir, "main")
+
+	credCmd := guardExpectedLine("credential", guardShellFamilyCmdExe)
+	// Origin: canonical Antigravity hooks.json with type:"command" (guard is wired).
+	originHook := fmt.Sprintf(`{
+  "trackfw": {
+    "PreToolUse": [
+      {"matcher": "run_command|manage_task", "hooks": [{"type": "command", "command": %q}]}
+    ]
+  }
+}`, credCmd)
+
+	initOriginMainWithArtifacts(t, dir, "req_dir: docs/req\n", map[string]string{
+		".agents/hooks.json": originHook,
+	})
+
+	// Disk: same command present but type changed to "notification" — runtime will NOT execute.
+	diskHook := fmt.Sprintf(`{
+  "trackfw": {
+    "PreToolUse": [
+      {"matcher": "run_command|manage_task", "hooks": [{"type": "notification", "command": %q}]}
+    ]
+  }
+}`, credCmd)
+	writeFile(t, dir, ".agents/hooks.json", diskHook)
+
+	chdir(t, dir)
+	t.Cleanup(func() { currentOriginMain = originMainAnchor{} })
+
+	msgs, err := validateGuardWiringRemoved()
+	if err != nil {
+		t.Fatalf("validateGuardWiringRemoved: %v", err)
+	}
+	if !hasViolation(msgs, "guard_wiring_removed") {
+		t.Fatalf("Antigravity type:notification — expected guard_wiring_removed violation; msgs=%v", msgs)
+	}
+	if !hasViolation(msgs, ".agents/hooks.json") {
+		t.Errorf("Antigravity type:notification — expected .agents/hooks.json named; msgs=%v", msgs)
+	}
+}
+
+// TestGuardWiringRemoved_Antigravity_TypeCommand_NaoDispara afirma (contra-braço):
+// quando uma entrada Antigravity tem type:"command" correto, a fiação é contada como
+// presente — guard_wiring_removed NÃO deve emitir violação.
+//
+// Conclusão afirmada (Regra Dura de Reconciliação, ML-4C2):
+//
+//	type:"command" é a única forma que conta como fiação viva no Antigravity; o
+//	contador-braço verifica que o filtro não é over-strict.
+//
+// Prova de mordida: se o filtro erroneamente rejeitar type:"command" também, a
+// violação seria emitida e este teste falharia em hasNoViolation.
+func TestGuardWiringRemoved_Antigravity_TypeCommand_NaoDispara(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir, "main")
+
+	credCmd := guardExpectedLine("credential", guardShellFamilyCmdExe)
+	// Origin: canonical with type:"command".
+	originHook := fmt.Sprintf(`{
+  "trackfw": {
+    "PreToolUse": [
+      {"matcher": "run_command|manage_task", "hooks": [{"type": "command", "command": %q}]}
+    ]
+  }
+}`, credCmd)
+
+	initOriginMainWithArtifacts(t, dir, "req_dir: docs/req\n", map[string]string{
+		".agents/hooks.json": originHook,
+	})
+
+	// Disk: identical (type:"command") — guard is wired, no violation expected.
+	writeFile(t, dir, ".agents/hooks.json", originHook)
+
+	chdir(t, dir)
+	t.Cleanup(func() { currentOriginMain = originMainAnchor{} })
+
+	msgs, err := validateGuardWiringRemoved()
+	if err != nil {
+		t.Fatalf("validateGuardWiringRemoved: %v", err)
+	}
+	for _, m := range msgs {
+		if strings.Contains(m, "guard_wiring_removed") && strings.Contains(m, ".agents/hooks.json") {
+			t.Fatalf("Antigravity type:command (counter-arm) — unexpected violation; msg=%q", m)
+		}
+	}
+}
+
+// --------------------------------------------------------------------------
 // ML-2C: Kiro D7 sem recursão — guard em metadata não dispara D7
 // --------------------------------------------------------------------------
 

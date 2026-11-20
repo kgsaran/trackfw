@@ -2,8 +2,8 @@
 status: Open
 date: 2026-11-17
 author: "zeus-tf (pedido do KG)"
-adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-11-17-guard-de-credencial-no-google-antigravity-e-revisao-do-suporte-ao-gemini-cli.md"
+adr: "docs/adr/ADR-2026-11-18-guard-de-credencial-e-de-git-branch-no-google-antigravity-e-gemini-cli-como-legado.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-11-17-guard-de-credencial-no-google-antigravity-e-revisao-do-suporte-ao-gemini-cli.md"
 ---
 
 # REQ: Guard de credencial no Google Antigravity e revisão do suporte ao Gemini CLI
@@ -30,30 +30,36 @@ Descoberto durante a REQ-2026-11-15 (Windows, ML-4A). Fica em REQ própria porqu
 agente novo, e não comportamento de plataforma.
 
 ## Acceptance Criteria
-- [ ] Medido, em fonte primária (documentação oficial e binário instalado): o Gemini CLI atual ainda executa shell/ferramentas?
+- [x] Medido, em fonte primária (documentação oficial e binário instalado): o Gemini CLI atual ainda executa shell/ferramentas?
   Se não, desde qual versão. A medição tem um contra-braço.
-- [ ] Medido: o Antigravity tem mecanismo de hook ou interceptação antes de executar comando (nome do evento, formato, arquivo,
+- [x] Medido: o Antigravity tem mecanismo de hook ou interceptação antes de executar comando (nome do evento, formato, arquivo,
   escopo projeto/global, shell usado no Windows e no macOS). Se não tiver, isso fica escrito com a fonte, e a REQ define o que o
   trackfw entrega no lugar (por exemplo, um aviso no `doctor`/`validate` de que o Antigravity roda sem guard).
-- [ ] Se houver hook: `trackfw init`/`update` gravam o guard de credencial para o Antigravity, e o `doctor` audita no mesmo
+- [x] Se houver hook: `trackfw init`/`update` gravam o guard de credencial para o Antigravity, e o `doctor` audita no mesmo
   caminho. Teste e medição real no Antigravity com um segredo fake bloqueado e um comando inócuo liberado.
-- [ ] Decisão registrada em ADR sobre o Gemini CLI: manter, marcar como legado ou remover os hooks. Se a decisão for remover,
+- [x] Decisão registrada em ADR sobre o Gemini CLI: manter, marcar como legado ou remover os hooks. Se a decisão for remover,
   ela inclui a migração das instalações existentes.
-- [ ] `docs/cli-parity.md` e o catálogo refletem o estado medido.
+- [x] `docs/cli-parity.md` e o catálogo refletem o estado medido.
+- [x] OpenCode (Wave 5): plugin medido no binário real. Se ele bloquear, `init`/`update`/`agents install` gravam o guard de
+  credencial e de git-branch, o `validate`/`doctor` auditam e o `update harness` reporta `missing`. Se não bloquear, a
+  limitação fica medida e escrita no ADR.
 
 ## Negative scope
 - Não altera o comportamento de Windows de outros CLIs (isso é da REQ-2026-11-15).
-- Não cria guard para OpenCode, mesmo sendo o outro CLI sem hook. Se a investigação mostrar a mesma causa, ele entra como ML
-  desta REQ, pela Regra Dura de Causa Raiz, mas não está no escopo inicial.
+- ~~Não cria guard para OpenCode~~ — **revogado em 2026-11-19 (decisão do KG, issue #691):** a investigação mostrou a
+  mesma causa (o OpenCode é o único alvo do catálogo sem hook; `hooks.go:16` nomeava os dois). Ele entra na Wave 5 desta
+  REQ, que começa medindo se um plugin do OpenCode consegue bloquear de verdade. O mecanismo é outro (plugin JS/TS com
+  `tool.execute.before`, não hook JSON + shell).
 - Não remove o suporte ao Gemini CLI sem a ADR do critério acima.
 
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->
-ADR: 
+ADR: docs/adr/ADR-2026-11-18-guard-de-credencial-e-de-git-branch-no-google-antigravity-e-gemini-cli-como-legado.md
+ADR (Wave 5, OpenCode): docs/adr/ADR-2026-11-19-guard-do-trackfw-no-opencode-via-plugin.md
 
 ## Blocked by ADRs
 <!-- none -->
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/backlog/ROADMAP-2026-11-17-guard-de-credencial-no-google-antigravity-e-revisao-do-suporte-ao-gemini-cli.md
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-11-17-guard-de-credencial-no-google-antigravity-e-revisao-do-suporte-ao-gemini-cli.md
