@@ -246,6 +246,15 @@ sem BOM.
       após `update harness` → silêncio. 7 testes conferidos por nome (`-run ^TestAntigravityIDEGlobalGuard_`). Pins 42→45.
       Desvio aceito: `proof-mac.sh` ganhou trap do `mktemp -d` (gate `check-mktemp-cleanup`).
 - ML-FB — `make quality` com a máquina ociosa e CI verde
+- ML-FB2 — Testes da Wave 4 que reprovam no Windows do CI (apolo-tf) — 🔄 In progress
+  > `windows-full-suites` reprova desde o 1º run do PR #692 (44533169241). Na run 44757700242, o ratchet ML-2A acusa
+  > 3 falhas novas; as outras 5 estão em `.github/windows-known-failures.json`. Causa única: os testes põem o diretório
+  > do IDE ou o esperado sob `HOME`, mas no Windows o resolvedor lê `USERPROFILE`, que o `main_test.go` aponta para outro
+  > temp. É o mesmo mecanismo do D8 do ADR-2026-11-18.
+  **Files affected:** `internal/agentconfig/agentconfig_test.go`, `internal/validator/validator_antigravity_ide_global_guard_test.go`
+  - [ ] `TestAntigravityConfigDir_Default_JoinsHomeDotGeminiConfig`, `TestAntigravityIDEGlobalGuard_ValidateForTest_Warns` e
+    `TestAntigravityIDEGlobalGuard_StrictMode_StillWarning` passam no `windows-full-suites`, sem entrar na lista de falhas conhecidas
+  - [ ] nenhum código de produto alterado; `go test ./internal/agentconfig/ ./internal/validator/` verde no Mac
 
 ## Wave 5 — OpenCode (issue #691; decisão do KG em 2026-11-19, opção a)
 > Mesma causa: o OpenCode é o único alvo do catálogo sem hook (`hooks.go:16`). Mecanismo diferente: plugin JS/TS
