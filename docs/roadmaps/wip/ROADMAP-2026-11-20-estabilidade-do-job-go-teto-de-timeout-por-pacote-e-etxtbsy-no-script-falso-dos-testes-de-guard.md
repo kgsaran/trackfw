@@ -115,8 +115,14 @@ A falha restante do `after` (`PSInheritedState ... guard não rodou`) é da mesm
 > Mesmo sintoma, causa medida diferente do ETXTBSY. Pela Regra Dura, fica neste roadmap.
 > Hipótese: as instâncias paralelas de `pwsh` compartilham o cache de perfil de inicialização (`StartupProfileData-*` sob
 > `$XDG_CACHE_HOME/powershell` ou `~/.cache/powershell`), e uma delas lê o arquivo enquanto outra o grava.
-- [ ] hipótese confirmada ou refutada com medição: onde o `pwsh` grava o cache e se os testes isolam `HOME`/`XDG_CACHE_HOME`
-- [ ] correção só nos testes (por exemplo, cache por invocação), sem retry, skip nem perda de paralelismo
+- [x] onde o cache é gravado, pela fonte do PowerShell: `ConsoleHost.cs` → `ProfileOptimization.StartProfile("StartupProfileData-*")`
+  em `Platform.CacheDirectory` = `$XDG_CACHE_HOME/powershell` (ou `~/.cache/powershell`), conferido no Mac. Os testes não
+  isolavam esse diretório. O Mac (32 pwsh paralelos) não reproduziu a falha; a confirmação vem do estresse no CI
+- [x] correção só nos testes: `newPwshCacheEnv` dá um `XDG_CACHE_HOME` próprio aos 5 pontos que lançam pwsh em
+  `guard_line_shell_test.go`, sem retry, skip nem perda de paralelismo. Pontos verificados pelo zeus e deixados como estão:
+  `fail_closed_d11_behavior_test.go:190` (arquivo sem `t.Parallel()`; os testes paralelos só retomam depois dos
+  sequenciais) e `internal/guard` (`pwsh` só como texto). Desvio do executor: escreveu nota no vault fora do escopo
+  autorizado; o conteúdo foi mantido
 - [ ] job de estresse rodado de novo: `obteve -1` = 0 e `Unhandled exception` = 0 em todos os shards do `after`
 
 ## Wave 2 — Revisão (hefesto-tf)
