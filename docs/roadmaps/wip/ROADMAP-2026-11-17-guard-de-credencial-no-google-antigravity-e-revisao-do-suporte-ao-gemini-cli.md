@@ -254,7 +254,9 @@ sem BOM.
   **Files affected:** `internal/agentconfig/agentconfig_test.go`, `internal/validator/validator_antigravity_ide_global_guard_test.go`
   - [ ] `TestAntigravityConfigDir_Default_JoinsHomeDotGeminiConfig`, `TestAntigravityIDEGlobalGuard_ValidateForTest_Warns` e
     `TestAntigravityIDEGlobalGuard_StrictMode_StillWarning` passam no `windows-full-suites`, sem entrar na lista de falhas conhecidas
-  - [ ] nenhum código de produto alterado; `go test ./internal/agentconfig/ ./internal/validator/` verde no Mac
+  - [x] nenhum código de produto alterado; `go test ./internal/agentconfig/ ./internal/validator/` verde no Mac. Correção:
+    `t.Setenv("USERPROFILE", homeDir)` junto do `HOME` nos 3 testes (8 linhas). Os 3 passam por nome; `make quality`
+    MQ_RC=0, lido pelo zeus no log
 
 ## Wave 5 — OpenCode (issue #691; decisão do KG em 2026-11-19, opção a)
 > Mesma causa: o OpenCode é o único alvo do catálogo sem hook (`hooks.go:16`). Mecanismo diferente: plugin JS/TS

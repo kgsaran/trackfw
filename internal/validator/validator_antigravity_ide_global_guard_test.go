@@ -200,6 +200,10 @@ func TestAntigravityIDEGlobalGuard_ValidateForTest_Warns(t *testing.T) {
 
 	// Get the HOME that setupConcordanceDir set, so we can place the IDE dir there.
 	homeDir := os.Getenv("HOME")
+	// Windows: OSCLIHomeResolver for CLIAntigravity reads USERPROFILE via os.UserHomeDir(),
+	// not HOME. setupConcordanceDir only moved HOME; point USERPROFILE at the same dir so
+	// both channels resolve to the same synthetic home and makeIDEDir lands where the rule looks.
+	t.Setenv("USERPROFILE", homeDir)
 
 	if err := generators.InjectAntigravityHooks(dir); err != nil {
 		t.Fatalf("InjectAntigravityHooks: %v", err)
@@ -238,6 +242,9 @@ func TestAntigravityIDEGlobalGuard_StrictMode_StillWarning(t *testing.T) {
 	t.Setenv("CODEX_HOME", "")
 
 	homeDir := os.Getenv("HOME")
+	// Windows: same USERPROFILE alignment as TestAntigravityIDEGlobalGuard_ValidateForTest_Warns —
+	// OSCLIHomeResolver for CLIAntigravity reads USERPROFILE on Windows; keep it in sync with HOME.
+	t.Setenv("USERPROFILE", homeDir)
 
 	trackfwYAML := "rules:\n  antigravity_ide_global_guard: error\n"
 	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte(trackfwYAML), 0644); err != nil {

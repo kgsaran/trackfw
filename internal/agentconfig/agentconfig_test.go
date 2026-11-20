@@ -560,6 +560,7 @@ func TestOSCLIHomeResolver_WindowsBranch_Antigravity(t *testing.T) {
 func TestAntigravityConfigDir_Default_JoinsHomeDotGeminiConfig(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir) // Windows: os.UserHomeDir() reads USERPROFILE; set equal to HOME so both channels agree
 	t.Setenv("CODEX_HOME", "")
 
 	dir, err := agentconfig.AntigravityConfigDir(agentconfig.DefaultResolver)
