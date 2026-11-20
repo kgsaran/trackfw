@@ -368,7 +368,7 @@ func makeFakeTrackfw(t *testing.T, dir string) {
 		"cat > \"$(dirname \"$0\")/stdin.out\"\n" +
 		"printf '%s' 'motivo-deny-fake' >&2\n" +
 		"exit ${FAKE_RC:-0}\n"
-	if err := os.WriteFile(stub, []byte(content), 0755); err != nil {
+	if err := writeExecutableForTest(stub, []byte(content), 0755); err != nil {
 		t.Fatalf("criando fake trackfw: %v", err)
 	}
 }
@@ -468,7 +468,7 @@ func makeFakeTrackfwCmd(t *testing.T, dir string) {
 		"more > \"%~dp0stdin.out\"\r\n" +
 		"echo motivo-deny-fake>&2\r\n" +
 		"exit /b %FAKE_RC%\r\n"
-	if err := os.WriteFile(stub, []byte(content), 0644); err != nil {
+	if err := writeExecutableForTest(stub, []byte(content), 0644); err != nil {
 		t.Fatalf("criando fake trackfw.cmd: %v", err)
 	}
 }

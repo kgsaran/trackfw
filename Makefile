@@ -8,7 +8,13 @@ build:
 	go build -o $(BUILD_DIR)/$(BINARY) ./cmd/trackfw
 
 test:
-	TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 2m ./...
+	# ML-1A (REQ-2026-11-20, #690): teto por pacote — internal/generators em 5m,
+	# demais pacotes em 2m. Ponto único: quality.yml e release.yml chamam make test.
+	# Guarda de vacuidade: lista de pacotes vazia reprova o alvo.
+	TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 5m ./internal/generators/
+	pkgs=$$(go list ./... | grep -v '^github\.com/kgsaran/trackfw/internal/generators$$'); \
+	[ -n "$$pkgs" ] || { echo 'ERROR: lista de pacotes vazia — verificar go list'; exit 1; }; \
+	TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 2m $$pkgs
 
 # ML-2G (ROADMAP-2026-09-06-perfil-e-aceleracao-do-check-gates-falsify): o alvo
 # `parity` foi dividido em dois -- `parity-rest` (os gates curtos) e

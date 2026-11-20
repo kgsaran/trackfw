@@ -60,7 +60,8 @@ test -s docs/seguranca/2026-11-20-wave0-estabilidade-job-go-threat-model.md
 > Dependências: Wave 0 auditada.
 
 ### ML-1A — Teto por pacote em ponto único (ares-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — auditado: 31 = 30 + 1 pacotes; falsificação nas duas direções (2s reprova, 5s passa, módulo
+sintético); nenhum gate pina a linha antiga; `make parity-rest` rc=0. Custo: os dois conjuntos rodam em sequência
 **Files affected:** `Makefile`, `.github/workflows/quality.yml` (só o job `go`), `.github/workflows/release.yml`
 **Actions:**
 1. Alvo `test` do `Makefile`: `internal/generators` com `-timeout 5m`, demais pacotes (`go list ./...` sem ele) com
@@ -68,13 +69,16 @@ test -s docs/seguranca/2026-11-20-wave0-estabilidade-job-go-threat-model.md
 2. `quality.yml:40` e `release.yml:43`: trocar o `go test -timeout 2m ./...` por `make test`, mantendo o `env`.
 3. Os demais sítios que a Wave 0 marcar como "entra".
 **Acceptance criteria:**
-- [ ] contagem de pacotes: `go list ./... | wc -l` igual à soma dos dois conjuntos do alvo
-- [ ] falsificação: um pacote não-generators com teste que dorme 150 s reprova em 2m; o mesmo sono no generators passa
+- [x] contagem de pacotes: `go list ./... | wc -l` igual à soma dos dois conjuntos do alvo
+- [x] falsificação: um pacote não-generators com teste que dorme 150 s reprova em 2m; o mesmo sono no generators passa
   (medido em módulo temporário ou com `-run`, sem commitar o teste)
-- [ ] `make parity-rest` rc=0 (pins de recipe do `Makefile`)
+- [x] `make parity-rest` rc=0 (pins de recipe do `Makefile`)
 
 ### ML-1B — `ETXTBSY` nos helpers de teste (artemis-tf)
-**Status:** ⬜ Pending
+**Status:** 🔄 In progress — código entregue e auditado: `writeExecutableForTest` sob `ForkLock.RLock()` em S1–S4;
+nenhum teste removido, pulado ou desparalelizado; R1 medido (risco zero: os testes de produto executam `bash script`).
+**Falta:** o braço "antes" não reproduziu (Docker com 1 CPU: 0 falhas em count=50, parallel=64). AC4 corrigido: o
+exit -1 vem do caminho PowerShell (`runInteractive`, sinal), não do POSIX; a causa segue sem medição
 **Files affected:** os `_test.go` enumerados na Wave 0 (começando por `internal/generators/guard_line_shell_test.go`)
 **Actions:**
 1. Gravar o executável sem janela de descritor de escrita aberto durante um fork concorrente. Ponto de partida:
@@ -84,8 +88,8 @@ test -s docs/seguranca/2026-11-20-wave0-estabilidade-job-go-threat-model.md
 3. Investigar a falha com exit -1 e stdin vazio (121b8ce5) e escrever a causa medida.
 **Acceptance criteria:**
 - [ ] antes/depois em Linux com contagem de falhas
-- [ ] nenhum teste removido, pulado ou desparalelizado
-- [ ] Regra de Reconciliação: uma frase por teste novo ou alterado
+- [x] nenhum teste removido, pulado ou desparalelizado
+- [x] Regra de Reconciliação: uma frase por teste novo ou alterado
 
 ## Wave 2 — Revisão (hefesto-tf)
 ### ML-2A — Revisão de qualidade do diff da Wave 1

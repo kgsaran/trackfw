@@ -83,7 +83,7 @@ func makeFakeTrackfwWithoutGuard(t *testing.T) string {
 	content := "#!/usr/bin/env bash\n" +
 		"if [ \"$1\" = \"guard\" ]; then exit 1; fi\n" +
 		"exit 0\n"
-	if err := os.WriteFile(script, []byte(content), 0755); err != nil {
+	if err := writeExecutableForTest(script, []byte(content), 0755); err != nil {
 		t.Fatalf("criando fake trackfw: %v", err)
 	}
 	return dir

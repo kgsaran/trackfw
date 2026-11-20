@@ -40,7 +40,7 @@ jobs:
       # ML-3A (v8): Node e Python removidos — npm/src e pypi/trackfw deletados.
       # check-cli-parity.sh e check-validate-parity.sh removidos — eram gates de
       # paridade cross-runtime que se tornaram DELETAR com a v8.
-      - run: go test -timeout 2m ./...
+      - run: make test
         env:
           TRACKFW_DISABLE_EXTERNAL_COMMANDS: "1"
       - run: go vet ./...
