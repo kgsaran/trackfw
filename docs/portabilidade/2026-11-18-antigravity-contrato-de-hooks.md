@@ -1050,3 +1050,21 @@ Leituras:
 - **Binário antigo no PATH vaza em silêncio.** Com o `trackfw` 11.5.0 do Homebrew primeiro no PATH, o App executou o
   comando com a chave: o 11.5.0 sai 0 para o payload do Antigravity (medido fora do App: 11.5.0 rc=0, 11.7.0 rc=2,
   mesmo payload, cwd `.agents/`). O hook só protege com trackfw ≥ a versão desta REQ.
+
+## 14. Gemini CLI no binário (M12, 2026-11-20, KG) — `gemini` 0.53.0, macOS
+
+Sonda `antigravity-sondas/proof-gemini-m12.sh`, sem chave de API e sem custo (decisão do KG). O prompt pede um `echo` para
+um arquivo marcador, num projeto temporário.
+
+| Braço | Resultado |
+|---|---|
+| M12a, login Google (OAuth) de conta individual | **recusado**: rc=55, `IneligibleTierError: This client is no longer supported for Gemini Code Assist for individuals. To continue using Gemini, please migrate to the Antigravity suite of products`; marker ausente |
+| M12b, contra-braço sem credencial | rc=41, `Please set an Auth method ... GEMINI_API_KEY, GOOGLE_GENAI_USE_VERTEXAI ...`; marker ausente |
+
+O contra-braço separa as duas causas: sem credencial, o erro é de autenticação (rc=41). Com o login individual, a
+credencial é aceita e o **plano** é recusado (rc=55). Para conta individual, o Gemini CLI não executa mais nada. A recusa
+vem do servidor: depende do plano, não da versão do binário.
+
+**Não medido:** o caminho por chave de API (`GEMINI_API_KEY`) e Vertex/Enterprise, que a documentação diz continuarem
+funcionando. O KG não tem chave e não quis custo. A sonda também mostrou que, em pasta não confiável, o `--approval-mode
+yolo` é rebaixado para `default`.

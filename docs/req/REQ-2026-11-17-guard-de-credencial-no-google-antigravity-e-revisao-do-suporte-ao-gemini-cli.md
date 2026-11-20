@@ -30,7 +30,7 @@ Descoberto durante a REQ-2026-11-15 (Windows, ML-4A). Fica em REQ própria porqu
 agente novo, e não comportamento de plataforma.
 
 ## Acceptance Criteria
-- [ ] Medido, em fonte primária (documentação oficial e binário instalado): o Gemini CLI atual ainda executa shell/ferramentas?
+- [x] Medido, em fonte primária (documentação oficial e binário instalado): o Gemini CLI atual ainda executa shell/ferramentas?
   Se não, desde qual versão. A medição tem um contra-braço.
 - [x] Medido: o Antigravity tem mecanismo de hook ou interceptação antes de executar comando (nome do evento, formato, arquivo,
   escopo projeto/global, shell usado no Windows e no macOS). Se não tiver, isso fica escrito com a fonte, e a REQ define o que o

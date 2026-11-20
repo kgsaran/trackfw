@@ -33,7 +33,7 @@ REQ: docs/req/REQ-2026-11-17-guard-de-credencial-no-google-antigravity-e-revisao
 
 ## Acceptance Criteria
 - [x] AC1 — contrato de hook do Antigravity medido em fonte primária e no binário (Mac e Windows)
-- [ ] AC2 — status do Gemini CLI medido com contra-braço
+- [x] AC2 — status do Gemini CLI medido com contra-braço
 - [x] AC3 — ADR com o contrato do Antigravity e a decisão de legado do Gemini
 - [x] AC4 — `init`/`update` gravam guard de credencial e de git-branch para o Antigravity (projeto e global) e
   `doctor`/`validate` auditam no mesmo caminho
@@ -104,7 +104,7 @@ test -s docs/portabilidade/2026-11-18-antigravity-contrato-de-hooks.md
   do threat model não se materializa no `agy` 1.5.11
 
 ### ML-1B — Hook global, home efetivo e App/IDE (bloqueia o ML-3B2)
-**Status:** 🔄 In progress — falta só o braço do Gemini CLI (M12 do contrato), que fecha o AC2
+**Status:** ✅ Done
 **Squad:** zeus-tf + KG
 **Files affected:** `docs/portabilidade/2026-11-18-antigravity-contrato-de-hooks.md` (§11),
 `docs/portabilidade/antigravity-sondas/` (runners do ML-1B)
@@ -117,7 +117,9 @@ test -s docs/portabilidade/2026-11-18-antigravity-contrato-de-hooks.md
   acha o `trackfw` no PATH?
   — Windows App/IDE fora (KG, 2026-11-18, opção b: VM sem App/IDE; residual no ADR); Mac medido (contrato §13): PATH herdado nos dois; App 2.29.0 bloqueia pelo hook de projeto; **IDE 2.6.0 ignora o
   de projeto e bloqueia só pelo global**
-- [ ] Gemini CLI: o binário instalado executa shell com chave de API? (contra-braço: sem chave)
+- [x] Gemini CLI: o binário instalado executa shell? (contra-braço: sem credencial) — contrato §14, 2026-11-20: o 0.53.0
+  recusa conta individual (`IneligibleTierError`, rc=55); o contra-braço dá erro de auth (rc=41). Chave de API não medida
+  (KG sem chave e sem custo)
 
 ## Wave 2 — ADR
 ### ML-2A — ADR do guard no Antigravity e legado do Gemini CLI
