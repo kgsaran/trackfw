@@ -125,6 +125,18 @@ A falha restante do `after` (`PSInheritedState ... guard não rodou`) é da mesm
   autorizado; o conteúdo foi mantido
 - [ ] job de estresse rodado de novo: `obteve -1` = 0 e `Unhandled exception` = 0 em todos os shards do `after`
 
+### ML-1D2 — Cache do pwsh aquecido e só para leitura (artemis-tf)
+**Status:** 🔄 In progress
+> Estresse 44833943635 (ef68cce3): no `after`, `obteve -1` = 0 e `Unhandled exception` = 0 nos 4 shards (no `before`,
+> 690 no shard 1). Mas o cache vazio por chamada põe todo `pwsh` em partida a frio: aquecimento de 0,12 s para 1,48 s.
+> O shard 1 do `after` estourou o prazo de 15 s por chamada (`não executado: /usr/bin/pwsh já estourou o prazo`) e o teto
+> de 20 m da carga focada. A correção trocou um flake por outro.
+- [ ] um único `pwsh` aquece um diretório de cache por processo de teste; depois o diretório fica sem escrita e todas as
+  invocações leem dele (sem escrita concorrente e sem partida a frio), ou alternativa medida melhor
+- [ ] medido: tempo de partida frio × quente × quente só para leitura, e que o `pwsh` não falha quando não consegue gravar
+  o perfil
+- [ ] estresse de novo: `obteve -1` = 0, `Unhandled exception` = 0, nenhum `já estourou o prazo` e nenhum `panic` no `after`
+
 ## Wave 2 — Revisão (hefesto-tf)
 ### ML-2A — Revisão de qualidade do diff da Wave 1
 **Status:** ⬜ Pending
