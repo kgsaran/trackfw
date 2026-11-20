@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-11-17
 author: "zeus-tf (pedido do KG)"
 adr: "docs/adr/ADR-2026-11-18-guard-de-credencial-e-de-git-branch-no-google-antigravity-e-gemini-cli-como-legado.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-11-17-guard-de-credencial-no-google-antigravity-e-revisao-do-suporte-ao-gemini-cli.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-11-17-guard-de-credencial-no-google-antigravity-e-revisao-do-suporte-ao-gemini-cli.md"
 ---
 
 # REQ: Guard de credencial no Google Antigravity e revisão do suporte ao Gemini CLI
 
-> Date: 2026-11-17 | Status: Open
+> Date: 2026-11-17 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -62,4 +62,4 @@ ADR (Wave 5, OpenCode): docs/adr/ADR-2026-11-19-guard-do-trackfw-no-opencode-via
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-11-17-guard-de-credencial-no-google-antigravity-e-revisao-do-suporte-ao-gemini-cli.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-11-17-guard-de-credencial-no-google-antigravity-e-revisao-do-suporte-ao-gemini-cli.md

@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-11-17
 req: "docs/req/REQ-2026-11-17-guard-de-credencial-no-google-antigravity-e-revisao-do-suporte-ao-gemini-cli.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Guard de credencial no Google Antigravity e revisão do suporte ao Gemini CLI
 
-> Created: 2026-11-17 | Status: wip
+> Created: 2026-11-17 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-11-17-guard-de-credencial-no-google-antigravity-e-revisao-do-suporte-ao-gemini-cli.md -->
@@ -292,6 +292,7 @@ Achado: `read` com caminho → guard sai 0 (sem extrator), mesma causa do D5 `vi
 - [x] itens que só o binário responde, listados para o ML-5B
 
 ### ML-5B — Medição no binário real (KG + zeus-tf) — ✅ Done (C7 coberto pelo P3 do ML-5H)
+**Status:** ✅ Done
 - [x] C7 `git commit` cru sob o OpenCode → bloqueado, commits iguais (Mac e Windows). Medido com o plugin do produto no P3 do
   ML-5H (2026-11-20), em vez da sonda. Sem modelo, o payload do
   plugin já dá rc=2 no `guard git-branch` para `git commit`, `git add -A` e `git push` (rc=0 para `ls`) — zeus, 2026-11-19.
@@ -300,9 +301,11 @@ disparando; `trackfw` ausente → bloqueado (ENOENT); `read` com segredo liberad
 desliga o plugin de projeto; plugin global bloqueia sozinho. Dois runs anteriores no Mac (LM Studio desligado; `--log-level
 DEBUG` recusado pela 2.x) não mediram nada e foram descartados.
 ### ML-5C — ADR — ✅ Done: `docs/adr/ADR-2026-11-19-guard-do-trackfw-no-opencode-via-plugin.md` (D1–D6). V1 (1.x) declarado
+**Status:** ✅ Done
 residual, não medido (decisão do KG em 2026-11-19, opção a).
 
 ### ML-5D — Guard em Go: `read` do OpenCode e caminhos congelados (apolo-tf; ADR D3, D4) — ✅ Done
+**Status:** ✅ Done
 **Files affected:** `internal/guard/credential.go`, `internal/guard/payload.go` (só se preciso), `internal/guard/writescope.go`,
 testes em `internal/guard/` (arquivo novo `opencode_test.go`)
 - [x] `hook_source=="opencode" && tool_name=="read"` → camada 2 lê `tool_input.file_path` (regular, mesmo limite): segredo → 2
@@ -311,6 +314,7 @@ testes em `internal/guard/` (arquivo novo `opencode_test.go`)
 - [x] testes de schema das outras CLIs inalterados (13 testes novos; 3 reprovavam antes)
 
 ### ML-5E — Plugin, geração e auditoria (apolo-tf; ADR D1, D2, D4, D5, D6) — ✅ Done (+ corretivo ML-5E2)
+**Status:** ✅ Done
 **Files affected:** asset novo do plugin em `internal/generators/` (go:embed), `internal/generators/hooks.go`, `agentfiles.go`,
 `update.go`, `antigravity_hooks_test.go` (inverter `contra_opencode_still_skips`), `internal/agentconfig/agentconfig.go`,
 `internal/validator/` (auditoria), `internal/commands/doctor.go`, `internal/integrations/`, `internal/auditsurface/`,
@@ -327,11 +331,14 @@ testes em `internal/guard/` (arquivo novo `opencode_test.go`)
   PT → EN; testes que faltavam (validator 9, agentconfig 8, runtime JS 5 braços — rodam no Mac, não pulam; update-parity 5c-2/5c-3).
 
 ### ML-5F — Revisão (hefesto-tf) — ✅ Done — **REPROVA** (`docs/qualidade/2026-11-19-ml-5f-opencode-review.md`): A7 bloqueante
+**Status:** ✅ Done
 (`patch` com alvo no texto pula a autoproteção); A2, A4, A5, A6, A8 baixos; A9 nota
 ### ML-5G — Red team (hades-tf) — ✅ Done — **REPROVA** (`docs/seguranca/2026-11-19-red-team-wave5-opencode.md`): F4 HIGH (escrita
+**Status:** ✅ Done
 de outro plugin em `.opencode/plugins/` ou por `shell`), F2/F8 (caixa e symlink na comparação), F6 (`webfetch`/`grep` fora do
 guard); F1, F3, F5, F7 baixos; VS residual
 ### ML-5I — Corretivo de A7/F1–F8 e notas (apolo-tf; ADR-2026-11-19 D7) — ✅ Done
+**Status:** ✅ Done
 - [x] autoproteção por diretório de plugin, `realpath` + caixa, alvos de patch, precedência única (A7, F2, F4, F5, F7, F8)
 - [x] `validate`/`doctor` acusam plugin estranho e chave `plugin(s)` no `opencode.json(c)` (F4 fix b)
 - [x] `webfetch` e `grep` no guard; `grep` em arquivo regular lido em Go; demais ferramentas nativas mapeadas ou declaradas (F6)
@@ -344,14 +351,17 @@ guard); F1, F3, F5, F7 baixos; VS residual
   cli-parity — só `glob` residual, devolve nomes): corrigir a leitura crua acima e pôr `websearch` (lista do contrato, l. 387) no guard — a consulta exfiltra
   como a URL do `webfetch`
 ### ML-5G2 — Red team rodada 2 (hades-tf) — ✅ Done — **REPROVA**: F1, F2, F3, F6, F7, F8-alvo e F4-write fechados; novos
+**Status:** ✅ Done
 N1 (diretórios protegidos sem `realpath` — symlink de dotfiles), N2 (`a/`/`b/` do diff git escapa), N3 (`validate` não olha o
 global — o D7 do ADR afirmava que olhava); baixos: F5 patch sem cabeçalho libera, F7 campos invertidos, N4 JSONC `/* */` e
 vírgula final
 ### ML-5I3 — Corretivo da rodada 2 (apolo-tf) — ✅ Done
+**Status:** ✅ Done
 - [x] N1, N2, N3 com teste que reprova antes; F5 fail-closed; F7 checa todos os campos de caminho; N4 JSONC completo
   (18 braços JS PASS no Mac, nenhum SKIP; 4 testes Go novos conferidos pelo nome — zeus)
 - [x] `make quality` — `MQ_RC=0` literal reportado pelo apolo; o zeus roda de novo após o ML-5I4
 ### ML-5I4 — Cabeçalhos git de renomeação/cópia no extrator de patch (apolo-tf) — ✅ Done
+**Status:** ✅ Done
 - [x] `diff --git a/X b/Y`, `rename from/to`, `copy from/to` viram alvos; patch misto (`+++` inócuo + rename para
   `.opencode/plugins/`) → bloqueado. Achado do zeus na auditoria do 5I3 (o apolo o listou como residual)
 - [x] `unquoteGitPath` decoda C-string: `\NNN` octal, `\"`, `\\`, etc.; token mal-formado → fail-closed;
@@ -361,19 +371,23 @@ vírgula final
 - [x] `make quality` — `MQ_RC=0` literal (apolo). Nota do zeus: o apolo editou este roadmap contra o handoff; conteúdo
   conferido e mantido.
 ### ML-5I5 — Patch nega por menção ao caminho protegido (apolo-tf) — ✅ Done (+ ML-5I6: menção também nos caminhos
+**Status:** ✅ Done
 decodificados e com octal decodificado — fecha `+++ "z/\056opencode/plugins/x.js"`)
 - [x] residual do 5I4: `git apply -pN` remove qualquer prefixo, então reconhecer cabeçalho por cabeçalho não fecha. Regra nova:
   `patch`/`apply_patch` cujo texto mencione, em qualquer posição e sem caixa, `.opencode/plugin`, `opencode.json` ou o diretório
   de config global (forma crua e `realpath`) → bloqueado, mesmo sem cabeçalho reconhecido
 - [x] 29 braços JS PASS no Mac, nenhum SKIP; `make quality` **MQ_RC=0 lido pelo zeus no log** (365 OK)
 ### ML-5G3 — Red team rodada 3 (hades-tf) — ✅ Done — **REPROVA**: N1, N2, F5, F7, N4 fechados; novos N7 (patch cria symlink;
+**Status:** ✅ Done
 symlink pendurado), N8 (NFD/NFC no macOS), N3-cond (global só checado com `.opencode/`), N9 (apagar/renomear `.opencode`);
 FP-A/FP-B falsos positivos. Decisão do zeus (ADR D8): corrigir os baratos e declarar a classe de truque de caminho em patch
 como residual equivalente ao `shell`, com a detecção como controle — sem rodada 4 para essa classe
 ### ML-5I7 — Corretivo da rodada 3 (apolo-tf; ADR D8) — ✅ Done
+**Status:** ✅ Done
 - [x] N7 (a) e (b), N8, N3-cond, N9 com teste que reprova antes (33 braços JS PASS no Mac, 0 SKIP; 2 testes Go novos);
   `make quality` MQ_RC=0 lido pelo zeus no log (365 OK)
 ### ML-5H — prova real com o plugin do produto (KG) — ✅ Done (2026-11-20)
+**Status:** ✅ Done
 opencode 2.3.2, `anthropic/claude-haiku-5-5`, trackfw da branch em d3bcc446 (hash do `.exe` na VM conferido), 7/7 por
 máquina, Mac e Windows 11 ARM64 iguais (contrato §8.1). Rodou depois do ML-5I7; a rodada 4 do hades foi dispensada pelo D8
 (decisão do KG em 2026-11-20, opção a).
