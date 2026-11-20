@@ -191,6 +191,10 @@ func psProbe(psBin string, timeout time.Duration) (time.Duration, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, psBin, "-NoProfile", "-NonInteractive", "-Command", "exit 0")
+	// Isolar cache JIT (ML-1D): psProbe pode correr com invocações paralelas de pwsh.
+	probeEnv, probeCleanup := newPwshCacheEnv(os.Environ())
+	defer probeCleanup()
+	cmd.Env = probeEnv
 	runErr := cmd.Run()
 	d := time.Since(start)
 	if ctx.Err() == context.DeadlineExceeded {
@@ -578,6 +582,10 @@ func execPSCommand(psBin, command, fakeDir string, fakeRC int, timeout time.Dura
 	if fakeDir != "" {
 		filtered = append(filtered, fmt.Sprintf("FAKE_RC=%d", fakeRC))
 	}
+	// Isolar cache JIT por invocação (ML-1D): cada pwsh recebe XDG_CACHE_HOME próprio para
+	// evitar corrida na escrita de StartupProfileData-* (FileLoadException com nomes embaralhados).
+	filtered, cacheCleanup := newPwshCacheEnv(filtered)
+	defer cacheCleanup()
 	cmd.Env = filtered
 
 	cmd.Stdin = strings.NewReader(stdinPayload)
@@ -627,6 +635,11 @@ func psWarmup(psBin string) (dur time.Duration, err error, fresh bool) {
 			ctx, cancel := context.WithTimeout(context.Background(), psWarmupTimeout)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, psBin, "-NoProfile", "-NonInteractive", "-Command", "exit 0")
+			// Isolar cache JIT (ML-1D): aquecimento também corre com invocações paralelas;
+			// cache isolado garante que warmup e chamadas reais usem o mesmo regime (cold start).
+			warmupEnv, warmupCleanup := newPwshCacheEnv(os.Environ())
+			defer warmupCleanup()
+			cmd.Env = warmupEnv
 			runErr := cmd.Run()
 			d := time.Since(start)
 			if ctx.Err() == context.DeadlineExceeded {
@@ -2031,6 +2044,11 @@ func execPSCommandOpts(psBin, command, fakeDir string, fakeRC int, timeout time.
 		filtered = append(filtered, fmt.Sprintf("FAKE_RC=%d", fakeRC))
 	}
 	filtered = append(filtered, extraEnv...)
+	// Isolar cache JIT por invocação (ML-1D): cada pwsh recebe XDG_CACHE_HOME próprio para
+	// evitar corrida na escrita de StartupProfileData-* (FileLoadException com nomes embaralhados).
+	// Aplica-se após extraEnv para também filtrar XDG_CACHE_HOME de extraEnv, se presente.
+	filtered, cacheCleanup := newPwshCacheEnv(filtered)
+	defer cacheCleanup()
 	cmd.Env = filtered
 
 	cmd.Stdin = strings.NewReader(stdinPayload)
@@ -2951,6 +2969,11 @@ func execPSCommandInteractive(psBin, command, fakeDir string, fakeRC int, timeou
 		filtered = append(filtered, fmt.Sprintf("FAKE_RC=%d", fakeRC))
 	}
 	filtered = append(filtered, extraEnv...)
+	// Isolar cache JIT por invocação (ML-1D): cada pwsh recebe XDG_CACHE_HOME próprio para
+	// evitar corrida na escrita de StartupProfileData-* (FileLoadException com nomes embaralhados).
+	// Aplica-se após extraEnv para também filtrar XDG_CACHE_HOME de extraEnv, se presente.
+	filtered, cacheCleanup := newPwshCacheEnv(filtered)
+	defer cacheCleanup()
 	cmd.Env = filtered
 
 	cmd.Stdin = strings.NewReader(stdinPayload)
