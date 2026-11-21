@@ -27,9 +27,11 @@ package commands
 //     on stderr, not stdout, so the JSON channel is uncontaminated).
 //
 //   TestGlobalInstallWindsurfDoesNotWriteWindsurfFiles
-//     Affirms T5: the entire block 278-298 is gated; with windsurf+global,
+//     Affirms T5: the entire inject block is gated; with windsurf+global,
 //     neither .windsurfrules (via InjectRulesForTool loop) nor
 //     .windsurf/hooks.json (via InjectWindsurfHooks) is created.
+//     Counter-arm affirms D3: --scope project creates .windsurfrules and
+//     .windsurf/hooks.json (InjectWindsurfHooks is not blocked for project scope).
 //
 //   TestGlobalInstallHintDoesNotCiteCwd
 //     Affirms T7: the D2 hint emitted to stderr does not contain the project
@@ -42,6 +44,11 @@ package commands
 //   TestTTYScopeProjectWritesRulesAndHooks
 //     Affirms T1: when the TTY prompt returns "project", opts.scope is set by
 //     resolveScope before the inject block runs, so rules and hooks are written.
+//
+//   TestAntigravityD4ScopeGatesD8Warning
+//     Affirms D4 (ADR-2026-11-21): when all three D8 conditions hold (project
+//     guard, IDE present, global guard absent), --scope project emits the D8
+//     warning to stderr while --scope global does not (inject block gated).
 
 import (
 	"bytes"
@@ -53,6 +60,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kgsaran/trackfw/internal/validator"
 )
 
 // staleContent is a minimal file body with no <!-- trackfw:rules:start -->
@@ -61,6 +70,12 @@ import (
 // real oracle (§1.11 of threat model): if InjectRulesForTool runs, the hash
 // changes; if it is correctly skipped, the hash stays the same.
 const staleContent = "# My Project\n\nThis file has no trackfw rules block.\n"
+
+// hintSentinel is the substring present in every D2 hint message.  Using a
+// shared constant for all positive and negative hint checks ensures that a
+// future reformulation that drops this token does not silently vacate the
+// negative assertions.
+const hintSentinel = "not modified"
 
 // fileSHA256 returns the hex-encoded SHA-256 of the file at path, or "" if the
 // file does not exist.  Any other error causes t.Fatal.
@@ -218,7 +233,7 @@ func TestProjectInstallWritesClaudeRulesAndHooksAndNoHint(t *testing.T) {
 		t.Errorf(".claude/settings.json must be created by --scope project install")
 	}
 	// T8: D2 hint must NOT appear for project scope.
-	if strings.Contains(stderr.String(), "not modified") {
+	if strings.Contains(stderr.String(), hintSentinel) {
 		t.Errorf("D2 hint must not appear for --scope project; stderr: %q", stderr.String())
 	}
 }
@@ -244,7 +259,7 @@ func TestGlobalInstallJsonStdoutIsValid(t *testing.T) {
 		t.Fatalf("stdout is not valid JSON after global --json install: %v\n%s", err, stdout.String())
 	}
 	// D2 hint goes to stderr.
-	if !strings.Contains(stderr.String(), "not modified") {
+	if !strings.Contains(stderr.String(), hintSentinel) {
 		t.Errorf("D2 hint missing from stderr with --json; stderr: %q", stderr.String())
 	}
 }
@@ -276,7 +291,6 @@ func TestGlobalInstallWindsurfDoesNotWriteWindsurfFiles(t *testing.T) {
 	project2, home2 := integrationCommandFixture(t)
 	t.Setenv("XDG_CONFIG_HOME", "")
 	writeGreekIdentity(t, home2)
-	_ = project2
 	cmd2 := newAgentsCmd()
 	cmd2.SetOut(&bytes.Buffer{})
 	cmd2.SetErr(io.Discard)
@@ -313,7 +327,7 @@ func TestGlobalInstallHintDoesNotCiteCwd(t *testing.T) {
 	// Find the hint line in stderr.
 	var hintLine string
 	for _, line := range strings.Split(stderr.String(), "\n") {
-		if strings.Contains(line, "not modified") {
+		if strings.Contains(line, hintSentinel) {
 			hintLine = line
 			break
 		}
@@ -324,18 +338,10 @@ func TestGlobalInstallHintDoesNotCiteCwd(t *testing.T) {
 	if strings.Contains(hintLine, project) {
 		t.Errorf("D2 hint must not contain the project path; hint: %q", hintLine)
 	}
-	// Also assert no absolute path starting with "/" is in the hint line.
-	if strings.Contains(hintLine, "/") && strings.Contains(hintLine, project[:min(len(project), 5)]) {
+	// Also assert no path separator (Unix "/" or Windows "\") is in the hint line.
+	if strings.ContainsAny(hintLine, "/\\") {
 		t.Errorf("D2 hint appears to contain a filesystem path; hint: %q", hintLine)
 	}
-}
-
-// min is a helper for older Go versions without built-in min for int.
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 // ----- TestTTYScopeGlobalDoesNotWriteRulesOrHooks --------------------------
@@ -373,7 +379,7 @@ func TestTTYScopeGlobalDoesNotWriteRulesOrHooks(t *testing.T) {
 	// T3: prompt-returned "global" must be honored by the inject gate.
 	assertHashUnchanged(t, "CLAUDE.md must be byte-identical (TTY prompt → global)", claudeMD, hashBefore)
 	assertFileAbsent(t, ".claude/settings.json must not be created (TTY prompt → global)", settingsJSON)
-	if !strings.Contains(stderr.String(), "not modified") {
+	if !strings.Contains(stderr.String(), hintSentinel) {
 		t.Errorf("D2 hint missing from stderr (TTY → global); stderr: %q", stderr.String())
 	}
 }
@@ -419,7 +425,90 @@ func TestTTYScopeProjectWritesRulesAndHooks(t *testing.T) {
 		t.Errorf(".claude/settings.json must be created when TTY prompt returns project")
 	}
 	// D2 hint must NOT appear for project scope.
-	if strings.Contains(stderr.String(), "not modified") {
+	if strings.Contains(stderr.String(), hintSentinel) {
 		t.Errorf("D2 hint must not appear when prompt returns project; stderr: %q", stderr.String())
+	}
+}
+
+// ----- TestAntigravityD4ScopeGatesD8Warning --------------------------------
+
+// antigravityProjectGuardHooks is a minimal .agents/hooks.json with the
+// credential guard marker.  Schema: hookCmdSchemaAntigravity (map of group →
+// events).  Mirrors the content that InjectAntigravityHooks writes, so the
+// counter-arm in the global fixture satisfies condition 1 (project has guard)
+// without calling the injector.
+const antigravityProjectGuardHooks = `{
+  "trackfw": {
+    "PreToolUse": [
+      {
+        "matcher": "run_command|manage_task",
+        "hooks": [{"type": "command", "command": "trackfw guard credential || exit 2"}]
+      }
+    ]
+  }
+}`
+
+func TestAntigravityD4ScopeGatesD8Warning(t *testing.T) {
+	// ARM 1: --scope project triggers D8 warning via cmd.ErrOrStderr().
+	//
+	// Setup: IDE present, global guard absent → all three D8 conditions met
+	// after InjectHooksForTools writes .agents/hooks.json.
+	_, home := integrationCommandFixture(t)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	if err := os.MkdirAll(filepath.Join(home, ".antigravity-ide"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	// No ~/.gemini/config/hooks.json written → global guard absent.
+
+	var stderrProject bytes.Buffer
+	cmd1 := newAgentsCmd()
+	cmd1.SetOut(&bytes.Buffer{})
+	cmd1.SetErr(&stderrProject)
+	cmd1.SetArgs([]string{"install", "--targets", "antigravity", "--items", "backend", "--scope", "project"})
+	if err := cmd1.Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	const d8marker = "Antigravity IDE ignores"
+	if !strings.Contains(stderrProject.String(), d8marker) {
+		t.Errorf("D4 arm project: D8 warning missing from stderr; stderr: %q", stderrProject.String())
+	}
+
+	// ARM 2: --scope global must NOT trigger D8 warning.
+	//
+	// Same three D8 conditions are arranged so the warning WOULD fire if the
+	// scope guard were absent — proving the gate is what suppresses it.
+	project2, home2 := integrationCommandFixture(t)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	if err := os.MkdirAll(filepath.Join(home2, ".antigravity-ide"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Pre-seed project guard so condition 1 holds even though InjectHooksForTools
+	// never runs for global scope.
+	agentsDir2 := filepath.Join(project2, ".agents")
+	if err := os.MkdirAll(agentsDir2, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agentsDir2, "hooks.json"), []byte(antigravityProjectGuardHooks), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// No ~/.gemini/config/hooks.json written → global guard absent.
+
+	// Verify all three D8 conditions hold so the negative arm is non-vacuous.
+	if msgs := validator.ValidateAntigravityIDEGlobalGuardWarningsForDoctor(project2); len(msgs) == 0 {
+		t.Fatal("D4 arm global: D8 conditions not met in fixture — counter-arm is vacuous; check test setup")
+	}
+
+	var stderrGlobal bytes.Buffer
+	cmd2 := newAgentsCmd()
+	cmd2.SetOut(&bytes.Buffer{})
+	cmd2.SetErr(&stderrGlobal)
+	cmd2.SetArgs([]string{"install", "--targets", "antigravity", "--items", "backend", "--scope", "global"})
+	if err := cmd2.Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(stderrGlobal.String(), d8marker) {
+		t.Errorf("D4 arm global: D8 warning must NOT appear with --scope global; stderr: %q", stderrGlobal.String())
 	}
 }

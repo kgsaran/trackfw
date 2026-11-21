@@ -228,7 +228,7 @@ func executeIntegrationMutation(cmd *cobra.Command, kind integrations.ItemKind, 
 	}
 	agentModels, warnMsg := config.ResolveAgentModels(opts.scope, manager.HomeDir, manager.ProjectRoot)
 	if warnMsg != "" {
-		fmt.Fprintln(os.Stderr, warnMsg)
+		fmt.Fprintln(cmd.ErrOrStderr(), warnMsg)
 	}
 	plans, err := integrations.BuildPlans(catalog, integrations.PlanRequest{
 		Kind: kind, Targets: opts.targets, Items: opts.items, Scope: opts.scope, Surfaces: surfaceMap, Identity: ident,
@@ -248,7 +248,7 @@ func executeIntegrationMutation(cmd *cobra.Command, kind integrations.ItemKind, 
 	}
 	if operation == "install" {
 		manager.OnSkip = func(_ string, reason string) {
-			fmt.Fprintln(os.Stderr, reason)
+			fmt.Fprintln(cmd.ErrOrStderr(), reason)
 		}
 	}
 	switch operation {
@@ -277,7 +277,7 @@ func executeIntegrationMutation(cmd *cobra.Command, kind integrations.ItemKind, 
 	// versioned files in whatever directory the user happens to be in.
 	// InjectRulesForTool no-ops for targets without a rules surface (e.g.
 	// antigravity, kiro) and is idempotent for repeated runs.
-	// opts.scope is read AFTER resolveScope (line 162) so it carries the
+	// opts.scope is read AFTER resolveScope() completes so it carries the
 	// fully-resolved value — the guard is never placed before resolveScope
 	// to avoid reading the unset default of "" (T1/T2 of threat model).
 	// D4 (ADR-2026-11-21): ValidateAntigravityIDEGlobalGuardWarningsForDoctor
@@ -294,13 +294,13 @@ func executeIntegrationMutation(cmd *cobra.Command, kind integrations.ItemKind, 
 		// InjectHooksForTools. Non-fatal: a hook-injection failure must not abort
 		// the install (mirrors installAITools in init.go).
 		if err := generators.InjectHooksForTools(opts.targets, manager.ProjectRoot); err != nil {
-			fmt.Fprintf(os.Stderr, "  ⚠ agent hooks: %v\n", err)
+			fmt.Fprintf(cmd.ErrOrStderr(), "  ⚠ agent hooks: %v\n", err)
 		}
 		// D8 (ADR-2026-11-18, ML-4E): warn if Antigravity was just installed in the project
 		// but the IDE is present and the global hook lacks a credential guard. Non-fatal.
 		if containsAntigravityTarget(opts.targets) {
 			for _, msg := range validator.ValidateAntigravityIDEGlobalGuardWarningsForDoctor(manager.ProjectRoot) {
-				fmt.Fprintf(os.Stderr, "  ⚠ %s\n", msg)
+				fmt.Fprintf(cmd.ErrOrStderr(), "  ⚠ %s\n", msg)
 			}
 		}
 	} else if operation == "install" {
@@ -339,7 +339,7 @@ func executeIntegrationMutation(cmd *cobra.Command, kind integrations.ItemKind, 
 			}
 			seen[name] = true
 			if regErr := config.AppendAgentToConfig(manager.ProjectRoot, yamlPath, name); regErr != nil {
-				fmt.Fprintf(os.Stderr, "warning: could not register agent %q in trackfw.yaml: %v\n", name, regErr)
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not register agent %q in trackfw.yaml: %v\n", name, regErr)
 			}
 		}
 	}

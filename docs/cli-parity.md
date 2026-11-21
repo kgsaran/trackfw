@@ -1297,9 +1297,9 @@ only when **`--scope project`** is resolved.
 **D1 — Global scope writes nothing under `manager.ProjectRoot`.**
 Running `agents install --scope global` (or without `--scope` in non-TTY,
 which resolves to `global`) only installs catalog artifacts into the user's
-home directory. The current working directory is not modified. This is true
-for both `agents install` and `skills install` (the guard is based on
-`opts.scope`, not on the command kind).
+home directory. Rules and hook files under the project root are not written.
+This is true for both `agents install` and `skills install` (the guard is
+based on `opts.scope`, not on the command kind).
 
 **D2 — After a global install, one hint line is printed to stderr.**
 The hint names the two remedies (`trackfw <kind> install --scope project` and
@@ -1317,10 +1317,10 @@ claim is false, so it only fires for `--scope project`.
 With `--json`, stdout carries the machine-readable lifecycle payload unchanged.
 
 **Contract wiring:** `integrations_flags.go`, function
-`executeIntegrationMutation`, block previously at line 278. The guard
-`if operation == "install" && opts.scope == "project"` is evaluated after
-`resolveScope` (the call at line 162) so it reads the fully-resolved scope,
-not the unset default `""` (threat model T1/T2 avoidance).
+`executeIntegrationMutation`, block at the
+`if operation == "install" && opts.scope == "project"` gate. The guard is
+evaluated after the `resolveScope()` call so it reads the fully-resolved
+scope, not the unset default `""` (threat model T1/T2 avoidance).
 
 ### Internal codex-sync paths fixed to `scope: "project"`
 

@@ -108,14 +108,16 @@ O `zz_redteam_scope_global_test.go` de medição foi retirado da árvore.
 - [x] Reimplementa a falsificação a partir do contrato, não do diff; residual declarado
 
 ### ML-2C — Corretivo dos achados da Wave 2 (apolo-tf)
-**Status:** 🔄 In progress
+**Status:** ✅ Done — NB-1..NB-8 corrigidos; as 5 saídas de `executeIntegrationMutation` em `os.Stderr` passaram a
+`cmd.ErrOrStderr()`; `TestAntigravityD4ScopeGatesD8Warning` novo. Contra-braço do arquiteto: sem o gate de escopo, o
+teste do D4 reprova no braço global. `internal/commands` e `make parity-rest` rc=0.
 **Files affected:** `internal/commands/integrations_flags.go`; `internal/commands/integrations_scope_project_writes_test.go`;
 `docs/cli-parity.md`
 **Actions:** NB-1..NB-8 do ML-2A; saídas de `executeIntegrationMutation` em `os.Stderr` passam a `cmd.ErrOrStderr()`
 (NB-3 e R3 do ML-2B), com teste do D4 capturável.
 **Acceptance criteria:**
-- [ ] cada NB corrigido ou justificado no relatório
-- [ ] teste afirma que o aviso D8 não sai com escopo global e sai com project
+- [x] cada NB corrigido ou justificado no relatório
+- [x] teste afirma que o aviso D8 não sai com escopo global e sai com project
 
 **Wave gates:**
 ```bash
