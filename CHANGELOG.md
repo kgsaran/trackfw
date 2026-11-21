@@ -7,6 +7,42 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [11.8.0] - 2026-11-21
+
+O guard do trackfw chega ao Google Antigravity e ao OpenCode, e o Gemini CLI passa a ser tratado como legado para contas individuais (#692, #691). Esta versão também corrige um guard que podia ser desligado por opções herdadas do shell (#687) e fecha a compatibilidade com o Windows (#688).
+
+### ⚠️ Atualize todos os binários antes de rodar `trackfw update`
+
+O `trackfw update` desta versão regrava as linhas de hook do guard na forma nova (#687). Um binário **11.7.0 ou anterior** não reconhece essa forma: o `validate` dele reporta uma violation por linha (6 num projeto com Claude Code, Codex e Gemini CLI, medido) e sai com erro. Atualize o trackfw em CI, hooks e nas máquinas do time antes de rodar o `update`. O caminho inverso não quebra: a 11.8.0 valida sem violations os hooks gerados pela 11.7.0.
+
+### Breaking Changes
+
+Nenhum contrato muda: comandos e flags continuam iguais, e o binário 11.8.0 aceita os hooks gerados por versões anteriores. A incompatibilidade de um binário antigo com os hooks novos está no aviso acima. As regras novas do `validate` são só de aviso e não podem ser escaladas para violação pelo `trackfw.yaml`.
+
+### Added
+
+- **Guard no Google Antigravity:** guard de credencial e de git-branch no projeto (`.agents/hooks.json`) e no global (`~/.gemini/config/hooks.json`; no Windows, sob `USERPROFILE`), auditados pelo `validate` e pelo `doctor` (#692).
+- **Guard no OpenCode via plugin:** `trackfw-guard.js` gerado no projeto e no global. O `validate` e o `doctor` avisam quando o plugin está ausente ou desatualizado, e o `update harness` o reporta como `missing` (#692).
+- **Regra `gemini_cli_legacy`** (sempre aviso): projeto com guard do Gemini CLI e sem guard do Antigravity (#692).
+- **Regra `antigravity_ide_global_guard`** (sempre aviso): a IDE do Antigravity ignora o hook de projeto; o aviso aparece quando ela está instalada sem guard global (#692).
+- **Regra `windows_sh_missing`** (sempre aviso): no Windows sem `sh` no PATH, lista os scripts de conveniência `.sh` do projeto e avisa que os gates do `barrier` não vão rodar; guards e hooks do git não entram (#688).
+
+### Changed
+
+- **Gemini CLI como legado:** o trackfw continua gerando e auditando os guards dele, para quem usa chave de API paga. O login Google individual é recusado pelo próprio Gemini CLI (`IneligibleTierError`) desde a migração para o Antigravity (#692).
+- **Guards globais do Codex** são gravados e auditados onde o Codex lê: `CODEX_HOME` e, no Windows, `USERPROFILE` (#688).
+
+### Fixed
+
+- **Linha de hook do guard resiste a opções herdadas do shell:** `errexit`/`nounset` (`bash -e`, `BASH_ENV`, `SHELLOPTS`) e, no PowerShell, `$ErrorActionPreference='Stop'` e `Set-StrictMode` derrubavam a linha antes de o guard rodar, e o comando era liberado. Rode `trackfw update` para regravar os hooks na forma nova (#687).
+- **Windows:** erros de execução que viravam exit 0 passam a falhar de fato; a forma cmd.exe foi verificada no cmd.exe real (#688).
+
+### Internal
+
+- Job `go` do CI estável: timeout por pacote no `make test`, que o CI e o release passam a chamar, e correção do `Text file busy` e da corrida de cache do `pwsh` nos testes de guard (#694, #690).
+- Agregador `parity` exige `success` de cada job em `needs` (#683); limpeza garantida de `mktemp` nos scripts, com gate próprio (#681).
+- Testes no Windows: skips registrados e verificados por gate, smoke de npm/PyPI e arm64 nativo (#688).
+
 ## [11.7.0] - 2026-11-11
 
 O produto passa a falar inglês: roadmap gerado, mensagens do CLI, dashboard, comandos slash e regras de agente. A saída fica em inglês em qualquer locale (#679). Segunda e última parte da REQ de idioma; o leitor bilíngue saiu na 11.6.0.
