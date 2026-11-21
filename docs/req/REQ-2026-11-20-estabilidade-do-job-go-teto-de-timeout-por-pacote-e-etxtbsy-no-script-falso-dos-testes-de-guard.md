@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-11-20
 author: "zeus-tf (decisões do KG em 2026-11-20)"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-11-20-estabilidade-do-job-go-teto-de-timeout-por-pacote-e-etxtbsy-no-script-falso-dos-testes-de-guard.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-11-20-estabilidade-do-job-go-teto-de-timeout-por-pacote-e-etxtbsy-no-script-falso-dos-testes-de-guard.md"
 ---
 
 # REQ: Estabilidade do job go: teto de timeout por pacote e ETXTBSY no script falso dos testes de guard
 
-> Date: 2026-11-20 | Status: Open
+> Date: 2026-11-20 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -59,4 +59,4 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-11-20-estabilidade-do-job-go-teto-de-timeout-por-pacote-e-etxtbsy-no-script-falso-dos-testes-de-guard.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-11-20-estabilidade-do-job-go-teto-de-timeout-por-pacote-e-etxtbsy-no-script-falso-dos-testes-de-guard.md

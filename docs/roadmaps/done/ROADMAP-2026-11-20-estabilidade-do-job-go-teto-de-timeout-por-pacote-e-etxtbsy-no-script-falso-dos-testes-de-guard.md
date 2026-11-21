@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-11-20
 req: "docs/req/REQ-2026-11-20-estabilidade-do-job-go-teto-de-timeout-por-pacote-e-etxtbsy-no-script-falso-dos-testes-de-guard.md"
 squad: "hades-tf, ares-tf, artemis-tf, hefesto-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, ares-tf, artemis-tf, hefesto-tf"
 
 # Roadmap: Estabilidade do job go: teto de timeout por pacote e ETXTBSY no script falso dos testes de guard
 
-> Created: 2026-11-20 | Status: wip
+> Created: 2026-11-20 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-11-20-estabilidade-do-job-go-teto-de-timeout-por-pacote-e-etxtbsy-no-script-falso-dos-testes-de-guard.md -->
