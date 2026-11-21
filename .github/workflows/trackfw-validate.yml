@@ -1,8 +1,8 @@
 name: trackfw validate
 on:
-  # push so na main. Com o gatilho de lista (push e pull_request juntos), uma
-  # branch do proprio repositorio dispara os DOIS eventos no mesmo commit e o
-  # gate roda em dobro — medido num PR real: 2 execucoes do mesmo job, mesmo SHA.
+  # push on main only. With a combined trigger (push + pull_request), a branch
+  # from the same repository fires BOTH events on the same commit and the gate
+  # runs twice — measured in a real PR: 2 runs of the same job, same SHA.
   push:
     branches: [main]
   pull_request:
