@@ -180,6 +180,7 @@ func TestMain(m *testing.M) {
 
 	code := m.Run()
 	cleanupGuardBinary()
+	cleanupPwshWarmCaches()
 	os.RemoveAll(guardTestHome)
 	os.Exit(code)
 }
