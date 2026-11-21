@@ -1,9 +1,9 @@
 ---
 status: Open
 date: 2026-11-17
-author: ""
-adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-11-17-agents-install-com-scope-global-reescreve-arquivos-de-regras-e-hooks-do-projeto-no-cwd.md"
+author: "zeus-tf (red team ML-FA da REQ-2026-11-15; decisão do KG em 2026-11-21)"
+adr: "docs/adr/ADR-2026-11-21-agents-e-skills-install-com-scope-global-nao-escrevem-no-projeto.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-11-17-agents-install-com-scope-global-reescreve-arquivos-de-regras-e-hooks-do-projeto-no-cwd.md"
 ---
 
 # REQ: agents install com scope global reescreve arquivos de regras e hooks do projeto no cwd
@@ -35,9 +35,11 @@ global — que, pelo nome, promete não tocar no projeto.
 - Não muda `trackfw init` nem `trackfw update` (eles são, por contrato, comandos de projeto).
 - Não muda o conteúdo do bloco de regras gerado, só **quando** ele é escrito.
 
+**Decisão do KG (2026-11-21):** com `--scope global`, o install não escreve nada no projeto (ADR-2026-11-21, D1–D5).
+
 ## Acceptance Criteria
-- [ ] Contrato decidido e escrito em `docs/cli-parity.md`: com `--scope global`, o install escreve ou não as regras e os
-  hooks do projeto; se escreve, o comando avisa qual projeto tocou
+- [ ] Contrato escrito em `docs/cli-parity.md`: com `--scope global` (explícito ou default), `agents install` e
+  `skills install` não escrevem regras nem hooks no projeto e imprimem a dica de `--scope project`/`trackfw update`
 - [ ] Teste com braço e contra-braço: `agents install --scope global` num cwd com `CLAUDE.md`/`AGENTS.md` versionados
   produz exatamente o efeito do contrato; `--scope project` mantém o comportamento atual
 - [ ] Varredura dos outros comandos de escopo global que chamam `InjectRulesForTool`/`InjectHooksForTools`/
@@ -45,11 +47,11 @@ global — que, pelo nome, promete não tocar no projeto.
 
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->
-ADR: 
+ADR: docs/adr/ADR-2026-11-21-agents-e-skills-install-com-scope-global-nao-escrevem-no-projeto.md
 
 ## Blocked by ADRs
 <!-- none -->
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/backlog/ROADMAP-2026-11-17-agents-install-com-scope-global-reescreve-arquivos-de-regras-e-hooks-do-projeto-no-cwd.md
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-11-17-agents-install-com-scope-global-reescreve-arquivos-de-regras-e-hooks-do-projeto-no-cwd.md
