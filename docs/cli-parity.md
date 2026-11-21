@@ -1285,6 +1285,43 @@ command and in `init`'s AI-tools step, the binary prints the resolved
 destination paths (skipped only for `--json`, which is the deterministic
 channel scripts consume instead).
 
+### Global scope does not write project rules or hooks (ADR-2026-11-21)
+
+<!-- trackfw-contract: gate=internal/commands/integrations_scope_project_writes_test.go -->
+
+`agents install` and `skills install` write auxiliary rules files
+(`CLAUDE.md`, `AGENTS.md`, `.windsurfrules`, etc.) and guard-hook files
+(`.claude/settings.json`, `.codex/hooks.json`, `.windsurf/hooks.json`, etc.)
+only when **`--scope project`** is resolved.
+
+**D1 — Global scope writes nothing under `manager.ProjectRoot`.**
+Running `agents install --scope global` (or without `--scope` in non-TTY,
+which resolves to `global`) only installs catalog artifacts into the user's
+home directory. The current working directory is not modified. This is true
+for both `agents install` and `skills install` (the guard is based on
+`opts.scope`, not on the command kind).
+
+**D2 — After a global install, one hint line is printed to stderr.**
+The hint names the two remedies (`trackfw <kind> install --scope project` and
+`trackfw update`) without citing the cwd path. With `--json`, the hint goes
+to stderr so stdout remains valid JSON.
+
+**D3 — `--scope project` is unchanged.** Rules, guard hooks, and the D8
+Antigravity warning are written exactly as before.
+
+**D4 — The D8 Antigravity warning follows the scope.** The warning asserts
+that Antigravity was just installed *in the project*; with global scope that
+claim is false, so it only fires for `--scope project`.
+
+**`--json` choice:** the D2 hint is always sent to `cmd.ErrOrStderr()`.
+With `--json`, stdout carries the machine-readable lifecycle payload unchanged.
+
+**Contract wiring:** `integrations_flags.go`, function
+`executeIntegrationMutation`, block previously at line 278. The guard
+`if operation == "install" && opts.scope == "project"` is evaluated after
+`resolveScope` (the call at line 162) so it reads the fully-resolved scope,
+not the unset default `""` (threat model T1/T2 avoidance).
+
 ### Internal codex-sync paths fixed to `scope: "project"`
 
 <!-- trackfw-contract: gap reason=nenhum gate verifica que a escrita do Codex (install e o re-sync de update) cai em scope=project no binário Go; a seção mesma nota que não é alcançável pela flag pública --scope, então precisaria de fixture dedicada que hoje não existe — antes da v8 a lacuna abrangia os 3 runtimes -->
@@ -10458,7 +10495,7 @@ Antigravity IDE ignores the project hook .agents/hooks.json (measured on 2.6.0 a
 - Global tem guard → silêncio (usuário já protegido).
 - Home irresolvível → silêncio.
 
-**Esta regra é ALWAYS warning.** `applyRuleWarnOnly` impede que `rules: antigravity_ide_global_guard: error` no `trackfw.yaml` converta o aviso em violation — testado em `TestAntigravityIDEGlobalGuard_StrictMode_StillWarning`. O `doctor` repete o mesmo aviso via `ValidateAntigravityIDEGlobalGuardWarningsForDoctor`. O `agents install` e o `init` imprimem o aviso em stderr quando o hook de projeto é gravado.
+**Esta regra é ALWAYS warning.** `applyRuleWarnOnly` impede que `rules: antigravity_ide_global_guard: error` no `trackfw.yaml` converta o aviso em violation — testado em `TestAntigravityIDEGlobalGuard_StrictMode_StillWarning`. O `doctor` repete o mesmo aviso via `ValidateAntigravityIDEGlobalGuardWarningsForDoctor`. O `agents install` e o `init` imprimem o aviso em stderr quando o hook de projeto é gravado (D4, ADR-2026-11-21: em `agents install`, isso ocorre apenas com `--scope project`; install global não grava o hook no projeto e portanto não emite o aviso).
 
 **Implementação:** `internal/validator/validator_antigravity_ide_global_guard.go` (ML-4E, REQ-2026-11-17).
 Wiring em `ValidateUnfiltered` e `validateUnfilteredTagged` em `internal/validator/validator.go`.

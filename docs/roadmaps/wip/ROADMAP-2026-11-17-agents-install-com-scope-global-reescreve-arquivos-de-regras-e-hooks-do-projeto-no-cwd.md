@@ -22,10 +22,10 @@ Varredura em 2026-11-21: nenhuma issue aberta; nenhuma outra REQ aberta com o me
 
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
-- [ ] AC1: contrato D1–D4 escrito em `docs/cli-parity.md` (seção de `agents|skills install`)
-- [ ] AC2: teste com braço e contra-braço: `--scope global` explícito e default não alteram nenhum byte de
+- [x] AC1: contrato D1–D4 escrito em `docs/cli-parity.md` (seção de `agents|skills install`)
+- [x] AC2: teste com braço e contra-braço: `--scope global` explícito e default não alteram nenhum byte de
   `CLAUDE.md`/`AGENTS.md`/hooks versionados no cwd e imprimem a dica; `--scope project` continua escrevendo
-- [ ] AC3: varredura dos demais sítios com escopo global que escrevem regras/hooks no cwd, com o contrato aplicado
+- [x] AC3: varredura dos demais sítios com escopo global que escrevem regras/hooks no cwd, com o contrato aplicado
   (mesma causa, mesma REQ) ou a lista fechada escrita com evidência
 - [ ] AC4: `make quality` rc=0 e CI verde no PR
 
@@ -67,7 +67,10 @@ test -s docs/seguranca/2026-11-21-wave0-scope-global-nao-toca-projeto-threat-mod
 > Dependencies: Wave 0 audited.
 
 ### ML-1A — D1–D4 no install e testes de escopo (apolo-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — bloco pós-install gatado por `opts.scope == "project"` depois do `resolveScope`; dica D2 em
+stderr (`--json` intacto). 9 testes em `integrations_scope_project_writes_test.go`. Contra-braço do arquiteto: sem a
+correção, os 7 braços globais reprovam e os 2 de project passam. Nenhum teste existente afirmava o contrato antigo.
+Gates do apolo: build, vet, `internal/commands`, `i18nguard`/`pathguard`, `check-update-parity.sh` e `make parity-rest`, todos rc=0.
 **Files affected:** `internal/commands/integrations_flags.go`; teste novo em `internal/commands/`; testes existentes
 que afirmam o contrato antigo; `docs/cli-parity.md`; sítios adicionais que o ML-0A listar
 **Actions:**
@@ -78,8 +81,8 @@ que afirmam o contrato antigo; `docs/cli-parity.md`; sítios adicionais que o ML
 4. Atualizar testes e cenários de `scripts/check-gates-falsify.sh` que afirmem o contrato antigo.
 5. Documentar D1–D4 em `docs/cli-parity.md`.
 **Acceptance criteria:**
-- [ ] AC1, AC2 e AC3 da REQ
-- [ ] `go build ./...` e `go test ./internal/commands/` verdes
+- [x] AC1, AC2 e AC3 da REQ
+- [x] `go build ./...` e `go test ./internal/commands/` verdes
 
 **Wave gates:**
 ```bash

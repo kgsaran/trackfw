@@ -272,10 +272,18 @@ func executeIntegrationMutation(cmd *cobra.Command, kind integrations.ItemKind, 
 	// install --targets <tool>`). Restores the behavior the removed
 	// deprecated CLI aliases used to provide (ML-5E of ROADMAP-2026-07-29-
 	// barrier-governanca-e-autoridade-do-orquestrador). Scoped to "install"
-	// only, mirroring the one-shot semantics the old aliases had.
+	// with project scope only (D1, ADR-2026-11-21): global scope must never
+	// write rules or hooks under manager.ProjectRoot — that would alter
+	// versioned files in whatever directory the user happens to be in.
 	// InjectRulesForTool no-ops for targets without a rules surface (e.g.
 	// antigravity, kiro) and is idempotent for repeated runs.
-	if operation == "install" {
+	// opts.scope is read AFTER resolveScope (line 162) so it carries the
+	// fully-resolved value — the guard is never placed before resolveScope
+	// to avoid reading the unset default of "" (T1/T2 of threat model).
+	// D4 (ADR-2026-11-21): ValidateAntigravityIDEGlobalGuardWarningsForDoctor
+	// claims Antigravity was just installed in the project; with global scope
+	// that claim is false, so it is gated here as well.
+	if operation == "install" && opts.scope == "project" {
 		for _, target := range opts.targets {
 			if err := generators.InjectRulesForTool(target, manager.ProjectRoot); err != nil {
 				return fmt.Errorf("install %s auxiliary rules: %w", target, err)
@@ -295,6 +303,16 @@ func executeIntegrationMutation(cmd *cobra.Command, kind integrations.ItemKind, 
 				fmt.Fprintf(os.Stderr, "  ⚠ %s\n", msg)
 			}
 		}
+	} else if operation == "install" {
+		// D2 (ADR-2026-11-21): with global scope, rules and hooks in the current
+		// project are intentionally NOT written. Print a one-line hint to stderr
+		// so the user knows how to update the project if needed.
+		// Sent to cmd.ErrOrStderr() (not os.Stderr) so tests can capture it and
+		// to avoid corrupting JSON output on stdout when --json is used (T6).
+		fmt.Fprintf(cmd.ErrOrStderr(),
+			"Installed globally. Project rules and hooks were not modified. "+
+				"To update the project, run: trackfw %s install --scope project  or  trackfw update\n",
+			kind)
 	}
 	// AC1-AC3, AC8 (ML-2A): register installed agents in trackfw.yaml agents: list
 	// so that by_agent projects stay synchronised without a manual discover --init.
