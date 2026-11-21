@@ -49,9 +49,8 @@ package generators
 //     como pipe criam apenas StartupProfileData-NonInteractive; InteractiveProfile não aparece.
 //     Fato medido; causa (stdin não-TTY) não verificada.
 //
-// Limpeza do template: cleanupPwshWarmCaches() está disponível para TestMain.
-// Pendente: adicionar cleanupPwshWarmCaches() em guard_parity_helper_test.go:TestMain (linha
-// após `cleanupGuardBinary()`, linha 182) — fora do escopo de escrita desta QA.
+// Limpeza do template: cleanupPwshWarmCaches() é chamada em
+// guard_parity_helper_test.go:183, após cleanupGuardBinary() (linha 182).
 // Os templates ficam em $TMPDIR/pwsh-warm-* até serem removidos pelo SO (no CI, o runner
 // descarta o contêiner; no Mac, /tmp é limpo periodicamente).
 //
@@ -69,7 +68,8 @@ import (
 // --- Template de cache por binário -------------------------------------------
 
 // pwshWarmCacheMu guarda pwshWarmCacheByBin para acesso concorrente seguro.
-var pwshWarmCacheMu sync.Mutex
+// RLock em leituras (getPwshWarmCache), Lock em escritas (setPwshWarmCache, cleanupPwshWarmCaches).
+var pwshWarmCacheMu sync.RWMutex
 
 // pwshWarmCacheByBin mapeia psBin → diretório template pré-aquecido.
 // Escrito uma vez (por psWarmup, que usa sync.OnceValues), lido por múltiplas goroutines.
@@ -77,10 +77,10 @@ var pwshWarmCacheMu sync.Mutex
 var pwshWarmCacheByBin = make(map[string]string)
 
 // getPwshWarmCache retorna o diretório template para psBin, ou "" se não existir.
-// Seguro para leituras concorrentes via mutex.
+// Seguro para leituras concorrentes via RLock.
 func getPwshWarmCache(psBin string) string {
-	pwshWarmCacheMu.Lock()
-	defer pwshWarmCacheMu.Unlock()
+	pwshWarmCacheMu.RLock()
+	defer pwshWarmCacheMu.RUnlock()
 	return pwshWarmCacheByBin[psBin]
 }
 
@@ -109,11 +109,7 @@ func newPwshWarmTemplate() (string, error) {
 
 // cleanupPwshWarmCaches remove os diretórios template por binário.
 // Destinado para TestMain: chamar após m.Run().
-//
-// Pendente: adicionar em guard_parity_helper_test.go:TestMain, linha após
-// cleanupGuardBinary() (linha 182):
-//
-//	cleanupPwshWarmCaches()
+// Chamado em guard_parity_helper_test.go:183, após cleanupGuardBinary() (linha 182).
 func cleanupPwshWarmCaches() {
 	pwshWarmCacheMu.Lock()
 	dirs := make([]string, 0, len(pwshWarmCacheByBin))

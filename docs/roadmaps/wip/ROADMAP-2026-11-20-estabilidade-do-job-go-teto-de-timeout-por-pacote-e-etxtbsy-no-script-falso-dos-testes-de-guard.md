@@ -144,9 +144,11 @@ A falha restante do `after` (`PSInheritedState ... guard não rodou`) é da mesm
 
 ## Wave 2 — Revisão (hefesto-tf)
 ### ML-2A — Revisão de qualidade do diff da Wave 1
-**Status:** ⬜ Pending
+**Status:** ✅ Done — APROVA todos os ACs, sem bloqueante. F2 (comentário desatualizado) e F3 (`RLock` na leitura do
+mapa) corrigidos (`-race` rc=0). F1 (pipeline sem `pipefail` no `Makefile`) fica registrado: a guarda de vacuidade
+cobre a falha total do `go list`, e ele não falha pela metade
 **Files affected:** `docs/qualidade/2026-11-20-estabilidade-job-go-review.md`
-- [ ] parecer com APROVA/REPROVA por AC
+- [x] parecer com APROVA/REPROVA por AC
 
 ## Fechamento
 ### ML-FB — `make quality` e CI verde
