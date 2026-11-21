@@ -129,7 +129,8 @@ test -s docs/seguranca/2026-11-21-red-team-scope-global-nao-toca-projeto.md
 > Dependencies: Wave 2 audited.
 
 ### ML-FB — make quality e CI (zeus-tf)
-**Status:** ⬜ Pending
+**Status:** 🔄 In progress — `make quality` MQ_RC=0 em 2026-11-21 com a máquina ociosa (`internal/commands` 65,1 s;
+gates-falsify 365 OK, 0 FAIL). Falta o CI do PR.
 **Acceptance criteria:**
 - [ ] AC4: `make quality` rc=0 com a máquina ociosa; CI verde no PR
 
