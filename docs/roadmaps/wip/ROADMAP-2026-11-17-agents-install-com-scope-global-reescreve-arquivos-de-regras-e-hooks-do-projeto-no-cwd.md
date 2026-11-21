@@ -94,16 +94,28 @@ TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 5m ./internal/commands/
 > Dependencies: Wave 1 audited.
 
 ### ML-2A — Revisão de qualidade (hefesto-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — APROVA com 8 achados não bloqueantes (NB-1..NB-8), corrigidos no ML-2C.
 **Files affected:** `docs/qualidade/2026-11-21-scope-global-nao-toca-projeto-review.md`
 **Acceptance criteria:**
-- [ ] Parecer escrito; achados bloqueantes corrigidos por ML corretivo
+- [x] Parecer escrito; achados bloqueantes corrigidos por ML corretivo (nenhum bloqueante; NB no ML-2C)
 
 ### ML-2B — Red team (hades-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — APROVA com ressalvas: nenhum bypass em 10 alvos × global com contra-braço de project. R1
+(provenance de `third-party install`) fica fora do D1 por decisão do arquiteto; R3 (`os.Stderr` direto) entra no ML-2C.
+O `zz_redteam_scope_global_test.go` de medição foi retirado da árvore.
 **Files affected:** `docs/seguranca/2026-11-21-red-team-scope-global-nao-toca-projeto.md`
 **Acceptance criteria:**
-- [ ] Reimplementa a falsificação a partir do contrato, não do diff; residual declarado
+- [x] Reimplementa a falsificação a partir do contrato, não do diff; residual declarado
+
+### ML-2C — Corretivo dos achados da Wave 2 (apolo-tf)
+**Status:** 🔄 In progress
+**Files affected:** `internal/commands/integrations_flags.go`; `internal/commands/integrations_scope_project_writes_test.go`;
+`docs/cli-parity.md`
+**Actions:** NB-1..NB-8 do ML-2A; saídas de `executeIntegrationMutation` em `os.Stderr` passam a `cmd.ErrOrStderr()`
+(NB-3 e R3 do ML-2B), com teste do D4 capturável.
+**Acceptance criteria:**
+- [ ] cada NB corrigido ou justificado no relatório
+- [ ] teste afirma que o aviso D8 não sai com escopo global e sai com project
 
 **Wave gates:**
 ```bash
