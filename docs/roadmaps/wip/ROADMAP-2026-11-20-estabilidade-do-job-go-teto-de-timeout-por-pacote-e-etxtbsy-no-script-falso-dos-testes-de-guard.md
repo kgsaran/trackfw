@@ -153,5 +153,5 @@ cobre a falha total do `go list`, e ele não falha pela metade
 ## Fechamento
 ### ML-FB — `make quality` e CI verde
 **Status:** ⬜ Pending
-- [ ] `make quality` MQ_RC=0 lido pelo zeus no log
+- [x] `make quality` MQ_RC=0 lido pelo zeus no log (`internal/generators` 89,1 s)
 - [ ] CI verde no PR, com o log do job `go` mostrando os dois tetos
