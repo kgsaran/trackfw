@@ -23,8 +23,8 @@ Issue: #690 (o PR usa `Closes #690`).
 ## Acceptance Criteria
 - [ ] AC1 — `make test`: `internal/generators` em 5m, demais pacotes em 2m, conjunto de pacotes igual ao `./...`
 - [ ] AC2 — `quality.yml` (job `go`) e `release.yml` chamam `make test`
-- [ ] AC3 — nenhum helper grava e executa binário sob paralelismo sem proteção contra `ETXTBSY`, medido em Linux com `-count`
-- [ ] AC4 — causa da falha exit -1 / stdin vazio medida e escrita
+- [x] AC3 — nenhum helper grava e executa binário sob paralelismo sem proteção contra `ETXTBSY`, medido em Linux com `-count`
+- [x] AC4 — causa da falha exit -1 / stdin vazio medida e escrita
 - [ ] AC5 — `make quality` rc=0 e CI verde
 
 ## Status Legend
@@ -75,7 +75,7 @@ sintético); nenhum gate pina a linha antiga; `make parity-rest` rc=0. Custo: os
 - [x] `make parity-rest` rc=0 (pins de recipe do `Makefile`)
 
 ### ML-1B — `ETXTBSY` nos helpers de teste (artemis-tf)
-**Status:** 🔄 In progress — código entregue e auditado: `writeExecutableForTest` sob `ForkLock.RLock()` em S1–S4;
+**Status:** ✅ Done — medido no estresse (ML-1C, 3 rodadas). Código entregue e auditado: `writeExecutableForTest` sob `ForkLock.RLock()` em S1–S4;
 nenhum teste removido, pulado ou desparalelizado; R1 medido (risco zero: os testes de produto executam `bash script`).
 **Falta:** o braço "antes" não reproduziu (Docker com 1 CPU: 0 falhas em count=50, parallel=64). AC4 corrigido: o
 exit -1 vem do caminho PowerShell (`runInteractive`, sinal), não do POSIX; a causa segue sem medição
@@ -87,7 +87,8 @@ exit -1 vem do caminho PowerShell (`runInteractive`, sinal), não do POSIX; a ca
    contêiner ou VM. Mostrar o `Text file busy` antes e a ausência depois.
 3. Investigar a falha com exit -1 e stdin vazio (121b8ce5) e escrever a causa medida.
 **Acceptance criteria:**
-- [ ] antes/depois em Linux com contagem de falhas
+- [x] antes/depois em Linux com contagem de falhas: `Text file busy` em 3 de 12 shards do `before` (uma ocorrência em cada
+  rodada) e 0 nos `after`
 - [x] nenhum teste removido, pulado ou desparalelizado
 - [x] Regra de Reconciliação: uma frase por teste novo ou alterado
 
@@ -108,10 +109,10 @@ A falha restante do `after` (`PSInheritedState ... guard não rodou`) é da mesm
 - [x] braço `before` (árvore de `origin/main`) e braço `after` (HEAD), no mesmo tipo de runner, com contagem de
   `Text file busy`, `obteve -1` e FAIL por braço
 - [x] o `before` reproduz pelo menos uma falha; se não reproduzir, isso fica escrito e o AC3 não é marcado por ausência
-- [ ] o arquivo sai da branch antes do merge (ML-FB confere)
+- [x] o arquivo sai da branch antes do merge: removido depois da 3ª rodada
 
 ### ML-1D — `pwsh` abortando na inicialização sob paralelismo (artemis-tf) — causa do exit -1 (AC4)
-**Status:** 🔄 In progress
+**Status:** ✅ Done (fechado com o ML-1D2)
 > Mesmo sintoma, causa medida diferente do ETXTBSY. Pela Regra Dura, fica neste roadmap.
 > Hipótese: as instâncias paralelas de `pwsh` compartilham o cache de perfil de inicialização (`StartupProfileData-*` sob
 > `$XDG_CACHE_HOME/powershell` ou `~/.cache/powershell`), e uma delas lê o arquivo enquanto outra o grava.
@@ -123,10 +124,12 @@ A falha restante do `after` (`PSInheritedState ... guard não rodou`) é da mesm
   `fail_closed_d11_behavior_test.go:190` (arquivo sem `t.Parallel()`; os testes paralelos só retomam depois dos
   sequenciais) e `internal/guard` (`pwsh` só como texto). Desvio do executor: escreveu nota no vault fora do escopo
   autorizado; o conteúdo foi mantido
-- [ ] job de estresse rodado de novo: `obteve -1` = 0 e `Unhandled exception` = 0 em todos os shards do `after`
+- [x] job de estresse rodado de novo: `obteve -1` = 0 e `Unhandled exception` = 0 em todos os shards do `after` (44833943635 e
+  44842568713)
 
 ### ML-1D2 — Cache do pwsh aquecido e só para leitura (artemis-tf)
-**Status:** 🔄 In progress
+**Status:** ✅ Done — estresse 44842568713 (4dff64a8): os 4 shards do `after` com `Text file busy`, `obteve -1`,
+`Unhandled exception`, `já estourou o prazo`, FAIL e panic = 0. O `before` voltou a mostrar 1 `Text file busy`
 > Estresse 44833943635 (ef68cce3): no `after`, `obteve -1` = 0 e `Unhandled exception` = 0 nos 4 shards (no `before`,
 > 690 no shard 1). Mas o cache vazio por chamada põe todo `pwsh` em partida a frio: aquecimento de 0,12 s para 1,48 s.
 > O shard 1 do `after` estourou o prazo de 15 s por chamada (`não executado: /usr/bin/pwsh já estourou o prazo`) e o teto
@@ -137,7 +140,7 @@ A falha restante do `after` (`PSInheritedState ... guard não rodou`) é da mesm
 - [x] medido no Mac (10 execuções cada): frio 230 ms, quente+cópia 171 ms, quente só leitura 172 ms; só leitura sai 0,
   sem erro e sem mudar o arquivo; 32 paralelos sem falha, e o contra-braço (cache gravável compartilhado) muda o sha. Itens: tempo de partida frio × quente × quente só para leitura, e que o `pwsh` não falha quando não consegue gravar
   o perfil
-- [ ] estresse de novo: `obteve -1` = 0, `Unhandled exception` = 0, nenhum `já estourou o prazo` e nenhum `panic` no `after`
+- [x] estresse de novo: `obteve -1` = 0, `Unhandled exception` = 0, nenhum `já estourou o prazo` e nenhum `panic` no `after`
 
 ## Wave 2 — Revisão (hefesto-tf)
 ### ML-2A — Revisão de qualidade do diff da Wave 1
