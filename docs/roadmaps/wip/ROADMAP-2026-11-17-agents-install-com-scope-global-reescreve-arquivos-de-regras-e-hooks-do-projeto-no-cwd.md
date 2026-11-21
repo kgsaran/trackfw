@@ -71,8 +71,8 @@ test -s docs/seguranca/2026-11-21-wave0-scope-global-nao-toca-projeto-threat-mod
 stderr (`--json` intacto). 9 testes em `integrations_scope_project_writes_test.go`. Contra-braço do arquiteto: sem a
 correção, os 7 braços globais reprovam e os 2 de project passam. Nenhum teste existente afirmava o contrato antigo.
 Gates do apolo: build, vet, `internal/commands`, `i18nguard`/`pathguard`, `check-update-parity.sh` e `make parity-rest`, todos rc=0.
-**Files affected:** `internal/commands/integrations_flags.go`; teste novo em `internal/commands/`; testes existentes
-que afirmam o contrato antigo; `docs/cli-parity.md`; sítios adicionais que o ML-0A listar
+**Files affected:** `internal/commands/integrations_flags.go`; `internal/commands/integrations_scope_project_writes_test.go`;
+`scripts/check-update-parity.sh` (comentário que afirmava o contrato antigo); `docs/cli-parity.md`
 **Actions:**
 1. Executar o bloco de `integrations_flags.go:277-296` (regras, hooks e aviso D8) só quando o escopo resolvido é
    `project`.
