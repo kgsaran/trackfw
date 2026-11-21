@@ -36,7 +36,12 @@ Varredura em 2026-11-21: nenhuma issue aberta; nenhuma outra REQ aberta com o me
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model and sweep (hades-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — `docs/seguranca/2026-11-21-wave0-scope-global-nao-toca-projeto-threat-model.md`. Sítio único:
+`integrations_flags.go:278-298` (o `InjectWindsurfHooks` interno também injeta regras, então o bloco inteiro é gatado).
+`update`/`uninstall` não injetam; nenhum cenário de `check-gates-falsify.sh` afirma o contrato antigo; só o comentário
+de `check-update-parity.sh:156-159`. Ameaças T1–T9 e residuais R1–R4. Auditoria do arquiteto: R1 (`third-party
+install` grava `.trackfw/thirdparty-provenance.json`) fica fora do D1, que trata de regras e hooks; o hades escreveu
+um `_test.go` de medição fora do escopo do handoff, que foi retirado da árvore.
 **Files affected:** `docs/seguranca/2026-11-21-wave0-scope-global-nao-toca-projeto-threat-model.md` (novo; único arquivo)
 **Actions:**
 1. Enumeration completeness — list every code path where a command running with global scope (explicit or default)
@@ -50,8 +55,8 @@ Varredura em 2026-11-21: nenhuma issue aberta; nenhuma outra REQ aberta com o me
    (regression of D3).
 4. Declared residual.
 **Acceptance criteria:**
-- [ ] The four sections above answered with evidence, not a one-line assertion
-- [ ] No implementation line written for this ML
+- [x] The four sections above answered with evidence, not a one-line assertion
+- [x] No implementation line written for this ML (o `_test.go` de medição foi retirado e não entra no commit)
 
 **Wave gates:**
 ```bash
