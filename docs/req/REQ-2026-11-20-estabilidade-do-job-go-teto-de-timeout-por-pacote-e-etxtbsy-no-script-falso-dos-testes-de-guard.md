@@ -34,15 +34,15 @@ Mesmo sintoma, outra causa, medida nas runs 44635171831 (3ff02a8b) e 44614230783
   chamar `make test`, em vez de repetir o comando.
 
 ## Acceptance Criteria
-- [ ] `make test` roda `internal/generators` com `-timeout 5m` e todos os demais pacotes com `-timeout 2m`. O conjunto
+- [x] `make test` roda `internal/generators` com `-timeout 5m` e todos os demais pacotes com `-timeout 2m`. O conjunto
   de pacotes testados é igual ao do `go test ./...` (contagem medida antes e depois).
-- [ ] O job `go` do `quality.yml` e o passo de teste do `release.yml` chamam `make test`. Não sobra `go test -timeout 2m ./...`
+- [x] O job `go` do `quality.yml` e o passo de teste do `release.yml` chamam `make test`. Não sobra `go test -timeout 2m ./...`
   fora dos módulos de sonda do ML-1A (`quality.yml:361/383`) e do corpus de testdata.
-- [ ] Nenhum helper de teste grava executável e o executa sob paralelismo sem proteção contra `ETXTBSY`. Todos os sítios
+- [x] Nenhum helper de teste grava executável e o executa sob paralelismo sem proteção contra `ETXTBSY`. Todos os sítios
   vêm da enumeração da Wave 0. A correção é medida em Linux com repetição (`-count`), antes e depois.
-- [ ] A falha com exit -1 e stdin vazio (121b8ce5) tem causa medida: ou é a mesma do `ETXTBSY`, ou fica escrita como
+- [x] A falha com exit -1 e stdin vazio (121b8ce5) tem causa medida: ou é a mesma do `ETXTBSY`, ou fica escrita como
   outra causa.
-- [ ] `make quality` rc=0 e CI verde, com o job `go` rodando os dois tetos.
+- [x] `make quality` rc=0 e CI verde, com o job `go` rodando os dois tetos.
 
 ## Negative scope
 - Não divide o pacote `internal/generators` (opção 3 do #690).

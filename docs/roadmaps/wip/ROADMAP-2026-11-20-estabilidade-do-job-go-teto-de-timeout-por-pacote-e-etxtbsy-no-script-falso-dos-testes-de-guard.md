@@ -21,11 +21,11 @@ Ver a REQ: duas causas para o mesmo sintoma (job `go` intermitente nos testes tr
 Issue: #690 (o PR usa `Closes #690`).
 
 ## Acceptance Criteria
-- [ ] AC1 — `make test`: `internal/generators` em 5m, demais pacotes em 2m, conjunto de pacotes igual ao `./...`
-- [ ] AC2 — `quality.yml` (job `go`) e `release.yml` chamam `make test`
+- [x] AC1 — `make test`: `internal/generators` em 5m, demais pacotes em 2m, conjunto de pacotes igual ao `./...`
+- [x] AC2 — `quality.yml` (job `go`) e `release.yml` chamam `make test`
 - [x] AC3 — nenhum helper grava e executa binário sob paralelismo sem proteção contra `ETXTBSY`, medido em Linux com `-count`
 - [x] AC4 — causa da falha exit -1 / stdin vazio medida e escrita
-- [ ] AC5 — `make quality` rc=0 e CI verde
+- [x] AC5 — `make quality` rc=0 e CI verde
 
 ## Status Legend
 ⬜ Pending · 🔄 In progress · ✅ Done · ❌ Blocked
@@ -152,6 +152,6 @@ cobre a falha total do `go list`, e ele não falha pela metade
 
 ## Fechamento
 ### ML-FB — `make quality` e CI verde
-**Status:** ⬜ Pending
+**Status:** ✅ Done
 - [x] `make quality` MQ_RC=0 lido pelo zeus no log (`internal/generators` 89,1 s)
-- [ ] CI verde no PR, com o log do job `go` mostrando os dois tetos
+- [x] CI verde no PR #694 (24/24 em 32d11c35); o log do job `go` mostra `-timeout 5m ./internal/generators/` e `-timeout 2m $pkgs`
