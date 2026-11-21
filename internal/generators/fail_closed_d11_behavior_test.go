@@ -67,7 +67,7 @@ func writeTrackfwStub(t *testing.T, dir string, exitCode int) {
 	t.Helper()
 	stub := filepath.Join(dir, "trackfw")
 	content := fmt.Sprintf("#!/bin/sh\nexit %d\n", exitCode)
-	if err := os.WriteFile(stub, []byte(content), 0755); err != nil {
+	if err := writeExecutableForTest(stub, []byte(content), 0755); err != nil {
 		t.Fatalf("escrever stub trackfw (exitCode=%d): %v", exitCode, err)
 	}
 }
@@ -78,7 +78,7 @@ func writeTrackfwStubCmd(t *testing.T, dir string, exitCode int) {
 	t.Helper()
 	stub := filepath.Join(dir, "trackfw.cmd")
 	content := fmt.Sprintf("@echo off\r\nexit /b %d\r\n", exitCode)
-	if err := os.WriteFile(stub, []byte(content), 0755); err != nil {
+	if err := writeExecutableForTest(stub, []byte(content), 0755); err != nil {
 		t.Fatalf("escrever stub trackfw.cmd (exitCode=%d): %v", exitCode, err)
 	}
 }

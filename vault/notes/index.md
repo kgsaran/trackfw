@@ -3,6 +3,7 @@
 > Ponto de entrada de conhecimento do projeto para agentes e pessoas.
 
 ## Índice
+- [pwsh-jit-cache-corrida-fileloadexception-2026-11-20](pwsh-jit-cache-corrida-fileloadexception-2026-11-20.md) — 🔴 **pwsh paralelos compartilham `$XDG_CACHE_HOME/powershell/StartupProfileData-*` → corrida de escrita → assembly names embaralhados → FileLoadException / exit -1; fix: `newPwshCacheEnv` dá XDG_CACHE_HOME único a cada invocação; HOME intacto** (ML-1D REQ-2026-11-20)
 - [jsruntime-test-node-bin-dir-and-windows-bat-trap-2026-11-19](jsruntime-test-node-bin-dir-and-windows-bat-trap-2026-11-19.md) — 🔴 **macOS: Homebrew coloca `node` e `trackfw` em `/opt/homebrew/bin`; não inclua `nodeBinDir` em `nodeEnvNoTrackfw` ou o real trackfw é encontrado; Windows: `.bat` fake não é achado por `spawnSync` sem `shell:true` — use helper-process pattern (TestMain + cópia do `.exe`)** (ML-5E2)
 - [opencode-write-scope-lowercase-e-credential-write-edit-2026-11-19](opencode-write-scope-lowercase-e-credential-write-edit-2026-11-19.md) — 🔴 **OpenCode lowercase tool names bypassam write-scope Step 4; `path`/`filePath` ≠ `file_path` → falso positivo em todas writes; credential guard deve cobrir Bash|PowerShell + Read + Write|Edit** (ML-5-0 Wave 5)
 - [opencode-path-binary-skew-d5-nao-tagueado-2026-11-19](opencode-path-binary-skew-d5-nao-tagueado-2026-11-19.md) — PATH binary (Homebrew 11.5.0) ≠ `bin/trackfw` (11.7.0 HEAD): D5 `credViewFileScan` não tagueado → T-D5=0 no PATH binary é esperado, não defeito; write/shell guards idênticos em ambas versões (ML-5A, M21)

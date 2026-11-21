@@ -227,7 +227,7 @@ func TestAttentionShellCommandsAndFailSoftWrappers(t *testing.T) {
 	for _, state := range []string{"missing", "failing"} {
 		binDir := t.TempDir()
 		if state == "failing" {
-			if err := os.WriteFile(filepath.Join(binDir, "trackfw"), []byte("#!/bin/sh\nexit 27\n"), 0755); err != nil {
+			if err := writeExecutableForTest(filepath.Join(binDir, "trackfw"), []byte("#!/bin/sh\nexit 27\n"), 0755); err != nil {
 				t.Fatal(err)
 			}
 		}

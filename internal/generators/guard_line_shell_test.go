@@ -191,6 +191,10 @@ func psProbe(psBin string, timeout time.Duration) (time.Duration, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, psBin, "-NoProfile", "-NonInteractive", "-Command", "exit 0")
+	// Isolar cache JIT (ML-1D/ML-1D2): psProbe pode correr com invocações paralelas de pwsh.
+	probeEnv, probeCleanup := newPwshCacheEnv(psBin, os.Environ())
+	defer probeCleanup()
+	cmd.Env = probeEnv
 	runErr := cmd.Run()
 	d := time.Since(start)
 	if ctx.Err() == context.DeadlineExceeded {
@@ -368,7 +372,7 @@ func makeFakeTrackfw(t *testing.T, dir string) {
 		"cat > \"$(dirname \"$0\")/stdin.out\"\n" +
 		"printf '%s' 'motivo-deny-fake' >&2\n" +
 		"exit ${FAKE_RC:-0}\n"
-	if err := os.WriteFile(stub, []byte(content), 0755); err != nil {
+	if err := writeExecutableForTest(stub, []byte(content), 0755); err != nil {
 		t.Fatalf("criando fake trackfw: %v", err)
 	}
 }
@@ -468,7 +472,7 @@ func makeFakeTrackfwCmd(t *testing.T, dir string) {
 		"more > \"%~dp0stdin.out\"\r\n" +
 		"echo motivo-deny-fake>&2\r\n" +
 		"exit /b %FAKE_RC%\r\n"
-	if err := os.WriteFile(stub, []byte(content), 0644); err != nil {
+	if err := writeExecutableForTest(stub, []byte(content), 0644); err != nil {
 		t.Fatalf("criando fake trackfw.cmd: %v", err)
 	}
 }
@@ -578,6 +582,11 @@ func execPSCommand(psBin, command, fakeDir string, fakeRC int, timeout time.Dura
 	if fakeDir != "" {
 		filtered = append(filtered, fmt.Sprintf("FAKE_RC=%d", fakeRC))
 	}
+	// Isolar cache JIT por invocação (ML-1D/ML-1D2): cópia do template pré-aquecido se
+	// disponível; fallback para dir vazio (ML-1D) caso contrário. Elimina corrida na
+	// escrita de StartupProfileData-* e reduz partida fria.
+	filtered, cacheCleanup := newPwshCacheEnv(psBin, filtered)
+	defer cacheCleanup()
 	cmd.Env = filtered
 
 	cmd.Stdin = strings.NewReader(stdinPayload)
@@ -627,8 +636,32 @@ func psWarmup(psBin string) (dur time.Duration, err error, fresh bool) {
 			ctx, cancel := context.WithTimeout(context.Background(), psWarmupTimeout)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, psBin, "-NoProfile", "-NonInteractive", "-Command", "exit 0")
+			// ML-1D2: criar diretório template para este binário. O aquecimento ocorre em
+			// sequência (sync.OnceValues), antes de qualquer chamada paralela — logo, não há
+			// corrida ao escrever o template. newPwshWarmTemplate retorna ("", nil) no Windows
+			// (onde XDG_CACHE_HOME não é usado), mantendo o no-op original do Windows.
+			// Se criar o dir falhar, cair de volta no isolamento por invocação (ML-1D).
+			warmDir, _ := newPwshWarmTemplate()
+			if warmDir != "" {
+				// Usar warmDir como XDG_CACHE_HOME: a execução do pwsh cria o perfil nele.
+				cmd.Env = applyXDGCacheHome(os.Environ(), warmDir)
+			} else {
+				// Windows (warmDir=="") ou falha de MkdirTemp: fallback ML-1D.
+				env, cleanup := newPwshCacheEnv("", os.Environ())
+				defer cleanup()
+				cmd.Env = env
+			}
 			runErr := cmd.Run()
 			d := time.Since(start)
+			if warmDir != "" {
+				if runErr == nil && ctx.Err() == nil {
+					// Aquecimento bem-sucedido: registrar template para uso por copyPwshWarmDir.
+					setPwshWarmCache(psBin, warmDir)
+				} else {
+					// Aquecimento falhou: remover template parcial.
+					_ = os.RemoveAll(warmDir)
+				}
+			}
 			if ctx.Err() == context.DeadlineExceeded {
 				return d, fmt.Errorf("timeout após %.1fs: %w", d.Seconds(), errPSTimeout)
 			}
@@ -2031,6 +2064,11 @@ func execPSCommandOpts(psBin, command, fakeDir string, fakeRC int, timeout time.
 		filtered = append(filtered, fmt.Sprintf("FAKE_RC=%d", fakeRC))
 	}
 	filtered = append(filtered, extraEnv...)
+	// Isolar cache JIT por invocação (ML-1D/ML-1D2): cópia do template pré-aquecido se
+	// disponível; fallback para dir vazio (ML-1D) caso contrário.
+	// Aplica-se após extraEnv para também filtrar XDG_CACHE_HOME de extraEnv, se presente.
+	filtered, cacheCleanup := newPwshCacheEnv(psBin, filtered)
+	defer cacheCleanup()
 	cmd.Env = filtered
 
 	cmd.Stdin = strings.NewReader(stdinPayload)
@@ -2951,6 +2989,13 @@ func execPSCommandInteractive(psBin, command, fakeDir string, fakeRC int, timeou
 		filtered = append(filtered, fmt.Sprintf("FAKE_RC=%d", fakeRC))
 	}
 	filtered = append(filtered, extraEnv...)
+	// Isolar cache JIT por invocação (ML-1D/ML-1D2): cópia do template pré-aquecido se
+	// disponível; fallback para dir vazio (ML-1D) caso contrário.
+	// Aplica-se após extraEnv para também filtrar XDG_CACHE_HOME de extraEnv, se presente.
+	// Medido: com stdin como pipe, pwsh cria StartupProfileData-NonInteractive mesmo sem
+	// -NonInteractive; o template da partida NonInteractive serve as três formas de invocação.
+	filtered, cacheCleanup := newPwshCacheEnv(psBin, filtered)
+	defer cacheCleanup()
 	cmd.Env = filtered
 
 	cmd.Stdin = strings.NewReader(stdinPayload)
