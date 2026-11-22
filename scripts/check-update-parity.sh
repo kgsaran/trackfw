@@ -153,10 +153,11 @@ snapshot_tree() {
 
 # install_claude_agents HOME_DIR — installs the claude agents target into an
 # isolated HOME. Runs from a throwaway scratch cwd under $WORK (removed by
-# the top-level trap), never the caller's cwd: `agents install --scope
-# global` writes CLAUDE.md into the *current project* in addition to the
-# redirected HOME, so without an isolated cwd this gate would mutate
-# whichever repo invoked it.
+# the top-level trap), never the caller's cwd.
+# (Until 11.8.0, `agents install --scope global` also wrote CLAUDE.md into
+# the current project — fixed in REQ-2026-11-17 / ADR-2026-11-21; the
+# isolated cwd is kept as defence-in-depth and to avoid any stray future
+# regression touching the invoking repo.)
 install_claude_agents() {
   local home_dir=$1
   mkdir -p "$home_dir"
