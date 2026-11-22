@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-11-17
 req: "docs/req/REQ-2026-11-17-agents-install-com-scope-global-reescreve-arquivos-de-regras-e-hooks-do-projeto-no-cwd.md"
 squad: "hades-tf, apolo-tf, hefesto-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, hefesto-tf"
 
 # Roadmap: agents install com scope global reescreve arquivos de regras e hooks do projeto no cwd
 
-> Created: 2026-11-17 | Status: wip
+> Created: 2026-11-17 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-11-17-agents-install-com-scope-global-reescreve-arquivos-de-regras-e-hooks-do-projeto-no-cwd.md -->
