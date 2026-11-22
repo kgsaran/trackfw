@@ -46,7 +46,7 @@ export default defineConfig({
           { text: 'Início', link: '/pt/' },
           { text: 'Guia', link: '/pt/guide/getting-started' },
           { text: 'Comandos', link: '/pt/guide/commands' },
-          { text: 'IA Agents', link: '/pt/guide/ai-agents' },
+          { text: 'Agentes de IA', link: '/pt/guide/ai-agents' },
           { text: 'GitHub', link: 'https://github.com/kgsaran/trackfw' },
         ],
         sidebar: {

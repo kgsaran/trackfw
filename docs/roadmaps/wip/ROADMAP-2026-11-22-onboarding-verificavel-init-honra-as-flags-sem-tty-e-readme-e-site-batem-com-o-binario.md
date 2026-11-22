@@ -139,7 +139,14 @@ bash scripts/check-init-preserves-user-config.sh
 ```
 
 ### ML-1D — Corretivo do ML-1C (apolo-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — com YAML inválido, `presentTopLevelKeys` cai no detector antigo
+(`presentTopLevelKeysFallback`). P1–P3 reafirmadas nos dois caminhos (`TestPresentTopLevelKeys_P1P2P3`). Testes de
+ponta a ponta: `TestWriteTrackfwConfig_D2a_QuotedAdrDirs`, `_SpaceBeforeColon`, `_BOM`,
+`TestGenerateLefthookHook_D2a_QuotedPreCommit`, `_InvalidYAMLFallback`. Contra-braço do apolo: com o detector só de
+texto, os 4 primeiros reprovam por duplicata; o último reprova na precondição (`ok`). `internal/generators` rc=0
+(rodado também pelo arquiteto) e `check-init-preserves-user-config.sh` rc=0. Achado de mesma causa no ML-1E: a inserção
+do lefthook compara `line == "pre-commit:"` (`scaffold.go:2359,2421`), então com `"pre-commit":` o `trackfw-validate`
+não é instalado e sai um aviso falso.
 **Files affected:** `internal/generators/scaffold.go`; `internal/generators/trackfw_config_merge_test.go`
 **Actions:**
 1. When `yaml.Node` parsing fails, `presentTopLevelKeys` falls back to the previous text detector (column-0 key before
@@ -151,13 +158,32 @@ bash scripts/check-init-preserves-user-config.sh
    `"pre-commit":` → no second `pre-commit`; invalid `lefthook.yml` with `pre-commit:` → no second block.
 4. Counter-arm: with the old text-only detector, the end-to-end test fails (report the failing names).
 **Acceptance criteria:**
-- [ ] AC1 da REQ (D2a), afirmado de ponta a ponta
-- [ ] `go test ./internal/generators/` e `bash scripts/check-init-preserves-user-config.sh` rc=0
+- [x] AC1 da REQ (D2a), afirmado de ponta a ponta
+- [x] `go test ./internal/generators/` e `bash scripts/check-init-preserves-user-config.sh` rc=0
 
 **Wave gates:**
 ```bash
 TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 5m ./internal/generators/
 bash scripts/check-init-preserves-user-config.sh
+```
+
+### ML-1E — Inserção do lefthook reconhece a chave pelo parse YAML (apolo-tf)
+**Status:** ⬜ Pending
+**Files affected:** `internal/generators/scaffold.go`; `internal/generators/trackfw_config_merge_test.go`
+**Actions:**
+1. Same cause as D2a on the insertion side: `generateLefthookHook` and `lefthookValidatePresent` track the
+   `pre-commit` section with `line == "pre-commit:"` (`scaffold.go:2359,2421`). A top-level key written as
+   `"pre-commit":`, `'pre-commit':` or `pre-commit :` must be recognized as the same section, so `trackfw-validate`
+   is inserted (or detected as present) and no false "no commands: section" warning is printed.
+2. `TestGenerateLefthookHook_D2a_QuotedPreCommit` also asserts that `trackfw-validate` is installed.
+3. Counter-arm: with the exact-string comparison, the test fails.
+**Acceptance criteria:**
+- [ ] `trackfw-validate` instalado e detectado com a chave `pre-commit` em qualquer grafia aceita pelo YAML
+- [ ] `go test ./internal/generators/` rc=0
+
+**Wave gates:**
+```bash
+TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 5m ./internal/generators/
 ```
 
 ### ML-1B — Inglês na raiz do site (afrodite-tf)
@@ -196,10 +222,14 @@ test ! -e site/en
 > Dependencies: Wave 1 audited. ML-2A touches only `site/`; ML-2B touches only `README.md`.
 
 ### ML-2A — Conteúdo do site (afrodite-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done, com corretivo no ML-2C — B.1–B.8, B.10–B.17 e D.2 corrigidos nos dois idiomas; o guia em inglês
+usa as 4 linhas do Quick start do README literalmente (conferido por grep: 2 ocorrências no guia, 1 no README);
+saída do `validate` mostra os 2 avisos reais; brownfield D2 documentado; nav pt "Agentes de IA". Build rc=0. Captura
+do guia em inglês conferida pelo arquiteto. Achados da auditoria, no ML-2C: `adr new`/`req new` sem título sobraram
+na referência de comandos; a nota do `install.ps1` está desatualizada.
 **Files affected:** `site/index.md`; `site/guide/getting-started.md`; `site/guide/commands.md`;
 `site/guide/ai-agents.md`; `site/pt/index.md`; `site/pt/guide/getting-started.md`; `site/pt/guide/commands.md`;
-`site/pt/guide/ai-agents.md`
+`site/pt/guide/ai-agents.md`; `site/.vitepress/config.mts` (só o rótulo "IA Agents" → "Agentes de IA" da nav pt)
 **Actions:** fix in both locales the audit findings B.1–B.8, B.10–B.17 and D.2, with every command run against
 `bin/trackfw` in an isolated temp dir. Output blocks that change every release (`status`) become a functional
 description instead of a literal snapshot. The English getting-started uses the same command lines as the README
@@ -211,6 +241,24 @@ Quick start, so ML-3A can pin both.
 **Wave gates:**
 ```bash
 test -f site/guide/getting-started.md
+```
+
+### ML-2C — Corretivo do ML-2A (afrodite-tf)
+**Status:** ⬜ Pending
+**Files affected:** `site/guide/commands.md`; `site/pt/guide/commands.md`; `site/guide/getting-started.md`;
+`site/pt/guide/getting-started.md`
+**Actions:**
+1. B.1 left in the command reference: `trackfw adr new` and `trackfw req new` without a title (`commands.md:261,295`
+   in both locales) get the positional title, as in the guide.
+2. Stale note at `getting-started.md:38` (both locales): `install.ps1` is already a release asset (measured on
+   v11.8.1); the note says it ships "after 11.1.0" and tells Windows users to avoid it.
+**Acceptance criteria:**
+- [ ] `grep -nE 'trackfw (adr|req) new$' site/guide/*.md site/pt/guide/*.md` vazio
+- [ ] `npm run build` em `site/` rc=0
+
+**Wave gates:**
+```bash
+test -f site/guide/commands.md
 ```
 
 ### ML-2B — README contíguo (atena-tf)

@@ -16,20 +16,25 @@ trackfw init [--brownfield] [--ai-tools codex,...]
 
 | Flag | Description |
 |------|-------------|
-| `--brownfield` | Activates lenient mode for 30 days (violations become warnings) |
+| `--brownfield` | Activates lenient mode for 30 days in a fresh project (violations become warnings); with an existing `trackfw.yaml`, warns and leaves the file unchanged |
 | `--ai-tools` | Configures all ten AI targets non-interactively |
+| `--scope project\|global` | Where to install agents and skills; default is `global` (writes to `~/.claude/`, `~/.codex/`, etc.) |
 
 ### What gets generated
 
-- `docs/adr/`, `docs/req/`, `docs/roadmaps/{backlog,wip,blocked,done,abandoned}/`
+- `docs/adr/`, `docs/req/`, `docs/roadmaps/{backlog,analyzing,wip,blocked,done,abandoned}/`
+- `vault/notes/index.md` — knowledge vault
 - `trackfw.yaml` — project configuration
-- `scripts/trackfw-validate.sh` — validation script for CI
+- `scripts/trackfw-validate.sh`, `scripts/trackfw-attention-signal.sh`, `scripts/trackfw-attention-cleanup.sh`, `scripts/trackfw-credential-guard.sh`, `scripts/trackfw-git-branch-guard.sh`
 - `CLAUDE.md` — context for Claude Code (if selected)
-- `.claude/commands/` — 7 slash commands for Claude Code
-- `AGENTS.md`, `.agents/skills/`, `.codex/agents/`, and `.codex/hooks.json` — Codex integration (if selected)
+- `.claude/commands/trackfw/` — 9 slash commands for Claude Code
+- `.claude/settings.json`
+- `AGENTS.md`, `.agents/skills/`, `.codex/agents/` — Codex integration (if selected)
 - `.husky/` or `lefthook.yml` — git hooks (if selected)
 - `.github/workflows/trackfw.yml` or `.gitlab-ci.yml` (if selected)
 - `pom.xml` Spring Boot 3.3 (if backend=java)
+
+**With `--ai-tools claude` (default `--scope global`):** also writes 12 agents to `~/.claude/agents/` and 17 skills to `~/.claude/skills/`. Use `--scope project` to confine all files to the repository.
 
 ### Example
 
@@ -43,7 +48,7 @@ $ trackfw init
 ? CI/CD: GitHub Actions
 ? AI assistants: Claude Code
 
-✓ Governance structure initialized.
+✓ trackfw initialized — run 'trackfw status' to see your governance state.
 ```
 
 ---
@@ -119,7 +124,7 @@ trackfw branch new fix/fix-401 --dry-run
 | Type | Behavior |
 |---|---|
 | `feat`, `fix`, `refactor` | Requires a roadmap with a matching slug already in `wip/` or `done/` — without a match, blocks and `git checkout -b` is never executed |
-| `chore`, `docs` | Exempt from the roadmap gate — the branch is created normally |
+| `chore`, `docs` | Exempt from the roadmap gate — requires a configured `origin` remote, or use `--from HEAD` to create from the current HEAD without a remote |
 
 ### Flags
 
@@ -578,8 +583,8 @@ trackfw barrier <roadmap> --wave <n> [--json]
 | Check | Passes when |
 |---|---|
 | `mls_complete` | The wave has at least one ML and every ML is `**Status:** ✅` |
-| `acceptance_evidence` | Every ML has a non-empty `**Critérios de aceite:**` block with no `- [ ]` line |
-| `gates` | Every command declared under `**Gates da wave:**` exits 0 — a wave with no such block declares zero gates, and the barrier never invents one |
+| `acceptance_evidence` | Every ML has a non-empty `**Acceptance criteria:**` block with no `- [ ]` line |
+| `gates` | Every command declared under `**Wave gates:**` exits 0 — a wave with no such block declares zero gates, and the barrier never invents one |
 | `validate` | `trackfw validate --json` reports `violations: 0` |
 
 ### Exit codes
@@ -966,8 +971,9 @@ Displays the installed version of trackfw.
 
 ```bash
 trackfw version
-# trackfw 11.1.0
 ```
+
+Prints the installed version (for example, `trackfw 11.8.1`).
 
 ---
 

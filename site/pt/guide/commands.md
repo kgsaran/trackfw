@@ -16,20 +16,25 @@ trackfw init [--brownfield] [--ai-tools codex,...]
 
 | Flag | Descrição |
 |------|-----------|
-| `--brownfield` | Ativa modo lenient por 30 dias (violações viram warnings) |
+| `--brownfield` | Ativa modo lenient por 30 dias em projeto sem `trackfw.yaml` (violações viram warnings); com `trackfw.yaml` existente, avisa e não altera o arquivo |
 | `--ai-tools` | Configura os dez targets de IA em modo não interativo |
+| `--scope project\|global` | Onde instalar agents e skills; padrão é `global` (escreve em `~/.claude/`, `~/.codex/`, etc.) |
 
 ### O que é gerado
 
-- `docs/adr/`, `docs/req/`, `docs/roadmaps/{backlog,wip,blocked,done,abandoned}/`
+- `docs/adr/`, `docs/req/`, `docs/roadmaps/{backlog,analyzing,wip,blocked,done,abandoned}/`
+- `vault/notes/index.md` — vault de conhecimento
 - `trackfw.yaml` — configuração do projeto
-- `scripts/trackfw-validate.sh` — script de validação para CI
+- `scripts/trackfw-validate.sh`, `scripts/trackfw-attention-signal.sh`, `scripts/trackfw-attention-cleanup.sh`, `scripts/trackfw-credential-guard.sh`, `scripts/trackfw-git-branch-guard.sh`
 - `CLAUDE.md` — contexto para Claude Code (se selecionado)
-- `.claude/commands/` — 7 slash commands para Claude Code
-- `AGENTS.md`, `.agents/skills/`, `.codex/agents/` e `.codex/hooks.json` — integração Codex (se selecionado)
+- `.claude/commands/trackfw/` — 9 slash commands para Claude Code
+- `.claude/settings.json`
+- `AGENTS.md`, `.agents/skills/`, `.codex/agents/` — integração Codex (se selecionado)
 - `.husky/` ou `lefthook.yml` — git hooks (se selecionado)
 - `.github/workflows/trackfw.yml` ou `.gitlab-ci.yml` (se selecionado)
 - `pom.xml` Spring Boot 3.3 (se backend=java)
+
+**Com `--ai-tools claude` (padrão `--scope global`):** também escreve 12 agents em `~/.claude/agents/` e 17 skills em `~/.claude/skills/`. Use `--scope project` para manter todos os arquivos dentro do repositório.
 
 ### Exemplo
 
@@ -43,7 +48,7 @@ $ trackfw init
 ? CI/CD: GitHub Actions
 ? AI assistants: Claude Code
 
-✓ Governance structure initialized.
+✓ trackfw initialized — run 'trackfw status' to see your governance state.
 ```
 
 ---
@@ -120,7 +125,7 @@ trackfw branch new fix/corrige-401 --dry-run
 | Tipo | Comportamento |
 |---|---|
 | `feat`, `fix`, `refactor` | Exige roadmap com slug correspondente já em `wip/` ou `done/` — sem correspondência, bloqueia e `git checkout -b` nunca é executado |
-| `chore`, `docs` | Isentos do gate de roadmap — a branch é criada normalmente |
+| `chore`, `docs` | Isentos do gate de roadmap — requerem remote `origin` configurado, ou use `--from HEAD` para criar a partir do HEAD atual sem remote |
 
 ### Flags
 
@@ -964,8 +969,9 @@ Exibe a versão instalada do trackfw.
 
 ```bash
 trackfw version
-# trackfw 11.1.0
 ```
+
+Exibe a versão instalada (por exemplo, `trackfw 11.8.1`).
 
 ---
 

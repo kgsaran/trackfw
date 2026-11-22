@@ -54,10 +54,10 @@ curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.s
 ## Em 30 segundos
 
 ```bash
-trackfw init          # wizard de configuração do projeto
-trackfw adr new       # nova decisão arquitetural
-trackfw req new       # novo requisito
-trackfw roadmap new   # novo roadmap vinculado à REQ
-trackfw status        # visão geral do projeto
-trackfw ship -m "feat(x): descrição"  # commit + push + abre PR/MR governados
+trackfw init                               # wizard de configuração do projeto
+trackfw adr new "Minha Decisão"            # nova decisão arquitetural
+trackfw req new "Meu Requisito"            # novo requisito (roadmap criado automaticamente)
+trackfw roadmap move ROADMAP-....md wip    # iniciar implementação
+trackfw validate                           # verificar governança
+trackfw ship -m "feat(x): descrição"      # commit + push + abre PR/MR governados
 ```

@@ -12,6 +12,15 @@ package generators
 //   T6 PrefixoColisaoPrevenida         → P2: roadmap_dir presente não impede acréscimo de roadmap_namespacing
 //   T7 PresentTopLevelKeys_D2a          → yaml.Node parse: quoted key, BOM, space-before-colon, indented sub-key, invalid YAML
 //   T8 PresentTopLevelKeys_CounterArm   → absent key not in map; valid parse returns ok=true
+//
+// ML-1D (REQ-2026-11-22): corretivo — fallback para YAML inválido; reafirmação P1–P3; ponta a ponta
+//
+//   T9  PresentTopLevelKeys_P1P2P3            → P1/P2/P3 no yaml.Node path (ok=true) e no fallback path (ok=false)
+//   T10 WriteTrackfwConfig_D2a_QuotedAdrDirs  → chave "adr_dirs" entre aspas não ganha segundo bloco após merge
+//   T11 WriteTrackfwConfig_D2a_SpaceBeforeColon → chave adr_dirs com espaço antes do : não ganha segundo bloco
+//   T12 WriteTrackfwConfig_D2a_BOM            → chave adr_dirs com BOM na linha 1 não ganha segundo bloco
+//   T13 GenerateLefthookHook_D2a_QuotedPreCommit → "pre-commit" entre aspas não ganha segundo bloco pre-commit:
+//   T14 GenerateLefthookHook_D2a_InvalidYAMLFallback → lefthook.yml inválido com pre-commit: → fallback encontra a chave, sem bloco duplicado
 
 import (
 	"os"
@@ -436,6 +445,323 @@ ci: github-actions
 	// Present keys must still be found (the counter-arm does not break detection).
 	if !keys["roadmap_dir"] {
 		t.Error("roadmap_dir must be detected (counter-arm must not break detection)")
+	}
+}
+
+// --- ML-1D tests ---
+
+// T9 — P1 (column 0), P2 (prefix isolation), P3 (comment = absent) on the
+// yaml.Node path (ok=true) and on the text-fallback path (ok=false).
+//
+// Reconciliation: this test asserts that presentTopLevelKeys correctly enforces
+// P1 (indented key is not top-level), P2 (roadmap_dir does not shadow
+// roadmap_namespacing), and P3 (commented key = absent) on the yaml.Node path
+// (valid YAML, ok=true), and that the same three properties hold on the text-
+// fallback path (invalid YAML, ok=false), proving the fallback preserves the
+// pre-D2a behavior without regression.
+func TestPresentTopLevelKeys_P1P2P3(t *testing.T) {
+	// --- yaml.Node path (valid YAML; ok must be true for each fixture) ---
+
+	// P1: indented key is not a top-level key.
+	p1Content := "frontend:\n  roadmap_namespacing: flat\nroadmap_dir: docs/roadmaps\nci: github-actions\n"
+	keys, ok := presentTopLevelKeys(p1Content)
+	if !ok {
+		t.Fatal("P1 fixture must parse as valid YAML (ok=true)")
+	}
+	if keys["roadmap_namespacing"] {
+		t.Error("P1 (yaml.Node path): indented roadmap_namespacing must not appear as a top-level key")
+	}
+	if !keys["roadmap_dir"] {
+		t.Error("P1 (yaml.Node path): roadmap_dir must be detected")
+	}
+
+	// P3: commented key = absent.
+	p3Content := "# governance_mode: lenient\nother_key: value\n"
+	keys, ok = presentTopLevelKeys(p3Content)
+	if !ok {
+		t.Fatal("P3 fixture must parse as valid YAML (ok=true)")
+	}
+	if keys["governance_mode"] {
+		t.Error("P3 (yaml.Node path): governance_mode in comment must not be detected as present")
+	}
+	if !keys["other_key"] {
+		t.Error("P3 (yaml.Node path): other_key must be detected")
+	}
+
+	// P2: prefix isolation — roadmap_dir must not shadow roadmap_namespacing.
+	p2Content := "roadmap_dir: docs/roadmaps\nci: github-actions\n"
+	keys, ok = presentTopLevelKeys(p2Content)
+	if !ok {
+		t.Fatal("P2 fixture must parse as valid YAML (ok=true)")
+	}
+	if keys["roadmap_namespacing"] {
+		t.Error("P2 (yaml.Node path): roadmap_namespacing must not be a false-positive when only roadmap_dir is present")
+	}
+	if !keys["roadmap_dir"] {
+		t.Error("P2 (yaml.Node path): roadmap_dir must be detected")
+	}
+
+	// --- text-fallback path (invalid YAML; ok must be false) ---
+	// Uses an explicitly invalid YAML document (unclosed flow sequence on the
+	// first line) followed by lines that exercise P1, P2, P3 of the text
+	// detector.
+	fallbackFixture := "key: [unclosed\n# governance_mode: lenient\nroadmap_dir: docs/roadmaps\n  roadmap_namespacing: flat\nci: github-actions\n"
+	keys, ok = presentTopLevelKeys(fallbackFixture)
+	if ok {
+		t.Fatal("fallback fixture must NOT parse as valid YAML (expected ok=false)")
+	}
+	// P1 (fallback): indented line is skipped.
+	if keys["roadmap_namespacing"] {
+		t.Error("P1 (fallback): indented roadmap_namespacing must not be detected")
+	}
+	if !keys["roadmap_dir"] {
+		t.Error("P1 (fallback): roadmap_dir at column 0 must be detected")
+	}
+	if !keys["ci"] {
+		t.Error("P1 (fallback): ci at column 0 must be detected")
+	}
+	// P3 (fallback): commented line is skipped.
+	if keys["governance_mode"] {
+		t.Error("P3 (fallback): governance_mode in comment must not be detected")
+	}
+	// P2 (fallback): roadmap_dir does not create a false positive for roadmap_namespacing.
+	if keys["roadmap_namespacing"] {
+		t.Error("P2 (fallback): roadmap_namespacing must not be a false-positive when roadmap_dir is present")
+	}
+}
+
+// fixtureBaseKeysWithout returns a minimal set of all template keys produced by
+// writeTrackfwConfig(Config{}), with adr_dirs omitted so callers can supply it
+// in the desired format. The user value for adr_dirs is "docs/decisions" to
+// distinguish it from the template value "docs/adr".
+const fixtureBaseKeysNoAdrDirs = `req_dir: docs/req
+roadmap_dir: docs/roadmaps
+roadmap_namespacing: flat
+hooks: none
+ci: github-actions
+frontend: ""
+backend: go
+backend_framework: ""
+pkg_manager: ""
+wip_limit: 1
+wip_by_squad: false
+require_req_in_commit: false
+rules:
+  branch_has_wip_roadmap: error
+`
+
+// T10 — end-to-end: existing trackfw.yaml with quoted "adr_dirs": key does not
+// gain a second adr_dirs block after writeTrackfwConfig.
+//
+// Reconciliation: this test asserts that the yaml.Node parser detects "adr_dirs"
+// (quoted) as the key adr_dirs, so writeTrackfwConfig treats the key as present
+// and performs a no-op for that key — measured by confirming that no unquoted
+// adr_dirs: line is added and the user's value (docs/decisions) is preserved.
+func TestWriteTrackfwConfig_D2a_QuotedAdrDirs(t *testing.T) {
+	dir := chdirTemp(t)
+	path := filepath.Join(dir, "trackfw.yaml")
+
+	fixture := "\"adr_dirs\":\n  - docs/decisions\n" + fixtureBaseKeysNoAdrDirs
+	if err := os.WriteFile(path, []byte(fixture), 0644); err != nil {
+		t.Fatalf("preparar fixture: %v", err)
+	}
+
+	if err := writeTrackfwConfig(Config{}); err != nil {
+		t.Fatalf("writeTrackfwConfig: %v", err)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ler trackfw.yaml: %v", err)
+	}
+	content := string(got)
+
+	// No unquoted adr_dirs: line should have been added.
+	for _, line := range strings.Split(content, "\n") {
+		if line == "adr_dirs:" {
+			t.Fatalf("duplicate unquoted adr_dirs: block was added after merge (D2a failed for quoted key)\ncontent:\n%s", content)
+		}
+	}
+	// User's value must be preserved.
+	if !strings.Contains(content, "docs/decisions") {
+		t.Fatalf("user's adr_dirs value (docs/decisions) was lost\ncontent:\n%s", content)
+	}
+}
+
+// T11 — end-to-end: existing trackfw.yaml with adr_dirs : (space before colon)
+// does not gain a second adr_dirs block after writeTrackfwConfig.
+//
+// Reconciliation: this test asserts that the yaml.Node parser detects "adr_dirs"
+// from "adr_dirs : [docs/decisions]" (key with trailing space stripped by yaml.v3),
+// so writeTrackfwConfig treats the key as present and performs a no-op for that
+// key — measured by confirming that no adr_dirs: line is added and the user's
+// value (docs/decisions) is preserved.
+func TestWriteTrackfwConfig_D2a_SpaceBeforeColon(t *testing.T) {
+	dir := chdirTemp(t)
+	path := filepath.Join(dir, "trackfw.yaml")
+
+	fixture := "adr_dirs : [docs/decisions]\n" + fixtureBaseKeysNoAdrDirs
+	if err := os.WriteFile(path, []byte(fixture), 0644); err != nil {
+		t.Fatalf("preparar fixture: %v", err)
+	}
+
+	if err := writeTrackfwConfig(Config{}); err != nil {
+		t.Fatalf("writeTrackfwConfig: %v", err)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ler trackfw.yaml: %v", err)
+	}
+	content := string(got)
+
+	// No exact adr_dirs: line should have been added (original uses "adr_dirs :").
+	for _, line := range strings.Split(content, "\n") {
+		if line == "adr_dirs:" {
+			t.Fatalf("duplicate adr_dirs: block was added after merge (D2a failed for space-before-colon)\ncontent:\n%s", content)
+		}
+	}
+	// User's value must be preserved.
+	if !strings.Contains(content, "docs/decisions") {
+		t.Fatalf("user's adr_dirs value (docs/decisions) was lost\ncontent:\n%s", content)
+	}
+}
+
+// T12 — end-to-end: existing trackfw.yaml with BOM on line 1 does not gain a
+// second adr_dirs block after writeTrackfwConfig.
+//
+// Reconciliation: this test asserts that the yaml.Node parser strips the UTF-8
+// BOM and detects "adr_dirs" correctly, so writeTrackfwConfig treats the key as
+// present and performs a no-op for that key — measured by confirming that no
+// unquoted adr_dirs: line is added and the user's value (docs/decisions) is
+// preserved.
+func TestWriteTrackfwConfig_D2a_BOM(t *testing.T) {
+	dir := chdirTemp(t)
+	path := filepath.Join(dir, "trackfw.yaml")
+
+	// BOM (\xef\xbb\xbf) prepended to adr_dirs: on line 1.
+	bom := "\xef\xbb\xbf"
+	fixture := bom + "adr_dirs:\n  - docs/decisions\n" + fixtureBaseKeysNoAdrDirs
+	if err := os.WriteFile(path, []byte(fixture), 0644); err != nil {
+		t.Fatalf("preparar fixture: %v", err)
+	}
+
+	if err := writeTrackfwConfig(Config{}); err != nil {
+		t.Fatalf("writeTrackfwConfig: %v", err)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ler trackfw.yaml: %v", err)
+	}
+	content := string(got)
+
+	// Count lines that EXACTLY equal "adr_dirs:" (the template block header).
+	// The original BOM line is "\xef\xbb\xbfadr_dirs:" — not equal — so only a
+	// newly appended duplicate would match.
+	count := 0
+	for _, line := range strings.Split(content, "\n") {
+		if line == "adr_dirs:" {
+			count++
+		}
+	}
+	if count != 0 {
+		t.Fatalf("duplicate adr_dirs: block was added after merge (D2a failed for BOM key); count=%d\ncontent:\n%s", count, content)
+	}
+	// User's value must be preserved.
+	if !strings.Contains(content, "docs/decisions") {
+		t.Fatalf("user's adr_dirs value (docs/decisions) was lost\ncontent:\n%s", content)
+	}
+}
+
+// T13 — end-to-end: existing lefthook.yml with "pre-commit": (quoted) does not
+// gain a second pre-commit: block after generateGitHooks.
+//
+// Reconciliation: this test asserts that the yaml.Node parser detects "pre-commit"
+// from the quoted key, so generateLefthookHook treats pre-commit as already present
+// and does not append a full new pre-commit: block — measured by confirming that no
+// unquoted top-level pre-commit: line is added. Note: a same-cause site exists in
+// the insertion-path section tracker (line == "pre-commit:") that prevents
+// trackfw-validate from being inserted into a quoted key block; that site is a
+// separate finding for the architect, not part of this test's scope.
+func TestGenerateLefthookHook_D2a_QuotedPreCommit(t *testing.T) {
+	dir := chdirTemp(t)
+
+	// Fixture: pre-commit: written as "pre-commit": (quoted key).
+	fixture := "\"pre-commit\":\n  commands:\n    lint:\n      run: golangci-lint run\n"
+	if err := os.WriteFile(filepath.Join(dir, "lefthook.yml"), []byte(fixture), 0644); err != nil {
+		t.Fatalf("preparar fixture: %v", err)
+	}
+
+	if err := generateGitHooks(Config{Hooks: "lefthook"}); err != nil {
+		t.Fatalf("generateGitHooks: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dir, "lefthook.yml"))
+	if err != nil {
+		t.Fatalf("ler lefthook.yml: %v", err)
+	}
+	content := string(got)
+
+	// No unquoted top-level pre-commit: line should have been added.
+	for _, line := range strings.Split(content, "\n") {
+		if line == "pre-commit:" {
+			t.Fatalf("duplicate unquoted pre-commit: block was added after merge (D2a failed for quoted key)\ncontent:\n%s", content)
+		}
+	}
+}
+
+// T14 — end-to-end: existing lefthook.yml with invalid YAML that contains
+// pre-commit: does not gain a second pre-commit: block after generateGitHooks
+// (guaranteed by the text-fallback introduced in ML-1D).
+//
+// Reconciliation: this test asserts that when yaml.Unmarshal fails on the
+// lefthook.yml content, presentTopLevelKeys falls back to the text detector
+// which finds pre-commit:, allowing generateLefthookHook to insert
+// trackfw-validate under the existing block instead of appending a full
+// duplicate block — measured by confirming that exactly one pre-commit: line
+// exists and trackfw-validate: is present. Without the fallback (D2a yaml-only),
+// yaml parse failure returns empty keys, the if-branch appends a full block, and
+// the count is two.
+func TestGenerateLefthookHook_D2a_InvalidYAMLFallback(t *testing.T) {
+	dir := chdirTemp(t)
+
+	// Fixture: invalid YAML (unclosed flow on line 1) with pre-commit: at column 0.
+	invalidFixture := "{unclosed\npre-commit:\n  commands:\n    lint:\n      run: golangci-lint run\n"
+
+	// Precondition: fixture must be invalid YAML (otherwise the fallback is not exercised).
+	_, ok := presentTopLevelKeys(invalidFixture)
+	if ok {
+		t.Fatal("precondition: invalidFixture must not parse as valid YAML — adjust the fixture if yaml.v3 accepts it")
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "lefthook.yml"), []byte(invalidFixture), 0644); err != nil {
+		t.Fatalf("preparar fixture: %v", err)
+	}
+
+	if err := generateGitHooks(Config{Hooks: "lefthook"}); err != nil {
+		t.Fatalf("generateGitHooks: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dir, "lefthook.yml"))
+	if err != nil {
+		t.Fatalf("ler lefthook.yml: %v", err)
+	}
+	content := string(got)
+
+	// Exactly one pre-commit: line must exist (original; no duplicate appended).
+	count := 0
+	for _, line := range strings.Split(content, "\n") {
+		if line == "pre-commit:" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected exactly 1 pre-commit: line, got %d (fallback must prevent duplicate)\ncontent:\n%s", count, content)
+	}
+	// trackfw-validate: must have been inserted by the fallback path.
+	if !strings.Contains(content, "trackfw-validate:") {
+		t.Fatalf("trackfw-validate: not inserted (fallback must find pre-commit: and insert under it)\ncontent:\n%s", content)
 	}
 }
 

@@ -928,12 +928,21 @@ type configBlock struct {
 // content, using a yaml.Node parse (ADR-2026-11-22, D2a). This correctly
 // handles quoted keys, keys with leading/trailing spaces, BOM-prefixed keys,
 // and anchor/alias indirection. The second return value is false when the
-// content is not valid YAML (safe no-op for the caller).
+// content is not valid YAML.
+//
+// When yaml.Unmarshal fails (invalid content), the function falls back to the
+// pre-D2a text-based detector (presentTopLevelKeysFallback) so that invalid
+// files keep exactly the pre-REQ behavior: a key visible at column 0 is treated
+// as present, preventing the merge from appending a duplicate. ok is false in
+// this case.
 func presentTopLevelKeys(content string) (map[string]bool, bool) {
 	keys := make(map[string]bool)
 	var root yaml.Node
 	if err := yaml.Unmarshal([]byte(content), &root); err != nil {
-		return keys, false
+		// Fall back to the pre-D2a text detector so invalid content keeps its
+		// pre-REQ behavior: a key at column 0 prevents a duplicate from being
+		// added by the merge.
+		return presentTopLevelKeysFallback(content), false
 	}
 	if len(root.Content) == 0 {
 		// Empty document: no keys, but not an error.
@@ -948,6 +957,37 @@ func presentTopLevelKeys(content string) (map[string]bool, bool) {
 		keys[k.Value] = true
 	}
 	return keys, true
+}
+
+// presentTopLevelKeysFallback is the pre-D2a text-based key detector. It is
+// called by presentTopLevelKeys when yaml.Unmarshal fails, preserving the
+// pre-REQ behavior for files with invalid YAML content.
+//
+// Properties (unchanged from pre-D2a):
+//   - P1: anchor at column 0 — key starts without leading space/tab.
+//   - P2: colon required — compares against key+":" to avoid prefix collision
+//     (e.g. roadmap_dir vs. roadmap_namespacing).
+//   - P3: commented line = key absent — lines starting with "#" (after
+//     TrimSpace) are ignored.
+func presentTopLevelKeysFallback(content string) map[string]bool {
+	keys := make(map[string]bool)
+	for _, line := range strings.Split(content, "\n") {
+		// P3: skip comment lines
+		if strings.HasPrefix(strings.TrimSpace(line), "#") {
+			continue
+		}
+		// P1: anchor at column 0 — skip indented and blank lines
+		if len(line) == 0 || line[0] == ' ' || line[0] == '\t' {
+			continue
+		}
+		// P2: colon required
+		idx := strings.Index(line, ":")
+		if idx <= 0 {
+			continue
+		}
+		keys[line[:idx]] = true
+	}
+	return keys
 }
 
 // resolveScaffoldAlias follows YAML alias chains until a non-alias node is

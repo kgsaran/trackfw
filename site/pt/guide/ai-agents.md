@@ -65,9 +65,7 @@ squad: backend
 ...
 ```
 
-O `trackfw validate` executa as regras internas de governança do CLI. Os JSON Schemas em
-`docs/schema/` são auxiliares para validação externa de agentes e automações; eles não são
-consumidos automaticamente pelo `trackfw validate`.
+O `trackfw validate` executa as regras internas de governança do CLI — verifica campos de frontmatter, presença de seções e critérios de aceite em ADRs, REQs e Roadmaps.
 
 ---
 
@@ -194,51 +192,9 @@ trackfw validate
 
 ---
 
-## JSON Schema em `docs/schema/`
+## Validação de frontmatter
 
-O `trackfw init` gera schemas JSON auxiliares em `docs/schema/`:
-
-```
-docs/schema/
-├── adr.schema.json
-├── req.schema.json
-└── roadmap.schema.json
-```
-
-Agentes externos podem extrair o frontmatter para JSON e validá-lo contra esses schemas antes de
-fazer commits. Essa validação é externa ao `trackfw validate`:
-
-```bash
-# Exemplo: extraia o frontmatter para /tmp/adr-frontmatter.json primeiro.
-
-# Com ajv-cli
-npx ajv validate -s docs/schema/adr.schema.json -d /tmp/adr-frontmatter.json
-
-# Com jsonschema (Python)
-python3 -m jsonschema -i /tmp/adr-frontmatter.json docs/schema/adr.schema.json
-```
-
-### Schema ADR (`docs/schema/adr.schema.json`)
-
-```json
-{
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "type": "object",
-  "required": ["status", "date"],
-  "properties": {
-    "status": {
-      "type": "string",
-      "enum": ["Draft", "Proposed", "Accepted", "Deprecated", "Superseded"]
-    },
-    "date": {
-      "type": "string",
-      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
-    },
-    "author": { "type": "string" },
-    "superseded_by": { "type": "string" }
-  }
-}
-```
+O `trackfw validate` executa as regras internas de governança do CLI — verifica campos de frontmatter, presença de seções e critérios de aceite em ADRs, REQs e Roadmaps. O diretório `docs/schema/` não é gerado pelo `trackfw init`.
 
 ---
 
@@ -271,25 +227,25 @@ Você é um agente de implementação especialista.
 
 ## Integração com Claude Code via slash commands
 
-Quando você seleciona **Claude Code** durante o `trackfw init`, os seguintes slash commands são gerados em `.claude/commands/`:
+Quando você seleciona **Claude Code** durante o `trackfw init`, 9 slash commands são gerados em `.claude/commands/trackfw/`:
 
 | Comando | Ação |
 |---------|------|
-| `/trackfw-context` | Emite contexto JSON atual e instrui o agente |
-| `/trackfw-adr-new` | Wizard de novo ADR via agente |
-| `/trackfw-req-new` | Wizard de nova REQ via agente |
-| `/trackfw-roadmap-new` | Cria roadmap vinculado à REQ atual |
-| `/trackfw-roadmap-wip` | Move roadmap atual para WIP |
-| `/trackfw-roadmap-done` | Finaliza roadmap atual |
-| `/trackfw-validate` | Valida e exibe violações |
+| `/trackfw:adr` | Novo ADR — `trackfw adr new "$ARGUMENTS"` |
+| `/trackfw:architect` | Guia de arquitetura — stack, direção de design |
+| `/trackfw:barrier` | Barrier de wave — checklist de liberação governada |
+| `/trackfw:implement` | Orquestrador de implementação — segue o fluxo de ML |
+| `/trackfw:move` | Mover roadmap — `trackfw roadmap move $ARGUMENTS` |
+| `/trackfw:req` | Nova REQ — `trackfw req new "$ARGUMENTS"` |
+| `/trackfw:roadmap` | Gera roadmap em microlotes para uma REQ |
+| `/trackfw:status` | Status do projeto — `trackfw status` |
+| `/trackfw:validate` | Validação de governança — `trackfw validate` |
 
 ### Uso no Claude Code
 
 ```
-/trackfw-context
+/trackfw:validate
 ```
-
-O agente lê automaticamente `trackfw context --format=json` e inclui o resultado no contexto antes de responder.
 
 ---
 

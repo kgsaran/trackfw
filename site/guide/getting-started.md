@@ -41,8 +41,37 @@ irm https://github.com/kgsaran/trackfw/releases/latest/download/install.ps1 | ie
 
 ```bash
 trackfw version
-# trackfw 11.1.0
 ```
+
+This prints the installed version (for example, `trackfw 11.8.1`).
+
+---
+
+## Quick start
+
+The five commands below set up a fully governed project from scratch. They are pinned by an end-to-end test (`internal/commands/quickstart_e2e_test.go`) so they keep working as the product changes.
+
+```bash
+trackfw init --ai-tools claude --forge github
+trackfw adr new "User Authentication Strategy"
+trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md
+trackfw roadmap move ROADMAP-$(date +%F)-user-authentication.md wip
+trackfw validate
+```
+
+After running these commands, `trackfw validate` exits with rc=0 and prints `2 warning(s)`:
+
+```
+⚠  adr_req_has_content: "docs/adr/ADR-...-user-authentication-strategy.md" has mandatory
+   section(s) with only model content: ## Context, ## Decision, ## Consequences,
+   ## Alternatives Considered — fill in or set rules.adr_req_has_content: off
+⚠  adr_req_has_content: "docs/req/REQ-...-user-authentication.md" has mandatory
+   section(s) with only model content: ## Motivation, ## Acceptance Criteria — fill in or
+   set rules.adr_req_has_content: off
+2 warning(s)
+```
+
+The warnings appear because the ADR and REQ sections contain only template placeholders. In a TTY session, `adr new` and `req new` open short wizards — if you fill in all sections there, `validate` produces `✓ No violations found.` instead. You can also disable the check with `rules.adr_req_has_content: off` in `trackfw.yaml`.
 
 ---
 
@@ -54,7 +83,13 @@ The `init` command runs an interactive wizard that detects the project stack and
 trackfw init
 ```
 
-The wizard asks about:
+For the Quick start flow, pass flags directly:
+
+```bash
+trackfw init --ai-tools claude --forge github
+```
+
+The wizard (or flags) configures:
 
 - **Project name** — used in generated templates
 - **Project type** — frontend, backend, or fullstack
@@ -72,24 +107,37 @@ After `init`, the following structure is created in the repository:
 docs/
 ├── adr/              ← Architecture Decision Records
 ├── req/              ← Requirements
-├── roadmaps/
-│   ├── backlog/
-│   ├── wip/
-│   ├── blocked/
-│   ├── done/
-│   └── abandoned/
-├── visao-projeto/
-└── agents-working-context.md
+└── roadmaps/
+    ├── backlog/
+    ├── analyzing/
+    ├── wip/
+    ├── blocked/
+    ├── done/
+    └── abandoned/
+
+vault/
+└── notes/
+    └── index.md      ← knowledge vault index
 
 trackfw.yaml          ← project configuration
 scripts/
-└── trackfw-validate.sh
+├── trackfw-validate.sh
+├── trackfw-attention-signal.sh
+├── trackfw-attention-cleanup.sh
+├── trackfw-credential-guard.sh
+└── trackfw-git-branch-guard.sh
+
 CLAUDE.md             ← context for Claude Code (if selected)
-.claude/commands/     ← slash commands for Claude Code
+.claude/
+├── commands/
+│   └── trackfw/      ← 9 slash commands for Claude Code
+└── settings.json
 AGENTS.md             ← persistent Codex instructions (if selected)
 .agents/skills/       ← Codex governance workflows
 .codex/agents/        ← Codex specialist subagents
 ```
+
+> **Global writes:** When `--ai-tools claude` is selected with the default `--scope global`, `init` also writes 12 agents to `~/.claude/agents/` and 17 skills to `~/.claude/skills/`. Use `--scope project` to keep all files within the repository.
 
 ### Brownfield mode (legacy projects)
 
@@ -99,7 +147,14 @@ For projects that already exist without structured governance, use the `--brownf
 trackfw init --brownfield
 ```
 
-This activates **lenient mode** for 30 days: governance violations are reported as warnings instead of errors, giving the team time to adapt processes without blocking existing CIs.
+**Without an existing `trackfw.yaml`:** `init` writes `governance_mode: lenient` and `lenient_until` (today + 30 days) to the generated `trackfw.yaml`. During the lenient period, governance violations are reported as warnings instead of errors.
+
+**With an existing `trackfw.yaml`:** `init` warns `governance keys not modified — edit trackfw.yaml directly to enable lenient mode` and leaves the existing file unchanged. To enable lenient mode manually, add to `trackfw.yaml`:
+
+```yaml
+governance_mode: lenient
+lenient_until: YYYY-MM-DD   # 30 days from today
+```
 
 ---
 
@@ -108,10 +163,12 @@ This activates **lenient mode** for 30 days: governance violations are reported 
 ADRs (Architecture Decision Records) document significant technical decisions in the project.
 
 ```bash
-trackfw adr new
+trackfw adr new "User Authentication Strategy"
 ```
 
-The wizard prompts for:
+Pass the title as an argument. In a TTY, omitting the title opens a wizard.
+
+The wizard (or the argument) prompts for:
 - **Title** of the decision
 - **Context** — why this decision was needed
 - **Decision** — what was decided
@@ -121,7 +178,7 @@ The wizard prompts for:
 ### Expected output
 
 ```
-created docs/adr/ADR-2026-06-13-use-postgresql-as-main-database.md
+created docs/adr/ADR-2026-06-13-user-authentication-strategy.md
 ```
 
 ### Generated file
@@ -133,7 +190,7 @@ date: 2026-06-13
 author: ""
 ---
 
-# ADR: Use PostgreSQL as main database
+# ADR: User Authentication Strategy
 
 | Status: Proposed | Date: 2026-06-13 |
 
@@ -146,9 +203,11 @@ author: ""
 ## Consequences
 <!-- Positive and negative impacts -->
 
-## Alternatives considered
+## Alternatives Considered
 <!-- Other options evaluated -->
 ```
+
+> **Note:** The section headings (`## Context`, `## Decision`, `## Consequences`, `## Alternatives Considered`) are in English regardless of locale — they are literal markers used by `trackfw validate`.
 
 ### List ADRs
 
@@ -157,7 +216,7 @@ trackfw adr list
 ```
 
 ```
-ADR-2026-06-13-use-postgresql-as-main-database.md    Proposed
+ADR-2026-06-13-user-authentication-strategy.md    Proposed
 ```
 
 ---
@@ -167,26 +226,30 @@ ADR-2026-06-13-use-postgresql-as-main-database.md    Proposed
 REQs (Requirements) document business and technical needs. The wizard includes **contextual probes** — domain-specific questions (authentication, UI, persistence, etc.) that automatically generate ADR Drafts when needed.
 
 ```bash
-trackfw req new
+trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md
 ```
 
-The wizard prompts for:
+Pass the title as an argument. In a TTY, omitting the title opens a wizard.
+
+The wizard (or the argument) prompts for:
 - **Title** of the requirement
 - **Motivation** — why this requirement exists
 - **Acceptance criteria** — how to know it's done
 - **Linked ADR** — related architectural decision
-- **Linked Roadmap** — implementation plan
 
-If the title or motivation mentions known domains (authentication, database, deploy, etc.), the wizard presents additional domain-specific questions and may automatically create ADR Drafts.
+### Auto-generated roadmap
+
+`req new` automatically creates a roadmap in `docs/roadmaps/backlog/`. You do not need to run `roadmap new` separately — it is only needed if you used `req new --no-roadmap`.
 
 ### Expected output
 
 ```
-created docs/req/REQ-2026-06-13-oauth-login.md
-created docs/adr/ADR-2026-06-13-oauth-provider.md (Draft)
-
-Next step: resolve Draft ADRs before creating the roadmap.
+created docs/req/REQ-2026-06-13-user-authentication.md
+✓ created docs/roadmaps/backlog/ROADMAP-2026-06-13-user-authentication.md
+✓ linked REQ-2026-06-13-user-authentication.md → docs/roadmaps/backlog/ROADMAP-...
 ```
+
+> **Note:** The section headings in the generated REQ file (`## Motivation`, `## Acceptance Criteria`) are in English — they are literal markers used by `trackfw validate`.
 
 ### List REQs
 
@@ -195,105 +258,89 @@ trackfw req list
 ```
 
 ```
-REQ-2026-06-13-oauth-login.md    Open
+REQ-2026-06-13-user-authentication.md    Open
 ```
 
 ---
 
-## 4. First roadmap: `trackfw roadmap new`
+## 4. Move roadmap to WIP: `trackfw roadmap move`
 
-Roadmaps detail the implementation plan for a REQ in microbatches (MLs).
+The roadmap was created in `backlog/` by `req new`. To start implementation, move it to `wip/`:
 
 ```bash
-trackfw roadmap new
-# or linking directly to a REQ:
-trackfw roadmap new --from-req docs/req/REQ-2026-06-13-oauth-login.md
+trackfw roadmap move ROADMAP-$(date +%F)-user-authentication.md wip
 ```
 
-### Available flags
+Use the `ROADMAP-` prefix with the `.md` extension, not the REQ filename.
 
-| Flag | Description |
-|------|-------------|
-| `--title "Title"` | Roadmap title (without wizard) |
-| `--req docs/req/REQ-*.md` | Path to linked REQ |
-| `--from-req docs/req/REQ-*.md` | Create roadmap already linked to REQ |
+### Expected output
 
-### Generated file
+```
+✓ moved ROADMAP-2026-06-13-user-authentication.md → docs/roadmaps/wip
+✓ synced REQ-2026-06-13-user-authentication.md → docs/roadmaps/wip/ROADMAP-...
+```
+
+### Generated roadmap structure
+
+The roadmap generated by `req new` includes a Wave 0 threat model:
 
 ```markdown
 ---
-status: backlog
+status: wip
 date: 2026-06-13
-req: ""
+req: "docs/req/REQ-2026-06-13-user-authentication.md"
 squad: ""
 ---
 
-# Roadmap: OAuth Login
+# Roadmap: User Authentication
 
-> Created: 2026-06-13 | Status: backlog
+> Created: 2026-06-13 | Status: wip
 
-## REQ: docs/req/REQ-2026-06-13-oauth-login.md
+## Wave 0 — Threat Model
+> Dependencies: none. Blocks all implementation.
+
+### ML-0A — Threat model for this roadmap
+**Status:** ⬜ Pending
+...
 
 ## Wave 1 — ...
 ```
 
----
+> **Note:** `ML-0A` must be marked `✅ Done` before `roadmap move ... done` will succeed. Moving to `done` with a pending ML-0A produces: `Error: cannot move "..." to done: 1 blocker(s): ML-0A`.
 
-## 5. Move roadmap between states
+### Available states
 
-```bash
-# Start implementation
-trackfw roadmap move REQ-2026-06-13-oauth-login wip
-
-# Complete
-trackfw roadmap move REQ-2026-06-13-oauth-login done
-```
-
-Available states: `backlog` → `wip` → `done` (or `blocked` / `abandoned`)
+`backlog` → `analyzing` → `wip` → `done` (or `blocked` / `abandoned`)
 
 ---
 
-## 6. Overview: `trackfw status` and `trackfw validate`
-
-### Project status
-
-```bash
-trackfw status
-```
-
-```
-trackfw — project status
-
-📋 Backlog       2 roadmaps
-🔄 WIP           1 roadmap
-❌ Blocked       0 roadmaps
-✅ Done          3 roadmaps
-
-📄 ADRs          4   (Proposed: 2, Accepted: 1, Draft: 1)
-📝 REQs          3   (Open: 2, Closed: 1)
-```
-
-### Consistency validation
+## 5. Check consistency: `trackfw validate`
 
 ```bash
 trackfw validate
 ```
 
-```
-✓ No violations found.
-```
+After the Quick start flow, `validate` exits rc=0 with `2 warning(s)` (see the Quick start section above for the full output).
 
-If there are issues:
+### If violations are found
 
 ```
-✗ 1 violation(s) found:
-
-  [violation] REQ-2026-06-13-oauth-login.md is blocked by Draft ADR: ADR-2026-06-13-oauth-provider.md
-
-⚠  1 warning(s):
-
-  [warning] ROADMAP-2026-06-10-refactor-db.md in WIP for 9 days (stale)
+✗ roadmap "ROADMAP-2026-06-13-implement-oauth.md" is in wip but has no linked REQ
+✗ REQ-2026-06-13-oauth-login.md is blocked by Draft ADR: ADR-2026-06-13-oauth-provider.md
+Error: 2 violation(s) found
 ```
+
+Each violation prefixes the message with `✗`. Warnings use `⚠`.
+
+---
+
+## 6. Project overview: `trackfw status`
+
+```bash
+trackfw status
+```
+
+Displays an inventory of ADRs, REQs, and roadmaps by state, with WIP and blocked roadmaps listed by name. Output format and counts reflect the current project state.
 
 ---
 
@@ -301,7 +348,7 @@ If there are issues:
 
 ## Windows
 
-For detailed Windows setup — installation paths, supported shells (PowerShell 5.1, Git Bash, pwsh 7), measured support matrix, and known limitations — see the **Windows** section in the [trackfw README on GitHub](https://github.com/kgsaran/trackfw#windows).
+For detailed Windows setup — installation paths, supported shells (PowerShell 5.1, Git Bash, pwsh 7), measured support matrix, and known limitations — see the **Windows support (partial)** section in the [trackfw README on GitHub](https://github.com/kgsaran/trackfw#windows-support-partial).
 
 ---
 
