@@ -29,7 +29,7 @@ e do README, site pinado por teste); inglês na raiz do site e pt-BR em `/pt/`. 
 ## Acceptance Criteria
 - [ ] AC1: toda flag de `trackfw init` tem o mesmo efeito com e sem TTY (`--brownfield`, `--ai-tools` e as demais que
   a varredura da Wave 0 encontrar), com teste de braço e contra-braço por caminho; os limites do brownfield (ADR D2)
-  são afirmados por teste
+  e o reconhecimento de chaves do merge do `trackfw.yaml` (ADR D2a) são afirmados por teste
 - [ ] AC2: o teste do Quick start afirma que cada comando que executa aparece literalmente no README e no guia de
   início do site em inglês, e que a saída prometida no documento é a que o `validate` produz (ADR D4)
 - [ ] AC3: o site serve inglês em `/trackfw/` e pt-BR em `/trackfw/pt/`; `npm ci && npm run build` em `site/` passa,

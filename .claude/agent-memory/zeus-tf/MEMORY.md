@@ -52,3 +52,4 @@
 - [Ler o log antes de atribuir falha](feedback_ler_o_log_antes_de_atribuir_falha.md) — CI vermelho: abrir o log do job; `go` do #687 não era timeout, era dash -u; make quality antes do push
 - [Sonda no binário, não leitura de fonte](feedback_sonda_no_binario_nao_leitura_de_fonte.md) — Codex: fonte dizia cmd.exe, binário roda powershell -NoProfile; 'guard inerte' era falso
 - [Ler o rc antes de commitar](feedback_ler_rc_antes_de_commitar.md) — exit da notificação é do wrapper `; echo rc=$?`; commitei rc=0 com rc=2 (ML-5I)
+- [Onboarding → GoatCounter → site novo](project_goatcounter_apos_onboarding.md) — ordem combinada 11-22; pedir código GoatCounter; site novo é protótipo primeiro

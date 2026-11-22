@@ -34,9 +34,21 @@ caminho TTY, uma flag passada explicitamente vence o wizard ou pula a pergunta c
 `--brownfield` e `--ai-tools`, e para qualquer outra flag que a varredura da Wave 0 encontrar lida em só um dos
 caminhos (mesma causa, mesma REQ).
 
-**D2 — Limites do brownfield sem TTY.** Pendente da Wave 0. O threat model mede o que `init --brownfield` faz num
-projeto que já tem `trackfw.yaml` (cria, estende ou preserva `lenient_until`; rebaixa um `governance_mode` já
-definido) e se os guards impedem um agente de rodar `trackfw init`. A decisão é escrita aqui antes da Wave 1.
+**D2 — `--brownfield` só escreve governança em projeto sem `trackfw.yaml`.** Sem `trackfw.yaml`, `init --brownfield`
+grava `governance_mode: lenient` e `lenient_until` (hoje + 30 dias), com e sem TTY. Com `trackfw.yaml` existente, o
+comando segue normalmente: mescla as chaves ausentes que não são de governança e instala os agentes. Mas não escreve
+`governance_mode` nem `lenient_until`, mesmo que faltem. Imprime um aviso dizendo que as chaves de governança não
+foram alteradas e que, para ativar o modo lenient, é preciso editar o `trackfw.yaml`. Sai com rc=0. Medição da Wave
+0 (`docs/seguranca/2026-11-22-wave0-onboarding-threat-model.md` §2): todo projeto criado pelo `init` padrão não tem
+`governance_mode`, e nenhum guard impede um agente de rodar `trackfw init` pelo shell. Sem este limite, a correção do
+D1 daria a qualquer agente um jeito de rebaixar um projeto para lenient.
+
+**D2a — O merge do `trackfw.yaml` reconhece as chaves como o leitor as reconhece.** O `init` decide quais chaves já
+existem com o mesmo parse YAML que o `config` usa para ler o arquivo, e não por texto. Hoje, uma chave com aspas
+(`"adr_dirs":`), com espaço antes do `:` ou com BOM na primeira linha é tratada como ausente. O `init` acrescenta então
+o valor padrão, que vence o do usuário, porque o leitor fica com a última ocorrência. Medido no 11.8.1: `"adr_dirs":`
+com `custom-adr` termina com um segundo `adr_dirs: docs/adr`. Isso vale para todo `init`, com ou sem `--brownfield`,
+e para os dois usos do detector em `internal/generators/scaffold.go` (`trackfw.yaml` e lefthook).
 
 **D3 — Inglês na raiz do site.** O site serve inglês em `/trackfw/` e pt-BR em `/trackfw/pt/`. O GitHub Pages não
 redireciona, então os links antigos para páginas internas em português quebram. O trackfw ainda não tem consumidores
@@ -61,8 +73,9 @@ interna afetada é atualizada.
   documento e o binário se afastam. Agentes de IA, que rodam sem TTY, recebem o mesmo `init` que um humano.
 - **Negativo:** links profundos antigos para o site em português quebram (D3). O teste do Quick start passa a reprovar
   em edição de README e do guia do site, o que é intencional.
-- **Risco aberto:** `init --brownfield` sem TTY passa a funcionar também para agentes. D2 fixa o limite antes da
-  implementação.
+- **Risco aceito:** num projeto ainda sem `trackfw.yaml`, um agente pode rodar `init --brownfield` e criar o projeto em
+  modo lenient. Não há governança anterior a rebaixar. O `lenient_until` limita o modo a 30 dias, e o `trackfw.yaml`
+  criado é versionado e aparece no diff.
 
 ## Alternatives Considered
 
@@ -73,3 +86,7 @@ interna afetada é atualizada.
 - **Job de CI que constrói o site em todo PR:** pegaria link morto antes do merge, mas é gate novo. Rejeitada enquanto
   os gates novos estiverem congelados.
 - **Manter pt-BR na raiz ou remover o pt-BR:** o KG escolheu inverter (D3).
+- **`init --brownfield` mesclar a governança em `trackfw.yaml` existente (comportamento atual no TTY):** rebaixa
+  projeto que nunca declarou `governance_mode`, e o D1 levaria isso também a agentes sem TTY. Rejeitada (D2).
+- **Guard que bloqueie `trackfw init` pelo shell:** gate novo, com os gates congelados. Rejeitada; o D2 resolve na
+  origem.
