@@ -7,6 +7,18 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [11.8.1] - 2026-11-22
+
+`agents install` e `skills install` com escopo global deixam de alterar o projeto em que o comando roda (#697).
+
+### Breaking Changes
+
+Nenhum contrato muda: comandos e flags continuam iguais. Quem dependia do efeito colateral descrito em *Changed* precisa passar `--scope project`.
+
+### Changed
+
+- **`agents install` e `skills install` com `--scope global` (o default) não escrevem no projeto.** Antes, os dois reescreviam no diretório atual os arquivos de regras (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `.github/copilot-instructions.md`, `.windsurfrules` e os demais) e os hooks de guard, mesmo com escopo global. Agora o comando informa no stderr que as regras e os hooks do projeto não foram alterados; a saída do `--json` continua válida. Para atualizar o projeto, rode `trackfw agents install --scope project` (ou `skills install`) ou `trackfw update`. O aviso de guard global do Antigravity no install só aparece com `--scope project`; o `validate` e o `doctor` continuam emitindo esse aviso (#697).
+
 ## [11.8.0] - 2026-11-21
 
 O guard do trackfw chega ao Google Antigravity e ao OpenCode, e o Gemini CLI passa a ser tratado como legado para contas individuais (#692, #691). Esta versão também corrige um guard que podia ser desligado por opções herdadas do shell (#687) e fecha a compatibilidade com o Windows (#688).
