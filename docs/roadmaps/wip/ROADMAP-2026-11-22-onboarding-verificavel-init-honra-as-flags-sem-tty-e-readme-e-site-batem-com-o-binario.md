@@ -40,7 +40,8 @@ de D3: 22 em 6 arquivos, 15 deles em `config.mts`, que o build não confere (gat
 do arquiteto: o relatório põe a implementação do D2 "em `writeTrackfwConfig` no `init.go`"; a função fica em
 `scaffold.go`. O D2 vai para `init.go` (não liga `BrownfieldMode` com `trackfw.yaml` existente), para que ML-1A e
 ML-1C não dividam arquivo.
-**Files affected:** `docs/seguranca/2026-11-22-wave0-onboarding-threat-model.md` (novo; único arquivo)
+**Files affected:** `docs/seguranca/2026-11-22-wave0-onboarding-threat-model.md` (novo; único arquivo do hades);
+`docs/qualidade/2026-11-22-auditoria-onboarding.md` (auditoria da atena-tf que originou a REQ, commitada com a governança)
 **Actions:**
 1. Enumeration completeness:
    - every `trackfw init` flag (`init.go:184-188` and any other) and the path that reads it (TTY, non-TTY or both),
