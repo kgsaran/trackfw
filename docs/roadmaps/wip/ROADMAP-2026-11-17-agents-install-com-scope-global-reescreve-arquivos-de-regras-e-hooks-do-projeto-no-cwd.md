@@ -27,7 +27,7 @@ Varredura em 2026-11-21: nenhuma issue aberta; nenhuma outra REQ aberta com o me
   `CLAUDE.md`/`AGENTS.md`/hooks versionados no cwd e imprimem a dica; `--scope project` continua escrevendo
 - [x] AC3: varredura dos demais sítios com escopo global que escrevem regras/hooks no cwd, com o contrato aplicado
   (mesma causa, mesma REQ) ou a lista fechada escrita com evidência
-- [ ] AC4: `make quality` rc=0 e CI verde no PR
+- [x] AC4: `make quality` rc=0 e CI verde no PR
 
 ## Status Legend
 ⬜ Pending · 🔄 In progress · ✅ Done · ❌ Blocked
@@ -129,10 +129,10 @@ test -s docs/seguranca/2026-11-21-red-team-scope-global-nao-toca-projeto.md
 > Dependencies: Wave 2 audited.
 
 ### ML-FB — make quality e CI (zeus-tf)
-**Status:** 🔄 In progress — `make quality` MQ_RC=0 em 2026-11-21 com a máquina ociosa (`internal/commands` 65,1 s;
-gates-falsify 365 OK, 0 FAIL). Falta o CI do PR.
+**Status:** ✅ Done — `make quality` MQ_RC=0 em 2026-11-21 com a máquina ociosa (`internal/commands` 65,1 s;
+gates-falsify 365 OK, 0 FAIL). CI do PR #697 verde em 951bed43: 24/24, incluindo `windows-full-suites`.
 **Acceptance criteria:**
-- [ ] AC4: `make quality` rc=0 com a máquina ociosa; CI verde no PR
+- [x] AC4: `make quality` rc=0 com a máquina ociosa; CI verde no PR
 
 **Wave gates:**
 ```bash
