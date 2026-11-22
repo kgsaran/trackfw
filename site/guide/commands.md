@@ -1,12 +1,12 @@
-# Referência de Comandos
+# Commands Reference
 
-Referência completa de todos os comandos do `trackfw`.
+Complete reference for all `trackfw` commands.
 
 ---
 
 ## `trackfw init`
 
-Inicializa a estrutura de governança no projeto atual via wizard interativo.
+Initializes the governance structure in the current project via interactive wizard.
 
 ```bash
 trackfw init [--brownfield] [--ai-tools codex,...]
@@ -14,28 +14,28 @@ trackfw init [--brownfield] [--ai-tools codex,...]
 
 ### Flags
 
-| Flag | Descrição |
-|------|-----------|
-| `--brownfield` | Ativa modo lenient por 30 dias (violações viram warnings) |
-| `--ai-tools` | Configura os dez targets de IA em modo não interativo |
+| Flag | Description |
+|------|-------------|
+| `--brownfield` | Activates lenient mode for 30 days (violations become warnings) |
+| `--ai-tools` | Configures all ten AI targets non-interactively |
 
-### O que é gerado
+### What gets generated
 
 - `docs/adr/`, `docs/req/`, `docs/roadmaps/{backlog,wip,blocked,done,abandoned}/`
-- `trackfw.yaml` — configuração do projeto
-- `scripts/trackfw-validate.sh` — script de validação para CI
-- `CLAUDE.md` — contexto para Claude Code (se selecionado)
-- `.claude/commands/` — 7 slash commands para Claude Code
-- `AGENTS.md`, `.agents/skills/`, `.codex/agents/` e `.codex/hooks.json` — integração Codex (se selecionado)
-- `.husky/` ou `lefthook.yml` — git hooks (se selecionado)
-- `.github/workflows/trackfw.yml` ou `.gitlab-ci.yml` (se selecionado)
-- `pom.xml` Spring Boot 3.3 (se backend=java)
+- `trackfw.yaml` — project configuration
+- `scripts/trackfw-validate.sh` — validation script for CI
+- `CLAUDE.md` — context for Claude Code (if selected)
+- `.claude/commands/` — 7 slash commands for Claude Code
+- `AGENTS.md`, `.agents/skills/`, `.codex/agents/`, and `.codex/hooks.json` — Codex integration (if selected)
+- `.husky/` or `lefthook.yml` — git hooks (if selected)
+- `.github/workflows/trackfw.yml` or `.gitlab-ci.yml` (if selected)
+- `pom.xml` Spring Boot 3.3 (if backend=java)
 
-### Exemplo
+### Example
 
 ```bash
 $ trackfw init
-? Project name: meu-projeto
+? Project name: my-project
 ? Project type: fullstack
 ? Backend language: java
 ? Backend framework: Spring Boot
@@ -50,8 +50,8 @@ $ trackfw init
 
 ## `trackfw discover`
 
-Escaneia o repositório e detecta automaticamente a estrutura de governança já existente
-(ADRs, REQs, roadmaps, stack).
+Scans the repository and automatically detects the existing governance structure (ADRs, REQs,
+roadmaps, stack).
 
 ```bash
 trackfw discover
@@ -61,17 +61,17 @@ trackfw discover --bootstrap-log
 
 ### Flags
 
-| Flag | Descrição |
-|------|-----------|
-| `--init` | Gera um `trackfw.yaml` calibrado para o projeto a partir do que foi detectado |
-| `--bootstrap-log` | Cria um `.trackfw-log` retroativo a partir dos arquivos já em `done/` |
+| Flag | Description |
+|------|-------------|
+| `--init` | Generates a `trackfw.yaml` calibrated for the project from what was detected |
+| `--bootstrap-log` | Creates a retroactive `.trackfw-log` from files already in `done/` |
 
 ---
 
 ## `trackfw configure`
 
-Wizard interativo que guia a configuração do `trackfw.yaml`. Gera um arquivo esparso: só grava
-os campos que diferem dos defaults.
+Interactive wizard that guides `trackfw.yaml` configuration. Generates a sparse file: only
+fields that differ from the defaults are written.
 
 ```bash
 trackfw configure
@@ -81,57 +81,56 @@ trackfw configure
 
 ## `trackfw help`
 
-**Não** é o `--help` genérico gerado pelo framework de CLI (cobra/commander/argparse) — esse
-continua disponível separadamente em todo comando (`trackfw --help`, `trackfw <comando>
---help`). `trackfw help` é a superfície explícita de ajuda do projeto: lista os comandos
-disponíveis **e** documenta as chaves de configuração do `trackfw.yaml`.
+This is **not** the generic `--help` produced by the CLI framework (cobra/commander/argparse) —
+that remains separately available on every command (`trackfw --help`, `trackfw <command>
+--help`). `trackfw help` is the project's explicit help surface: it lists the available commands
+**and** documents `trackfw.yaml` configuration keys.
 
 ```bash
-trackfw help              # lista os comandos e todas as chaves de trackfw.yaml
-trackfw help <comando>    # ajuda daquele comando (equivalente a "<comando> --help")
-trackfw help <chave>      # documentação de uma chave de trackfw.yaml (tipo, default, exemplo, impacto)
+trackfw help              # lists commands and every trackfw.yaml key
+trackfw help <command>    # help for that command (equivalent to "<command> --help")
+trackfw help <key>        # documentation for a trackfw.yaml key (type, default, example, impact)
 ```
 
-Sem argumento, a saída tem duas seções: a lista de comandos disponíveis (nome + descrição curta)
-e uma tabela `KEY / DEFAULT / DESCRIÇÃO` com todas as chaves reconhecidas de `trackfw.yaml`
+With no argument, the output has two sections: the list of available commands (name + short
+description) and a `KEY / DEFAULT / DESCRIPTION` table with every recognized `trackfw.yaml` key
 (`adr_dirs`, `roadmap_namespacing`, `wip_limit`, `rules.*`, `trace_id_field`, etc.).
 
-Com um argumento que casa com o nome de uma chave de configuração, mostra tipo, valor default,
-descrição, um exemplo de uso em YAML e o impacto prático de alterá-la. Com um argumento que casa
-com o nome de um comando, mostra a ajuda desse comando. Um assunto desconhecido — nem comando nem
-chave — sai com código de saída diferente de zero e, quando há um nome próximo o suficiente,
-sugere a correção.
+With an argument that matches a configuration key's name, it shows type, default value,
+description, a YAML usage example, and the practical impact of changing it. With an argument that
+matches a command's name, it shows that command's help. An unknown topic — neither command nor
+key — exits with a non-zero code and, when a close-enough name exists, suggests the fix.
 
 ---
 
 ## `trackfw branch new`
 
-Cria uma branch `feat/`, `fix/`, `refactor/`, `chore/` ou `docs/` movendo o gate de governança
-`branch_has_wip_roadmap` (já aplicado por `trackfw validate` e `trackfw ship`) para **antes** da
-criação da branch, em vez de depois.
+Creates a `feat/`, `fix/`, `refactor/`, `chore/`, or `docs/` branch by moving the
+`branch_has_wip_roadmap` governance gate (already enforced by `trackfw validate` and
+`trackfw ship`) to **before** branch creation, instead of after.
 
 ```bash
-trackfw branch new feat/login-oauth
-trackfw branch new fix/corrige-401 --dry-run
+trackfw branch new feat/oauth-login
+trackfw branch new fix/fix-401 --dry-run
 ```
 
-### Comportamento
+### Behavior
 
-| Tipo | Comportamento |
+| Type | Behavior |
 |---|---|
-| `feat`, `fix`, `refactor` | Exige roadmap com slug correspondente já em `wip/` ou `done/` — sem correspondência, bloqueia e `git checkout -b` nunca é executado |
-| `chore`, `docs` | Isentos do gate de roadmap — a branch é criada normalmente |
+| `feat`, `fix`, `refactor` | Requires a roadmap with a matching slug already in `wip/` or `done/` — without a match, blocks and `git checkout -b` is never executed |
+| `chore`, `docs` | Exempt from the roadmap gate — the branch is created normally |
 
 ### Flags
 
-| Flag | Descrição |
-|------|-----------|
-| `--dry-run` | Reporta se a branch seria criada ou bloqueada, sem executar o `git` |
+| Flag | Description |
+|------|-------------|
+| `--dry-run` | Reports whether the branch would be created or blocked, without executing `git` |
 
-Quando permitido, executa `git checkout -b <type>/<slug>`, propagando literalmente a saída e o
-exit status do Git.
+When allowed, runs `git checkout -b <type>/<slug>`, propagating Git's own output and exit status
+literally.
 
-### Se bloquear
+### If it blocks
 
 ```bash
 trackfw req new "title"
@@ -141,83 +140,83 @@ trackfw roadmap move <name> wip
 
 ---
 
-## `trackfw agents` e `trackfw skills`
+## `trackfw agents` and `trackfw skills`
 
-Gerenciam agents especialistas e skills de governança.
+Manage specialist agents and governance skills.
 
 ```bash
 trackfw agents list|install|uninstall|update [flags]
 trackfw skills list|install|uninstall|update [flags]
 ```
 
-Targets suportados: `claude`, `codex`, `gemini`, `antigravity`, `cursor`,
-`copilot`, `windsurf`, `amazonq`, `opencode` e `kiro`.
+Supported targets: `claude`, `codex`, `gemini`, `antigravity`, `cursor`,
+`copilot`, `windsurf`, `amazonq`, `opencode`, and `kiro`.
 
 ### Flags
 
-| Flag | Descrição |
+| Flag | Description |
 |---|---|
-| `--targets <csv>` | CLIs de destino; obrigatório para mutações sem TTY |
-| `--items <csv>` | IDs do catálogo; o padrão é todos os items |
-| `--scope project\|global` | Instala no projeto ou no diretório do usuário |
-| `--surface target=surface` | Seleciona uma surface específica; pode ser repetido |
-| `--json` | Emite catálogo e deployments em formato determinístico |
-| `--force` | Permite substituir/remover conteúdo gerenciado modificado |
+| `--targets <csv>` | Target CLIs; required for mutations without a TTY |
+| `--items <csv>` | Catalog IDs; defaults to all items |
+| `--scope project\|global` | Installs in the project or user directory |
+| `--surface target=surface` | Selects a specific surface; may be repeated |
+| `--json` | Emits catalog and deployments in deterministic format |
+| `--force` | Allows replacing/removing modified managed content |
 
-Em TTY, `install`, `update` e `uninstall` sem `--targets` abrem uma seleção
-interativa. Em CI ou outro ambiente não interativo, omitir `--targets` é erro.
+In a TTY, `install`, `update`, and `uninstall` without `--targets` open an
+interactive selector. In CI or another non-interactive environment, omitting
+`--targets` is an error.
 
-### Exemplos
+### Examples
 
 ```bash
-# Lista catálogo, formato nativo/fallback e estado; inclui surfaces legadas
+# Lists catalog, native/fallback representation, and state; includes legacy surfaces
 trackfw agents list --json
 
-# Instala agents e skills selecionados no projeto
+# Installs selected agents and skills in the project
 trackfw agents install --targets claude,codex --items architect,backend --scope project
 trackfw skills install --targets gemini,kiro --items governance,implement --scope project
 
-# Instala globalmente e seleciona a surface CLI do Kiro
+# Installs globally and selects the Kiro CLI surface
 trackfw agents install --targets kiro --scope global --surface kiro=cli
 
-# Inspeciona a surface antiga do Antigravity explicitamente
+# Explicitly inspects the old Antigravity surface
 trackfw agents list --targets antigravity --surface antigravity=legacy-cli
 
-# Atualiza ou remove apenas deployments selecionados
+# Updates or removes only selected deployments
 trackfw skills update --targets codex,gemini
 trackfw agents uninstall --targets claude --items backend
 ```
 
-Os estados são `not-installed`, `current`, `outdated` e `modified`. O manifesto
-`.trackfw/integrations-manifest.json`, separado por scope, registra ownership,
-versão, SHA-256 e claims compartilhados. Arquivos `modified` são preservados por
-`update` e `uninstall` até o uso explícito de `--force`. Uninstall nunca remove
-arquivo unmanaged nem artefato ainda compartilhado. Uma instalação histórica
-com hash conhecido é adotada sem overwrite e aparece como `outdated`; `update`
-faz a migração. Conteúdo unmanaged desconhecido nunca é adotado por update,
-mesmo com `--force`.
+States are `not-installed`, `current`, `outdated`, and `modified`. The
+scope-specific `.trackfw/integrations-manifest.json` manifest records ownership,
+version, SHA-256, and shared claims. `update` and `uninstall` preserve `modified`
+files until `--force` is explicit. Uninstall never removes an unmanaged file or
+an artifact that is still shared. A historical installation with a known hash
+is adopted without overwrite and reported as `outdated`; `update` migrates it.
+Unknown unmanaged content is never adopted by update, even with `--force`.
 
-O gate de paridade de identidade é derivado do catálogo canônico de integrações:
-toda surface com suporte a agents é exercitada como `target=surface`, o mesmo
-formato usado por `--surface`.
+The identity parity gate is derived from the canonical integration catalog:
+every agent-capable surface is exercised as `target=surface`, the same format
+used by `--surface`.
 
-Os comandos standalone `gemini`, `cursor`, `copilot`, `windsurf` e `amazonq`
-foram removidos. Use `agents` e `skills` com `--targets` (os nomes de target
-acima continuam válidos ali) para todos os fluxos de instalação e atualização.
+The standalone `gemini`, `cursor`, `copilot`, `windsurf`, and `amazonq` commands
+have been removed. Use `agents` and `skills` with `--targets` (the target names
+above remain valid catalog values there) for all installation and update flows.
 
-`trackfw agents third-party` e `trackfw skills third-party` buscam e instalam conteúdo de
-terceiros sob um gate de quarentena em duas fases — `fetch` baixa para quarentena sem instalar,
-`install` consome um artefato já em quarentena e com aprovação vinculada ao checksum.
+`trackfw agents third-party` and `trackfw skills third-party` fetch and install third-party
+content under a two-phase quarantine gate — `fetch` downloads into quarantine without installing,
+`install` consumes an already-quarantined artifact with checksum-linked approval.
 
 ---
 
 ## `trackfw update`
 
-Reaplica os templates atuais do trackfw a um projeto já inicializado com `trackfw init` ou
-`trackfw discover --init`. É uma operação de escopo de projeto — nunca mexe no diretório home do
-usuário. Atualiza o bloco de regras trackfw nos arquivos de config de agente (`CLAUDE.md`,
-`GEMINI.md` etc.), `scripts/trackfw-validate.sh`, o workflow de CI, deployments de agent/skill do
-Codex já existentes, slash commands históricos do Claude e Git hooks.
+Re-applies current trackfw templates to a project already initialized with `trackfw init` or
+`trackfw discover --init`. A project-scope operation — it never touches the user's home
+directory. Updates the trackfw rules block in agent config files (`CLAUDE.md`, `GEMINI.md`,
+etc.), `scripts/trackfw-validate.sh`, the CI workflow, existing Codex agent/skill deployments,
+historical Claude slash commands, and Git hooks.
 
 ```bash
 trackfw update
@@ -227,19 +226,20 @@ trackfw update --targets claude,codex --install-missing
 
 ### Flags
 
-| Flag | Descrição |
-|------|-----------|
-| `--dry-run` | Calcula e reporta os estados dos targets sem escrever nada |
-| `--install-missing` | Também instala targets reportados como ausentes |
-| `--targets <csv>` | Subconjunto de IDs de target (ID desconhecido é erro de uso) |
-| `--json` | Emite o resultado como documento JSON, em vez do relatório em texto |
+| Flag | Description |
+|------|-------------|
+| `--dry-run` | Computes and reports target states without writing anything |
+| `--install-missing` | Also installs targets currently reported as missing |
+| `--targets <csv>` | Comma-separated subset of target IDs (unknown ID is a usage error) |
+| `--json` | Emits the result as a JSON document instead of the text report |
 
 ### `trackfw update harness`
 
-Reaplica os templates atuais a todo artefato de escopo global já instalado no diretório home do
-usuário (skill de compatibilidade histórica do Claude, deployments globais de agent/skill do
-Codex). Nunca requer `trackfw.yaml` nem toca no repositório atual — isso é trabalho de
-`trackfw update`. Aceita as mesmas flags `--dry-run`, `--json`, `--targets` e `--install-missing`.
+Re-applies current templates to every already-installed global-scope artifact in the user's
+home directory (historical Claude compatibility skill, global Codex agent/skill deployments).
+Never requires `trackfw.yaml` and never touches the current repository — that is
+`trackfw update`'s job. Accepts the same `--dry-run`, `--json`, `--targets`, and
+`--install-missing` flags.
 
 ```bash
 trackfw update harness
@@ -250,133 +250,133 @@ trackfw update harness --install-missing
 
 ## `trackfw adr new`
 
-Cria um novo Architecture Decision Record via wizard interativo.
+Creates a new Architecture Decision Record via interactive wizard.
 
 ```bash
 trackfw adr new
 ```
 
-### Saída esperada
+### Expected output
 
 ```
-created docs/adr/ADR-2026-06-13-titulo-da-decisao.md
+created docs/adr/ADR-2026-06-13-decision-title.md
 ```
 
 ---
 
 ## `trackfw adr list`
 
-Lista todos os ADRs do projeto com status.
+Lists all project ADRs with status.
 
 ```bash
 trackfw adr list
 ```
 
-### Saída esperada
+### Expected output
 
 ```
-ADR-2026-06-13-usar-postgresql.md         Proposed
-ADR-2026-06-10-arquitetura-monolito.md    Accepted
-ADR-2026-06-01-provider-oauth.md          Draft
+ADR-2026-06-13-use-postgresql.md         Proposed
+ADR-2026-06-10-monolith-architecture.md  Accepted
+ADR-2026-06-01-oauth-provider.md         Draft
 ```
 
 ---
 
 ## `trackfw req new`
 
-Cria um novo requisito via wizard interativo com probes contextuais.
+Creates a new requirement via interactive wizard with contextual probes.
 
 ```bash
 trackfw req new
 ```
 
-O wizard detecta domínios (autenticação, UI, persistência, API, deploy, eventos) com base no título e motivação e apresenta perguntas específicas por domínio. ADR Drafts são criados automaticamente quando a resposta indica decisão arquitetural pendente.
+The wizard detects domains (authentication, UI, persistence, API, deploy, events) based on title and motivation and presents domain-specific questions. ADR Drafts are automatically created when an answer indicates a pending architectural decision.
 
-### Saída esperada
+### Expected output
 
 ```
-created docs/req/REQ-2026-06-13-login-via-oauth.md
-created docs/adr/ADR-2026-06-13-provider-oauth.md (Draft)
+created docs/req/REQ-2026-06-13-oauth-login.md
+created docs/adr/ADR-2026-06-13-oauth-provider.md (Draft)
 ```
 
 ---
 
 ## `trackfw req list`
 
-Lista todos os requisitos com status.
+Lists all requirements with status.
 
 ```bash
 trackfw req list
 ```
 
-### Saída esperada
+### Expected output
 
 ```
-REQ-2026-06-13-login-via-oauth.md      Open
-REQ-2026-06-10-exportar-relatorio.md   Closed
+REQ-2026-06-13-oauth-login.md        Open
+REQ-2026-06-10-export-report.md      Closed
 ```
 
 ---
 
 ## `trackfw req move`
 
-Atualiza o status de uma REQ no lugar (frontmatter e header).
+Updates a REQ's status in place (frontmatter and header).
 
 ```bash
-trackfw req move <nome-parcial> <status>
+trackfw req move <partial-name> <status>
 ```
 
-### Exemplo
+### Example
 
 ```bash
-trackfw req move login-via-oauth Closed
+trackfw req move oauth-login Closed
 ```
 
 ---
 
 ## `trackfw roadmap new`
 
-Cria um novo roadmap de implementação.
+Creates a new implementation roadmap.
 
 ```bash
-trackfw roadmap new [--title "Título"] [--req docs/req/REQ-*.md] [--from-req docs/req/REQ-*.md]
+trackfw roadmap new [--title "Title"] [--req docs/req/REQ-*.md] [--from-req docs/req/REQ-*.md]
 ```
 
 ### Flags
 
-| Flag | Descrição |
-|------|-----------|
-| `--title "Título"` | Define título sem wizard |
-| `--req <path>` | Vincula REQ ao roadmap |
-| `--from-req <path>` | Cria roadmap já vinculado à REQ (shorthand) |
+| Flag | Description |
+|------|-------------|
+| `--title "Title"` | Sets title without wizard |
+| `--req <path>` | Links REQ to roadmap |
+| `--from-req <path>` | Creates roadmap already linked to REQ (shorthand) |
 
-### Exemplos
+### Examples
 
 ```bash
-# Wizard interativo
+# Interactive wizard
 trackfw roadmap new
 
-# Com título e REQ definidos
-trackfw roadmap new --title "Implementar OAuth" --req docs/req/REQ-2026-06-13-login-via-oauth.md
+# With title and REQ defined
+trackfw roadmap new --title "Implement OAuth" --req docs/req/REQ-2026-06-13-oauth-login.md
 
 # Shorthand
-trackfw roadmap new --from-req docs/req/REQ-2026-06-13-login-via-oauth.md
+trackfw roadmap new --from-req docs/req/REQ-2026-06-13-oauth-login.md
 ```
 
 ---
 
 ## `trackfw roadmap list`
 
-Lista todos os roadmaps agrupados por estado.
+Lists all roadmaps grouped by state.
 
 ```bash
 trackfw roadmap list
 ```
 
-### Saída esperada
+### Expected output
 
 ```
-[backlog]  ROADMAP-2026-06-13-implementar-oauth.md
+[backlog]  ROADMAP-2026-06-13-implement-oauth.md
 [wip]      ROADMAP-2026-06-10-refactor-db.md
 [done]     ROADMAP-2026-06-01-setup-ci.md
 ```
@@ -385,37 +385,37 @@ trackfw roadmap list
 
 ## `trackfw roadmap move`
 
-Move um roadmap entre estados do kanban.
+Moves a roadmap between kanban states.
 
 ```bash
-trackfw roadmap move <nome-parcial> <estado>
+trackfw roadmap move <partial-name> <state>
 ```
 
-Estados válidos: `backlog`, `analyzing`, `wip`, `blocked`, `done`, `abandoned`
+Valid states: `backlog`, `analyzing`, `wip`, `blocked`, `done`, `abandoned`
 
-### Exemplo
+### Example
 
 ```bash
 trackfw roadmap move oauth wip
-# ✓ moved ROADMAP-2026-06-13-implementar-oauth.md → docs/roadmaps/wip
+# ✓ moved ROADMAP-2026-06-13-implement-oauth.md → docs/roadmaps/wip
 ```
 
-A transição é registrada automaticamente em `docs/roadmaps/.trackfw-log`.
-Ao mover, o CLI sincroniza a pasta, o frontmatter `status:` e o header
-`| Status:`. O estado `analyzing` representa a fase de leitura, validação e
-planejamento antes de iniciar execução em `wip`.
+The transition is automatically logged to `docs/roadmaps/.trackfw-log`. The
+`analyzing` state represents the reading, validation, and planning phase before
+execution begins in `wip`. The CLI keeps the roadmap folder, `status:`
+frontmatter, and `| Status:` header synchronized.
 
 ---
 
 ## `trackfw roadmap show`
 
-Exibe o conteúdo completo de um roadmap com busca parcial por nome.
+Displays the full content of a roadmap with partial name search.
 
 ```bash
-trackfw roadmap show <nome-parcial>
+trackfw roadmap show <partial-name>
 ```
 
-### Exemplo
+### Example
 
 ```bash
 trackfw roadmap show oauth
@@ -423,69 +423,70 @@ trackfw roadmap show oauth
 
 ```
 ─────────────────────────────────────────
-ROADMAP-2026-06-13-implementar-oauth.md — [WIP]
+ROADMAP-2026-06-13-implement-oauth.md — [WIP]
 ─────────────────────────────────────────
 
 ---
 status: wip
 date: 2026-06-13
-req: docs/req/REQ-2026-06-13-login-via-oauth.md
+req: docs/req/REQ-2026-06-13-oauth-login.md
 squad: ""
 ---
 
-# Roadmap: Implementar OAuth
+# Roadmap: Implement OAuth
 ...
 
-Location: docs/roadmaps/wip/ROADMAP-2026-06-13-implementar-oauth.md
+Location: docs/roadmaps/wip/ROADMAP-2026-06-13-implement-oauth.md
 ```
 
 ---
 
 ## `trackfw baseline`
 
-Executa todas as validações e salva o resultado como baseline em `.trackfw-baseline.json`. O
-`trackfw validate` subsequente reporta apenas violations **novas** em relação a esse baseline —
-útil para adotar governança em projeto brownfield sem precisar zerar o passivo existente de uma vez.
+Runs all validations and saves the result as a baseline in `.trackfw-baseline.json`. The
+subsequent `trackfw validate` reports only violations that are **new** relative to that
+baseline — useful for adopting governance in a brownfield project without having to clear all
+existing debt at once.
 
 ```bash
 trackfw baseline
 ```
 
-Commite `.trackfw-baseline.json` no repositório para documentar o passivo aceito.
+Commit `.trackfw-baseline.json` to the repository to document the accepted debt.
 
 ---
 
 ## `trackfw validate`
 
-Valida a consistência entre ADRs, REQs e Roadmaps do projeto.
+Validates consistency across ADRs, REQs, and Roadmaps.
 
 ```bash
 trackfw validate
 ```
 
-### Regras validadas
+### Rules validated
 
-1. Roadmaps em WIP devem ter campo REQ preenchido
-2. Roadmaps em WIP devem ter critérios de aceite
-3. Somente um roadmap pode estar em WIP por vez (configurável por squad)
-4. Roadmaps em Blocked devem ter campo REQ preenchido
-5. REQs devem ter Roadmap vinculado
-6. ADRs devem ser referenciados em pelo menos uma REQ
-7. REQs Open não podem estar bloqueadas por ADRs em Draft
-8. Roadmaps em WIP há mais de `stale_wip_days` dias são marcados como stale
-9. ADRs e REQs devem ter frontmatter YAML válido
+1. WIP roadmaps must have REQ field filled
+2. WIP roadmaps must have acceptance criteria
+3. Only one roadmap can be in WIP at a time (configurable per squad)
+4. Blocked roadmaps must have REQ field filled
+5. REQs must have a linked Roadmap
+6. ADRs must be referenced in at least one REQ
+7. Open REQs cannot be blocked by Draft ADRs
+8. WIP roadmaps older than `stale_wip_days` are marked as stale
+9. ADRs and REQs must have valid YAML frontmatter
 
 ### `stale_wip`
 
-`stale_wip` usa a entrada mais recente do roadmap em `wip/` no
-`docs/roadmaps/.trackfw-log`, incluindo transições `backlog → wip`,
-`analyzing → wip` e `blocked → wip`. Em `roadmap_namespacing: by_agent`, a
-identidade do roadmap inclui o prefixo do agente registrado no log, por exemplo
-`zeus/ROADMAP-2026-07-27-exemplo.md`.
+`stale_wip` uses the roadmap's latest transition into `wip/` in
+`docs/roadmaps/.trackfw-log`, including `backlog → wip`,
+`analyzing → wip`, and `blocked → wip`. In
+`roadmap_namespacing: by_agent`, the roadmap identity includes the agent prefix
+recorded in the log, for example `zeus/ROADMAP-2026-07-27-example.md`.
 
-Se o log não existir ou não houver entrada parseável para o roadmap atual, o
-fallback retrocompatível é o `mtime` do arquivo. Tempo de commit Git não faz
-parte do contrato.
+If the log is absent or has no parseable entry for the current roadmap, the
+backward-compatible fallback is the file `mtime`. Git commit time is not part
+of the contract.
 
 ```yaml
 stale_wip_days: 14 # default: 7
@@ -493,53 +494,53 @@ rules:
   stale_wip: warning
 ```
 
-### Política de I/O do validator
+### Validator I/O Policy
 
-Diretórios opcionais de estado ausentes, como `wip/`, `blocked/` ou `done/`,
-são tratados como vazios. Falhas reais de inspeção, como permissão negada,
-`ENOTDIR`, erro de walk/list, arquivo esperado ilegível ou linha inválida no
-`.trackfw-log`, geram diagnóstico com regra, caminho e causa; a severidade segue
-a configuração da regra (`off`, `warning` ou `error`).
+Missing optional state directories such as `wip/`, `blocked/`, or `done/` are
+treated as empty. Real inspection failures, such as permission denied,
+`ENOTDIR`, walk/list failures, unreadable expected files, or invalid
+`.trackfw-log` lines, emit a diagnostic with rule, path, and cause; severity
+follows the rule configuration (`off`, `warning`, or `error`).
 
-### Saída esperada — sem violações
+### Expected output — no violations
 
 ```
 ✓ No violations found.
 ```
 
-### Saída esperada — com problemas
+### Expected output — with issues
 
 ```
 ✗ 2 violation(s) found:
 
-  [violation] ROADMAP-2026-06-13-implementar-oauth.md missing REQ field
-  [violation] REQ-2026-06-13-login-via-oauth.md is blocked by Draft ADR: ADR-2026-06-13-provider-oauth.md
+  [violation] ROADMAP-2026-06-13-implement-oauth.md missing REQ field
+  [violation] REQ-2026-06-13-oauth-login.md is blocked by Draft ADR: ADR-2026-06-13-oauth-provider.md
 
 ⚠  1 warning(s):
 
   [warning] ROADMAP-2026-06-10-refactor-db.md in WIP for 9 days (stale)
 ```
 
-### Modo lenient (brownfield)
+### Lenient mode (brownfield)
 
 ```
 [LENIENT MODE until 2026-07-13]
 
 ⚠  1 violation treated as warning:
-  [warning] ROADMAP-2026-06-13-implementar-oauth.md missing REQ field
+  [warning] ROADMAP-2026-06-13-implement-oauth.md missing REQ field
 ```
 
 ---
 
 ## `trackfw status`
 
-Exibe visão geral do estado atual do projeto.
+Displays an overview of the current project state.
 
 ```bash
 trackfw status
 ```
 
-### Saída esperada
+### Expected output
 
 ```
 trackfw — project status
@@ -554,42 +555,42 @@ trackfw — project status
 📝 REQs          3   (Open: 2, Closed: 1)
 
 ⏳ REQs blocked by Draft ADRs:
-  REQ-2026-06-13-login-via-oauth.md → ADR-2026-06-13-provider-oauth.md
+  REQ-2026-06-13-oauth-login.md → ADR-2026-06-13-oauth-provider.md
 ```
 
 ---
 
 ## `trackfw barrier`
 
-Barreira determinística de liberação de wave. É **agnóstica de stack**: nunca assume ferramenta de
-build, test runner ou regra de paridade — todo check executável vem do próprio roadmap (os gates
-declarados na wave) ou do `trackfw validate` rodado em processo.
+Deterministic wave-release barrier. It is **stack-agnostic**: it never assumes a build tool, a
+test runner, or a parity rule — every executable check comes from the roadmap itself (the wave's
+declared gates) or from `trackfw validate` run in-process.
 
 ```bash
 trackfw barrier <roadmap> --wave <n> [--json]
 ```
 
-`<roadmap>` é o basename com ou sem `.md`, resolvido em `wip/` e depois em `done/` sob
-`roadmap_dir` (inclusive no layout `by_agent`). `--wave` é obrigatório.
+`<roadmap>` is the basename with or without `.md`, resolved against `wip/` then `done/` under
+`roadmap_dir` (including the `by_agent` layout). `--wave` is required.
 
-### Checks embutidos
+### Built-in checks
 
-| Check | Passa quando |
+| Check | Passes when |
 |---|---|
-| `mls_complete` | A wave tem ao menos um ML e todos estão `**Status:** ✅` |
-| `acceptance_evidence` | Todo ML tem um bloco `**Critérios de aceite:**` não vazio, sem nenhuma linha `- [ ]` |
-| `gates` | Todo comando declarado em `**Gates da wave:**` sai com código 0 — uma wave sem esse bloco declara zero gates, e a barrier nunca inventa um |
-| `validate` | `trackfw validate --json` reporta `violations: 0` |
+| `mls_complete` | The wave has at least one ML and every ML is `**Status:** ✅` |
+| `acceptance_evidence` | Every ML has a non-empty `**Critérios de aceite:**` block with no `- [ ]` line |
+| `gates` | Every command declared under `**Gates da wave:**` exits 0 — a wave with no such block declares zero gates, and the barrier never invents one |
+| `validate` | `trackfw validate --json` reports `violations: 0` |
 
 ### Exit codes
 
-| Exit | Significado |
+| Exit | Meaning |
 |---|---|
-| `0` | `status: "passed"` — todos os checks passaram, a wave pode ser liberada |
-| `1` | `status: "blocked"` — pelo menos um check falhou; o relatório (texto ou `--json`) diz qual |
-| `2` | Erro de uso/resolução — roadmap ou wave não encontrados. **Não** é `blocked`: uma barrier que não pôde rodar é diferente de uma que rodou e reprovou |
+| `0` | `status: "passed"` — every check is green, the wave may release |
+| `1` | `status: "blocked"` — at least one check failed; the report (text or `--json`) says which |
+| `2` | Usage/resolution error — the roadmap or the wave could not be resolved. This is **not** `blocked`: a barrier that could not run is distinct from one that ran and failed |
 
-### Fluxo de correção
+### Correction flow
 
 ```bash
 $ trackfw barrier ROADMAP-example --wave 2
@@ -598,8 +599,8 @@ $ trackfw barrier ROADMAP-example --wave 2
 wave 2: blocked
 ```
 
-Corrija o roadmap (marque o ML como `✅`, feche os critérios pendentes) e rode o **mesmo comando** de
-novo — a barrier não é uma negação permanente; a wave corrigida passa na próxima invocação:
+Fix the roadmap (mark the ML `✅`, close the remaining criteria) and rerun the **same command** —
+the barrier is not a permanent denial; a corrected wave passes on the next invocation:
 
 ```bash
 $ trackfw barrier ROADMAP-example --wave 2
@@ -610,7 +611,7 @@ $ trackfw barrier ROADMAP-example --wave 2
 wave 2: passed
 ```
 
-### Saída JSON
+### JSON output
 
 ```bash
 trackfw barrier ROADMAP-example --wave 2 --json
@@ -635,18 +636,18 @@ trackfw barrier ROADMAP-example --wave 2 --json
 
 ### `trackfw barrier` vs. `/trackfw:barrier`
 
-`trackfw barrier` é o núcleo determinístico e reproduzível — nunca invoca agentes, nunca executa
-Git. O slash command `/trackfw:barrier` orquestra em torno dele: dispara as revisões de
-`code-quality`/`security` quando aplicável, audita o diff contra o escopo combinado, e — apenas o
-`trackfw_architect`, única autoridade Git do fluxo — comita e faz push quando tudo estiver verde.
-Uma barrier de CLI verde é necessária, mas não suficiente, para liberar uma wave. Contrato completo:
-`docs/cli-parity.md` → `## trackfw barrier`.
+`trackfw barrier` is the deterministic, reproducible core — it never invokes agents and never
+performs Git operations. The `/trackfw:barrier` slash command orchestrates around it: it dispatches
+`code-quality`/`security` reviews when applicable, audits the diff against scope, and — only for
+`trackfw_architect`, the sole Git authority in the workflow — commits and pushes once every check
+and review is green. A green CLI barrier is necessary but not sufficient to release a wave. Full
+contract: `docs/cli-parity.md` → `## trackfw barrier`.
 
 ---
 
 ## `trackfw context`
 
-Emite o contexto de governança do projeto para consumo por LLMs e agentes de IA.
+Emits governance context for LLM and AI agent consumption.
 
 ```bash
 trackfw context [--format=md|json]
@@ -654,11 +655,11 @@ trackfw context [--format=md|json]
 
 ### Flags
 
-| Flag | Descrição | Padrão |
-|------|-----------|--------|
-| `--format` | Formato de saída: `md` ou `json` | `md` |
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--format` | Output format: `md` or `json` | `md` |
 
-### Exemplo — formato JSON
+### Example — JSON format
 
 ```bash
 trackfw context --format=json
@@ -666,16 +667,16 @@ trackfw context --format=json
 
 ```json
 {
-  "project": "meu-projeto",
+  "project": "my-project",
   "governance_score": 80,
   "adrs": [
-    { "file": "ADR-2026-06-13-usar-postgresql.md", "status": "Accepted" }
+    { "file": "ADR-2026-06-13-use-postgresql.md", "status": "Accepted" }
   ],
   "reqs": [
-    { "file": "REQ-2026-06-13-login-via-oauth.md", "status": "Open" }
+    { "file": "REQ-2026-06-13-oauth-login.md", "status": "Open" }
   ],
   "roadmaps": {
-    "wip": ["ROADMAP-2026-06-13-implementar-oauth.md"]
+    "wip": ["ROADMAP-2026-06-13-implement-oauth.md"]
   },
   "violations": [],
   "warnings": []
@@ -686,7 +687,7 @@ trackfw context --format=json
 
 ## `trackfw serve`
 
-Inicia um servidor HTTP local com visualização web da cadeia ADR → REQ → ROADMAP.
+Starts a local HTTP server with web visualization of the ADR → REQ → ROADMAP chain.
 
 ```bash
 trackfw serve [--port 8080]
@@ -694,39 +695,39 @@ trackfw serve [--port 8080]
 
 ### Flags
 
-| Flag | Descrição | Padrão |
-|------|-----------|--------|
-| `--port` | Porta do servidor | `8080` |
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--port` | Server port | `8080` |
 
-Acesse `http://localhost:8080` para ver:
-- **Traceability** — mapa de rastreabilidade ADR → REQ → ROADMAP
-- **Timeline** — linha do tempo de transições
-- **Kanban** — board visual dos roadmaps por estado
+Access `http://localhost:8080` to see:
+- **Traceability** — ADR → REQ → ROADMAP traceability map
+- **Timeline** — state transition timeline
+- **Kanban** — visual board of roadmaps by state
 
 ---
 
 ## `trackfw metrics`
 
-Calcula métricas de fluxo a partir do histórico de transições (`.trackfw-log`).
+Calculates flow metrics from the transition history (`.trackfw-log`).
 
 ```bash
-trackfw metrics [--since YYYY-MM-DD] [--export relatorio.csv]
+trackfw metrics [--since YYYY-MM-DD] [--export report.csv]
 ```
 
 ### Flags
 
-| Flag | Descrição |
-|------|-----------|
-| `--since` | Data de início do período (ex: `2026-01-01`) |
-| `--export` | Exporta métricas para CSV |
+| Flag | Description |
+|------|-------------|
+| `--since` | Start date of the period (e.g., `2026-01-01`) |
+| `--export` | Export metrics to CSV |
 
-### Métricas calculadas
+### Metrics calculated
 
-- **Cycle time** — tempo médio de backlog → done
-- **Throughput** — roadmaps concluídos por semana
-- **WIP age** — tempo médio dos roadmaps em WIP
+- **Cycle time** — average backlog → done time
+- **Throughput** — roadmaps completed per week
+- **WIP age** — average time of roadmaps in WIP
 
-### Saída esperada
+### Expected output
 
 ```
 Metrics (2026-01-01 → 2026-06-13)
@@ -740,7 +741,7 @@ WIP age:       3 days (avg)
 
 ## `trackfw sync`
 
-Sincroniza REQs abertas com ferramentas de issue tracking externas.
+Syncs open REQs with external issue tracking tools.
 
 ```bash
 trackfw sync --to=linear
@@ -749,54 +750,54 @@ trackfw sync --to=jira
 
 ### Flags
 
-| Flag | Descrição | Valores |
-|------|-----------|---------|
-| `--to` | Destino da sincronização | `linear`, `jira` |
+| Flag | Description | Values |
+|------|-------------|--------|
+| `--to` | Sync destination | `linear`, `jira` |
 
-### Configuração — Linear
+### Configuration — Linear
 
-Em `trackfw.yaml` ou via variáveis de ambiente:
+In `trackfw.yaml` or via environment variables:
 
 ```yaml
 linear_api_key: "lin_api_..."
 linear_team_id: "TEAM_ID"
 ```
 
-Ou:
+Or:
 ```bash
 export LINEAR_API_KEY="lin_api_..."
 export LINEAR_TEAM_ID="TEAM_ID"
 ```
 
-### Configuração — Jira
+### Configuration — Jira
 
 ```yaml
-jira_base_url: "https://empresa.atlassian.net"
-jira_email: "usuario@empresa.com"
+jira_base_url: "https://company.atlassian.net"
+jira_email: "user@company.com"
 jira_token: "ATATT..."
 jira_project: "PROJ"
 ```
 
-Ou:
+Or:
 ```bash
-export JIRA_BASE_URL="https://empresa.atlassian.net"
-export JIRA_EMAIL="usuario@empresa.com"
+export JIRA_BASE_URL="https://company.atlassian.net"
+export JIRA_EMAIL="user@company.com"
 export JIRA_TOKEN="ATATT..."
 export JIRA_PROJECT="PROJ"
 ```
 
-### Saída esperada
+### Expected output
 
 ```
-REQ-2026-06-13-login-via-oauth.md → LIN-42 (created)
-REQ-2026-06-10-exportar-relatorio.md → already synced (skipped)
+REQ-2026-06-13-oauth-login.md → LIN-42 (created)
+REQ-2026-06-10-export-report.md → already synced (skipped)
 ```
 
 ---
 
 ## `trackfw log`
 
-Exibe o histórico de transições de estado dos roadmaps.
+Displays the history of roadmap state transitions.
 
 ```bash
 trackfw log [--tail N]
@@ -804,15 +805,15 @@ trackfw log [--tail N]
 
 ### Flags
 
-| Flag | Descrição | Padrão |
-|------|-----------|--------|
-| `--tail` | Número de entradas a exibir | `20` |
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--tail` | Number of entries to display | `20` |
 
-### Saída esperada
+### Expected output
 
 ```
 Date                 Roadmap                                            From       To
-2026-06-13 14:32     ROADMAP-2026-06-13-implementar-oauth.md           backlog  → wip
+2026-06-13 14:32     ROADMAP-2026-06-13-implement-oauth.md             backlog  → wip
 2026-06-12 09:15     ROADMAP-2026-06-10-refactor-db.md                 wip      → done
 ```
 
@@ -820,23 +821,23 @@ Date                 Roadmap                                            From    
 
 ## `trackfw note new`
 
-Cria uma nova nota de conhecimento em `vault/notes/`.
+Creates a new knowledge note in `vault/notes/`.
 
 ```bash
-trackfw note new "<título>"
+trackfw note new "<title>"
 ```
 
-### Saída esperada
+### Expected output
 
 ```
-created vault/notes/2026-06-13-titulo-da-nota.md
+created vault/notes/2026-06-13-note-title.md
 ```
 
 ---
 
 ## `trackfw changelog`
 
-Consulta o `CHANGELOG.md` sem sair do terminal.
+Reads entries from `CHANGELOG.md` without leaving the terminal.
 
 ```bash
 trackfw changelog
@@ -846,45 +847,46 @@ trackfw changelog --version 7.0.0
 
 ### Flags
 
-| Flag | Descrição |
-|------|-----------|
-| `--all` | Mostra o `CHANGELOG.md` inteiro |
-| `--version <x.y.z>` | Mostra apenas a seção da versão informada |
+| Flag | Description |
+|------|-------------|
+| `--all` | Shows the entire `CHANGELOG.md` |
+| `--version <x.y.z>` | Shows only the section for the given version |
 
-Sem flags, mostra a seção `[Unreleased]` (ou a mais recente, se não houver `[Unreleased]`).
+Without flags, shows the `[Unreleased]` section (or the most recent one, if there is no
+`[Unreleased]`).
 
 ---
 
 ## `trackfw commit`
 
-Passo intermediário entre `git commit` puro e `trackfw ship`: comita as mudanças staged
-diretamente, mas bloqueia **antes** do commit acontecer quando falta governança — em vez de
-deixar o commit acontecer e só detectar o problema depois.
+The missing intermediate step between raw `git commit` and `trackfw ship`: it commits staged
+changes directly, but blocks the commit **before** it happens when governance is missing, instead
+of letting it land and only catching it later.
 
 ```bash
 trackfw commit -m "fix(api): correct 401 on refresh"
 trackfw commit --suggest
 ```
 
-### Comportamento por branch
+### Behavior by branch
 
-| Branch | Comportamento |
+| Branch | Behavior |
 |---|---|
-| `main`/`master` | Sempre bloqueado — commit direto na branch default nunca é permitido |
-| `feat/`, `fix/`, `refactor/` | Exige roadmap com slug correspondente já em `wip/` ou `done/` (mesma lógica de `trackfw branch new` e `trackfw validate`); sem correspondência, bloqueia com a mensma orientação de governança |
-| Outras (ex.: `docs/`, `chore/`) | Permitido sem exigir roadmap — um warning é registrado, mas o commit prossegue |
+| `main`/`master` | Always blocked — committing directly on the default branch is never permitted |
+| `feat/`, `fix/`, `refactor/` | Requires a roadmap with a matching slug already in `wip/` or `done/` (same logic as `trackfw branch new` and `trackfw validate`); without a match, blocks with the same governance orientation message |
+| Other (e.g. `docs/`, `chore/`) | Allowed without requiring a roadmap — a warning is logged, but the commit proceeds |
 
 ### Flags
 
-| Flag | Descrição |
-|------|-----------|
-| `-m` / `--message` | Mensagem de commit (obrigatória, exceto com `--suggest`) |
-| `--suggest` | Imprime um esqueleto heurístico de mensagem Conventional Commits a partir de `git diff --cached --name-status` e sai sem commitar (ignora `-m`; nenhuma chamada de LLM) |
+| Flag | Description |
+|------|-------------|
+| `-m` / `--message` | Commit message (required, except with `--suggest`) |
+| `--suggest` | Prints a heuristic Conventional Commits message skeleton from `git diff --cached --name-status` and exits without committing (ignores `-m`; no LLM call) |
 
-Quando permitido, executa `git commit -m <message>`, propagando literalmente a saída e o exit
-status do Git.
+When allowed, runs `git commit -m <message>`, propagating Git's own output and exit status
+literally.
 
-### Se bloquear
+### If it blocks
 
 ```bash
 trackfw req new "title"
@@ -896,7 +898,7 @@ trackfw roadmap move <name> wip
 
 ## `trackfw ship`
 
-Executa a sequência de entrega governada em sete passos: valida branch, verifica governança (REQ + roadmap em wip/), detecta squash-merges pendentes, revisa staged, commita, faz push e abre PR/MR via CLI da forge detectada (ou imprime URL de fallback caso a CLI não esteja disponível).
+Runs a seven-step governed delivery sequence: validates branch, checks governance (REQ + roadmap in wip/), detects pending squash-merges, reviews staged changes, commits, pushes, and opens a PR/MR via the resolved forge CLI (or prints a fallback browser URL when the CLI is absent).
 
 ```bash
 trackfw ship -m "feat(auth): add login flow"
@@ -907,30 +909,30 @@ trackfw ship -m "feat(ui): new dashboard" --forge gitlab
 
 ### Flags
 
-| Flag | Tipo | Descrição |
-|------|------|-----------|
-| `-m` / `--message` | string | Mensagem de commit (formato Conventional Commits obrigatório) |
-| `--dry-run` | bool | Imprime o que seria feito sem executar comandos de escrita; no passo 7, também reporta disponibilidade da CLI e imprime URL de fallback |
-| `--no-pr` | bool | Pula a criação do PR/MR após o push (passos 1–6 ainda rodam) |
-| `--forge` | string | Sobrepõe a detecção de forge (`github`, `gitlab`, `bitbucket`, `azure`) |
+| Flag | Type | Description |
+|------|------|-------------|
+| `-m` / `--message` | string | Commit message (Conventional Commits format required) |
+| `--dry-run` | bool | Print what would be done without executing write commands; in step 7, also reports forge CLI availability and prints the fallback URL when absent |
+| `--no-pr` | bool | Skip PR/MR creation after push (steps 1–6 still run) |
+| `--forge` | string | Override forge detection (`github`, `gitlab`, `bitbucket`, `azure`) |
 
-### Detecção de forge
+### Forge detection
 
-A forge é resolvida por precedência:
+The forge is resolved by precedence:
 
 1. `--forge` flag
-2. Campo `forge:` no `trackfw.yaml`
-3. URL do remote (ex.: `github.com`, `gitlab.com`, `bitbucket.org`, `dev.azure.com`)
-4. Arquivos de CI (`.gitlab-ci.yml` → gitlab; `.github/workflows/` → github)
-5. Manual — nenhuma forge detectada
+2. `forge:` field in `trackfw.yaml`
+3. Remote URL (e.g. `github.com`, `gitlab.com`, `bitbucket.org`, `dev.azure.com`)
+4. CI files (`.gitlab-ci.yml` → gitlab; `.github/workflows/` → github)
+5. Manual — no forge detected
 
-A forge e sua fonte são exibidas antes do passo 7:
+The resolved forge and its source are printed before step 7:
 
 ```
 Forge:     github (source: config)
 ```
 
-### Exemplo
+### Example
 
 ```bash
 $ trackfw ship -m "feat(auth): add OAuth login"
@@ -948,19 +950,19 @@ Forge:     github (source: remote)
 
 ## `trackfw completion`
 
-Gera o script de autocompletion do trackfw para o shell informado.
+Generates the trackfw autocompletion script for the given shell.
 
 ```bash
 trackfw completion bash|fish|powershell|zsh
 ```
 
-Consulte `trackfw completion <shell> --help` para instruções de instalação específicas do shell.
+See `trackfw completion <shell> --help` for shell-specific installation instructions.
 
 ---
 
 ## `trackfw version`
 
-Exibe a versão instalada do trackfw.
+Displays the installed version of trackfw.
 
 ```bash
 trackfw version
@@ -971,7 +973,7 @@ trackfw version
 
 ## `trackfw push`
 
-Push governado para commits já criados por `trackfw commit` ou `git commit`. Faz push da branch atual para o origin sem commitar e sem abrir PR/MR.
+Governed git push for commits already created by `trackfw commit` or `git commit`. Pushes the current branch to origin without committing and without opening a PR/MR.
 
 ```bash
 trackfw push
@@ -982,7 +984,7 @@ trackfw push --dry-run
 
 ## `trackfw doctor`
 
-Varre todos os destinos de agents/skills gerenciados pelo catálogo no disco e compara com o manifesto de integrações. Distingue artefatos modificados manualmente de conteúdo desconhecido.
+Sweeps every catalog-managed agents/skills destination on disk and compares the findings against the integrations manifest. Distinguishes hand-modified artifacts from unknown content and reports the discrepancy.
 
 ```bash
 trackfw doctor
@@ -993,25 +995,25 @@ trackfw doctor --json
 
 ## `trackfw guard`
 
-Guards de hook aplicados pelo trackfw no momento do uso de ferramentas.
+Hook guards enforced by trackfw at tool-use time.
 
 ```bash
-trackfw guard write-scope <name>    # bloqueia escrita em caminhos congelados
-trackfw guard git-branch <name>     # bloqueia operações git branch/commit/push diretas
-trackfw guard credential <name>     # bloqueia padrões de credencial nos payloads
-trackfw guard credential --global   # aplica o guard de credencial globalmente
+trackfw guard write-scope <name>    # blocks writes to frozen paths
+trackfw guard git-branch <name>     # blocks raw git branch/commit/push operations
+trackfw guard credential <name>     # blocks credential patterns in tool payloads
+trackfw guard credential --global   # applies credential guard globally
 ```
 
-Consulte `trackfw guard <subcomando> --help` para opções específicas de cada guard.
+See `trackfw guard <subcommand> --help` for per-guard options.
 
 ---
 
 ## `trackfw attention`
 
-Escreve ou limpa o sinal de atenção do board que o Kanban do `trackfw serve` exibe como banner em tempo real.
+Writes or clears the board attention signal that the `trackfw serve` Kanban picks up as a live banner.
 
 ```bash
-trackfw attention signal    # escreve .trackfw-attention.json
+trackfw attention signal    # write .trackfw-attention.json
 trackfw attention cleanup   # remove .trackfw-attention.json
 ```
 
@@ -1019,10 +1021,10 @@ trackfw attention cleanup   # remove .trackfw-attention.json
 
 ## `trackfw release tag`
 
-Cria e publica uma tag de release anotada com o changelog no corpo da mensagem.
+Creates and publishes an annotated git release tag with changelog in the message body.
 
 ```bash
-trackfw release tag <versão>
+trackfw release tag <version>
 trackfw release tag 11.2.0
 ```
 
@@ -1030,20 +1032,20 @@ trackfw release tag 11.2.0
 
 ## `trackfw branch prune`
 
-Reporta (e, com `--apply`, exclui) branches locais já integradas em `origin/main`.
+Reports (and, with `--apply`, deletes) local branches already integrated into `origin/main`.
 
 ```bash
-trackfw branch prune          # apenas relatório — keep / review / delete
-trackfw branch prune --apply  # exclui as branches classificadas como delete
+trackfw branch prune          # report only — keep / review / delete
+trackfw branch prune --apply  # delete classified-as-delete branches
 ```
 
-Classifica em `keep`, `review` e `delete`. A categoria `review` nunca é excluída automaticamente, mesmo com `--apply`.
+Classifies into `keep`, `review`, and `delete`. The `review` category is never deleted automatically even with `--apply`.
 
 ---
 
 ## `trackfw audit-surface`
 
-Reporta a superfície executável de um ref git (wiring de hooks e arquivos de instrução) sem fazer checkout.
+Reports the executable surface of a git ref (hook wiring and instruction files) without checking it out.
 
 ```bash
 trackfw audit-surface <ref>
@@ -1054,7 +1056,7 @@ trackfw audit-surface FETCH_HEAD
 
 ## `trackfw agents models`
 
-Lista as versões de modelo configuradas para cada target de agente e mostra a fonte da configuração.
+Lists the configured model versions for each agent target and shows the configuration source.
 
 ```bash
 trackfw agents models

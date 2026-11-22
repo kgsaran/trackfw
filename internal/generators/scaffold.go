@@ -13,6 +13,7 @@ import (
 	"github.com/kgsaran/trackfw/internal/pathguard"
 	"github.com/kgsaran/trackfw/internal/validator"
 	"github.com/kgsaran/trackfw/internal/version"
+	"gopkg.in/yaml.v3"
 )
 
 // projectRoot returns the resolved (EvalSymlinks) absolute path of the current
@@ -923,36 +924,39 @@ type configBlock struct {
 	text string
 }
 
-// presentTopLevelKeys devolve o conjunto de chaves de nível 0 presentes no
-// conteúdo YAML, respeitando as quatro propriedades da ADR:
-//
-//   - P1: âncora em coluna 0 — chave começa sem espaço/tab.
-//   - P2: dois-pontos obrigatórios — compara key+":" para evitar colisão de
-//     prefixo (ex: roadmap_dir vs. roadmap_namespacing).
-//   - P3: linha comentada = chave ausente — linhas que começam com "#" após
-//     TrimSpace são ignoradas.
-//
-// A função intenciona detectar presença, não ausência — não confundir com
-// parseConfigBlocks, que extrai blocos do conteúdo *gerado* (não do existente).
-func presentTopLevelKeys(content string) map[string]bool {
+// presentTopLevelKeys returns the set of top-level keys present in the YAML
+// content, using a yaml.Node parse (ADR-2026-11-22, D2a). This correctly
+// handles quoted keys, keys with leading/trailing spaces, BOM-prefixed keys,
+// and anchor/alias indirection. The second return value is false when the
+// content is not valid YAML (safe no-op for the caller).
+func presentTopLevelKeys(content string) (map[string]bool, bool) {
 	keys := make(map[string]bool)
-	for _, line := range strings.Split(content, "\n") {
-		// P3: ignora linhas de comentário
-		if strings.HasPrefix(strings.TrimSpace(line), "#") {
-			continue
-		}
-		// P1: âncora em coluna 0 — ignora linhas indentadas e em branco
-		if len(line) == 0 || line[0] == ' ' || line[0] == '\t' {
-			continue
-		}
-		// P2: dois-pontos obrigatórios
-		idx := strings.Index(line, ":")
-		if idx <= 0 {
-			continue
-		}
-		keys[line[:idx]] = true
+	var root yaml.Node
+	if err := yaml.Unmarshal([]byte(content), &root); err != nil {
+		return keys, false
 	}
-	return keys
+	if len(root.Content) == 0 {
+		// Empty document: no keys, but not an error.
+		return keys, true
+	}
+	top := root.Content[0]
+	if top.Kind != yaml.MappingNode {
+		return keys, false
+	}
+	for i := 0; i+1 < len(top.Content); i += 2 {
+		k := resolveScaffoldAlias(top.Content[i])
+		keys[k.Value] = true
+	}
+	return keys, true
+}
+
+// resolveScaffoldAlias follows YAML alias chains until a non-alias node is
+// reached. This mirrors config.go's unexported resolveAlias.
+func resolveScaffoldAlias(n *yaml.Node) *yaml.Node {
+	for n.Kind == yaml.AliasNode && n.Alias != nil {
+		n = n.Alias
+	}
+	return n
 }
 
 // parseConfigBlocks extrai os blocos de configuração do conteúdo *gerado* pelo
@@ -1110,7 +1114,7 @@ roadmap_namespacing: flat
 	// Arquivo presente: merge textual por chave ausente (ADR-2026-09-28).
 	// Preserva todo valor já escrito pelo consumidor; acrescenta apenas as chaves
 	// que faltam. Zero diff nas linhas pré-existentes quando não há chave nova.
-	existingKeys := presentTopLevelKeys(string(existing))
+	existingKeys, _ := presentTopLevelKeys(string(existing))
 	blocks := parseConfigBlocks(content)
 
 	var missing []string
@@ -2354,7 +2358,8 @@ func generateLefthookHook() error {
 	}
 
 	var out string
-	if !presentTopLevelKeys(existingStr)["pre-commit"] {
+	existingLefthookKeys, _ := presentTopLevelKeys(existingStr)
+	if !existingLefthookKeys["pre-commit"] {
 		// No pre-commit block yet: append the full block with a blank-line separator.
 		out = existingStr
 		if out != "" && !strings.HasSuffix(out, "\n") {

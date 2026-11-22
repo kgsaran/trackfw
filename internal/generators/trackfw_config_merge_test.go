@@ -10,7 +10,8 @@ package generators
 //   T4 BlocoMultilinhaAcrescentado     → bloco multi-linha (chave + corpo indentado) não emite linha-órfã
 //   T5 ChaveComentadaEhAusente         → P3: chave comentada conta como ausente e é acrescentada
 //   T6 PrefixoColisaoPrevenida         → P2: roadmap_dir presente não impede acréscimo de roadmap_namespacing
-//   T7 PresentTopLevelKeys_P1P2P3      → unidade: P1 (coluna 0), P2 (dois-pontos), P3 (comentário)
+//   T7 PresentTopLevelKeys_D2a          → yaml.Node parse: quoted key, BOM, space-before-colon, indented sub-key, invalid YAML
+//   T8 PresentTopLevelKeys_CounterArm   → absent key not in map; valid parse returns ok=true
 
 import (
 	"os"
@@ -339,40 +340,102 @@ rules:
 	}
 }
 
-// T7 — unidade de presentTopLevelKeys: P1 (coluna 0), P2 (dois-pontos), P3 (comentário).
+// T7 — yaml.Node parse (D2a, ADR-2026-11-22): quoted key, BOM-prefixed key,
+// key with space-before-colon, indented sub-key not at top level, invalid YAML.
 //
-// Reconciliação: este teste afirma que presentTopLevelKeys detecta corretamente
-// chaves presentes e ausentes de acordo com as propriedades P1-P3, que são os
-// predicados que governam se um bloco é acrescentado ou ignorado no merge.
-func TestPresentTopLevelKeys_P1P2P3(t *testing.T) {
-	content := `# roadmap_dir: docs/roadmaps
+// Reconciliação: este teste afirma que presentTopLevelKeys (D2a) usa yaml.Node
+// e detecta corretamente:
+//   - chave entre aspas ("governance_mode": …) → detectada sem as aspas
+//   - chave com BOM (\xef\xbb\xbfadr_dirs: …) → detectada como "adr_dirs"
+//   - chave com espaço antes do `:` (adr_dirs : …) → detectada como "adr_dirs"
+//   - sub-chave indentada não aparece como chave de nível 0
+//   - YAML inválido → retorna (empty, false) sem pânico
+func TestPresentTopLevelKeys_D2a(t *testing.T) {
+	// quoted key: yaml.Node strips the quotes from the key value.
+	quotedContent := `"governance_mode": lenient
 roadmap_dir: docs/roadmaps
-  roadmap_namespacing: flat
+`
+	keys, ok := presentTopLevelKeys(quotedContent)
+	if !ok {
+		t.Fatal("quoted-key fixture must parse as valid YAML")
+	}
+	if !keys["governance_mode"] {
+		t.Error("quoted key \"governance_mode\" must be detected as governance_mode")
+	}
+	if !keys["roadmap_dir"] {
+		t.Error("roadmap_dir must be detected")
+	}
+
+	// BOM-prefixed: yaml.v3 strips BOM from key values.
+	bomContent := "\xef\xbb\xbfadr_dirs:\n  - docs/adr\ngovernance_mode: lenient\n"
+	keys, ok = presentTopLevelKeys(bomContent)
+	if !ok {
+		t.Fatal("BOM-prefixed fixture must parse as valid YAML")
+	}
+	if !keys["adr_dirs"] {
+		t.Error("BOM-prefixed key must be detected as adr_dirs (BOM stripped by yaml.v3)")
+	}
+	if !keys["governance_mode"] {
+		t.Error("governance_mode must be detected alongside BOM key")
+	}
+
+	// space-before-colon: old text implementation kept trailing space in key name;
+	// yaml.Node correctly trims it.
+	spaceContent := "adr_dirs : [docs/adr]\ngovernance_mode: lenient\n"
+	keys, ok = presentTopLevelKeys(spaceContent)
+	if !ok {
+		t.Fatal("space-before-colon fixture must parse as valid YAML")
+	}
+	if !keys["adr_dirs"] {
+		t.Errorf("space-before-colon key must be detected as adr_dirs; got keys %v", keys)
+	}
+
+	// indented sub-key: nested value must NOT appear as a top-level key.
+	nestedContent := `frontend:
+  framework: react
+roadmap_dir: docs/roadmaps
+`
+	keys, ok = presentTopLevelKeys(nestedContent)
+	if !ok {
+		t.Fatal("nested fixture must parse as valid YAML")
+	}
+	if keys["framework"] {
+		t.Error("indented sub-key framework must not appear as a top-level key")
+	}
+	if !keys["frontend"] {
+		t.Error("top-level key frontend must be detected")
+	}
+
+	// invalid YAML → (empty, false)
+	_, ok = presentTopLevelKeys("key: [unclosed")
+	if ok {
+		t.Error("invalid YAML must return ok=false")
+	}
+}
+
+// T8 — counter-arm: absent key not in map; valid parse returns ok=true.
+//
+// Reconciliação: este teste afirma que uma chave ausente do YAML retorna false
+// no mapa (não falso-positivo), e que um parse válido retorna ok=true —
+// garantindo que o merge acrescenta a chave ausente em vez de silenciosamente
+// assumir que ela já existe.
+func TestPresentTopLevelKeys_CounterArm(t *testing.T) {
+	content := `roadmap_dir: docs/roadmaps
 ci: github-actions
 `
-	keys := presentTopLevelKeys(content)
-
-	// P3: comentado — deve ser detectado como presente porque roadmap_dir aparece
-	// também como chave real na linha seguinte.
+	keys, ok := presentTopLevelKeys(content)
+	if !ok {
+		t.Fatal("valid YAML must return ok=true")
+	}
+	if keys["governance_mode"] {
+		t.Error("governance_mode must not be a false-positive when absent from YAML")
+	}
+	if keys["lenient_until"] {
+		t.Error("lenient_until must not be a false-positive when absent from YAML")
+	}
+	// Present keys must still be found (the counter-arm does not break detection).
 	if !keys["roadmap_dir"] {
-		t.Error("roadmap_dir deveria estar presente (linha real, não apenas comentário)")
-	}
-	// P1: indentado — roadmap_namespacing NÃO deve ser detectado como chave de nível 0.
-	if keys["roadmap_namespacing"] {
-		t.Error("roadmap_namespacing indentado não deveria ser detectado como chave P1")
-	}
-	// P2: ci: presente.
-	if !keys["ci"] {
-		t.Error("ci deveria estar presente")
-	}
-
-	// P3 puro: apenas comentário.
-	contentOnlyComment := `# governance_mode: lenient
-other_key: value
-`
-	keys2 := presentTopLevelKeys(contentOnlyComment)
-	if keys2["governance_mode"] {
-		t.Error("governance_mode apenas em comentário não deveria ser detectado como presente (P3)")
+		t.Error("roadmap_dir must be detected (counter-arm must not break detection)")
 	}
 }
 

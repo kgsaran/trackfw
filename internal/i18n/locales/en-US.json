@@ -17,7 +17,8 @@
       "identityCustomName": "Display name for the agent",
       "identityNickname": "What should we call you? (optional)"
     },
-    "success": "\n✓ trackfw initialized — run 'trackfw status' to see your governance state."
+    "success": "\n✓ trackfw initialized — run 'trackfw status' to see your governance state.",
+    "brownfieldYamlExists": "⚠ governance keys not modified — edit trackfw.yaml directly to enable lenient mode"
   },
   "identity": {
     "inUse": "identity: {{count}} custom agent(s)",

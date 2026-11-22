@@ -3,32 +3,32 @@ import { defineConfig } from 'vitepress'
 export default defineConfig({
   base: '/trackfw/',
   title: 'trackfw',
-  description: 'CLI de governança para entrega de software: ADR → REQ → ROADMAP → kanban',
+  description: 'Software delivery governance CLI: ADR → REQ → ROADMAP → kanban',
 
   head: [
     ['meta', { name: 'og:type', content: 'website' }],
-    ['meta', { name: 'og:title', content: 'trackfw — Governança para times e agentes de IA' }],
-    ['meta', { name: 'og:description', content: 'CLI open-source para governança de entrega: ADR → REQ → ROADMAP → kanban. Suporte nativo a agentes de IA.' }],
+    ['meta', { name: 'og:title', content: 'trackfw — Governance for teams and AI agents' }],
+    ['meta', { name: 'og:description', content: 'Open-source CLI for delivery governance: ADR → REQ → ROADMAP → kanban. Native support for AI agents.' }],
     ['link', { rel: 'icon', href: '/trackfw/favicon.ico', type: 'image/x-icon' }],
   ],
 
   locales: {
     root: {
-      label: 'Português',
-      lang: 'pt-BR',
+      label: 'English',
+      lang: 'en-US',
       themeConfig: {
         nav: [
-          { text: 'Início', link: '/' },
-          { text: 'Guia', link: '/guide/getting-started' },
-          { text: 'Comandos', link: '/guide/commands' },
-          { text: 'IA Agents', link: '/guide/ai-agents' },
+          { text: 'Home', link: '/' },
+          { text: 'Guide', link: '/guide/getting-started' },
+          { text: 'Commands', link: '/guide/commands' },
+          { text: 'AI Agents', link: '/guide/ai-agents' },
           { text: 'GitHub', link: 'https://github.com/kgsaran/trackfw' },
         ],
         sidebar: {
           '/guide/': [
-            { text: 'Início Rápido', link: '/guide/getting-started' },
-            { text: 'Referência de Comandos', link: '/guide/commands' },
-            { text: 'trackfw para Agentes de IA', link: '/guide/ai-agents' },
+            { text: 'Getting Started', link: '/guide/getting-started' },
+            { text: 'Commands Reference', link: '/guide/commands' },
+            { text: 'trackfw for AI Agents', link: '/guide/ai-agents' },
           ],
         },
         footer: {
@@ -37,23 +37,23 @@ export default defineConfig({
         },
       },
     },
-    en: {
-      label: 'English',
-      lang: 'en-US',
-      link: '/en/',
+    pt: {
+      label: 'Português',
+      lang: 'pt-BR',
+      link: '/pt/',
       themeConfig: {
         nav: [
-          { text: 'Home', link: '/en/' },
-          { text: 'Guide', link: '/en/guide/getting-started' },
-          { text: 'Commands', link: '/en/guide/commands' },
-          { text: 'AI Agents', link: '/en/guide/ai-agents' },
+          { text: 'Início', link: '/pt/' },
+          { text: 'Guia', link: '/pt/guide/getting-started' },
+          { text: 'Comandos', link: '/pt/guide/commands' },
+          { text: 'IA Agents', link: '/pt/guide/ai-agents' },
           { text: 'GitHub', link: 'https://github.com/kgsaran/trackfw' },
         ],
         sidebar: {
-          '/en/guide/': [
-            { text: 'Getting Started', link: '/en/guide/getting-started' },
-            { text: 'Commands Reference', link: '/en/guide/commands' },
-            { text: 'trackfw for AI Agents', link: '/en/guide/ai-agents' },
+          '/pt/guide/': [
+            { text: 'Início Rápido', link: '/pt/guide/getting-started' },
+            { text: 'Referência de Comandos', link: '/pt/guide/commands' },
+            { text: 'trackfw para Agentes de IA', link: '/pt/guide/ai-agents' },
           ],
         },
         footer: {

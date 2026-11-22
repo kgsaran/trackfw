@@ -75,9 +75,17 @@ test -s docs/seguranca/2026-11-22-wave0-onboarding-threat-model.md
 > sequential); afrodite-tf runs ML-1B in parallel (only `site/`).
 
 ### ML-1A — `init` honra as flags nos dois caminhos (apolo-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — pontos de injeção `initStdinIsTTY`/`initFormRunner` em `init.go`. D1: `--brownfield` lido sem
+TTY; `--ai-tools` passado esconde a pergunta do wizard e vence no TTY. D2: `applyBrownfieldOrWarn`, com aviso em
+`init.brownfieldYamlExists` (`internal/i18n/locales/en-US.json`, fora da lista do handoff mas exigido pelo i18n;
+aceito). `guard.go:37` lista os três guards; contrato D1/D2/D2a em `docs/cli-parity.md`. Testes:
+`TestInitD1_NonTTY_BrownfieldNewProject`, `TestInitD2_NonTTY_BrownfieldExistingYAML_GovernanceUnchanged`,
+`TestInitD1_TTY_AIToolsFlag_SkipsWizard`. Auditoria do arquiteto, sonda no binário contra o 11.8.0: projeto novo +
+`--brownfield` sem TTY grava `governance_mode` (antes 0); `trackfw.yaml` existente + `--brownfield --ai-tools claude`
+mantém a governança, imprime o aviso e instala 12 agentes. O apolo não entregou o contra-braço pedido, rodou
+`go test ./...` (proibido no handoff), editou o roadmap e deixou um `check-gates-falsify.sh` órfão, que encerrei.
 **Files affected:** `internal/commands/init.go`; `internal/commands/init_flags_both_paths_test.go` (novo);
-`internal/commands/guard.go`; `docs/cli-parity.md`
+`internal/commands/guard.go`; `internal/i18n/locales/en-US.json`; `docs/cli-parity.md`
 **Actions:**
 1. ADR D1: `--brownfield` read on the non-TTY path; `--ai-tools`, when passed (`Changed`), wins on the TTY path and
    skips the AI tools question. `--identity-preset`, `--forge` and `--scope` already behave on both paths (ML-0A §1.1).
@@ -104,7 +112,13 @@ TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 5m ./internal/commands/
 ```
 
 ### ML-1C — Merge do `trackfw.yaml` reconhece chaves pelo parse YAML (apolo-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done, com corretivo no ML-1D — `presentTopLevelKeys` usa parse `yaml.Node` nos dois chamadores.
+Sonda do arquiteto contra o 11.8.0: `"adr_dirs":`, `adr_dirs :` e BOM deixam de ganhar um segundo `adr_dirs`
+(2 → 1); YAML inválido continua abortando o `init` (rc=1, sem escrita). Achados da auditoria, no ML-1D: com YAML
+inválido o detector devolve vazio, e o `lefthook.yml` inválido ganharia um `pre-commit` duplicado (antes, a detecção
+por texto o achava); o teste antigo `TestPresentTopLevelKeys_P1P2P3` (comentário = ausente, prefixo `roadmap_dir`
+× `roadmap_namespacing`) foi removido sem que as propriedades fossem reafirmadas; falta teste de ponta a ponta do merge
+(só o detector é testado).
 **Files affected:** `internal/generators/scaffold.go`; `internal/generators/trackfw_config_merge_test.go`
 **Actions:**
 1. ADR D2a: `presentTopLevelKeys` (`scaffold.go:937`) derives the present top-level keys from a `yaml.Node` parse,
@@ -124,8 +138,36 @@ TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 5m ./internal/generators/
 bash scripts/check-init-preserves-user-config.sh
 ```
 
-### ML-1B — Inglês na raiz do site (afrodite-tf)
+### ML-1D — Corretivo do ML-1C (apolo-tf)
 **Status:** ⬜ Pending
+**Files affected:** `internal/generators/scaffold.go`; `internal/generators/trackfw_config_merge_test.go`
+**Actions:**
+1. When `yaml.Node` parsing fails, `presentTopLevelKeys` falls back to the previous text detector (column-0 key before
+   `:`), so invalid content keeps exactly the pre-REQ behavior; the `bool` is used by the callers only if needed.
+2. Restore the P1–P3 assertions of the removed `TestPresentTopLevelKeys_P1P2P3` (commented key is absent; indented key
+   is not top-level; `roadmap_dir` does not match `roadmap_namespacing`) against the new implementation.
+3. End-to-end merge test: existing `trackfw.yaml` with `"adr_dirs":`, `adr_dirs :` and BOM on line 1 → after
+   `writeTrackfwConfig`, exactly one `adr_dirs` and the user's value kept; `lefthook.yml` with a quoted
+   `"pre-commit":` → no second `pre-commit`; invalid `lefthook.yml` with `pre-commit:` → no second block.
+4. Counter-arm: with the old text-only detector, the end-to-end test fails (report the failing names).
+**Acceptance criteria:**
+- [ ] AC1 da REQ (D2a), afirmado de ponta a ponta
+- [ ] `go test ./internal/generators/` e `bash scripts/check-init-preserves-user-config.sh` rc=0
+
+**Wave gates:**
+```bash
+TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 5m ./internal/generators/
+bash scripts/check-init-preserves-user-config.sh
+```
+
+### ML-1B — Inglês na raiz do site (afrodite-tf)
+**Status:** ✅ Done — inglês em `site/` e pt-BR em `site/pt/`; `site/en/` removido; `config.mts` com `root` en-US e
+`pt` pt-BR; 7 links nas páginas e 15 pontos no `config.mts`. `npm ci && npm run build` rc=0. Grep do `dist`: nenhum
+`/trackfw/en/`; no `dist/pt`, só os 3 links do seletor de idioma para a página equivalente em inglês. Auditoria do
+arquiteto: capturas headless de `/trackfw/`, `/trackfw/pt/` e `/trackfw/guide/getting-started.html` sem asset quebrado,
+com idioma certo e seletor visível (a afrodite não conseguiu gerar os PNGs: o Chromium do brew trava no
+`--screenshot`; usei o `chrome-headless-shell` do Playwright). A afrodite marcou o status no roadmap, fora da lista
+de arquivos dela, e deixou um Chromium órfão, que encerrei. A nav do pt mostra "IA Agents" (conteúdo, ML-2A).
 **Files affected:** `site/.vitepress/config.mts`; `site/index.md`; `site/guide/getting-started.md`;
 `site/guide/commands.md`; `site/guide/ai-agents.md`; `site/pt/index.md`; `site/pt/guide/getting-started.md`;
 `site/pt/guide/commands.md`; `site/pt/guide/ai-agents.md`; `site/en/index.md`, `site/en/guide/getting-started.md`,
@@ -137,11 +179,11 @@ bash scripts/check-init-preserves-user-config.sh
 3. Update the 22 inbound links ML-0A §1.3 listed inside `site/` (15 in `config.mts`). The `docs/cli-parity.md` line
    belongs to ML-1A.
 **Acceptance criteria:**
-- [ ] `npm ci && npm run build` em `site/` rc=0 (o VitePress reprova link morto)
-- [ ] Captura em Chrome headless de `/trackfw/` (inglês) e `/trackfw/pt/` (pt-BR) sem asset quebrado
-- [ ] Nenhum `href="/trackfw/en/` no `site/.vitepress/dist`, e nenhum link do `dist/pt` para páginas da raiz em
+- [x] `npm ci && npm run build` em `site/` rc=0 (o VitePress reprova link morto)
+- [x] Captura em Chrome headless de `/trackfw/` (inglês) e `/trackfw/pt/` (pt-BR) sem asset quebrado
+- [x] Nenhum `href="/trackfw/en/` no `site/.vitepress/dist`, e nenhum link do `dist/pt` para páginas da raiz em
   inglês fora do seletor de idioma (calibrar na primeira build e registrar no relatório)
-- [ ] Nenhum arquivo fora de `site/`
+- [x] Nenhum arquivo fora de `site/` (exceto o status no roadmap, registrado acima)
 
 **Wave gates:**
 ```bash
