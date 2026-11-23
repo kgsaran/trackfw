@@ -482,6 +482,9 @@ TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 5m ./internal/config/
 ### ML-FB — make quality e CI (zeus-tf)
 **Status:** 🔄 In progress — `make quality` MQ_RC=0 em 2026-11-23 com a máquina ociosa (carga ~4; 3297 linhas de
 log; `internal/commands` 64,4 s; as linhas `FAIL` do log são dos contra-braços dos self-tests). Falta o CI do PR.
+**Files affected:** `docs/req/REQ-2026-11-23-guard-write-scope-re-enraizado-por-trackfw-yaml-aninhado-permite-ao-subagente-desligar-os-proprios-hooks.md`;
+`docs/roadmaps/backlog/ROADMAP-2026-11-23-guard-write-scope-re-enraizado-por-trackfw-yaml-aninhado-permite-ao-subagente-desligar-os-proprios-hooks.md`
+(REQ do F-5 aberta no backlog a pedido do KG; outra causa, outra REQ); `docs/roadmaps/.trackfw-log-entries/`
 **Acceptance criteria:**
 - [ ] AC6: `make quality` rc=0 com a máquina ociosa; CI verde no PR
 
