@@ -292,13 +292,18 @@ bash scripts/check-wheel-metadata-readme.sh
 ```
 
 ### ML-2D — Windows depois de *Installation* (atena-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — ordem de topo: Quick start (19), continued (40), The problem (59), Installation (74), Windows
+support (partial) (136), Commands (456). Diff ordenado vazio: só reordenação. wheel-metadata e `guardforms` rc=0. A
+atena relatou como quebrada a âncora `#guard-hooks-on-windows--measured-state-since-v930`, que no ML-2B tinha dado
+como OK. Pelo algoritmo do GitHub (github-slugger: minúsculas, remove pontuação, cada espaço vira hífen), o título
+`Guard hooks on Windows — measured state (since v9.3.0)` gera exatamente esse id; o checker do ML-2D é que diverge.
+Âncora válida.
 **Files affected:** `README.md`
 **Actions:** move the whole `## Windows support (partial)` section (with its subsections) to right after
 `## Installation`, before `## Commands`. Nothing else changes; anchors keep working.
 **Acceptance criteria:**
-- [ ] Ordem de topo: Quick start, Quick start continued, The problem, Installation, Windows support (partial), Commands
-- [ ] `bash scripts/check-wheel-metadata-readme.sh` e `go test ./internal/guardforms/` rc=0
+- [x] Ordem de topo: Quick start, Quick start continued, The problem, Installation, Windows support (partial), Commands
+- [x] `bash scripts/check-wheel-metadata-readme.sh` e `go test ./internal/guardforms/` rc=0
 
 **Wave gates:**
 ```bash

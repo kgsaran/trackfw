@@ -56,6 +56,83 @@ trackfw serve
 
 ---
 
+## The problem
+
+Most teams accumulate technical debt not because they lack tools, but because they lack **governance traceability**. Decisions are made in Slack. Requirements live in someone's head. Roadmaps drift from what was actually shipped.
+
+- **ADR tools** manage decision records, but don't connect them to delivery.
+- **Kanban tools** track tasks, but don't enforce that tasks are backed by a decision.
+- **CI tools** validate code, but don't validate governance.
+- **AI coding assistants** generate code at unprecedented speed, but without traceability: who decided what? Why? Which requirement authorized this roadmap?
+
+trackfw adds the governance layer that makes AI-assisted delivery auditable.
+
+trackfw closes the loop — connective tissue between *why*, *what*, and *when*.
+
+---
+
+## Installation
+
+### macOS / Linux — curl
+
+```bash
+curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh
+```
+
+### Homebrew
+
+```bash
+brew install kgsaran/trackfw/trackfw
+```
+
+### npm
+
+```bash
+npm install -g trackfw
+```
+
+From v8.0.0, the npm package is a ~80-line JavaScript shim that resolves
+`@trackfw-bin/<platform>` at require() time (execution, not postinstall) and executes
+the Go binary. **It is no longer pure Node.js — it contains a compiled binary.** The binary arrives through
+the `npm` channel rather than as a separate download, so organisations whose policy
+allows `npm install` but blocks direct executable downloads remain served.
+
+If your policy forbids compiled binaries in any form regardless of channel, this
+version is a breaking change for you. See [Changelog](CHANGELOG.md) for the full
+declaration.
+
+Shared behavior follows the [command contract](docs/cli-parity.md).
+
+> **The npm package delivers the same Go binary, and guard and attention hooks run it from
+> `PATH`.** Since v9.3.0, guard hooks call `trackfw guard <name>` directly; since v10.1.0,
+> attention hooks call `trackfw attention signal|cleanup` — no POSIX shell, `jq`, or
+> `python3` required. On Windows, the npm shim is a `.ps1` that PowerShell's
+> `ExecutionPolicy Restricted` blocks — see
+> [Windows support](#windows-support-partial) before relying on the hooks.
+
+
+### pip
+
+```bash
+pip install trackfw
+```
+
+From v8.0.0, the pip package is a binary wheel in `gh-bin` format — **it contains
+no Python files and no source**. The Go binary is installed into the PATH by pip.
+`python -m trackfw` no longer works; use the `trackfw` executable directly.
+
+Platforms not covered by the published wheels now fail at resolution time with
+"no matching distribution found" — a clean failure instead of silently installing
+the wrong thing. Eight wheels are published: `manylinux_2_17_x86_64`, `musllinux_1_2_x86_64`,
+`manylinux_2_17_aarch64`, `musllinux_1_2_aarch64`, `macosx_10_9_x86_64`,
+`macosx_11_0_arm64`, `win_amd64`, `win_arm64`. Linux publishes two wheels per
+architecture (manylinux + musllinux), so Alpine and similar musl-based distributions
+are covered.
+
+Shared behavior follows the [command contract](docs/cli-parity.md).
+
+---
+
 ## Windows support (partial)
 
 🚧 **Windows support is partial. Read this before adopting `trackfw` on Windows.**
@@ -373,83 +450,6 @@ that directory instead (cross-platform). `trackfw validate` warns when the two p
 (rule `home_divergence_windows`, informative only). Other CLIs (Codex, Gemini, Cursor,
 Copilot, Kiro) continue under `HOME` until measured; Windsurf is not yet measured and is
 flagged in the warning.
-
----
-
-## The problem
-
-Most teams accumulate technical debt not because they lack tools, but because they lack **governance traceability**. Decisions are made in Slack. Requirements live in someone's head. Roadmaps drift from what was actually shipped.
-
-- **ADR tools** manage decision records, but don't connect them to delivery.
-- **Kanban tools** track tasks, but don't enforce that tasks are backed by a decision.
-- **CI tools** validate code, but don't validate governance.
-- **AI coding assistants** generate code at unprecedented speed, but without traceability: who decided what? Why? Which requirement authorized this roadmap?
-
-trackfw adds the governance layer that makes AI-assisted delivery auditable.
-
-trackfw closes the loop — connective tissue between *why*, *what*, and *when*.
-
----
-
-## Installation
-
-### macOS / Linux — curl
-
-```bash
-curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh
-```
-
-### Homebrew
-
-```bash
-brew install kgsaran/trackfw/trackfw
-```
-
-### npm
-
-```bash
-npm install -g trackfw
-```
-
-From v8.0.0, the npm package is a ~80-line JavaScript shim that resolves
-`@trackfw-bin/<platform>` at require() time (execution, not postinstall) and executes
-the Go binary. **It is no longer pure Node.js — it contains a compiled binary.** The binary arrives through
-the `npm` channel rather than as a separate download, so organisations whose policy
-allows `npm install` but blocks direct executable downloads remain served.
-
-If your policy forbids compiled binaries in any form regardless of channel, this
-version is a breaking change for you. See [Changelog](CHANGELOG.md) for the full
-declaration.
-
-Shared behavior follows the [command contract](docs/cli-parity.md).
-
-> **The npm package delivers the same Go binary, and guard and attention hooks run it from
-> `PATH`.** Since v9.3.0, guard hooks call `trackfw guard <name>` directly; since v10.1.0,
-> attention hooks call `trackfw attention signal|cleanup` — no POSIX shell, `jq`, or
-> `python3` required. On Windows, the npm shim is a `.ps1` that PowerShell's
-> `ExecutionPolicy Restricted` blocks — see
-> [Windows support](#windows-support-partial) before relying on the hooks.
-
-
-### pip
-
-```bash
-pip install trackfw
-```
-
-From v8.0.0, the pip package is a binary wheel in `gh-bin` format — **it contains
-no Python files and no source**. The Go binary is installed into the PATH by pip.
-`python -m trackfw` no longer works; use the `trackfw` executable directly.
-
-Platforms not covered by the published wheels now fail at resolution time with
-"no matching distribution found" — a clean failure instead of silently installing
-the wrong thing. Eight wheels are published: `manylinux_2_17_x86_64`, `musllinux_1_2_x86_64`,
-`manylinux_2_17_aarch64`, `musllinux_1_2_aarch64`, `macosx_10_9_x86_64`,
-`macosx_11_0_arm64`, `win_amd64`, `win_arm64`. Linux publishes two wheels per
-architecture (manylinux + musllinux), so Alpine and similar musl-based distributions
-are covered.
-
-Shared behavior follows the [command contract](docs/cli-parity.md).
 
 ---
 
