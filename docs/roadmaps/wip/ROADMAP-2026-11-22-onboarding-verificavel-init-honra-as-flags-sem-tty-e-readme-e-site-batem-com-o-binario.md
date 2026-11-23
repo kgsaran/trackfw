@@ -102,8 +102,8 @@ mantém a governança, imprime o aviso e instala 12 agentes. O apolo não entreg
 6. Existing tests and `scripts/check-gates-falsify.sh` scenarios that pin the old behavior change with it. No new
    falsify scenario is required; Go tests carry D1/D2.
 **Acceptance criteria:**
-- [ ] AC1 da REQ (D1 e D2)
-- [ ] `go build ./...` e `go test ./internal/commands/` verdes
+- [x] AC1 da REQ (D1 e D2)
+- [x] `go build ./...` e `go test ./internal/commands/` verdes
 
 ### ML-1C — Merge do `trackfw.yaml` reconhece chaves pelo parse YAML (apolo-tf)
 **Status:** ✅ Done, com corretivo no ML-1D — `presentTopLevelKeys` usa parse `yaml.Node` nos dois chamadores.
@@ -123,8 +123,8 @@ por texto o achava); o teste antigo `TestPresentTopLevelKeys_P1P2P3` (comentári
 3. Tests: quoted key, space before `:`, BOM on line 1, for `adr_dirs` and `governance_mode` → no duplicate key after
    init; counter-arm: a key really absent is still appended.
 **Acceptance criteria:**
-- [ ] AC1 da REQ (D2a)
-- [ ] `bash scripts/check-init-preserves-user-config.sh` rc=0
+- [x] AC1 da REQ (D2a)
+- [x] `bash scripts/check-init-preserves-user-config.sh` rc=0
 
 ### ML-1D — Corretivo do ML-1C (apolo-tf)
 **Status:** ✅ Done — com YAML inválido, `presentTopLevelKeys` cai no detector antigo
@@ -219,8 +219,8 @@ na referência de comandos; a nota do `install.ps1` está desatualizada.
 description instead of a literal snapshot. The English getting-started uses the same command lines as the README
 Quick start, so ML-3A can pin both.
 **Acceptance criteria:**
-- [ ] Cada achado listado corrigido, ou justificado no relatório
-- [ ] `npm ci && npm run build` em `site/` rc=0; capturas headless das duas raízes
+- [x] Cada achado listado corrigido, ou justificado no relatório
+- [x] `npm ci && npm run build` em `site/` rc=0; capturas headless das duas raízes
 
 ### ML-2C — Corretivo do ML-2A (afrodite-tf)
 **Status:** ✅ Done — `adr new "Decision title"` e `req new "Requirement title"` na referência dos dois idiomas, com a
