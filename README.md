@@ -25,7 +25,7 @@ trackfw init --ai-tools claude --forge github
 trackfw adr new "User Authentication Strategy"
 trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md
 trackfw roadmap move ROADMAP-$(date +%F)-user-authentication.md wip
-trackfw validate                  # ✓ No violations found.
+trackfw validate                  # 0 violations, 2 warning(s) until you fill in the ADR and REQ sections
 ```
 
 In a terminal, `init`, `adr new` and `req new` open short wizards. The
@@ -37,61 +37,26 @@ as the product changes. Next: [Quick start, continued](#quick-start-continued).
 
 ---
 
-## The problem
+## Quick start, continued
 
-Most teams accumulate technical debt not because they lack tools, but because they lack **governance traceability**. Decisions are made in Slack. Requirements live in someone's head. Roadmaps drift from what was actually shipped.
+The [Quick start](#quick-start) gets the chain in place. Day to day:
 
-- **ADR tools** manage decision records, but don't connect them to delivery.
-- **Kanban tools** track tasks, but don't enforce that tasks are backed by a decision.
-- **CI tools** validate code, but don't validate governance.
-- **AI coding assistants** generate code at unprecedented speed, but without traceability: who decided what? Why? Which requirement authorized this roadmap?
+```bash
+# See what is in flight
+trackfw status
 
-trackfw adds the governance layer that makes AI-assisted delivery auditable.
+# Governed commit + push + open PR/MR (feat/fix/refactor branches only)
+trackfw branch new feat/<slug>    # ship refuses to run on main
+git add -p                        # stage your changes explicitly
+trackfw ship -m "feat(auth): add login flow"
 
-trackfw closes the loop — connective tissue between *why*, *what*, and *when*.
+# Live Kanban board at http://localhost:4080
+trackfw serve
+```
 
 ---
 
-## Installation
-
-### macOS / Linux — curl
-
-```bash
-curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh
-```
-
-### Homebrew
-
-```bash
-brew install kgsaran/trackfw/trackfw
-```
-
-### npm
-
-```bash
-npm install -g trackfw
-```
-
-From v8.0.0, the npm package is a ~80-line JavaScript shim that resolves
-`@trackfw-bin/<platform>` at require() time (execution, not postinstall) and executes
-the Go binary. **It is no longer pure Node.js — it contains a compiled binary.** The binary arrives through
-the `npm` channel rather than as a separate download, so organisations whose policy
-allows `npm install` but blocks direct executable downloads remain served.
-
-If your policy forbids compiled binaries in any form regardless of channel, this
-version is a breaking change for you. See [Changelog](CHANGELOG.md) for the full
-declaration.
-
-Shared behavior follows the [command contract](docs/cli-parity.md).
-
-> **The npm package delivers the same Go binary, and guard and attention hooks run it from
-> `PATH`.** Since v9.3.0, guard hooks call `trackfw guard <name>` directly; since v10.1.0,
-> attention hooks call `trackfw attention signal|cleanup` — no POSIX shell, `jq`, or
-> `python3` required. On Windows, the npm shim is a `.ps1` that PowerShell's
-> `ExecutionPolicy Restricted` blocks — see
-> [Windows support](#windows-support-partial) before relying on the hooks.
-
-### Windows support (partial)
+## Windows support (partial)
 
 🚧 **Windows support is partial. Read this before adopting `trackfw` on Windows.**
 
@@ -102,7 +67,7 @@ We publish a Windows binary and the npm/pip packages install on Windows. That is
 the same as the tool working end to end, and we would rather tell you where the edges
 are than let you find them after adoption.
 
-#### Installing on Windows
+### Installing on Windows
 
 **npm:**
 
@@ -175,7 +140,7 @@ Download `trackfw_<version>_windows_amd64.tar.gz` or `windows_arm64.tar.gz` from
 [releases page](https://github.com/kgsaran/trackfw/releases). Extract `trackfw.exe`,
 move it to a folder of your choice, and add that folder to your user `PATH`.
 
-**Pitfall: more than one `trackfw` on `PATH`**
+#### Pitfall: more than one `trackfw` on `PATH`
 
 Measured during the 2026-10-21 Windows journey: Claude Code hooks run through Git Bash,
 and the Git Bash login profile (`/etc/profile`) prepends `~/bin` (`%USERPROFILE%\bin`)
@@ -246,7 +211,7 @@ Each cell: ✅ measured | ⚠️ not verified | — not applicable.
 
 Windows CI matrix: **x64 only**. ARM64 CI is not currently run.
 
-**Guard hooks on Windows — measured state (since v9.3.0)**
+### Guard hooks on Windows — measured state (since v9.3.0)
 
 Since v9.3.0, guard hooks call `trackfw guard <name>` (the Go binary) instead of a
 `.sh` script. The same binary runs in every shell; for a given agent CLI, the hook
@@ -409,6 +374,63 @@ that directory instead (cross-platform). `trackfw validate` warns when the two p
 Copilot, Kiro) continue under `HOME` until measured; Windsurf is not yet measured and is
 flagged in the warning.
 
+---
+
+## The problem
+
+Most teams accumulate technical debt not because they lack tools, but because they lack **governance traceability**. Decisions are made in Slack. Requirements live in someone's head. Roadmaps drift from what was actually shipped.
+
+- **ADR tools** manage decision records, but don't connect them to delivery.
+- **Kanban tools** track tasks, but don't enforce that tasks are backed by a decision.
+- **CI tools** validate code, but don't validate governance.
+- **AI coding assistants** generate code at unprecedented speed, but without traceability: who decided what? Why? Which requirement authorized this roadmap?
+
+trackfw adds the governance layer that makes AI-assisted delivery auditable.
+
+trackfw closes the loop — connective tissue between *why*, *what*, and *when*.
+
+---
+
+## Installation
+
+### macOS / Linux — curl
+
+```bash
+curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh
+```
+
+### Homebrew
+
+```bash
+brew install kgsaran/trackfw/trackfw
+```
+
+### npm
+
+```bash
+npm install -g trackfw
+```
+
+From v8.0.0, the npm package is a ~80-line JavaScript shim that resolves
+`@trackfw-bin/<platform>` at require() time (execution, not postinstall) and executes
+the Go binary. **It is no longer pure Node.js — it contains a compiled binary.** The binary arrives through
+the `npm` channel rather than as a separate download, so organisations whose policy
+allows `npm install` but blocks direct executable downloads remain served.
+
+If your policy forbids compiled binaries in any form regardless of channel, this
+version is a breaking change for you. See [Changelog](CHANGELOG.md) for the full
+declaration.
+
+Shared behavior follows the [command contract](docs/cli-parity.md).
+
+> **The npm package delivers the same Go binary, and guard and attention hooks run it from
+> `PATH`.** Since v9.3.0, guard hooks call `trackfw guard <name>` directly; since v10.1.0,
+> attention hooks call `trackfw attention signal|cleanup` — no POSIX shell, `jq`, or
+> `python3` required. On Windows, the npm shim is a `.ps1` that PowerShell's
+> `ExecutionPolicy Restricted` blocks — see
+> [Windows support](#windows-support-partial) before relying on the hooks.
+
+
 ### pip
 
 ```bash
@@ -428,24 +450,6 @@ architecture (manylinux + musllinux), so Alpine and similar musl-based distribut
 are covered.
 
 Shared behavior follows the [command contract](docs/cli-parity.md).
-
----
-
-## Quick start, continued
-
-The [Quick start](#quick-start) gets the chain in place. Day to day:
-
-```bash
-# See what is in flight
-trackfw status
-
-# Governed commit + push + open PR/MR (feat/fix/refactor branches only)
-git add -p                        # stage your changes explicitly
-trackfw ship -m "feat(auth): add login flow"
-
-# Live Kanban board at http://localhost:4080
-trackfw serve
-```
 
 ---
 

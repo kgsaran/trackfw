@@ -267,7 +267,14 @@ test -f site/guide/commands.md
 ```
 
 ### ML-2B — README contíguo (atena-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done, com corretivo no ML-2D — Quick start e continuação contíguos (linhas 19 e 40); Windows virou
+`## Windows support (partial)`, com a âncora mantida; B.19 corrigido (2 parágrafos em negrito viraram títulos, 0
+âncora quebrada); A.2: o comentário do `validate` diz "0 violations, 2 warning(s)", medido; B.18: `branch new` antes
+do `ship`. Diff ordenado: só movimentação e as linhas listadas; +4 linhas. Gates: wheel-metadata, `guardforms` e
+`TestQuickStart` rc=0. Auditoria do arquiteto: o bloco de Windows (320 linhas) ficou **antes** de *The problem* e
+*Installation*, empurrando o pitch e a instalação para a linha 379. Foi seguido o texto do ADR D5 ("depois deles"),
+que eu escrevi mal; a intenção era tirar o Windows do caminho de leitura de macOS/Linux. ML-2D o move para depois de
+*Installation*.
 **Files affected:** `README.md`
 **Actions:**
 1. ADR D5: `## Quick start, continued` right after `## Quick start`; `### Windows support (partial)` leaves
@@ -276,8 +283,22 @@ test -f site/guide/commands.md
 3. Fix A.2: the `validate` line promises the output the Quick start really produces.
 4. Fix B.18: `trackfw branch new feat/<slug>` before `ship` in *Quick start, continued*.
 **Acceptance criteria:**
-- [ ] AC5 da REQ; lista das âncoras antes/depois no relatório
-- [ ] `bash scripts/check-wheel-metadata-readme.sh` rc=0
+- [x] AC5 da REQ; lista das âncoras antes/depois no relatório
+- [x] `bash scripts/check-wheel-metadata-readme.sh` rc=0
+
+**Wave gates:**
+```bash
+bash scripts/check-wheel-metadata-readme.sh
+```
+
+### ML-2D — Windows depois de *Installation* (atena-tf)
+**Status:** ⬜ Pending
+**Files affected:** `README.md`
+**Actions:** move the whole `## Windows support (partial)` section (with its subsections) to right after
+`## Installation`, before `## Commands`. Nothing else changes; anchors keep working.
+**Acceptance criteria:**
+- [ ] Ordem de topo: Quick start, Quick start continued, The problem, Installation, Windows support (partial), Commands
+- [ ] `bash scripts/check-wheel-metadata-readme.sh` e `go test ./internal/guardforms/` rc=0
 
 **Wave gates:**
 ```bash

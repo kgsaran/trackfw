@@ -60,7 +60,8 @@ que a saída prometida no documento é a que o `validate` produz. O teste não i
 existe no texto. Assim o documento não muda sem que o teste mude junto.
 
 **D5 — O README fica com o caminho do usuário novo contíguo.** O Quick start e a continuação dele ficam juntos, e o
-bloco de Windows sai de *Installation* para uma seção própria depois deles. Nenhum conteúdo é removido. Toda âncora
+bloco de Windows sai de dentro de *Installation* para uma seção própria logo depois dela, fora do caminho de leitura
+de quem instala no macOS ou no Linux. Nenhum conteúdo é removido. Toda âncora
 interna afetada é atualizada.
 
 **D6 — O site é verificado na REQ, sem job novo de CI.** Cada ML que mexe no site roda `npm ci && npm run build` em
