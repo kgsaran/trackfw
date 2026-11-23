@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-11-22
 author: "zeus-tf (decisões do KG em 2026-11-22)"
 adr: "docs/adr/ADR-2026-11-22-onboarding-verificavel-init-honra-as-flags-sem-tty-site-em-ingles-na-raiz-e-pinado-por-teste.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-11-22-onboarding-verificavel-init-honra-as-flags-sem-tty-e-readme-e-site-batem-com-o-binario.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-11-22-onboarding-verificavel-init-honra-as-flags-sem-tty-e-readme-e-site-batem-com-o-binario.md"
 ---
 
 # REQ: Onboarding verificável: init honra as flags sem TTY e README e site batem com o binário
 
-> Date: 2026-11-22 | Status: Open
+> Date: 2026-11-22 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -27,17 +27,17 @@ e o README promete `✓ No violations found.`. O produto é inglês primeiro, ma
 e do README, site pinado por teste); inglês na raiz do site e pt-BR em `/pt/`. ADR-2026-11-22, D1–D6.
 
 ## Acceptance Criteria
-- [ ] AC1: toda flag de `trackfw init` tem o mesmo efeito com e sem TTY (`--brownfield`, `--ai-tools` e as demais que
+- [x] AC1: toda flag de `trackfw init` tem o mesmo efeito com e sem TTY (`--brownfield`, `--ai-tools` e as demais que
   a varredura da Wave 0 encontrar), com teste de braço e contra-braço por caminho; os limites do brownfield (ADR D2)
   e o reconhecimento de chaves do merge do `trackfw.yaml` (ADR D2a) são afirmados por teste
-- [ ] AC2: o teste do Quick start afirma que cada comando que executa aparece literalmente no README e no guia de
+- [x] AC2: o teste do Quick start afirma que cada comando que executa aparece literalmente no README e no guia de
   início do site em inglês, e que a saída prometida no documento é a que o `validate` produz (ADR D4)
-- [ ] AC3: o site serve inglês em `/trackfw/` e pt-BR em `/trackfw/pt/`; `npm ci && npm run build` em `site/` passa,
+- [x] AC3: o site serve inglês em `/trackfw/` e pt-BR em `/trackfw/pt/`; `npm ci && npm run build` em `site/` passa,
   e as capturas em Chrome headless das duas raízes mostram as páginas sem asset quebrado (ADR D3, D6)
-- [ ] AC4: os bloqueantes e os atritos da auditoria estão corrigidos, ou justificados no roadmap um a um
-- [ ] AC5: no README, o Quick start e a continuação dele ficam contíguos e o bloco de Windows sai de *Installation*,
+- [x] AC4: os bloqueantes e os atritos da auditoria estão corrigidos, ou justificados no roadmap um a um
+- [x] AC5: no README, o Quick start e a continuação dele ficam contíguos e o bloco de Windows sai de *Installation*,
   sem conteúdo removido e sem âncora interna quebrada (ADR D5)
-- [ ] AC6: `make quality` rc=0 e CI verde no PR
+- [x] AC6: `make quality` rc=0 e CI verde no PR
 
 ## Negative scope
 - Não cria job novo de CI para o site (gates novos congelados; ADR D6).
@@ -55,4 +55,4 @@ ADR: docs/adr/ADR-2026-11-22-onboarding-verificavel-init-honra-as-flags-sem-tty-
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-11-22-onboarding-verificavel-init-honra-as-flags-sem-tty-e-readme-e-site-batem-com-o-binario.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-11-22-onboarding-verificavel-init-honra-as-flags-sem-tty-e-readme-e-site-batem-com-o-binario.md

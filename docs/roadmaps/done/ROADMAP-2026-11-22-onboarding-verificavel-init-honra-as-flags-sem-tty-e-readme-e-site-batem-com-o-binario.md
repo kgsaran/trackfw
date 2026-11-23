@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-11-22
 req: "docs/req/REQ-2026-11-22-onboarding-verificavel-init-honra-as-flags-sem-tty-e-readme-e-site-batem-com-o-binario.md"
 squad: "hades-tf, apolo-tf, afrodite-tf, atena-tf, hefesto-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, afrodite-tf, atena-tf, hefesto-tf"
 
 # Roadmap: Onboarding verificável: init honra as flags sem TTY e README e site batem com o binário
 
-> Created: 2026-11-22 | Status: wip
+> Created: 2026-11-22 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-11-22-onboarding-verificavel-init-honra-as-flags-sem-tty-e-readme-e-site-batem-com-o-binario.md -->
