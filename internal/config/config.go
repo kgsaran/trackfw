@@ -279,6 +279,19 @@ func Load() ProjectConfig {
 		if err != nil {
 			return
 		}
+		// ML-4G: first-pass with interface{} to detect alias bomb before the yaml.Node
+		// walk. yaml.Node ignores yaml.v3's aliasing limiter; interface{} carries it. Only
+		// "excessive aliasing" (fan-out bomb) is handled here — cyclic anchors produce
+		// "anchor value contains itself" and are handled by the cycle guard (ML-4E). All
+		// other interface{} errors (duplicate keys, cycle) fall through to the yaml.Node
+		// probe below or to parse(), which tolerates them gracefully.
+		var aliasprobe interface{}
+		if err := yaml.Unmarshal(data, &aliasprobe); err != nil &&
+			strings.Contains(err.Error(), "excessive aliasing") {
+			fmt.Fprintln(os.Stderr, MalformedConfigMessage)
+			osExit(1)
+			return
+		}
 		// Pre-check: yaml.Unmarshal into a throwaway node to detect genuine syntax errors
 		// before parse() runs. Kept as a separate, cheap decode (config files are small)
 		// rather than threading an error return through parse() and its ~20 direct test

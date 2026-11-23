@@ -937,6 +937,16 @@ type configBlock struct {
 // this case.
 func presentTopLevelKeys(content string) (map[string]bool, bool) {
 	keys := make(map[string]bool)
+	// ML-4G: first-pass with interface{} to detect alias bomb before yaml.Node walking.
+	// yaml.Node ignores yaml.v3's aliasing limiter; interface{} carries it. Only
+	// "excessive aliasing" (fan-out bomb) triggers the fallback here — cyclic anchors
+	// produce "anchor value contains itself" and are handled by the cycle guard (ML-4E).
+	// All other interface{} errors fall through to the yaml.Node path below.
+	var aliasprobe interface{}
+	if err := yaml.Unmarshal([]byte(content), &aliasprobe); err != nil &&
+		strings.Contains(err.Error(), "excessive aliasing") {
+		return presentTopLevelKeysFallback(content), false
+	}
 	var root yaml.Node
 	if err := yaml.Unmarshal([]byte(content), &root); err != nil {
 		// Fall back to the pre-D2a text detector so invalid content keeps its

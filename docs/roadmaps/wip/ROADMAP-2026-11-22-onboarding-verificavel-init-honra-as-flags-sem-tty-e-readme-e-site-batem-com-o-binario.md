@@ -421,7 +421,13 @@ escreveu a nota de vault `vault/notes/yaml-node-alias-bomb-bypass-interface-limi
   contrato; residual declarado
 
 ### ML-4G — Limite de alias no leitor e no escritor (apolo-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done, incompleto: ML-4H fecha — primeira passada em `interface{}` em `Load()` e em
+`presentTopLevelKeys`; só o erro "excessive aliasing" desvia (leitor: YAML malformado, rc=1; escritor: detector de
+texto). Ponta a ponta medido pelo apolo: bomba de 30 níveis, `validate` e `init` de 30 s (timeout) para 0,01 s, rc=1.
+6 testes (`TestAliasBomb_*`). Auditoria do arquiteto: a proteção depende do texto da mensagem do yaml.v3 e o próprio
+apolo mostrou dois desvios — um ciclo ou um `<<` duplicado **antes** da bomba muda o erro da primeira passada e a
+bomba volta a travar — além de `ParseRulesFromContent`, `ParseDirsFromContent`, `ReadNamespacingConfig` e
+`ReadAgentConventions`, que chamam `parse()` sem passar por `Load()`. Mesma causa: o caminhador não tem limite.
 **Files affected:** `internal/config/config.go`; `internal/config/config_merge_key_test.go`;
 `internal/generators/scaffold.go`; `internal/generators/trackfw_config_merge_test.go`
 **Actions:**
@@ -433,7 +439,25 @@ escreveu a nota de vault `vault/notes/yaml-node-alias-bomb-bypass-interface-limi
    same fixture exceeds the timeout (run as subprocess or with a short deadline, never hanging the package run).
 3. End-to-end: `validate` and `init` with the bomb return in under 2 s with a clear error.
 **Acceptance criteria:**
-- [ ] bomba de alias de 30 níveis: `validate` e `init` terminam em menos de 2 s (medido no binário)
+- [x] bomba de alias de 30 níveis: `validate` e `init` terminam em menos de 2 s (medido no binário)
+- [x] `go test ./internal/config/` e `go test ./internal/generators/` rc=0
+
+### ML-4H — Orçamento de visitas no caminhador (apolo-tf)
+**Status:** ⬜ Pending
+**Files affected:** `internal/config/config.go`; `internal/config/config_merge_key_test.go`;
+`internal/generators/scaffold.go`; `internal/generators/trackfw_config_merge_test.go`
+**Actions:**
+1. A node-visit budget inside the walkers themselves (`parse()` → `normalizeMapping`/`normalizeNode`/`applyMerge*`, and
+   `presentTopLevelKeys` → `expandTopLevelKeys`/`expandMergeValue`), shared per top-level call. When exceeded, the
+   reader returns an error that every caller of `parse()` handles as malformed YAML, and the writer falls back to the
+   text detector. Budget value stated and justified in the report (well above any real `trackfw.yaml`).
+2. The ML-4G string match on "excessive aliasing" stays only if still useful as an early exit; the budget is the
+   control.
+3. Tests: bomb alone; cycle-before-bomb; duplicate `<<`-before-bomb; bomb through each direct caller of `parse()`
+   (`ParseRulesFromContent`, `ParseDirsFromContent`, `ReadNamespacingConfig`, `ReadAgentConventions`); all return
+   within 2 s. Legitimate alias use keeps working.
+**Acceptance criteria:**
+- [ ] nenhuma das 4 formas (bomba, ciclo antes, `<<` duplicado antes, chamador direto de `parse()`) passa de 2 s
 - [ ] `go test ./internal/config/` e `go test ./internal/generators/` rc=0
 
 **Wave gates:**

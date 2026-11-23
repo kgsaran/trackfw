@@ -10,9 +10,12 @@ package config
 // which passes on the old code too — see the counter-arm note in that function.
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -210,5 +213,89 @@ func TestCyclicAnchor_SameAliasTwiceNoCycle(t *testing.T) {
 	// still sees c as unvisited and correctly skips the already-present key (no duplicate).
 	if cfg.WipLimit != 3 {
 		t.Errorf("WipLimit: want 3 (path-based guard must not block second use of *c), got %d", cfg.WipLimit)
+	}
+}
+
+// --- ML-4G: alias bomb tests ---
+
+// aliasBombSequence generates a YAML sequence-merge alias bomb with levels levels.
+// Each level doubles the expansion count: levels=30 → 2^30 ≈ 10^9 iterations.
+// levels=10 triggers "excessive aliasing" in yaml.Unmarshal(_, &interface{}).
+// levels=25 takes ~3 s in the yaml.Node walker (useful for counter-arm with 2 s deadline).
+func aliasBombSequence(levels int) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "n00: &n00\n  wip_limit: 1\n")
+	for i := 1; i < levels; i++ {
+		fmt.Fprintf(&sb, "n%02d: &n%02d\n  <<: [*n%02d, *n%02d]\n", i, i, i-1, i-1)
+	}
+	fmt.Fprintf(&sb, "req_dir: docs/req\nadr_dirs:\n  - docs/adr\n<<: [*n%02d, *n%02d]\n",
+		levels-1, levels-1)
+	return sb.String()
+}
+
+// TestAliasBomb_ReaderRejectsLoud asserts:
+// A 30-level sequence alias bomb causes Load() to call osExit(1) with MalformedConfigMessage
+// and return within 2 s. This confirms that the ML-4G interface{} first-pass check in Load()
+// intercepts the bomb before the yaml.Node walker runs.
+func TestAliasBomb_ReaderRejectsLoud(t *testing.T) {
+	bomb := aliasBombSequence(30)
+	done := make(chan struct{})
+	go func() {
+		assertLoadFailsLoud(t, bomb)
+		close(done)
+	}()
+	select {
+	case <-done:
+		// assertLoadFailsLoud already verified osExit(1) + MalformedConfigMessage.
+	case <-time.After(2 * time.Second):
+		t.Fatal("Load() must reject alias bomb and return within 2 s (ML-4G)")
+	}
+}
+
+// TestAliasBomb_ReaderLegitimateAlias asserts:
+// An anchor used 3 times (legitimate, non-bomb aliasing) is NOT rejected by the ML-4G
+// interface{} check and is loaded normally by Load() — wip_limit and req_dir are read.
+func TestAliasBomb_ReaderLegitimateAlias(t *testing.T) {
+	content := "c: &c\n  wip_limit: \"5\"\nreq_dir: docs/req\nadr_dirs:\n  - docs/adr\n<<: *c\na: *c\nb: *c\n"
+	cfg := loadFromYAML(t, content)
+	if cfg.WipLimit != 5 {
+		t.Errorf("WipLimit: want 5 (anchor used 3× must not be treated as bomb), got %d", cfg.WipLimit)
+	}
+	if cfg.REQDir != "docs/req" {
+		t.Errorf("REQDir: want docs/req, got %q", cfg.REQDir)
+	}
+}
+
+// TestAliasBomb_ReaderCounterArm asserts:
+// Without the ML-4G interface{} pre-check, normalizeMapping on a 25-level sequence bomb
+// takes >2 s — demonstrating the attack vector the fix addresses. Uses 25 levels
+// (~2.9 s without the guard) so the goroutine terminates naturally within ~1 s after
+// the 2 s deadline fires. If this test fails (goroutine finishes before deadline),
+// verify that aliasBombSequence(25) produces an effective bomb on this machine.
+func TestAliasBomb_ReaderCounterArm(t *testing.T) {
+	// 25 levels: 2^25 ≈ 33 M yaml.Node walker steps — takes ~2.9 s without the guard.
+	bomb := aliasBombSequence(25)
+	var root yaml.Node
+	if err := yaml.Unmarshal([]byte(bomb), &root); err != nil {
+		t.Fatalf("bomb must parse as yaml.Node without error: %v", err)
+	}
+	if len(root.Content) == 0 || root.Content[0].Kind != yaml.MappingNode {
+		t.Fatal("bomb must have a top-level MappingNode")
+	}
+	top := root.Content[0]
+	done := make(chan struct{})
+	go func() {
+		// Call normalizeMapping directly — this is the yaml.Node walker path that
+		// runs after the ML-4G check and would hang without it.
+		normalizeMapping(top, make(map[*yaml.Node]bool))
+		close(done)
+	}()
+	select {
+	case <-done:
+		t.Fatal("counter-arm FAIL: normalizeMapping completed on 25-level bomb within 2 s — " +
+			"verify aliasBombSequence(25) generates an effective bomb on this machine")
+	case <-time.After(2 * time.Second):
+		// Expected: without the interface{} check, normalizeMapping takes >>2 s.
+		// Goroutine terminates naturally after ~0.9 s more; test process continues. ML-4G.
 	}
 }

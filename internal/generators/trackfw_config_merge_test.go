@@ -34,11 +34,14 @@ package generators
 //   T19 PresentTopLevelKeysFallback_QuotedKey   → R1: fallback usa normalizeYAMLTopLevelKey; chave entre aspas retorna sem aspas
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // fixtureAllKeys retorna um trackfw.yaml mínimo que contém TODAS as chaves
@@ -1163,4 +1166,104 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// --- ML-4G: alias bomb tests (writers side) ---
+
+// aliasBombSequenceWriter generates a YAML sequence-merge alias bomb with levels levels.
+// Equivalent to the reader-side generator in config_merge_key_test.go; duplicated here
+// because the generators package does not import the config test helpers.
+func aliasBombSequenceWriter(levels int) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "n00: &n00\n  wip_limit: 1\n")
+	for i := 1; i < levels; i++ {
+		fmt.Fprintf(&sb, "n%02d: &n%02d\n  <<: [*n%02d, *n%02d]\n", i, i, i-1, i-1)
+	}
+	fmt.Fprintf(&sb, "req_dir: docs/req\nadr_dirs:\n  - docs/adr\n<<: [*n%02d, *n%02d]\n",
+		levels-1, levels-1)
+	return sb.String()
+}
+
+// TestAliasBomb_WriterFallback asserts:
+// presentTopLevelKeys on a 30-level sequence alias bomb returns ok=false (fallback path)
+// within 2 s. This confirms that the ML-4G interface{} first-pass check in
+// presentTopLevelKeys intercepts the bomb before the yaml.Node walker runs.
+// The fallback text detector must still find the column-0 keys req_dir and adr_dirs.
+func TestAliasBomb_WriterFallback(t *testing.T) {
+	bomb := aliasBombSequenceWriter(30)
+	type res struct {
+		keys map[string]bool
+		ok   bool
+	}
+	ch := make(chan res, 1)
+	go func() {
+		k, ok := presentTopLevelKeys(bomb)
+		ch <- res{k, ok}
+	}()
+	select {
+	case r := <-ch:
+		if r.ok {
+			t.Fatal("bomb must return ok=false (fallback triggered by ML-4G interface{} check)")
+		}
+		// The fallback text detector scans lines at column 0; req_dir is at column 0.
+		if !r.keys["req_dir"] {
+			t.Error("fallback must detect req_dir (column-0 key in bomb fixture)")
+		}
+		if !r.keys["adr_dirs"] {
+			t.Error("fallback must detect adr_dirs (column-0 key in bomb fixture)")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("presentTopLevelKeys must handle alias bomb within 2 s (ML-4G)")
+	}
+}
+
+// TestAliasBomb_WriterLegitimateAlias asserts:
+// presentTopLevelKeys on a YAML where the same anchor is used 3 times (legitimate
+// aliasing) returns ok=true (yaml.Node path, not fallback) and detects both the
+// explicit keys and the key inherited via <<: *c.
+func TestAliasBomb_WriterLegitimateAlias(t *testing.T) {
+	content := "c: &c\n  wip_limit: \"5\"\nreq_dir: docs/req\nadr_dirs:\n  - docs/adr\n<<: *c\na: *c\nb: *c\n"
+	keys, ok := presentTopLevelKeys(content)
+	if !ok {
+		t.Fatal("anchor used 3× must not be treated as bomb (ok must be true, yaml.Node path)")
+	}
+	if !keys["req_dir"] {
+		t.Error("req_dir must be detected")
+	}
+	if !keys["wip_limit"] {
+		t.Error("wip_limit inherited via <<: *c must be detected")
+	}
+}
+
+// TestAliasBomb_WriterCounterArm asserts:
+// Without the ML-4G interface{} pre-check, expandTopLevelKeys on a 25-level sequence
+// bomb takes >2 s — demonstrating the attack vector the fix addresses. Uses 25 levels
+// (~2.9 s without the guard) so the goroutine terminates naturally within ~1 s after
+// the 2 s deadline fires.
+func TestAliasBomb_WriterCounterArm(t *testing.T) {
+	// 25 levels: 2^25 ≈ 33 M yaml.Node walker steps — takes ~2.9 s without the guard.
+	bomb := aliasBombSequenceWriter(25)
+	var root yaml.Node
+	if err := yaml.Unmarshal([]byte(bomb), &root); err != nil {
+		t.Fatalf("bomb must parse as yaml.Node without error: %v", err)
+	}
+	if len(root.Content) == 0 || root.Content[0].Kind != yaml.MappingNode {
+		t.Fatal("bomb must have a top-level MappingNode")
+	}
+	top := root.Content[0]
+	done := make(chan struct{})
+	go func() {
+		// Call expandTopLevelKeys directly — this is the yaml.Node walker path that
+		// runs after the ML-4G check and would hang without it.
+		expandTopLevelKeys(top, make(map[string]bool), make(map[*yaml.Node]bool))
+		close(done)
+	}()
+	select {
+	case <-done:
+		t.Fatal("counter-arm FAIL: expandTopLevelKeys completed on 25-level bomb within 2 s — " +
+			"verify aliasBombSequenceWriter(25) generates an effective bomb on this machine")
+	case <-time.After(2 * time.Second):
+		// Expected: without the interface{} check, expandTopLevelKeys takes >>2 s.
+		// Goroutine terminates naturally after ~0.9 s more; test process continues. ML-4G.
+	}
 }
