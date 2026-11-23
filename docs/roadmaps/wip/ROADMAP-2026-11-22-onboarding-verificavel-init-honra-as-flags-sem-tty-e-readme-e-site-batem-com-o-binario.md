@@ -480,7 +480,8 @@ TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 5m ./internal/config/
 > Dependencies: Wave 4 audited.
 
 ### ML-FB — make quality e CI (zeus-tf)
-**Status:** ⬜ Pending
+**Status:** 🔄 In progress — `make quality` MQ_RC=0 em 2026-11-23 com a máquina ociosa (carga ~4; 3297 linhas de
+log; `internal/commands` 64,4 s; as linhas `FAIL` do log são dos contra-braços dos self-tests). Falta o CI do PR.
 **Acceptance criteria:**
 - [ ] AC6: `make quality` rc=0 com a máquina ociosa; CI verde no PR
 
