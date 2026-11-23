@@ -1,0 +1,63 @@
+---
+layout: home
+
+hero:
+  name: "trackfw"
+  text: "ADR → REQ → ROADMAP → kanban"
+  tagline: "Governança de entrega de software para times humanos e agentes de IA."
+  actions:
+    - theme: brand
+      text: Começar agora
+      link: /pt/guide/getting-started
+    - theme: alt
+      text: Ver no GitHub
+      link: https://github.com/kgsaran/trackfw
+
+features:
+  - icon: 🔗
+    title: Cadeia de governança
+    details: Cada linha de código rastreada até uma decisão (ADR), um requisito (REQ) e um microlote de implementação (ROADMAP).
+  - icon: 🤖
+    title: Nativo para agentes de IA
+    details: '"trackfw context --format=json" emite o contexto completo para LLMs. Codex recebe AGENTS.md, skills, subagentes e hooks nativos; Claude Code, Gemini CLI, Cursor, Copilot, Windsurf e Amazon Q também são suportados.'
+  - icon: 🌐
+    title: Multi-stack e multi-linguagem
+    details: Go, Java, Node.js, Python. Frontend React/Vue/Angular. Hooks para husky, lefthook, GitHub Actions e GitLab CI.
+  - icon: 📦
+    title: Sem lock-in
+    details: Arquivos Markdown versionados no próprio repositório. Sem servidor, sem banco de dados, sem conta obrigatória.
+---
+
+## Instalação
+
+::: code-group
+
+```bash [Homebrew]
+brew tap kgsaran/trackfw
+brew install trackfw
+```
+
+```bash [npm]
+npm install -g trackfw
+```
+
+```bash [pip]
+pip install trackfw
+```
+
+```bash [install.sh]
+curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh
+```
+
+:::
+
+## Em 30 segundos
+
+```bash
+trackfw init                               # wizard de configuração do projeto
+trackfw adr new "Minha Decisão"            # nova decisão arquitetural
+trackfw req new "Meu Requisito"            # novo requisito (roadmap criado automaticamente)
+trackfw roadmap move ROADMAP-....md wip    # iniciar implementação
+trackfw validate                           # verificar governança
+trackfw ship -m "feat(x): descrição"      # commit + push + abre PR/MR governados
+```

@@ -4,31 +4,31 @@ layout: home
 hero:
   name: "trackfw"
   text: "ADR → REQ → ROADMAP → kanban"
-  tagline: "Governança de entrega de software para times humanos e agentes de IA."
+  tagline: "Software delivery governance for human teams and AI agents."
   actions:
     - theme: brand
-      text: Começar agora
+      text: Get started
       link: /guide/getting-started
     - theme: alt
-      text: Ver no GitHub
+      text: View on GitHub
       link: https://github.com/kgsaran/trackfw
 
 features:
   - icon: 🔗
-    title: Cadeia de governança
-    details: Cada linha de código rastreada até uma decisão (ADR), um requisito (REQ) e um microlote de implementação (ROADMAP).
+    title: Governance chain
+    details: Every line of code traced back to a decision (ADR), a requirement (REQ), and an implementation microbatch (ROADMAP).
   - icon: 🤖
-    title: Nativo para agentes de IA
-    details: '"trackfw context --format=json" emite o contexto completo para LLMs. Codex recebe AGENTS.md, skills, subagentes e hooks nativos; Claude Code, Gemini CLI, Cursor, Copilot, Windsurf e Amazon Q também são suportados.'
+    title: AI-agent native
+    details: '"trackfw context --format=json" emits full LLM context. Codex gets native AGENTS.md, skills, subagents, and hooks; Claude Code, Gemini CLI, Cursor, Copilot, Windsurf, and Amazon Q are also supported.'
   - icon: 🌐
-    title: Multi-stack e multi-linguagem
-    details: Go, Java, Node.js, Python. Frontend React/Vue/Angular. Hooks para husky, lefthook, GitHub Actions e GitLab CI.
+    title: Multi-stack
+    details: Go, Java, Node.js, Python. React/Vue/Angular frontends. Hooks for husky, lefthook, GitHub Actions, and GitLab CI.
   - icon: 📦
-    title: Sem lock-in
-    details: Arquivos Markdown versionados no próprio repositório. Sem servidor, sem banco de dados, sem conta obrigatória.
+    title: No lock-in
+    details: Markdown files versioned in your own repo. No server, no database, no mandatory account.
 ---
 
-## Instalação
+## Installation
 
 ::: code-group
 
@@ -51,13 +51,13 @@ curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.s
 
 :::
 
-## Em 30 segundos
+## In 30 seconds
 
 ```bash
-trackfw init          # wizard de configuração do projeto
-trackfw adr new       # nova decisão arquitetural
-trackfw req new       # novo requisito
-trackfw roadmap new   # novo roadmap vinculado à REQ
-trackfw status        # visão geral do projeto
-trackfw ship -m "feat(x): descrição"  # commit + push + abre PR/MR governados
+trackfw init                               # project setup wizard
+trackfw adr new "My Architecture Decision" # new architecture decision record
+trackfw req new "My Requirement"           # new requirement (roadmap created automatically)
+trackfw roadmap move ROADMAP-....md wip    # start implementation
+trackfw validate                           # check governance consistency
+trackfw ship -m "feat(x): description"    # governed commit + push + open PR/MR
 ```

@@ -1,7 +1,7 @@
 # Memory Index — trackfw (Zeus)
 
 - [Verificação visual obrigatória em MLs de UI](feedback_verificacao_visual_obrigatoria.md) — gates verdes não provam UX; auditar em navegador real
-- [Visual sem extensão: Chrome headless](feedback_verificacao_visual_sem_extensao.md) — sem mcp__claude-in-chrome, `--headless --screenshot` + Read; pegou logo 404 no site
+- [Visual sem extensão: headless](feedback_verificacao_visual_sem_extensao.md) — use chrome-headless-shell do Playwright; chromium do brew trava no --screenshot (11-22)
 - [Atribuição de papéis em MLs](feedback_atribuicao_de_papeis_ml.md) — Hefesto e Hades não modificam código, nem em cópia mecânica
 - [Dashboard do serve é light-only](project_dashboard_light_only.md) — sem prefers-color-scheme; static do Go é go:embed e fonte canônica
 - [trackfw ainda sem usuários downstream](project_trackfw_sem_usuarios_downstream.md) — compatibilidade retroativa não é restrição de peso; corrigir na origem
@@ -52,3 +52,4 @@
 - [Ler o log antes de atribuir falha](feedback_ler_o_log_antes_de_atribuir_falha.md) — CI vermelho: abrir o log do job; `go` do #687 não era timeout, era dash -u; make quality antes do push
 - [Sonda no binário, não leitura de fonte](feedback_sonda_no_binario_nao_leitura_de_fonte.md) — Codex: fonte dizia cmd.exe, binário roda powershell -NoProfile; 'guard inerte' era falso
 - [Ler o rc antes de commitar](feedback_ler_rc_antes_de_commitar.md) — exit da notificação é do wrapper `; echo rc=$?`; commitei rc=0 com rc=2 (ML-5I)
+- [Onboarding → GoatCounter → site novo](project_goatcounter_apos_onboarding.md) — ordem combinada 11-22; pedir código GoatCounter; site novo é protótipo primeiro

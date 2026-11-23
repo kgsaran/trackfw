@@ -22,6 +22,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// initStdinIsTTY is an injection point for tests to override stdin TTY detection.
+// In production it delegates to the real terminal check.
+var initStdinIsTTY = func() bool {
+	return cbterm.IsTerminal(uintptr(os.Stdin.Fd()))
+}
+
+// initFormRunner is an injection point for tests to override huh.Form.Run().
+// In production it calls f.Run() directly.
+var initFormRunner = func(f *huh.Form) error {
+	return f.Run()
+}
+
 // applyCITriggerFromExisting reads ci_trigger from an already-existing trackfw.yaml (if any)
 // and applies it to cfg. Option (c) from §Z of ML-1A (REQ-2026-10-24):
 //   - absent → no change to cfg (CI template will use default "pull_request" behaviour)
@@ -213,6 +225,23 @@ func identityFileExists(home string) bool {
 	return err == nil
 }
 
+// applyBrownfieldOrWarn implements ADR D2 (ADR-2026-11-22): when trackfw.yaml
+// already exists in cwd, --brownfield must not write governance keys. The
+// function prints the D2 warning to cmd's output writer and returns true
+// (meaning "skip governance write"). When trackfw.yaml is absent it returns
+// false (meaning "set BrownfieldMode normally"). Any stat error other than
+// IsNotExist is treated as "file present" (fail-safe: no governance downgrade).
+func applyBrownfieldOrWarn(cmd *cobra.Command, cwd string) (skipGovernance bool) {
+	_, err := os.Lstat(filepath.Join(cwd, "trackfw.yaml"))
+	if err != nil && os.IsNotExist(err) {
+		// No trackfw.yaml: allow brownfield governance write.
+		return false
+	}
+	// File present (or Lstat failed for another reason): warn and skip.
+	fmt.Fprintln(cmd.OutOrStdout(), i18n.T("init.brownfieldYamlExists"))
+	return true
+}
+
 func runInit(cmd *cobra.Command, args []string) error {
 	home, err := homedir.Dir()
 	if err != nil {
@@ -263,7 +292,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	skipIdentityWizard := presetChanged || identityFileExists(home)
 
 	// Non-TTY: use defaults and skip wizard (matches npm CLI behavior)
-	if !cbterm.IsTerminal(uintptr(os.Stdin.Fd())) {
+	if !initStdinIsTTY() {
 		cwd, _ := os.Getwd()
 
 		// AC3 (#661), P-6: detect pkg_manager from the project, don't hardcode "npm".
@@ -289,6 +318,16 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 		if err := applyCITriggerFromExisting(&cfg); err != nil {
 			return err
+		}
+
+		// D1 (ADR-2026-11-22): read --brownfield on the non-TTY path.
+		// D2 (ADR-2026-11-22): with trackfw.yaml already present, do not set
+		// BrownfieldMode — print a warning and let the rest of init proceed.
+		if brownfieldPassed, _ := cmd.Flags().GetBool("brownfield"); brownfieldPassed {
+			if skipGovernance := applyBrownfieldOrWarn(cmd, cwd); !skipGovernance {
+				cfg.BrownfieldMode = true
+				cfg.LenientUntil = time.Now().AddDate(0, 0, config.LenientDefaultDays)
+			}
 		}
 
 		// Resolve scope for this non-TTY run.
@@ -344,6 +383,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 	} else {
 		wizardForge = forgeValue
 	}
+
+	// D1 (ADR-2026-11-22): when --ai-tools is explicitly passed, the wizard
+	// group for AI tools is hidden and the flag value is used instead.
+	aiToolsChanged := cmd.Flags().Changed("ai-tools")
 
 	form := huh.NewForm(
 		// Grupo 1 — sempre mostrado
@@ -435,6 +478,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 		),
 
 		// Grupo 5 — seleção de ferramentas de IA
+		// D1 (ADR-2026-11-22): hidden when --ai-tools was explicitly passed;
+		// the flag value is applied after the form returns (see below).
 		huh.NewGroup(
 			huh.NewMultiSelect[string]().
 				Title(titleAITools).
@@ -451,11 +496,17 @@ func runInit(cmd *cobra.Command, args []string) error {
 					huh.NewOption("Kiro", "kiro"),
 				).
 				Value(&aiTools),
-		),
+		).WithHideFunc(func() bool { return aiToolsChanged }),
 	)
 
-	if err := form.Run(); err != nil {
+	if err := initFormRunner(form); err != nil {
 		return err
+	}
+
+	// D1 (ADR-2026-11-22): when --ai-tools was explicitly passed, the wizard
+	// group was hidden; use the flag value as the definitive tool list.
+	if aiToolsChanged {
+		aiTools, _ = cmd.Flags().GetStringSlice("ai-tools")
 	}
 
 	// Identity wizard runs as its own form, right after the main form — the
@@ -481,7 +532,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 					Value(&requireReqInCommit),
 			),
 		)
-		if err := reqForm.Run(); err != nil {
+		if err := initFormRunner(reqForm); err != nil {
 			return err
 		}
 	}
@@ -522,7 +573,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 						Value(&backendFramework),
 				),
 			)
-			if err := frameworkForm.Run(); err != nil {
+			if err := initFormRunner(frameworkForm); err != nil {
 				return err
 			}
 		}
@@ -546,9 +597,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 		RequireReqInCommit: requireReqInCommit,
 		Forge:              finalForge,
 	}
+	// D1/D2 (ADR-2026-11-22): honour --brownfield on the TTY path too, with
+	// the same yaml-exists guard as the non-TTY path.
 	if brownfield {
-		cfg.BrownfieldMode = true
-		cfg.LenientUntil = time.Now().AddDate(0, 0, config.LenientDefaultDays)
+		if skipGovernance := applyBrownfieldOrWarn(cmd, cwd); !skipGovernance {
+			cfg.BrownfieldMode = true
+			cfg.LenientUntil = time.Now().AddDate(0, 0, config.LenientDefaultDays)
+		}
 	}
 
 	if err := applyCITriggerFromExisting(&cfg); err != nil {

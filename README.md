@@ -25,7 +25,7 @@ trackfw init --ai-tools claude --forge github
 trackfw adr new "User Authentication Strategy"
 trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md
 trackfw roadmap move ROADMAP-$(date +%F)-user-authentication.md wip
-trackfw validate                  # ✓ No violations found.
+trackfw validate                  # 0 violations, 2 warning(s) until you fill in the ADR and REQ sections
 ```
 
 In a terminal, `init`, `adr new` and `req new` open short wizards. The
@@ -34,6 +34,25 @@ as the product changes. Next: [Quick start, continued](#quick-start-continued).
 
 > **Platforms:** Linux and macOS are fully supported. Windows support is partial; read
 > [Windows support (partial)](#windows-support-partial) before adopting on Windows.
+
+---
+
+## Quick start, continued
+
+The [Quick start](#quick-start) gets the chain in place. Day to day:
+
+```bash
+# See what is in flight
+trackfw status
+
+# Governed commit + push + open PR/MR (feat/fix/refactor branches only)
+trackfw branch new feat/<slug>    # ship refuses to run on main
+git add -p                        # stage your changes explicitly
+trackfw ship -m "feat(auth): add login flow"
+
+# Live Kanban board at http://localhost:4080
+trackfw serve
+```
 
 ---
 
@@ -91,7 +110,30 @@ Shared behavior follows the [command contract](docs/cli-parity.md).
 > `ExecutionPolicy Restricted` blocks — see
 > [Windows support](#windows-support-partial) before relying on the hooks.
 
-### Windows support (partial)
+
+### pip
+
+```bash
+pip install trackfw
+```
+
+From v8.0.0, the pip package is a binary wheel in `gh-bin` format — **it contains
+no Python files and no source**. The Go binary is installed into the PATH by pip.
+`python -m trackfw` no longer works; use the `trackfw` executable directly.
+
+Platforms not covered by the published wheels now fail at resolution time with
+"no matching distribution found" — a clean failure instead of silently installing
+the wrong thing. Eight wheels are published: `manylinux_2_17_x86_64`, `musllinux_1_2_x86_64`,
+`manylinux_2_17_aarch64`, `musllinux_1_2_aarch64`, `macosx_10_9_x86_64`,
+`macosx_11_0_arm64`, `win_amd64`, `win_arm64`. Linux publishes two wheels per
+architecture (manylinux + musllinux), so Alpine and similar musl-based distributions
+are covered.
+
+Shared behavior follows the [command contract](docs/cli-parity.md).
+
+---
+
+## Windows support (partial)
 
 🚧 **Windows support is partial. Read this before adopting `trackfw` on Windows.**
 
@@ -102,7 +144,7 @@ We publish a Windows binary and the npm/pip packages install on Windows. That is
 the same as the tool working end to end, and we would rather tell you where the edges
 are than let you find them after adoption.
 
-#### Installing on Windows
+### Installing on Windows
 
 **npm:**
 
@@ -175,7 +217,7 @@ Download `trackfw_<version>_windows_amd64.tar.gz` or `windows_arm64.tar.gz` from
 [releases page](https://github.com/kgsaran/trackfw/releases). Extract `trackfw.exe`,
 move it to a folder of your choice, and add that folder to your user `PATH`.
 
-**Pitfall: more than one `trackfw` on `PATH`**
+#### Pitfall: more than one `trackfw` on `PATH`
 
 Measured during the 2026-10-21 Windows journey: Claude Code hooks run through Git Bash,
 and the Git Bash login profile (`/etc/profile`) prepends `~/bin` (`%USERPROFILE%\bin`)
@@ -246,7 +288,7 @@ Each cell: ✅ measured | ⚠️ not verified | — not applicable.
 
 Windows CI matrix: **x64 only**. ARM64 CI is not currently run.
 
-**Guard hooks on Windows — measured state (since v9.3.0)**
+### Guard hooks on Windows — measured state (since v9.3.0)
 
 Since v9.3.0, guard hooks call `trackfw guard <name>` (the Go binary) instead of a
 `.sh` script. The same binary runs in every shell; for a given agent CLI, the hook
@@ -408,44 +450,6 @@ that directory instead (cross-platform). `trackfw validate` warns when the two p
 (rule `home_divergence_windows`, informative only). Other CLIs (Codex, Gemini, Cursor,
 Copilot, Kiro) continue under `HOME` until measured; Windsurf is not yet measured and is
 flagged in the warning.
-
-### pip
-
-```bash
-pip install trackfw
-```
-
-From v8.0.0, the pip package is a binary wheel in `gh-bin` format — **it contains
-no Python files and no source**. The Go binary is installed into the PATH by pip.
-`python -m trackfw` no longer works; use the `trackfw` executable directly.
-
-Platforms not covered by the published wheels now fail at resolution time with
-"no matching distribution found" — a clean failure instead of silently installing
-the wrong thing. Eight wheels are published: `manylinux_2_17_x86_64`, `musllinux_1_2_x86_64`,
-`manylinux_2_17_aarch64`, `musllinux_1_2_aarch64`, `macosx_10_9_x86_64`,
-`macosx_11_0_arm64`, `win_amd64`, `win_arm64`. Linux publishes two wheels per
-architecture (manylinux + musllinux), so Alpine and similar musl-based distributions
-are covered.
-
-Shared behavior follows the [command contract](docs/cli-parity.md).
-
----
-
-## Quick start, continued
-
-The [Quick start](#quick-start) gets the chain in place. Day to day:
-
-```bash
-# See what is in flight
-trackfw status
-
-# Governed commit + push + open PR/MR (feat/fix/refactor branches only)
-git add -p                        # stage your changes explicitly
-trackfw ship -m "feat(auth): add login flow"
-
-# Live Kanban board at http://localhost:4080
-trackfw serve
-```
 
 ---
 

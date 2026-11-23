@@ -13,6 +13,7 @@ import (
 	"github.com/kgsaran/trackfw/internal/pathguard"
 	"github.com/kgsaran/trackfw/internal/validator"
 	"github.com/kgsaran/trackfw/internal/version"
+	"gopkg.in/yaml.v3"
 )
 
 // projectRoot returns the resolved (EvalSymlinks) absolute path of the current
@@ -923,36 +924,195 @@ type configBlock struct {
 	text string
 }
 
-// presentTopLevelKeys devolve o conjunto de chaves de nível 0 presentes no
-// conteúdo YAML, respeitando as quatro propriedades da ADR:
+// scaffoldNodeBudget is the per-call node-visit budget for the writer's yaml.Node walkers
+// (expandTopLevelKeys / expandMergeValue). Same rationale as config.nodeVisitBudget:
+// well above any real trackfw.yaml or lefthook.yml key count, stops a bomb instantly. ML-4H.
+const scaffoldNodeBudget = 10_000
+
+// scaffoldCtx carries per-call state for the writer's yaml.Node walkers: a path-based cycle
+// guard (ML-4E) and a visit budget (ML-4H). limit overrides scaffoldNodeBudget when non-zero
+// (counter-arm tests only).
+type scaffoldCtx struct {
+	visiting map[*yaml.Node]bool
+	visits   int
+	exceeded bool
+	limit    int // 0 → use scaffoldNodeBudget; non-zero → use this value (tests only)
+}
+
+func newScaffoldCtx() *scaffoldCtx {
+	return &scaffoldCtx{visiting: make(map[*yaml.Node]bool)}
+}
+
+func (c *scaffoldCtx) step() bool {
+	if c.exceeded {
+		return false
+	}
+	c.visits++
+	lim := scaffoldNodeBudget
+	if c.limit != 0 {
+		lim = c.limit
+	}
+	if c.visits > lim {
+		c.exceeded = true
+		return false
+	}
+	return true
+}
+
+// presentTopLevelKeys returns the set of top-level keys present in the YAML
+// content, using a yaml.Node parse (ADR-2026-11-22, D2a). This correctly
+// handles quoted keys, keys with leading/trailing spaces, BOM-prefixed keys,
+// and anchor/alias indirection. The second return value is false when the
+// content is not valid YAML or when the walker's visit budget is exceeded.
 //
-//   - P1: âncora em coluna 0 — chave começa sem espaço/tab.
-//   - P2: dois-pontos obrigatórios — compara key+":" para evitar colisão de
-//     prefixo (ex: roadmap_dir vs. roadmap_namespacing).
-//   - P3: linha comentada = chave ausente — linhas que começam com "#" após
-//     TrimSpace são ignoradas.
+// When yaml.Unmarshal fails (invalid content), or when the visit budget is
+// exceeded (alias bomb), the function falls back to the pre-D2a text-based
+// detector so that invalid files keep exactly the pre-REQ behavior. ok is
+// false in both cases.
 //
-// A função intenciona detectar presença, não ausência — não confundir com
-// parseConfigBlocks, que extrai blocos do conteúdo *gerado* (não do existente).
-func presentTopLevelKeys(content string) map[string]bool {
+// The ML-4G interface{} alias-bomb first-pass that lived here has been removed:
+// the walker now carries a node-visit budget (ML-4H) which stops every bomb
+// form (fan-out, cycle-prefixed, duplicate-merge-key-prefixed) without
+// depending on yaml.v3's error text.
+func presentTopLevelKeys(content string) (map[string]bool, bool) {
+	keys := make(map[string]bool)
+	var root yaml.Node
+	if err := yaml.Unmarshal([]byte(content), &root); err != nil {
+		// Fall back to the pre-D2a text detector so invalid content keeps its
+		// pre-REQ behavior: a key at column 0 prevents a duplicate from being
+		// added by the merge.
+		return presentTopLevelKeysFallback(content), false
+	}
+	if len(root.Content) == 0 {
+		// Empty document: no keys, but not an error.
+		return keys, true
+	}
+	top := root.Content[0]
+	if top.Kind != yaml.MappingNode {
+		return keys, false
+	}
+	ctx := newScaffoldCtx()
+	expandTopLevelKeys(top, keys, ctx)
+	if ctx.exceeded {
+		// Budget exceeded (alias bomb): fall back to text detector. ok=false
+		// signals the caller not to trust the key set. ML-4H.
+		return presentTopLevelKeysFallback(content), false
+	}
+	return keys, true
+}
+
+// expandTopLevelKeys adds top-level keys from a MappingNode to keys,
+// expanding YAML merge keys (Tag "!!merge") recursively.
+// This handles <<: *anchor and <<: [*a, *b], including anchors that
+// themselves contain nested << merge keys.
+// F-9 fix (ML-4C, REQ-2026-11-22).
+//
+// ctx carries the path-based cycle guard (ML-4E) and the visit budget (ML-4H).
+func expandTopLevelKeys(node *yaml.Node, keys map[string]bool, ctx *scaffoldCtx) {
+	if node.Kind != yaml.MappingNode {
+		return
+	}
+	if !ctx.step() {
+		return // budget exhausted (ML-4H)
+	}
+	if ctx.visiting[node] {
+		// Cycle: this mapping is already on the expansion path. ML-4E.
+		return
+	}
+	ctx.visiting[node] = true
+	defer delete(ctx.visiting, node)
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if ctx.exceeded {
+			break
+		}
+		k := resolveScaffoldAlias(node.Content[i])
+		if k.Tag == "!!merge" {
+			// YAML merge key: expand the value (alias or sequence of aliases)
+			// and add all inherited keys to the set.
+			expandMergeValue(node.Content[i+1], keys, ctx)
+		} else {
+			keys[k.Value] = true
+		}
+	}
+}
+
+// expandMergeValue handles the value side of a YAML merge key (<<).
+// val may be:
+//   - AliasNode (<<: *anchor) — resolved to a MappingNode whose keys are added.
+//   - SequenceNode (<<: [*a, *b]) — each element is expanded recursively.
+//
+// Nested merge keys inside the target mapping are handled because
+// expandTopLevelKeys is called recursively on each resolved MappingNode.
+// ctx carries the path-based cycle guard (ML-4E) and the visit budget (ML-4H).
+func expandMergeValue(val *yaml.Node, keys map[string]bool, ctx *scaffoldCtx) {
+	if !ctx.step() {
+		return // budget exhausted (ML-4H)
+	}
+	resolved := resolveScaffoldAlias(val)
+	switch resolved.Kind {
+	case yaml.MappingNode:
+		expandTopLevelKeys(resolved, keys, ctx)
+	case yaml.SequenceNode:
+		if ctx.visiting[resolved] {
+			// Cycle in a merge-value sequence: skip to avoid infinite recursion. ML-4E.
+			return
+		}
+		ctx.visiting[resolved] = true
+		defer delete(ctx.visiting, resolved)
+		for _, elem := range resolved.Content {
+			if ctx.exceeded {
+				break
+			}
+			expandMergeValue(elem, keys, ctx)
+		}
+	}
+}
+
+// presentTopLevelKeysFallback is the pre-D2a text-based key detector. It is
+// called by presentTopLevelKeys when yaml.Unmarshal fails, preserving the
+// pre-REQ behavior for files with invalid YAML content.
+//
+// Properties (unchanged from pre-D2a):
+//   - P1: anchor at column 0 — key starts without leading space/tab.
+//   - P2: colon required — compares against key+":" to avoid prefix collision
+//     (e.g. roadmap_dir vs. roadmap_namespacing).
+//   - P3: commented line = key absent — lines starting with "#" (after
+//     TrimSpace) are ignored.
+func presentTopLevelKeysFallback(content string) map[string]bool {
 	keys := make(map[string]bool)
 	for _, line := range strings.Split(content, "\n") {
-		// P3: ignora linhas de comentário
+		// P3: skip comment lines
 		if strings.HasPrefix(strings.TrimSpace(line), "#") {
 			continue
 		}
-		// P1: âncora em coluna 0 — ignora linhas indentadas e em branco
+		// P1: anchor at column 0 — skip indented and blank lines
 		if len(line) == 0 || line[0] == ' ' || line[0] == '\t' {
 			continue
 		}
-		// P2: dois-pontos obrigatórios
+		// P2: colon required (fast pre-check; normalizeYAMLTopLevelKey also checks)
 		idx := strings.Index(line, ":")
 		if idx <= 0 {
 			continue
 		}
-		keys[line[:idx]] = true
+		// R1 fix (ML-4C): use normalizeYAMLTopLevelKey so that quoted keys (e.g.
+		// "pre-commit":) are stored without quotes, matching the lookup key used by
+		// the merge caller. Without this, keys['"pre-commit"'] != keys["pre-commit"].
+		k := normalizeYAMLTopLevelKey(line)
+		if k == "" {
+			continue
+		}
+		keys[k] = true
 	}
 	return keys
+}
+
+// resolveScaffoldAlias follows YAML alias chains until a non-alias node is
+// reached. This mirrors config.go's unexported resolveAlias.
+func resolveScaffoldAlias(n *yaml.Node) *yaml.Node {
+	for n.Kind == yaml.AliasNode && n.Alias != nil {
+		n = n.Alias
+	}
+	return n
 }
 
 // parseConfigBlocks extrai os blocos de configuração do conteúdo *gerado* pelo
@@ -1110,7 +1270,7 @@ roadmap_namespacing: flat
 	// Arquivo presente: merge textual por chave ausente (ADR-2026-09-28).
 	// Preserva todo valor já escrito pelo consumidor; acrescenta apenas as chaves
 	// que faltam. Zero diff nas linhas pré-existentes quando não há chave nova.
-	existingKeys := presentTopLevelKeys(string(existing))
+	existingKeys, _ := presentTopLevelKeys(string(existing))
 	blocks := parseConfigBlocks(content)
 
 	var missing []string
@@ -2291,6 +2451,59 @@ func generateGitIgnore() error {
 	return nil
 }
 
+// normalizeYAMLTopLevelKey normalizes a column-0 YAML line to its bare key string,
+// the same value yaml.v3 would return as the mapping key. It:
+//   - strips the UTF-8 BOM (\xef\xbb\xbf) from the beginning (first-line artifact)
+//   - strips surrounding double or single quotes from the key portion
+//   - strips a space before the colon (e.g. "pre-commit :" → "pre-commit")
+//
+// Returns the empty string when no colon is found (not a key line).
+// Used by lefthookValidatePresent and generateLefthookHook so that both share
+// the same section-detection logic and handle the same set of YAML spellings.
+// normalizeYAMLTopLevelKey derives the key name from a column-0 line using the
+// YAML parser as the primary path (F-10, ML-4C, REQ-2026-11-22). This correctly
+// decodes YAML escape sequences in quoted keys (e.g. "pre\x2dcommit" → "pre-commit")
+// that the text-based path cannot handle.
+//
+// Primary path: unmarshal the line as a one-entry YAML document and read the first
+// mapping key. Returns the empty string when the top node is not a mapping (scalar,
+// sequence, alias, or empty document).
+//
+// Fallback (text-based): applied when the YAML parse fails (e.g. unknown alias,
+// malformed scalar). Strips BOM, surrounding double/single quotes, and trailing
+// space before the colon — same rules as the pre-ML-4C implementation.
+//
+// Returns "" when no colon is found on the line or the parse+fallback both yield
+// an empty key.
+func normalizeYAMLTopLevelKey(line string) string {
+	// Primary path: parse the line as a YAML document and read the first mapping key.
+	var node yaml.Node
+	if err := yaml.Unmarshal([]byte(line), &node); err == nil &&
+		len(node.Content) > 0 &&
+		node.Content[0].Kind == yaml.MappingNode &&
+		len(node.Content[0].Content) >= 1 {
+		k := resolveScaffoldAlias(node.Content[0].Content[0])
+		if k.Kind == yaml.ScalarNode && k.Value != "" {
+			return k.Value
+		}
+	}
+	// Fallback: text-based extraction (pre-ML-4C behavior: BOM strip, quote strip, space trim).
+	line = strings.TrimPrefix(line, "\xef\xbb\xbf")
+	idx := strings.IndexByte(line, ':')
+	if idx < 0 {
+		return ""
+	}
+	key := strings.TrimSpace(line[:idx])
+	// Strip surrounding double or single quotes.
+	if len(key) >= 2 {
+		if (key[0] == '"' && key[len(key)-1] == '"') ||
+			(key[0] == '\'' && key[len(key)-1] == '\'') {
+			key = key[1 : len(key)-1]
+		}
+	}
+	return key
+}
+
 // lefthookValidatePresent reports whether a trackfw-validate: entry already lives
 // inside the top-level pre-commit: block of a lefthook.yml file.
 //
@@ -2307,12 +2520,15 @@ func generateGitIgnore() error {
 // of the value. Since this key carries no quoted value in practice — only optional
 // trailing comments — the truncation is safe. Declaring rather than hiding the edge
 // case (mirrors the equivalent caveat in scripts/check-init-preserves-user-config.sh).
+//
+// Section tracking uses normalizeYAMLTopLevelKey so that "pre-commit" written as
+// "pre-commit": or 'pre-commit': is recognized as the same section (D2a, ML-1E).
 func lefthookValidatePresent(content string) bool {
 	inPreCommit := false
 	for _, line := range strings.Split(content, "\n") {
 		// Track top-level sections (column-0, non-whitespace, non-comment).
 		if len(line) > 0 && line[0] != ' ' && line[0] != '\t' && line[0] != '#' {
-			inPreCommit = line == "pre-commit:"
+			inPreCommit = normalizeYAMLTopLevelKey(line) == "pre-commit"
 		}
 		// Strip inline YAML comment (" #" sequence) before comparing.
 		// A leading '#' (full-line comment) is already excluded by the section-tracking
@@ -2354,7 +2570,8 @@ func generateLefthookHook() error {
 	}
 
 	var out string
-	if !presentTopLevelKeys(existingStr)["pre-commit"] {
+	existingLefthookKeys, _ := presentTopLevelKeys(existingStr)
+	if !existingLefthookKeys["pre-commit"] {
 		// No pre-commit block yet: append the full block with a blank-line separator.
 		out = existingStr
 		if out != "" && !strings.HasSuffix(out, "\n") {
@@ -2372,8 +2589,10 @@ func generateLefthookHook() error {
 		inserted := false
 		for _, line := range lines {
 			// Track top-level sections (column-0, non-comment).
+			// normalizeYAMLTopLevelKey handles quoted keys ("pre-commit":,
+			// 'pre-commit':) and space-before-colon (D2a, ML-1E).
 			if len(line) > 0 && line[0] != ' ' && line[0] != '\t' && line[0] != '#' {
-				inPreCommit = line == "pre-commit:"
+				inPreCommit = normalizeYAMLTopLevelKey(line) == "pre-commit"
 			}
 			result = append(result, line)
 			if inPreCommit && !inserted && strings.TrimSpace(line) == "commands:" {

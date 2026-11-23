@@ -382,13 +382,31 @@ three, not to claim the broader 31-key set is resolved.
 
 <!-- trackfw-contract: none reason=a própria seção declara que docs/cli-parity.md não contrata prosa de documentação (site/guide), só comportamento de CLI; registrada apenas como paper trail de uma limpeza -->
 
-`site/guide/commands.md` and `site/en/guide/commands.md` are pt/en mirrors of the same command
-reference; `docs/cli-parity.md` does not contract them, because this document pins **CLI
-behavior**, not documentation prose. ML-2B (same roadmap as the other items in this section)
-removed `trackfw plugins` (no longer exists, ADR-2026-08-15) and added `changelog` and `commit`
-(existed but were undocumented) to both files, verified against the real `trackfw --help` output
-rather than `README.md`. Registered here only so the cleanup has a paper trail; it is not a new
-clause of the parity contract.
+`site/guide/commands.md` (English, root) and `site/pt/guide/commands.md` (pt-BR) are the two
+locale mirrors of the same command reference; `docs/cli-parity.md` does not contract them,
+because this document pins **CLI behavior**, not documentation prose. ML-2B (same roadmap as the
+other items in this section) removed `trackfw plugins` (no longer exists, ADR-2026-08-15) and
+added `changelog` and `commit` (existed but were undocumented) to both files, verified against
+the real `trackfw --help` output rather than `README.md`. Registered here only so the cleanup
+has a paper trail; it is not a new clause of the parity contract.
+
+### `trackfw init` flag behaviour (D1 and D2, ADR-2026-11-22)
+
+<!-- trackfw-contract: gate=internal/commands/init_flags_both_paths_test.go -->
+
+Every flag that `trackfw init` accepts has the same effect with and without a TTY (D1):
+
+- `--brownfield`: read on the **non-TTY path** (D1 fix). Sets `governance_mode: lenient` and
+  `lenient_until: <today+30d>` in `trackfw.yaml` when no `trackfw.yaml` exists yet.
+- `--ai-tools`: when explicitly passed on the **TTY path** (`--Changed`), the AI-tools wizard
+  group is hidden and the flag value is used directly (D1 fix).
+- `--identity-preset`, `--forge`, `--scope`: honoured on both paths (pre-existing).
+
+D2 — `--brownfield` only writes governance keys when `trackfw.yaml` does not yet exist. With
+an existing `trackfw.yaml`, the command proceeds normally (merges non-governance keys, installs
+agents) but prints `"⚠ governance keys not modified — edit trackfw.yaml directly to enable
+lenient mode"` to stdout and exits with rc=0 without writing `governance_mode` or
+`lenient_until`.
 
 ## Canonical governance references
 

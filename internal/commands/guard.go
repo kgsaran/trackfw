@@ -34,7 +34,7 @@ Denied commands exit with code 2 (ADR-2026-10-04 D7).`,
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return &guardError{
-				"trackfw guard: requires a subcommand (git-branch or credential)",
+				"trackfw guard: requires a subcommand (git-branch, write-scope or credential)",
 			}
 		},
 	}

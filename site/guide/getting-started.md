@@ -1,8 +1,8 @@
-# Início Rápido
+# Getting Started
 
-Este guia cobre a instalação do `trackfw` e os primeiros passos para configurar governança de entrega no seu projeto.
+This guide covers installing `trackfw` and the first steps to set up delivery governance in your project.
 
-## Instalação
+## Installation
 
 ### Homebrew (macOS / Linux)
 
@@ -23,7 +23,7 @@ npm install -g trackfw
 pip install trackfw
 ```
 
-### Script shell (macOS / Linux / Git Bash no Windows)
+### Shell script (macOS / Linux / Git Bash on Windows)
 
 ```bash
 curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh
@@ -35,96 +35,153 @@ curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.s
 irm https://github.com/kgsaran/trackfw/releases/latest/download/install.ps1 | iex
 ```
 
-> Nota: o `install.ps1` é publicado como asset de release a partir da release após a 11.1.0. Para instalação no Windows hoje, use npm (`npm install -g trackfw`), pip (`pip install trackfw`) ou o script shell via Git Bash.
+> `install.ps1` is published with every release.
 
-### Verificar instalação
+### Verify installation
 
 ```bash
 trackfw version
-# trackfw 11.1.0
 ```
+
+This prints the installed version (for example, `trackfw 11.8.1`).
 
 ---
 
-## 1. Inicializar um projeto: `trackfw init`
+## Quick start
 
-O comando `init` executa um wizard interativo que detecta a stack do projeto e gera toda a estrutura de governança.
+The five commands below set up a fully governed project from scratch. They are pinned by an end-to-end test (`internal/commands/quickstart_e2e_test.go`) so they keep working as the product changes.
+
+```bash
+trackfw init --ai-tools claude --forge github
+trackfw adr new "User Authentication Strategy"
+trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md
+trackfw roadmap move ROADMAP-$(date +%F)-user-authentication.md wip
+trackfw validate
+```
+
+After running these commands, `trackfw validate` exits with rc=0 and prints `2 warning(s)`:
+
+```
+⚠  adr_req_has_content: "docs/adr/ADR-...-user-authentication-strategy.md" has mandatory
+   section(s) with only model content: ## Context, ## Decision, ## Consequences,
+   ## Alternatives Considered — fill in or set rules.adr_req_has_content: off
+⚠  adr_req_has_content: "docs/req/REQ-...-user-authentication.md" has mandatory
+   section(s) with only model content: ## Motivation, ## Acceptance Criteria — fill in or
+   set rules.adr_req_has_content: off
+2 warning(s)
+```
+
+The warnings appear because the ADR and REQ sections contain only template placeholders. In a TTY session, `adr new` and `req new` open short wizards — if you fill in all sections there, `validate` produces `✓ No violations found.` instead. You can also disable the check with `rules.adr_req_has_content: off` in `trackfw.yaml`.
+
+---
+
+## 1. Initialize a project: `trackfw init`
+
+The `init` command runs an interactive wizard that detects the project stack and generates the full governance structure.
 
 ```bash
 trackfw init
 ```
 
-O wizard faz perguntas sobre:
+For the Quick start flow, pass flags directly:
 
-- **Nome do projeto** — usado nos templates gerados
-- **Tipo de projeto** — frontend, backend ou fullstack
-- **Stack backend** — Go, Java, Node.js ou Python
-- **Framework backend** — Spring Boot, Gin, Express, FastAPI, etc.
-- **Git hooks** — husky, lefthook ou nenhum
-- **CI/CD** — GitHub Actions ou GitLab CI
-- **Agentes de IA** — Claude Code, OpenAI Codex, Gemini CLI, Google Antigravity, Cursor, GitHub Copilot, Windsurf, Amazon Q, OpenCode e Kiro (10 targets).
+```bash
+trackfw init --ai-tools claude --forge github
+```
 
-### O que é gerado
+The wizard (or flags) configures:
 
-Após o `init`, a seguinte estrutura é criada no repositório:
+- **Project name** — used in generated templates
+- **Project type** — frontend, backend, or fullstack
+- **Backend stack** — Go, Java, Node.js, or Python
+- **Backend framework** — Spring Boot, Gin, Express, FastAPI, etc.
+- **Git hooks** — husky, lefthook, or none
+- **CI/CD** — GitHub Actions or GitLab CI
+- **AI agents** — Claude Code, OpenAI Codex, Gemini CLI, Google Antigravity, Cursor, GitHub Copilot, Windsurf, Amazon Q, OpenCode, and Kiro (10 targets).
+
+### What gets generated
+
+After `init`, the following structure is created in the repository:
 
 ```
 docs/
 ├── adr/              ← Architecture Decision Records
 ├── req/              ← Requirements
-├── roadmaps/
-│   ├── backlog/
-│   ├── wip/
-│   ├── blocked/
-│   ├── done/
-│   └── abandoned/
-├── visao-projeto/
-└── agents-working-context.md
+└── roadmaps/
+    ├── backlog/
+    ├── analyzing/
+    ├── wip/
+    ├── blocked/
+    ├── done/
+    └── abandoned/
 
-trackfw.yaml          ← configuração do projeto
+vault/
+└── notes/
+    └── index.md      ← knowledge vault index
+
+trackfw.yaml          ← project configuration
 scripts/
-└── trackfw-validate.sh
-CLAUDE.md             ← contexto para Claude Code (se selecionado)
-.claude/commands/     ← slash commands para Claude Code
-AGENTS.md             ← instruções persistentes para Codex (se selecionado)
-.agents/skills/       ← workflows de governança para Codex
-.codex/agents/        ← subagentes especialistas do Codex
+├── trackfw-validate.sh
+├── trackfw-attention-signal.sh
+├── trackfw-attention-cleanup.sh
+├── trackfw-credential-guard.sh
+└── trackfw-git-branch-guard.sh
+
+CLAUDE.md             ← context for Claude Code (if selected)
+.claude/
+├── commands/
+│   └── trackfw/      ← 9 slash commands for Claude Code
+└── settings.json
+AGENTS.md             ← persistent Codex instructions (if selected)
+.agents/skills/       ← Codex governance workflows
+.codex/agents/        ← Codex specialist subagents
 ```
 
-### Modo brownfield (projeto legado)
+> **Global writes:** When `--ai-tools claude` is selected with the default `--scope global`, `init` also writes 12 agents to `~/.claude/agents/` and 17 skills to `~/.claude/skills/`. Use `--scope project` to keep all files within the repository.
 
-Para projetos que já existem sem governança estruturada, use o flag `--brownfield`:
+### Brownfield mode (legacy projects)
+
+For projects that already exist without structured governance, use the `--brownfield` flag:
 
 ```bash
 trackfw init --brownfield
 ```
 
-Isso ativa o **modo lenient** por 30 dias: violações de governança são reportadas como avisos (warnings) em vez de erros, dando tempo para o time adaptar os processos sem bloquear CIs existentes.
+**Without an existing `trackfw.yaml`:** `init` writes `governance_mode: lenient` and `lenient_until` (today + 30 days) to the generated `trackfw.yaml`. During the lenient period, governance violations are reported as warnings instead of errors.
+
+**With an existing `trackfw.yaml`:** `init` warns `governance keys not modified — edit trackfw.yaml directly to enable lenient mode` and leaves the existing file unchanged. To enable lenient mode manually, add to `trackfw.yaml`:
+
+```yaml
+governance_mode: lenient
+lenient_until: YYYY-MM-DD   # 30 days from today
+```
 
 ---
 
-## 2. Primeira decisão arquitetural: `trackfw adr new`
+## 2. First architectural decision: `trackfw adr new`
 
-ADRs (Architecture Decision Records) documentam decisões técnicas significativas do projeto.
+ADRs (Architecture Decision Records) document significant technical decisions in the project.
 
 ```bash
-trackfw adr new
+trackfw adr new "User Authentication Strategy"
 ```
 
-O wizard solicita:
-- **Título** da decisão
-- **Contexto** — por que essa decisão foi necessária
-- **Decisão** — o que foi decidido
-- **Consequências** — impactos positivos e negativos
-- **Alternativas** consideradas
+Pass the title as an argument. In a TTY, omitting the title opens a wizard.
 
-### Saída esperada
+The wizard (or the argument) prompts for:
+- **Title** of the decision
+- **Context** — why this decision was needed
+- **Decision** — what was decided
+- **Consequences** — positive and negative impacts
+- **Alternatives** considered
+
+### Expected output
 
 ```
-created docs/adr/ADR-2026-06-13-usar-postgresql-como-banco-principal.md
+created docs/adr/ADR-2026-06-13-user-authentication-strategy.md
 ```
 
-### Arquivo gerado
+### Generated file
 
 ```markdown
 ---
@@ -133,167 +190,157 @@ date: 2026-06-13
 author: ""
 ---
 
-# ADR: Usar PostgreSQL como banco principal
+# ADR: User Authentication Strategy
 
 | Status: Proposed | Date: 2026-06-13 |
 
-## Contexto
-<!-- Por que essa decisão foi necessária -->
+## Context
+<!-- Why this decision was needed -->
 
-## Decisão
-<!-- O que foi decidido -->
+## Decision
+<!-- What was decided -->
 
-## Consequências
-<!-- Impactos positivos e negativos -->
+## Consequences
+<!-- Positive and negative impacts -->
 
-## Alternativas consideradas
-<!-- Outras opções avaliadas -->
+## Alternatives Considered
+<!-- Other options evaluated -->
 ```
 
-### Listar ADRs
+> **Note:** The section headings (`## Context`, `## Decision`, `## Consequences`, `## Alternatives Considered`) are in English regardless of locale — they are literal markers used by `trackfw validate`.
+
+### List ADRs
 
 ```bash
 trackfw adr list
 ```
 
 ```
-ADR-2026-06-13-usar-postgresql-como-banco-principal.md    Proposed
+ADR-2026-06-13-user-authentication-strategy.md    Proposed
 ```
 
 ---
 
-## 3. Primeiro requisito: `trackfw req new`
+## 3. First requirement: `trackfw req new`
 
-REQs (Requirements) documentam necessidades de negócio e técnicas. O wizard inclui **probes contextuais** — perguntas específicas por domínio (autenticação, UI, persistência, etc.) que geram ADR Drafts automaticamente quando necessário.
+REQs (Requirements) document business and technical needs. The wizard includes **contextual probes** — domain-specific questions (authentication, UI, persistence, etc.) that automatically generate ADR Drafts when needed.
 
 ```bash
-trackfw req new
+trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md
 ```
 
-O wizard solicita:
-- **Título** do requisito
-- **Motivação** — por que este requisito existe
-- **Critérios de aceite** — como saber que está pronto
-- **ADR vinculado** — decisão arquitetural relacionada
-- **Roadmap vinculado** — plano de implementação
+Pass the title as an argument. In a TTY, omitting the title opens a wizard.
 
-Se o título ou motivação mencionar domínios conhecidos (autenticação, banco de dados, deploy, etc.), o wizard apresenta perguntas adicionais específicas e pode criar ADR Drafts automaticamente.
+The wizard (or the argument) prompts for:
+- **Title** of the requirement
+- **Motivation** — why this requirement exists
+- **Acceptance criteria** — how to know it's done
+- **Linked ADR** — related architectural decision
 
-### Saída esperada
+### Auto-generated roadmap
+
+`req new` automatically creates a roadmap in `docs/roadmaps/backlog/`. You do not need to run `roadmap new` separately — it is only needed if you used `req new --no-roadmap`.
+
+### Expected output
 
 ```
-created docs/req/REQ-2026-06-13-login-via-oauth.md
-created docs/adr/ADR-2026-06-13-provider-oauth.md (Draft)
-
-Next step: resolve Draft ADRs before creating the roadmap.
+created docs/req/REQ-2026-06-13-user-authentication.md
+✓ created docs/roadmaps/backlog/ROADMAP-2026-06-13-user-authentication.md
+✓ linked REQ-2026-06-13-user-authentication.md → docs/roadmaps/backlog/ROADMAP-...
 ```
 
-### Listar REQs
+> **Note:** The section headings in the generated REQ file (`## Motivation`, `## Acceptance Criteria`) are in English — they are literal markers used by `trackfw validate`.
+
+### List REQs
 
 ```bash
 trackfw req list
 ```
 
 ```
-REQ-2026-06-13-login-via-oauth.md    Open
+REQ-2026-06-13-user-authentication.md    Open
 ```
 
 ---
 
-## 4. Primeiro roadmap: `trackfw roadmap new`
+## 4. Move roadmap to WIP: `trackfw roadmap move`
 
-Roadmaps detalham o plano de implementação de uma REQ em microlotes (MLs).
+The roadmap was created in `backlog/` by `req new`. To start implementation, move it to `wip/`:
 
 ```bash
-trackfw roadmap new
-# ou vinculando diretamente a uma REQ:
-trackfw roadmap new --from-req docs/req/REQ-2026-06-13-login-via-oauth.md
+trackfw roadmap move ROADMAP-$(date +%F)-user-authentication.md wip
 ```
 
-### Flags disponíveis
+Use the `ROADMAP-` prefix with the `.md` extension, not the REQ filename.
 
-| Flag | Descrição |
-|------|-----------|
-| `--title "Título"` | Título do roadmap (sem wizard) |
-| `--req docs/req/REQ-*.md` | Caminho da REQ vinculada |
-| `--from-req docs/req/REQ-*.md` | Cria roadmap já vinculado à REQ |
+### Expected output
 
-### Arquivo gerado
+```
+✓ moved ROADMAP-2026-06-13-user-authentication.md → docs/roadmaps/wip
+✓ synced REQ-2026-06-13-user-authentication.md → docs/roadmaps/wip/ROADMAP-...
+```
+
+### Generated roadmap structure
+
+The roadmap generated by `req new` includes a Wave 0 threat model:
 
 ```markdown
 ---
-status: backlog
+status: wip
 date: 2026-06-13
-req: ""
+req: "docs/req/REQ-2026-06-13-user-authentication.md"
 squad: ""
 ---
 
-# Roadmap: Login via OAuth
+# Roadmap: User Authentication
 
-> Criado em: 2026-06-13 | Status: backlog
+> Created: 2026-06-13 | Status: wip
 
-## REQ: docs/req/REQ-2026-06-13-login-via-oauth.md
+## Wave 0 — Threat Model
+> Dependencies: none. Blocks all implementation.
+
+### ML-0A — Threat model for this roadmap
+**Status:** ⬜ Pending
+...
 
 ## Wave 1 — ...
 ```
 
----
+> **Note:** `ML-0A` must be marked `✅ Done` before `roadmap move ... done` will succeed. Moving to `done` with a pending ML-0A produces: `Error: cannot move "..." to done: 1 blocker(s): ML-0A`.
 
-## 5. Mover roadmap entre estados
+### Available states
 
-```bash
-# Iniciar implementação
-trackfw roadmap move REQ-2026-06-13-login-via-oauth wip
-
-# Concluir
-trackfw roadmap move REQ-2026-06-13-login-via-oauth done
-```
-
-Estados disponíveis: `backlog` → `wip` → `done` (ou `blocked` / `abandoned`)
+`backlog` → `analyzing` → `wip` → `done` (or `blocked` / `abandoned`)
 
 ---
 
-## 6. Visão geral: `trackfw status` e `trackfw validate`
-
-### Status do projeto
-
-```bash
-trackfw status
-```
-
-```
-trackfw — project status
-
-📋 Backlog       2 roadmaps
-🔄 WIP           1 roadmap
-❌ Blocked       0 roadmaps
-✅ Done          3 roadmaps
-
-📄 ADRs          4   (Proposed: 2, Accepted: 1, Draft: 1)
-📝 REQs          3   (Open: 2, Closed: 1)
-```
-
-### Validação de consistência
+## 5. Check consistency: `trackfw validate`
 
 ```bash
 trackfw validate
 ```
 
-```
-✓ No violations found.
-```
+After the Quick start flow, `validate` exits rc=0 with `2 warning(s)` (see the Quick start section above for the full output).
 
-Se houver problemas:
+### If violations are found
 
 ```
-✗ 1 violation(s) found:
-
-  [violation] REQ-2026-06-13-login-via-oauth.md is blocked by Draft ADR: ADR-2026-06-13-provider-oauth.md
-
-⚠  1 warning(s):
-
-  [warning] ROADMAP-2026-06-10-refactor-db.md in WIP for 9 days (stale)
+✗ roadmap "ROADMAP-2026-06-13-implement-oauth.md" is in wip but has no linked REQ
+✗ REQ-2026-06-13-oauth-login.md is blocked by Draft ADR: ADR-2026-06-13-oauth-provider.md
+Error: 2 violation(s) found
 ```
+
+Each violation prefixes the message with `✗`. Warnings use `⚠`.
+
+---
+
+## 6. Project overview: `trackfw status`
+
+```bash
+trackfw status
+```
+
+Displays an inventory of ADRs, REQs, and roadmaps by state, with WIP and blocked roadmaps listed by name. Output format and counts reflect the current project state.
 
 ---
 
@@ -301,11 +348,11 @@ Se houver problemas:
 
 ## Windows
 
-Para configuração detalhada no Windows — caminhos de instalação, shells suportados (PowerShell 5.1, Git Bash, pwsh 7), matriz de suporte medida e limitações conhecidas — veja a seção **Windows** no [README do trackfw no GitHub](https://github.com/kgsaran/trackfw#windows).
+For detailed Windows setup — installation paths, supported shells (PowerShell 5.1, Git Bash, pwsh 7), measured support matrix, and known limitations — see the **Windows support (partial)** section in the [trackfw README on GitHub](https://github.com/kgsaran/trackfw#windows-support-partial).
 
 ---
 
-## Próximos passos
+## Next steps
 
-- [Referência completa de comandos](/guide/commands)
-- [Usando trackfw com agentes de IA](/guide/ai-agents)
+- [Full commands reference](/guide/commands)
+- [Using trackfw with AI agents](/guide/ai-agents)
