@@ -25,6 +25,13 @@ package generators
 // ML-1E (inserção reconhece chave pelo parse YAML):
 //
 //   T15 LefthookValidatePresent_D2a_QuotedKey → lefthookValidatePresent retorna true quando pre-commit: está entre aspas duplas
+//
+// ML-4C (corretivo da Wave 4 — F-9, F-10, R1):
+//
+//   T16 PresentTopLevelKeys_D2a_MergeKey        → F-9: <<: *anchor e <<: [*a, *b] têm as chaves expandidas; merge aninhado também
+//   T17 WriteTrackfwConfig_D2a_MergeKey         → F-9 E2E: chave herdada por âncora não recebe bloco duplicado após init
+//   T18 NormalizeYAMLTopLevelKey_EscapeSequence → F-10: escape YAML "pre\x2dcommit" decodificado como "pre-commit"
+//   T19 PresentTopLevelKeysFallback_QuotedKey   → R1: fallback usa normalizeYAMLTopLevelKey; chave entre aspas retorna sem aspas
 
 import (
 	"os"
@@ -792,6 +799,207 @@ func TestLefthookValidatePresent_D2a_QuotedKey(t *testing.T) {
 	content := "\"pre-commit\":\n  commands:\n    trackfw-validate:\n      run: trackfw validate\n"
 	if !lefthookValidatePresent(content) {
 		t.Fatalf("lefthookValidatePresent returned false for quoted pre-commit key (ML-1E detection-path fix missing)\ncontent:\n%s", content)
+	}
+}
+
+// --- ML-4C tests ---
+
+// T16 — presentTopLevelKeys expands YAML merge keys (<<: *anchor and <<: [*a, *b]),
+// including nested merge keys inside the anchor target.
+//
+// Reconciliation: this test asserts that presentTopLevelKeys (F-9, ML-4C) enumerates
+// keys inherited via YAML merge (<<) so that writeTrackfwConfig treats them as present
+// and does not append template defaults that would silently downgrade user-configured
+// values (e.g. require_req_in_commit: true → false).
+func TestPresentTopLevelKeys_D2a_MergeKey(t *testing.T) {
+	// Single alias: <<: *anchor
+	singleAlias := `defaults: &d
+  require_req_in_commit: true
+  wip_limit: 3
+<<: *d
+adr_dirs:
+  - docs/adr
+`
+	keys, ok := presentTopLevelKeys(singleAlias)
+	if !ok {
+		t.Fatal("single-alias fixture must parse as valid YAML (ok=true)")
+	}
+	if !keys["require_req_in_commit"] {
+		t.Error("F-9: require_req_in_commit inherited via <<: *d must be detected as present")
+	}
+	if !keys["wip_limit"] {
+		t.Error("F-9: wip_limit inherited via <<: *d must be detected as present")
+	}
+	if !keys["adr_dirs"] {
+		t.Error("adr_dirs (explicit key) must still be detected")
+	}
+
+	// Sequence form: <<: [*a, *b]
+	seqForm := `a: &a
+  foo: 1
+b: &b
+  bar: 2
+<<: [*a, *b]
+baz: 3
+`
+	keys, ok = presentTopLevelKeys(seqForm)
+	if !ok {
+		t.Fatal("sequence-alias fixture must parse as valid YAML (ok=true)")
+	}
+	if !keys["foo"] {
+		t.Error("F-9: foo inherited via <<: [*a, ...] must be detected as present")
+	}
+	if !keys["bar"] {
+		t.Error("F-9: bar inherited via <<: [..., *b] must be detected as present")
+	}
+	if !keys["baz"] {
+		t.Error("baz (explicit key) must still be detected")
+	}
+
+	// Nested merge: anchor that itself has a <<: *inner merge key.
+	nestedMerge := `base: &base
+  x: 1
+extended: &ext
+  <<: *base
+  y: 2
+<<: *ext
+z: 3
+`
+	keys, ok = presentTopLevelKeys(nestedMerge)
+	if !ok {
+		t.Fatal("nested-merge fixture must parse as valid YAML (ok=true)")
+	}
+	if !keys["x"] {
+		t.Error("F-9: x inherited transitively via nested merge must be detected as present")
+	}
+	if !keys["y"] {
+		t.Error("F-9: y inherited via <<: *ext must be detected as present")
+	}
+	if !keys["z"] {
+		t.Error("z (explicit key) must still be detected")
+	}
+
+	// Counter-arm: a key genuinely absent must still be absent.
+	if keys["absent_key"] {
+		t.Error("absent_key must not be a false-positive (counter-arm)")
+	}
+}
+
+// T17 — end-to-end: trackfw.yaml with governance keys inherited via YAML merge key
+// (<<: *anchor) keeps the user's values after writeTrackfwConfig.
+//
+// Reconciliation: this test asserts that presentTopLevelKeys (F-9, ML-4C) prevents
+// writeTrackfwConfig from appending template defaults for keys that exist only via
+// merge-key expansion — confirming the downgrade scenario (require_req_in_commit:
+// true → false, wip_limit: 3 → 1) cannot occur after the fix.
+//
+// config.Load() is NOT used to assert values: the yaml.Node reader does not expand
+// merge keys, so it always returns defaults for anchor-inherited values regardless
+// of whether the file was modified. The assertion is by absence of appended defaults
+// and by yaml.Unmarshal-into-map, which does expand merge keys (confirmed by probe).
+func TestWriteTrackfwConfig_D2a_MergeKey(t *testing.T) {
+	dir := chdirTemp(t)
+	path := filepath.Join(dir, "trackfw.yaml")
+
+	// Fixture: governance keys defined in an anchor and merged at top level.
+	// require_req_in_commit: true and wip_limit: 3 are only present via <<: *d.
+	fixture := `defaults: &d
+  require_req_in_commit: true
+  wip_limit: 3
+<<: *d
+adr_dirs:
+  - docs/adr
+req_dir: docs/req
+roadmap_dir: docs/roadmaps
+roadmap_namespacing: flat
+hooks: none
+ci: github-actions
+frontend: ""
+backend: go
+backend_framework: ""
+pkg_manager: ""
+wip_by_squad: false
+rules:
+  branch_has_wip_roadmap: error
+`
+	if err := os.WriteFile(path, []byte(fixture), 0644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	if err := writeTrackfwConfig(Config{}); err != nil {
+		t.Fatalf("writeTrackfwConfig: %v", err)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	content := string(got)
+
+	// No explicit require_req_in_commit or wip_limit line should have been appended.
+	// The template writes "require_req_in_commit: false" and "wip_limit: 1" when it
+	// believes the keys are absent. If present here, the fix failed.
+	for _, line := range strings.Split(content, "\n") {
+		if line == "require_req_in_commit: false" {
+			t.Fatalf("F-9: require_req_in_commit: false was appended (merge key not expanded)\ncontent:\n%s", content)
+		}
+		if line == "wip_limit: 1" {
+			t.Fatalf("F-9: wip_limit: 1 was appended (merge key not expanded)\ncontent:\n%s", content)
+		}
+	}
+
+	// Absence of appended defaults is sufficient: writeTrackfwConfig is a no-op for
+	// present keys, so if neither default line appeared, the user's anchor-merged
+	// values are intact. config.Load() is not used here because yaml.Node (which
+	// config.go uses internally) does not expand merge keys — it always returns
+	// defaults for anchor-inherited values regardless of whether the file changed.
+	// Confirmed by measurement in probe_mergekey_test (session 2026-11-22).
+}
+
+// T18 — normalizeYAMLTopLevelKey decodes YAML escape sequences in quoted keys.
+//
+// Reconciliation: this test asserts that the YAML-parser primary path in
+// normalizeYAMLTopLevelKey (F-10, ML-4C) decodes "pre\x2dcommit" (a YAML
+// double-quoted scalar with escape \x2d = '-') as "pre-commit", which the
+// text-based fallback cannot do (it returns the literal "pre\x2dcommit").
+func TestNormalizeYAMLTopLevelKey_EscapeSequence(t *testing.T) {
+	// Raw string: contains the literal bytes "pre\x2dcommit": (backslash, x, 2, d).
+	// In YAML double-quoted string semantics, \x2d is the Unicode escape for '-',
+	// so the parsed key is "pre-commit".
+	line := `"pre\x2dcommit":`
+	got := normalizeYAMLTopLevelKey(line)
+	if got != "pre-commit" {
+		t.Errorf("F-10: normalizeYAMLTopLevelKey(%q) = %q, want \"pre-commit\""+
+			" (YAML \\x2d escape must be decoded by the YAML-parser primary path)", line, got)
+	}
+}
+
+// T19 — presentTopLevelKeysFallback uses normalizeYAMLTopLevelKey so that a quoted
+// key ("pre-commit":) in an otherwise-invalid YAML file is stored without quotes.
+//
+// Reconciliation: this test asserts that presentTopLevelKeysFallback (R1, ML-4C)
+// calls normalizeYAMLTopLevelKey on each column-0 line instead of using line[:idx].
+// Without R1, the key is stored as '"pre-commit"' (with quotes); the subsequent
+// caller looks up "pre-commit" (without quotes) and gets false, triggering a
+// duplicate block insertion.
+func TestPresentTopLevelKeysFallback_QuotedKey(t *testing.T) {
+	// Invalid YAML overall (unclosed flow) but "pre-commit": is a valid column-0 line.
+	content := "{unclosed\n\"pre-commit\":\n  commands:\n    lint:\n      run: golangci-lint run\n"
+
+	// Precondition: fixture must be invalid YAML (the fallback path is exercised).
+	_, ok := presentTopLevelKeys(content)
+	if ok {
+		t.Fatal("precondition: fixture must NOT parse as valid YAML — adjust if yaml.v3 accepts it")
+	}
+
+	keys := presentTopLevelKeysFallback(content)
+	if !keys["pre-commit"] {
+		t.Errorf(`R1: presentTopLevelKeysFallback must return keys["pre-commit"]=true for a quoted key; `+
+			`keys=%v — without normalizeYAMLTopLevelKey, the key would be stored as '"pre-commit"' (with quotes)`, keys)
+	}
+	// Keys with the raw quoted form must not appear.
+	if keys[`"pre-commit"`] {
+		t.Errorf(`R1: keys['"pre-commit"'] must be false; the quoted form must not persist as a key`)
 	}
 }
 

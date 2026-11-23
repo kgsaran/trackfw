@@ -952,11 +952,48 @@ func presentTopLevelKeys(content string) (map[string]bool, bool) {
 	if top.Kind != yaml.MappingNode {
 		return keys, false
 	}
-	for i := 0; i+1 < len(top.Content); i += 2 {
-		k := resolveScaffoldAlias(top.Content[i])
-		keys[k.Value] = true
-	}
+	expandTopLevelKeys(top, keys)
 	return keys, true
+}
+
+// expandTopLevelKeys adds top-level keys from a MappingNode to keys,
+// expanding YAML merge keys (Tag "!!merge") recursively.
+// This handles <<: *anchor and <<: [*a, *b], including anchors that
+// themselves contain nested << merge keys.
+// F-9 fix (ML-4C, REQ-2026-11-22).
+func expandTopLevelKeys(node *yaml.Node, keys map[string]bool) {
+	if node.Kind != yaml.MappingNode {
+		return
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		k := resolveScaffoldAlias(node.Content[i])
+		if k.Tag == "!!merge" {
+			// YAML merge key: expand the value (alias or sequence of aliases)
+			// and add all inherited keys to the set.
+			expandMergeValue(node.Content[i+1], keys)
+		} else {
+			keys[k.Value] = true
+		}
+	}
+}
+
+// expandMergeValue handles the value side of a YAML merge key (<<).
+// val may be:
+//   - AliasNode (<<: *anchor) — resolved to a MappingNode whose keys are added.
+//   - SequenceNode (<<: [*a, *b]) — each element is expanded recursively.
+//
+// Nested merge keys inside the target mapping are handled because
+// expandTopLevelKeys is called recursively on each resolved MappingNode.
+func expandMergeValue(val *yaml.Node, keys map[string]bool) {
+	resolved := resolveScaffoldAlias(val)
+	switch resolved.Kind {
+	case yaml.MappingNode:
+		expandTopLevelKeys(resolved, keys)
+	case yaml.SequenceNode:
+		for _, elem := range resolved.Content {
+			expandMergeValue(elem, keys)
+		}
+	}
 }
 
 // presentTopLevelKeysFallback is the pre-D2a text-based key detector. It is
@@ -980,12 +1017,19 @@ func presentTopLevelKeysFallback(content string) map[string]bool {
 		if len(line) == 0 || line[0] == ' ' || line[0] == '\t' {
 			continue
 		}
-		// P2: colon required
+		// P2: colon required (fast pre-check; normalizeYAMLTopLevelKey also checks)
 		idx := strings.Index(line, ":")
 		if idx <= 0 {
 			continue
 		}
-		keys[line[:idx]] = true
+		// R1 fix (ML-4C): use normalizeYAMLTopLevelKey so that quoted keys (e.g.
+		// "pre-commit":) are stored without quotes, matching the lookup key used by
+		// the merge caller. Without this, keys['"pre-commit"'] != keys["pre-commit"].
+		k := normalizeYAMLTopLevelKey(line)
+		if k == "" {
+			continue
+		}
+		keys[k] = true
 	}
 	return keys
 }
@@ -2344,8 +2388,34 @@ func generateGitIgnore() error {
 // Returns the empty string when no colon is found (not a key line).
 // Used by lefthookValidatePresent and generateLefthookHook so that both share
 // the same section-detection logic and handle the same set of YAML spellings.
+// normalizeYAMLTopLevelKey derives the key name from a column-0 line using the
+// YAML parser as the primary path (F-10, ML-4C, REQ-2026-11-22). This correctly
+// decodes YAML escape sequences in quoted keys (e.g. "pre\x2dcommit" → "pre-commit")
+// that the text-based path cannot handle.
+//
+// Primary path: unmarshal the line as a one-entry YAML document and read the first
+// mapping key. Returns the empty string when the top node is not a mapping (scalar,
+// sequence, alias, or empty document).
+//
+// Fallback (text-based): applied when the YAML parse fails (e.g. unknown alias,
+// malformed scalar). Strips BOM, surrounding double/single quotes, and trailing
+// space before the colon — same rules as the pre-ML-4C implementation.
+//
+// Returns "" when no colon is found on the line or the parse+fallback both yield
+// an empty key.
 func normalizeYAMLTopLevelKey(line string) string {
-	// Strip UTF-8 BOM (\xef\xbb\xbf) — only appears at the start of a file.
+	// Primary path: parse the line as a YAML document and read the first mapping key.
+	var node yaml.Node
+	if err := yaml.Unmarshal([]byte(line), &node); err == nil &&
+		len(node.Content) > 0 &&
+		node.Content[0].Kind == yaml.MappingNode &&
+		len(node.Content[0].Content) >= 1 {
+		k := resolveScaffoldAlias(node.Content[0].Content[0])
+		if k.Kind == yaml.ScalarNode && k.Value != "" {
+			return k.Value
+		}
+	}
+	// Fallback: text-based extraction (pre-ML-4C behavior: BOM strip, quote strip, space trim).
 	line = strings.TrimPrefix(line, "\xef\xbb\xbf")
 	idx := strings.IndexByte(line, ':')
 	if idx < 0 {

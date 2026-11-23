@@ -332,7 +332,17 @@ o hades rodou um `init --brownfield` com o HOME real, contra o handoff. O arquit
 - [x] Reimplementa a falsificação de D1, D2 e D4 a partir do contrato, não do diff; residual declarado
 
 ### ML-4C — Corretivo da Wave 4 (apolo-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done, com sítio de mesma causa no ML-4D — `presentTopLevelKeys` expande merge key pela tag `!!merge`
+(`<<: *a`, `<<: [*a, *b]`, aninhado); `normalizeYAMLTopLevelKey` faz parse YAML da linha (escape decodificado), com
+texto como fallback, e `presentTopLevelKeysFallback` o usa (R1); a conferência do site exige `2 warning(s)` dentro do
+bloco de saída (F-8). Testes: `TestPresentTopLevelKeys_D2a_MergeKey`, `TestWriteTrackfwConfig_D2a_MergeKey`,
+`TestNormalizeYAMLTopLevelKey_EscapeSequence`, `TestPresentTopLevelKeysFallback_QuotedKey`,
+`TestQuickStartDocsPinned_CounterArm_SiteGuideOutputFence`; contra-braço por item reportado. `internal/generators` e
+`internal/commands` rc=0. **Achado do apolo, medido pelo arquiteto no binário:** o leitor (`config.normalizeMapping`)
+também não expande merge key — com `<<: *d` e `wip_limit: 3` na âncora, o `validate` avisa "2 roadmaps in wip/
+(limit: 1)", igual ao `wip_limit: 1` explícito. Então o rebaixamento do F-9 não acontecia na leitura: o leitor sempre
+ignorou âncoras. Depois do ML-4C o escritor reconhece a chave herdada e o leitor não, o que contraria o D2a ("como o
+leitor reconhece"). ML-4D corrige o leitor.
 **Files affected:** `internal/generators/scaffold.go`; `internal/generators/trackfw_config_merge_test.go`;
 `internal/commands/quickstart_e2e_test.go`
 **Actions:**
@@ -344,8 +354,22 @@ o hades rodou um `init --brownfield` com o HOME real, contra o handoff. O arquit
    in the page.
 4. Tests with counter-arm for each item; reconciliation sentence per test.
 **Acceptance criteria:**
-- [ ] `trackfw.yaml` com chave de governança herdada por âncora mantém o valor do usuário após `init`
-- [ ] `go test ./internal/generators/` e `go test ./internal/commands/` rc=0
+- [x] `trackfw.yaml` com chave de governança herdada por âncora mantém o valor do usuário após `init`
+- [x] `go test ./internal/generators/` e `go test ./internal/commands/` rc=0
+
+### ML-4D — Leitor de config expande merge key (apolo-tf)
+**Status:** ⬜ Pending
+**Files affected:** `internal/config/config.go`; `internal/config/config_merge_key_test.go` (novo)
+**Actions:**
+1. `normalizeMapping` honors YAML merge keys (tag `!!merge`, `<<: *a` and `<<: [*a, *b]`, nested) with YAML
+   semantics: explicit keys of the mapping win over merged ones regardless of order; in a sequence, earlier sources
+   win over later ones. Applies to nested mappings too (same function).
+2. Tests: `wip_limit` and `require_req_in_commit` from an anchor are read; explicit key overrides the merged one;
+   sequence precedence; nested merge. Counter-arm: without the change, the tests fail.
+3. End-to-end: the anchored `trackfw.yaml` makes `validate` respect `wip_limit: 3`.
+**Acceptance criteria:**
+- [ ] o leitor e o escritor reconhecem as mesmas chaves num `trackfw.yaml` com âncora (ADR D2a)
+- [ ] `go test ./internal/config/` e `go test ./internal/validator/` rc=0
 
 **Wave gates:**
 ```bash
@@ -353,6 +377,7 @@ test -s docs/qualidade/2026-11-22-onboarding-review.md
 test -s docs/seguranca/2026-11-22-red-team-onboarding.md
 TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 5m ./internal/generators/
 TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 5m ./internal/commands/
+TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 5m ./internal/config/
 ```
 
 ## Wave 5 — Fechamento

@@ -407,10 +407,66 @@ func TestQuickStartEndToEnd_CounterArm_NoADRFlagFails(t *testing.T) {
 
 // ── ADR D4 — doc-pinning tests ─────────────────────────────────────────────────
 
+// assertSiteGuideHas2Warnings reads the site guide at path, finds the Quick start
+// run block, then checks that the output fence immediately after it contains a line
+// whose trimmed text equals "2 warning(s)".
+//
+// Using a trimmed-line equality (not strings.Contains over the whole file) ensures
+// that "2 warning(s)" appearing only in prose (lines 62/323) or inside an HTML
+// comment does not cause a false pass when the actual output fence is wrong (F-8,
+// ML-4C).
+//
+// Uses dc for reporting so counter-arm tests can capture failures without
+// propagating to the real *testing.T.
+func assertSiteGuideHas2Warnings(dc docChecker, path string) {
+	dc.Helper()
+	content, err := os.ReadFile(path)
+	if err != nil {
+		dc.Errorf("assertSiteGuideHas2Warnings: read %s: %v", filepath.Base(path), err)
+		return
+	}
+	lines := strings.Split(string(content), "\n")
+	runIdx := findQuickStartRun(lines)
+	if runIdx < 0 {
+		dc.Errorf("assertSiteGuideHas2Warnings: Quick start run not found in %s — cannot check output fence",
+			filepath.Base(path))
+		return
+	}
+	// Scan forward from after the last command line.
+	// The first ``` encountered is the closing fence of the command block; skip it.
+	// The second ``` opens the output block; scan inside it for "2 warning(s)".
+	skipFences := 1 // closing fence of the command block
+	inFence := false
+	found := false
+	for li := runIdx + len(quickStartLines); li < len(lines); li++ {
+		line := lines[li]
+		if strings.HasPrefix(line, "```") {
+			if skipFences > 0 {
+				skipFences--
+				continue
+			}
+			if !inFence {
+				inFence = true
+				continue
+			}
+			break // end of output fence; stop
+		}
+		if inFence && strings.TrimSpace(line) == "2 warning(s)" {
+			found = true
+		}
+	}
+	if !found {
+		dc.Errorf("%s: output fence after Quick start run must contain a line \"2 warning(s)\""+
+			" (F-8, ML-4C: scoped to output fence, not the whole page — prose references do not count)",
+			filepath.Base(path))
+	}
+}
+
 // TestQuickStartDocsPinned — ADR D4: each Quick start command line appears as a
 // contiguous block in README.md and in site/guide/getting-started.md; the README
 // validate line promises "2 warning(s)" and does not promise "✓ No violations found.";
-// the site guide contains "2 warning(s)" in the output block after the run.
+// the site guide contains "2 warning(s)" inside the output fence that immediately
+// follows the Quick start command fence (F-8, ML-4C: scoped to the fence, not the page).
 //
 // Asserts (ML-3A): documentation matches the commands the binary executes; a doc
 // edit without a matching test edit is detected at test time.
@@ -429,6 +485,7 @@ func TestQuickStartDocsPinned(t *testing.T) {
 			strings.Join(quickStartLines, "\n    "))
 	} else {
 		// The validate line (run[4]) must promise the right output.
+		// The README uses an inline comment on the validate line itself.
 		validateLine := readmeLines[readmeIdx+len(quickStartLines)-1]
 		if !strings.Contains(validateLine, "2 warning(s)") {
 			t.Errorf("README.md: validate line must contain \"2 warning(s)\", got:\n  %s", validateLine)
@@ -444,14 +501,14 @@ func TestQuickStartDocsPinned(t *testing.T) {
 		t.Fatalf("read site/guide/getting-started.md: %v", err)
 	}
 	siteLines := strings.Split(string(siteBytes), "\n")
-	if findQuickStartRun(siteLines) < 0 {
+	siteRunIdx := findQuickStartRun(siteLines)
+	if siteRunIdx < 0 {
 		t.Errorf("site/guide/getting-started.md: Quick start block not found as contiguous run\n  want (each normalised):\n    %s",
 			strings.Join(quickStartLines, "\n    "))
 	}
-	// The output block immediately after the run promises "2 warning(s)".
-	if !strings.Contains(string(siteBytes), "2 warning(s)") {
-		t.Errorf("site/guide/getting-started.md must contain \"2 warning(s)\"")
-	}
+	// F-8 (ML-4C): "2 warning(s)" must appear inside the output fence immediately
+	// after the command block, not just anywhere in the page.
+	assertSiteGuideHas2Warnings(t, filepath.Join(root, "site", "guide", "getting-started.md"))
 }
 
 // TestQuickStartDocsPinned_CounterArm_README — removing or editing a Quick start
@@ -520,5 +577,86 @@ func TestQuickStartDocsPinned_CounterArm_SiteGuide(t *testing.T) {
 	assertDocContainsRun(rec, tmpFile)
 	if !rec.failed {
 		t.Errorf("counter-arm: modified site guide passed the run check — the doc pin is not detecting changes")
+	}
+}
+
+// TestQuickStartDocsPinned_CounterArm_SiteGuideOutputFence — replacing "2 warning(s)"
+// in the output fence with "0 warning(s)" while leaving prose intact must cause
+// assertSiteGuideHas2Warnings to fail.
+//
+// This counter-arm specifically tests the F-8 fix (ML-4C): the old check used
+// strings.Contains over the whole page, so any surviving "2 warning(s)" in prose
+// (lines 62/323) would cause a false pass. The new fence-scoped check catches it.
+//
+// Asserts (F-8 counter-arm, ML-4C): the output-fence scope is not vacuous; prose
+// references at lines 62/323 do not satisfy the check when the fence is wrong.
+func TestQuickStartDocsPinned_CounterArm_SiteGuideOutputFence(t *testing.T) {
+	root := repoRoot()
+	src, err := os.ReadFile(filepath.Join(root, "site", "guide", "getting-started.md"))
+	if err != nil {
+		t.Fatalf("read site/guide/getting-started.md: %v", err)
+	}
+	lines := strings.Split(string(src), "\n")
+
+	// Find the Quick start run and then the output fence (second ``` after the run).
+	runIdx := findQuickStartRun(lines)
+	if runIdx < 0 {
+		t.Fatal("counter-arm setup: Quick start run not found in site guide — fixture is broken")
+	}
+
+	// Locate the output fence boundaries using the same logic as assertSiteGuideHas2Warnings.
+	skipFences := 1
+	inFence := false
+	fenceStart := -1
+	fenceEnd := -1
+	for li := runIdx + len(quickStartLines); li < len(lines); li++ {
+		line := lines[li]
+		if strings.HasPrefix(line, "```") {
+			if skipFences > 0 {
+				skipFences--
+				continue
+			}
+			if !inFence {
+				inFence = true
+				fenceStart = li
+				continue
+			}
+			fenceEnd = li
+			break
+		}
+	}
+	if fenceStart < 0 || fenceEnd < 0 {
+		t.Fatal("counter-arm setup: output fence not found after Quick start run")
+	}
+
+	// Replace "2 warning(s)" with "0 warning(s)" only inside the output fence.
+	for li := fenceStart; li <= fenceEnd; li++ {
+		if strings.TrimSpace(lines[li]) == "2 warning(s)" {
+			lines[li] = "0 warning(s)"
+		}
+	}
+
+	// Verify "2 warning(s)" still appears in prose (line 62-ish) so the counter-arm
+	// isolates the fence-scope failure rather than a total absence.
+	proseFound := false
+	for _, l := range lines {
+		if strings.Contains(l, "2 warning(s)") && !strings.HasPrefix(l, "```") {
+			proseFound = true
+			break
+		}
+	}
+	if !proseFound {
+		t.Fatal("counter-arm setup: '2 warning(s)' not found in prose after editing fence — adjust fixture")
+	}
+
+	tmpFile := filepath.Join(t.TempDir(), "getting-started.md")
+	if err := os.WriteFile(tmpFile, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
+		t.Fatalf("write modified site guide to temp: %v", err)
+	}
+
+	rec := &failRecorder{}
+	assertSiteGuideHas2Warnings(rec, tmpFile)
+	if !rec.failed {
+		t.Errorf("counter-arm: modified site guide (output fence says '0 warning(s)') passed the fence check — F-8 fix is not detecting the wrong output")
 	}
 }
