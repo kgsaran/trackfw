@@ -19,8 +19,12 @@ package generators
 //   T10 WriteTrackfwConfig_D2a_QuotedAdrDirs  → chave "adr_dirs" entre aspas não ganha segundo bloco após merge
 //   T11 WriteTrackfwConfig_D2a_SpaceBeforeColon → chave adr_dirs com espaço antes do : não ganha segundo bloco
 //   T12 WriteTrackfwConfig_D2a_BOM            → chave adr_dirs com BOM na linha 1 não ganha segundo bloco
-//   T13 GenerateLefthookHook_D2a_QuotedPreCommit → "pre-commit" entre aspas não ganha segundo bloco pre-commit:
+//   T13 GenerateLefthookHook_D2a_QuotedPreCommit → "pre-commit" entre aspas não ganha segundo bloco pre-commit:; trackfw-validate instalado; sem aviso "no 'commands:'"
 //   T14 GenerateLefthookHook_D2a_InvalidYAMLFallback → lefthook.yml inválido com pre-commit: → fallback encontra a chave, sem bloco duplicado
+//
+// ML-1E (inserção reconhece chave pelo parse YAML):
+//
+//   T15 LefthookValidatePresent_D2a_QuotedKey → lefthookValidatePresent retorna true quando pre-commit: está entre aspas duplas
 
 import (
 	"os"
@@ -675,27 +679,29 @@ func TestWriteTrackfwConfig_D2a_BOM(t *testing.T) {
 }
 
 // T13 — end-to-end: existing lefthook.yml with "pre-commit": (quoted) does not
-// gain a second pre-commit: block after generateGitHooks.
+// gain a second pre-commit: block after generateGitHooks; trackfw-validate is
+// inserted under the existing block; no "no 'commands:'" warning is emitted.
 //
-// Reconciliation: this test asserts that the yaml.Node parser detects "pre-commit"
-// from the quoted key, so generateLefthookHook treats pre-commit as already present
-// and does not append a full new pre-commit: block — measured by confirming that no
-// unquoted top-level pre-commit: line is added. Note: a same-cause site exists in
-// the insertion-path section tracker (line == "pre-commit:") that prevents
-// trackfw-validate from being inserted into a quoted key block; that site is a
-// separate finding for the architect, not part of this test's scope.
+// Reconciliation: this test asserts that normalizeYAMLTopLevelKey lets both the
+// key-detection path (presentTopLevelKeys) and the insertion-path section tracker
+// (generateLefthookHook) recognize "pre-commit" written as "pre-commit": — so
+// generateLefthookHook inserts trackfw-validate under the existing quoted block
+// instead of (a) appending a duplicate block or (b) printing the "no commands:"
+// warning and skipping the insertion (ML-1E).
 func TestGenerateLefthookHook_D2a_QuotedPreCommit(t *testing.T) {
 	dir := chdirTemp(t)
 
-	// Fixture: pre-commit: written as "pre-commit": (quoted key).
+	// Fixture: pre-commit: written as "pre-commit": (quoted key) with a commands: section.
 	fixture := "\"pre-commit\":\n  commands:\n    lint:\n      run: golangci-lint run\n"
 	if err := os.WriteFile(filepath.Join(dir, "lefthook.yml"), []byte(fixture), 0644); err != nil {
 		t.Fatalf("preparar fixture: %v", err)
 	}
 
-	if err := generateGitHooks(Config{Hooks: "lefthook"}); err != nil {
-		t.Fatalf("generateGitHooks: %v", err)
-	}
+	stdout := captureStdout(t, func() {
+		if err := generateGitHooks(Config{Hooks: "lefthook"}); err != nil {
+			t.Fatalf("generateGitHooks: %v", err)
+		}
+	})
 
 	got, err := os.ReadFile(filepath.Join(dir, "lefthook.yml"))
 	if err != nil {
@@ -708,6 +714,16 @@ func TestGenerateLefthookHook_D2a_QuotedPreCommit(t *testing.T) {
 		if line == "pre-commit:" {
 			t.Fatalf("duplicate unquoted pre-commit: block was added after merge (D2a failed for quoted key)\ncontent:\n%s", content)
 		}
+	}
+
+	// trackfw-validate must be installed under the quoted pre-commit block (ML-1E).
+	if !strings.Contains(content, "trackfw-validate:") {
+		t.Fatalf("trackfw-validate: not inserted under quoted pre-commit block (ML-1E insertion-path fix missing)\ncontent:\n%s", content)
+	}
+
+	// No "no 'commands:'" warning should appear — the insertion succeeded (ML-1E).
+	if strings.Contains(stdout, "commands:") && strings.Contains(stdout, "pre-commit") {
+		t.Fatalf("unexpected 'no commands:' warning printed (ML-1E insertion-path fix missing)\nstdout: %s", stdout)
 	}
 }
 
@@ -762,6 +778,20 @@ func TestGenerateLefthookHook_D2a_InvalidYAMLFallback(t *testing.T) {
 	// trackfw-validate: must have been inserted by the fallback path.
 	if !strings.Contains(content, "trackfw-validate:") {
 		t.Fatalf("trackfw-validate: not inserted (fallback must find pre-commit: and insert under it)\ncontent:\n%s", content)
+	}
+}
+
+// T15 — unit: lefthookValidatePresent returns true when trackfw-validate: lives
+// under a pre-commit block whose key is written between double quotes.
+//
+// Reconciliation: this test asserts that normalizeYAMLTopLevelKey lets
+// lefthookValidatePresent recognize "pre-commit": as the pre-commit section, so
+// that a file with the quoted spelling is treated as already having the hook
+// installed — preventing a spurious second insertion (ML-1E detection-path fix).
+func TestLefthookValidatePresent_D2a_QuotedKey(t *testing.T) {
+	content := "\"pre-commit\":\n  commands:\n    trackfw-validate:\n      run: trackfw validate\n"
+	if !lefthookValidatePresent(content) {
+		t.Fatalf("lefthookValidatePresent returned false for quoted pre-commit key (ML-1E detection-path fix missing)\ncontent:\n%s", content)
 	}
 }
 

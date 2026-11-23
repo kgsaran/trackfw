@@ -168,7 +168,10 @@ bash scripts/check-init-preserves-user-config.sh
 ```
 
 ### ML-1E — Inserção do lefthook reconhece a chave pelo parse YAML (apolo-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — helper `normalizeYAMLTopLevelKey` (BOM, aspas simples e duplas, espaço antes do `:`) nos dois
+sítios. `TestGenerateLefthookHook_D2a_QuotedPreCommit` afirma também a instalação do `trackfw-validate` e a ausência
+do aviso; `TestLefthookValidatePresent_D2a_QuotedKey` é novo. Contra-braço do apolo: com a comparação exata, os dois
+reprovam. `internal/generators` rc=0 e `check-init-preserves-user-config.sh` rc=0.
 **Files affected:** `internal/generators/scaffold.go`; `internal/generators/trackfw_config_merge_test.go`
 **Actions:**
 1. Same cause as D2a on the insertion side: `generateLefthookHook` and `lefthookValidatePresent` track the
@@ -178,8 +181,8 @@ bash scripts/check-init-preserves-user-config.sh
 2. `TestGenerateLefthookHook_D2a_QuotedPreCommit` also asserts that `trackfw-validate` is installed.
 3. Counter-arm: with the exact-string comparison, the test fails.
 **Acceptance criteria:**
-- [ ] `trackfw-validate` instalado e detectado com a chave `pre-commit` em qualquer grafia aceita pelo YAML
-- [ ] `go test ./internal/generators/` rc=0
+- [x] `trackfw-validate` instalado e detectado com a chave `pre-commit` em qualquer grafia aceita pelo YAML
+- [x] `go test ./internal/generators/` rc=0
 
 **Wave gates:**
 ```bash

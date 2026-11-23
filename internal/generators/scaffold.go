@@ -2335,6 +2335,33 @@ func generateGitIgnore() error {
 	return nil
 }
 
+// normalizeYAMLTopLevelKey normalizes a column-0 YAML line to its bare key string,
+// the same value yaml.v3 would return as the mapping key. It:
+//   - strips the UTF-8 BOM (\xef\xbb\xbf) from the beginning (first-line artifact)
+//   - strips surrounding double or single quotes from the key portion
+//   - strips a space before the colon (e.g. "pre-commit :" → "pre-commit")
+//
+// Returns the empty string when no colon is found (not a key line).
+// Used by lefthookValidatePresent and generateLefthookHook so that both share
+// the same section-detection logic and handle the same set of YAML spellings.
+func normalizeYAMLTopLevelKey(line string) string {
+	// Strip UTF-8 BOM (\xef\xbb\xbf) — only appears at the start of a file.
+	line = strings.TrimPrefix(line, "\xef\xbb\xbf")
+	idx := strings.IndexByte(line, ':')
+	if idx < 0 {
+		return ""
+	}
+	key := strings.TrimSpace(line[:idx])
+	// Strip surrounding double or single quotes.
+	if len(key) >= 2 {
+		if (key[0] == '"' && key[len(key)-1] == '"') ||
+			(key[0] == '\'' && key[len(key)-1] == '\'') {
+			key = key[1 : len(key)-1]
+		}
+	}
+	return key
+}
+
 // lefthookValidatePresent reports whether a trackfw-validate: entry already lives
 // inside the top-level pre-commit: block of a lefthook.yml file.
 //
@@ -2351,12 +2378,15 @@ func generateGitIgnore() error {
 // of the value. Since this key carries no quoted value in practice — only optional
 // trailing comments — the truncation is safe. Declaring rather than hiding the edge
 // case (mirrors the equivalent caveat in scripts/check-init-preserves-user-config.sh).
+//
+// Section tracking uses normalizeYAMLTopLevelKey so that "pre-commit" written as
+// "pre-commit": or 'pre-commit': is recognized as the same section (D2a, ML-1E).
 func lefthookValidatePresent(content string) bool {
 	inPreCommit := false
 	for _, line := range strings.Split(content, "\n") {
 		// Track top-level sections (column-0, non-whitespace, non-comment).
 		if len(line) > 0 && line[0] != ' ' && line[0] != '\t' && line[0] != '#' {
-			inPreCommit = line == "pre-commit:"
+			inPreCommit = normalizeYAMLTopLevelKey(line) == "pre-commit"
 		}
 		// Strip inline YAML comment (" #" sequence) before comparing.
 		// A leading '#' (full-line comment) is already excluded by the section-tracking
@@ -2417,8 +2447,10 @@ func generateLefthookHook() error {
 		inserted := false
 		for _, line := range lines {
 			// Track top-level sections (column-0, non-comment).
+			// normalizeYAMLTopLevelKey handles quoted keys ("pre-commit":,
+			// 'pre-commit':) and space-before-colon (D2a, ML-1E).
 			if len(line) > 0 && line[0] != ' ' && line[0] != '\t' && line[0] != '#' {
-				inPreCommit = line == "pre-commit:"
+				inPreCommit = normalizeYAMLTopLevelKey(line) == "pre-commit"
 			}
 			result = append(result, line)
 			if inPreCommit && !inserted && strings.TrimSpace(line) == "commands:" {
