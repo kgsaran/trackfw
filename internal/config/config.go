@@ -279,23 +279,8 @@ func Load() ProjectConfig {
 		if err != nil {
 			return
 		}
-		// ML-4G: first-pass with interface{} to detect alias bomb before the yaml.Node
-		// walk. yaml.Node ignores yaml.v3's aliasing limiter; interface{} carries it. Only
-		// "excessive aliasing" (fan-out bomb) is handled here — cyclic anchors produce
-		// "anchor value contains itself" and are handled by the cycle guard (ML-4E). All
-		// other interface{} errors (duplicate keys, cycle) fall through to the yaml.Node
-		// probe below or to parse(), which tolerates them gracefully.
-		var aliasprobe interface{}
-		if err := yaml.Unmarshal(data, &aliasprobe); err != nil &&
-			strings.Contains(err.Error(), "excessive aliasing") {
-			fmt.Fprintln(os.Stderr, MalformedConfigMessage)
-			osExit(1)
-			return
-		}
 		// Pre-check: yaml.Unmarshal into a throwaway node to detect genuine syntax errors
-		// before parse() runs. Kept as a separate, cheap decode (config files are small)
-		// rather than threading an error return through parse() and its ~20 direct test
-		// call sites across the package — containment over signature purity here.
+		// before parse() runs. Kept as a separate, cheap decode (config files are small).
 		//
 		// hasMultipleDocuments is checked separately: yaml.Unmarshal only decodes the first
 		// "---"-delimited document in a stream and silently ignores any trailing ones (no
@@ -303,13 +288,23 @@ func Load() ProjectConfig {
 		// a single document in the stream") both reject that shape outright — divergence
 		// found by ML-1B's cross-CLI audit and closed here so Go doesn't silently read only
 		// the first of two pasted-by-mistake documents.
+		//
+		// The ML-4G interface{} alias-bomb first-pass that lived here has been removed:
+		// parse() now carries a node-visit budget inside the walkers (ML-4H), which stops
+		// every bomb form (fan-out, cycle-prefixed, duplicate-merge-key-prefixed) regardless
+		// of the yaml.v3 error text. The first-pass was only needed for the plain fan-out
+		// case; the budget covers all cases without depending on a string match.
 		var probe yaml.Node
 		if err := yaml.Unmarshal(data, &probe); err != nil || hasMultipleDocuments(data) {
 			fmt.Fprintln(os.Stderr, MalformedConfigMessage)
 			osExit(1)
 			return
 		}
-		parse(string(data), &instance)
+		if err := parse(string(data), &instance); err != nil {
+			fmt.Fprintln(os.Stderr, MalformedConfigMessage)
+			osExit(1)
+			return
+		}
 	})
 	return instance
 }
@@ -333,12 +328,15 @@ func Reset() {
 func ParseWriteScopeConfig(content string) (WriteScopeConfig, error) {
 	// First pass: validate YAML syntax including duplicate mapping keys.
 	// yaml.Node silently accepts duplicate keys; interface{} rejects them.
+	// This first pass is ML-4C (duplicate-key protection), NOT ML-4G — keep it.
 	var raw interface{}
 	if err := yaml.Unmarshal([]byte(content), &raw); err != nil {
 		return WriteScopeConfig{}, err
 	}
 	cfg := ProjectConfig{Rules: make(map[string]string)}
-	parse(content, &cfg)
+	if err := parse(content, &cfg); err != nil {
+		return WriteScopeConfig{}, err
+	}
 	return cfg.WriteScope, nil
 }
 
@@ -477,29 +475,31 @@ func initConfigMaps(cfg *ProjectConfig) {
 	}
 }
 
-// parse itself still tolerates yaml.Unmarshal failure by returning early (cfg keeps whatever
-// defaults/prior state it had) — genuine syntax errors are caught and turned into a fatal exit
-// one layer up, in Load, before parse is ever called with malformed content. This function only
-// handles the benign cases: an absent/empty/comments-only document (len(root.Content) == 0,
-// valid YAML that simply has no content) and a document whose top-level node parses fine but
-// isn't a mapping (valid YAML, unexpected shape — e.g. a bare list) are both left as silent
-// no-ops, since neither is a parse failure.
-func parse(content string, cfg *ProjectConfig) {
+// parse reads trackfw.yaml content with gopkg.in/yaml.v3 and applies the ~20 known keys onto
+// cfg. Unknown keys are silently ignored (forward-compatibility). Returns an error only when the
+// yaml.Node walker's visit budget is exceeded (ML-4H alias-bomb protection). All other irregular
+// shapes (syntax error, empty document, non-mapping top-level) are tolerated silently — genuine
+// syntax errors are caught and turned into a fatal exit one layer up in Load().
+func parse(content string, cfg *ProjectConfig) error {
 	initConfigMaps(cfg) // guarantee: all map fields are non-nil before any write
 
 	var root yaml.Node
 	if err := yaml.Unmarshal([]byte(content), &root); err != nil {
-		return
+		return nil
 	}
 	if len(root.Content) == 0 {
-		return
+		return nil
 	}
 	top := root.Content[0]
 	if top.Kind != yaml.MappingNode {
-		return
+		return nil
 	}
 
-	m := normalizeMapping(top, make(map[*yaml.Node]bool))
+	ctx := newWalkCtx()
+	m := normalizeMapping(top, ctx)
+	if ctx.exceeded {
+		return fmt.Errorf("node visit budget exceeded (possible alias bomb)")
+	}
 
 	// --- Scalar keys — driven by scalarKeyTable; no literal-keyed reads here.
 	// The table is the only place to add a new scalar key. ML-1C, REQ-2026-10-24.
@@ -664,6 +664,47 @@ func parse(content string, cfg *ProjectConfig) {
 			}
 		}
 	}
+	return nil
+}
+
+// nodeVisitBudget is the maximum number of yaml.Node visits allowed across one
+// parse() call (reader) or one presentTopLevelKeys() call (writer). Chosen to be
+// well above any real trackfw.yaml (measured: ~15 visits for the repo's own file;
+// 10 000 handles configs with hundreds of rules/agents) while stopping a
+// sequence-alias bomb instantly: a 25-level bomb triggers ~33 M walker calls
+// without the budget; at 10 000 it is exhausted in microseconds. ML-4H.
+const nodeVisitBudget = 10_000
+
+// walkCtx carries state shared across one top-level parse() call.
+// visiting is the path-based cycle guard from ML-4E (insert on entry, delete on exit).
+// visits counts total node visits; exceeded is set when visits > the effective limit.
+// limit overrides nodeVisitBudget when non-zero (counter-arm tests only).
+type walkCtx struct {
+	visiting map[*yaml.Node]bool
+	visits   int
+	exceeded bool
+	limit    int // 0 → use nodeVisitBudget; non-zero → use this value (tests only)
+}
+
+func newWalkCtx() *walkCtx {
+	return &walkCtx{visiting: make(map[*yaml.Node]bool)}
+}
+
+// step records one node visit and returns false when the budget is exhausted.
+func (c *walkCtx) step() bool {
+	if c.exceeded {
+		return false
+	}
+	c.visits++
+	lim := nodeVisitBudget
+	if c.limit != 0 {
+		lim = c.limit
+	}
+	if c.visits > lim {
+		c.exceeded = true
+		return false
+	}
+	return true
 }
 
 // normalizeMapping converts a *yaml.Node of Kind MappingNode into a map[string]interface{}
@@ -678,34 +719,41 @@ func parse(content string, cfg *ProjectConfig) {
 //
 // A quoted key "<<" (tag !!str) is not a merge key and is kept as a literal map entry.
 //
-// visiting is the set of *yaml.Node pointers currently on the expansion path (call stack).
-// A node found already in visiting is a back-edge of a cycle: return an empty map so the
-// caller keeps every key that was reachable without following the cycle. The set uses path
-// semantics (insert on entry, delete on exit via defer) so the same alias used twice in
+// ctx carries the per-call visit budget (ML-4H) and the path-based cycle guard (ML-4E).
+// A node found already in ctx.visiting is a back-edge of a cycle: return an empty map so the
+// caller keeps every key that was reachable without following the cycle. The visiting set uses
+// path semantics (insert on entry, delete on exit via defer) so the same alias used twice in
 // unrelated positions is not falsely blocked. ML-4E.
-func normalizeMapping(n *yaml.Node, visiting map[*yaml.Node]bool) map[string]interface{} {
+func normalizeMapping(n *yaml.Node, ctx *walkCtx) map[string]interface{} {
 	result := make(map[string]interface{}, len(n.Content)/2)
-	if visiting[n] {
-		// Cycle: this node is already being expanded on the current path.
-		// Return the empty result so the caller keeps whatever it collected before
-		// reaching this back-edge. ML-4E.
+	if !ctx.step() {
+		return result // budget exhausted (ML-4H)
+	}
+	if ctx.visiting[n] {
+		// Cycle: this node is already being expanded on the current path. ML-4E.
 		return result
 	}
-	visiting[n] = true
-	defer delete(visiting, n)
+	ctx.visiting[n] = true
+	defer delete(ctx.visiting, n)
 	// Pass 1: collect explicit (non-merge) keys so they win regardless of position.
 	for i := 0; i+1 < len(n.Content); i += 2 {
+		if ctx.exceeded {
+			break
+		}
 		k := resolveAlias(n.Content[i])
 		if k.Tag == "!!merge" {
 			continue
 		}
-		result[k.Value] = normalizeNode(n.Content[i+1], visiting)
+		result[k.Value] = normalizeNode(n.Content[i+1], ctx)
 	}
 	// Pass 2: expand merge keys, filling gaps left by explicit keys.
 	for i := 0; i+1 < len(n.Content); i += 2 {
+		if ctx.exceeded {
+			break
+		}
 		k := resolveAlias(n.Content[i])
 		if k.Tag == "!!merge" {
-			applyMergeNode(n.Content[i+1], result, visiting)
+			applyMergeNode(n.Content[i+1], result, ctx)
 		}
 	}
 	return result
@@ -715,21 +763,26 @@ func normalizeMapping(n *yaml.Node, visiting map[*yaml.Node]bool) map[string]int
 // skipping keys already present. Handles:
 //   - AliasNode (<<: *anchor) — resolved to a MappingNode;
 //   - SequenceNode (<<: [*a, *b]) — each element expanded in order (earlier wins).
-func applyMergeNode(val *yaml.Node, dst map[string]interface{}, visiting map[*yaml.Node]bool) {
+func applyMergeNode(val *yaml.Node, dst map[string]interface{}, ctx *walkCtx) {
+	if !ctx.step() {
+		return // budget exhausted (ML-4H)
+	}
 	resolved := resolveAlias(val)
 	switch resolved.Kind {
 	case yaml.MappingNode:
-		applyMergeMapping(resolved, dst, visiting)
+		applyMergeMapping(resolved, dst, ctx)
 	case yaml.SequenceNode:
-		if visiting[resolved] {
-			// Cycle in a merge-value sequence: the sequence is already on the
-			// expansion path. Skip it to avoid infinite recursion. ML-4E.
+		if ctx.visiting[resolved] {
+			// Cycle in a merge-value sequence: skip to avoid infinite recursion. ML-4E.
 			return
 		}
-		visiting[resolved] = true
-		defer delete(visiting, resolved)
+		ctx.visiting[resolved] = true
+		defer delete(ctx.visiting, resolved)
 		for _, elem := range resolved.Content {
-			applyMergeNode(elem, dst, visiting)
+			if ctx.exceeded {
+				break
+			}
+			applyMergeNode(elem, dst, ctx)
 		}
 	}
 }
@@ -737,30 +790,37 @@ func applyMergeNode(val *yaml.Node, dst map[string]interface{}, visiting map[*ya
 // applyMergeMapping copies keys from a MappingNode into dst, skipping keys already present.
 // The source mapping's own explicit keys win over that mapping's own nested merge keys
 // (two-pass, same semantics as normalizeMapping).
-func applyMergeMapping(node *yaml.Node, dst map[string]interface{}, visiting map[*yaml.Node]bool) {
-	if visiting[node] {
-		// Cycle: this mapping node is already on the expansion path.
-		// Return without adding any keys so the caller keeps whatever it collected
-		// before reaching this back-edge. ML-4E.
+func applyMergeMapping(node *yaml.Node, dst map[string]interface{}, ctx *walkCtx) {
+	if !ctx.step() {
+		return // budget exhausted (ML-4H)
+	}
+	if ctx.visiting[node] {
+		// Cycle: this mapping node is already on the expansion path. ML-4E.
 		return
 	}
-	visiting[node] = true
-	defer delete(visiting, node)
+	ctx.visiting[node] = true
+	defer delete(ctx.visiting, node)
 	var mergeVals []*yaml.Node
 	// Pass 1: fill dst from explicit keys of the source mapping.
 	for i := 0; i+1 < len(node.Content); i += 2 {
+		if ctx.exceeded {
+			break
+		}
 		k := resolveAlias(node.Content[i])
 		if k.Tag == "!!merge" {
 			mergeVals = append(mergeVals, node.Content[i+1])
 			continue
 		}
 		if _, exists := dst[k.Value]; !exists {
-			dst[k.Value] = normalizeNode(node.Content[i+1], visiting)
+			dst[k.Value] = normalizeNode(node.Content[i+1], ctx)
 		}
 	}
 	// Pass 2: expand nested merge keys from the source, filling remaining gaps.
 	for _, mv := range mergeVals {
-		applyMergeNode(mv, dst, visiting)
+		if ctx.exceeded {
+			break
+		}
+		applyMergeNode(mv, dst, ctx)
 	}
 }
 
@@ -777,12 +837,16 @@ func resolveAlias(n *yaml.Node) *yaml.Node {
 // normalizeNode converts a single *yaml.Node into a string (scalar, using the pre-coercion
 // raw text in Node.Value), a []interface{} (sequence) or a map[string]interface{} (mapping).
 //
-// A node pointer already in visiting is a cycle in a value position (e.g. a sequence
+// A node pointer already in ctx.visiting is a cycle in a value position (e.g. a sequence
 // element that is an alias to its own parent sequence). The cyclic element is returned as
-// nil so that stringListRec skips it silently. ML-4E.
-func normalizeNode(n *yaml.Node, visiting map[*yaml.Node]bool) interface{} {
+// nil so that stringListRec skips it silently. ML-4E. The visit budget (ML-4H) is checked
+// at entry and inside sequence loops.
+func normalizeNode(n *yaml.Node, ctx *walkCtx) interface{} {
 	n = resolveAlias(n)
-	if visiting[n] {
+	if !ctx.step() {
+		return nil // budget exhausted (ML-4H)
+	}
+	if ctx.visiting[n] {
 		// Cycle in value position: return nil so list/scalar consumers drop this
 		// element silently. For sequences, the non-cyclic elements are retained.
 		// For mappings, normalizeMapping's own cycle guard fires first and returns
@@ -793,15 +857,18 @@ func normalizeNode(n *yaml.Node, visiting map[*yaml.Node]bool) interface{} {
 	case yaml.ScalarNode:
 		return n.Value
 	case yaml.SequenceNode:
-		visiting[n] = true
-		defer delete(visiting, n)
+		ctx.visiting[n] = true
+		defer delete(ctx.visiting, n)
 		items := make([]interface{}, 0, len(n.Content))
 		for _, c := range n.Content {
-			items = append(items, normalizeNode(c, visiting))
+			if ctx.exceeded {
+				break
+			}
+			items = append(items, normalizeNode(c, ctx))
 		}
 		return items
 	case yaml.MappingNode:
-		return normalizeMapping(n, visiting)
+		return normalizeMapping(n, ctx)
 	default:
 		return nil
 	}

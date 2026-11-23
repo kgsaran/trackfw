@@ -235,8 +235,8 @@ func aliasBombSequence(levels int) string {
 
 // TestAliasBomb_ReaderRejectsLoud asserts:
 // A 30-level sequence alias bomb causes Load() to call osExit(1) with MalformedConfigMessage
-// and return within 2 s. This confirms that the ML-4G interface{} first-pass check in Load()
-// intercepts the bomb before the yaml.Node walker runs.
+// and return within 2 s. The walker's node-visit budget (ML-4H) fires after 10 000 visits,
+// parse() returns an error, and Load() treats it as malformed YAML.
 func TestAliasBomb_ReaderRejectsLoud(t *testing.T) {
 	bomb := aliasBombSequence(30)
 	done := make(chan struct{})
@@ -248,13 +248,14 @@ func TestAliasBomb_ReaderRejectsLoud(t *testing.T) {
 	case <-done:
 		// assertLoadFailsLoud already verified osExit(1) + MalformedConfigMessage.
 	case <-time.After(2 * time.Second):
-		t.Fatal("Load() must reject alias bomb and return within 2 s (ML-4G)")
+		t.Fatal("Load() must reject alias bomb and return within 2 s (ML-4H budget)")
 	}
 }
 
 // TestAliasBomb_ReaderLegitimateAlias asserts:
-// An anchor used 3 times (legitimate, non-bomb aliasing) is NOT rejected by the ML-4G
-// interface{} check and is loaded normally by Load() — wip_limit and req_dir are read.
+// An anchor used 3 times (legitimate, non-bomb aliasing) is not stopped by the ML-4H
+// budget (well below 10 000 visits) and is loaded normally by Load() — wip_limit and
+// req_dir are read.
 func TestAliasBomb_ReaderLegitimateAlias(t *testing.T) {
 	content := "c: &c\n  wip_limit: \"5\"\nreq_dir: docs/req\nadr_dirs:\n  - docs/adr\n<<: *c\na: *c\nb: *c\n"
 	cfg := loadFromYAML(t, content)
@@ -267,13 +268,14 @@ func TestAliasBomb_ReaderLegitimateAlias(t *testing.T) {
 }
 
 // TestAliasBomb_ReaderCounterArm asserts:
-// Without the ML-4G interface{} pre-check, normalizeMapping on a 25-level sequence bomb
-// takes >2 s — demonstrating the attack vector the fix addresses. Uses 25 levels
-// (~2.9 s without the guard) so the goroutine terminates naturally within ~1 s after
-// the 2 s deadline fires. If this test fails (goroutine finishes before deadline),
-// verify that aliasBombSequence(25) produces an effective bomb on this machine.
+// The cycle guard alone does not stop a fan-out bomb: normalizeMapping with an
+// effectively unlimited budget (ML-4H limit field) on a 25-level sequence bomb
+// takes >2 s. This demonstrates that the budget (ML-4H) is the control — the
+// cycle guard (ML-4E) handles back-edges but cannot bound fan-out complexity.
+// Uses 25 levels (~2.9 s at unlimited budget) so the goroutine terminates
+// naturally within ~1 s after the 2 s deadline fires.
 func TestAliasBomb_ReaderCounterArm(t *testing.T) {
-	// 25 levels: 2^25 ≈ 33 M yaml.Node walker steps — takes ~2.9 s without the guard.
+	// 25 levels: 2^25 ≈ 33 M yaml.Node walker steps — takes ~2.9 s without budget limit.
 	bomb := aliasBombSequence(25)
 	var root yaml.Node
 	if err := yaml.Unmarshal([]byte(bomb), &root); err != nil {
@@ -285,17 +287,244 @@ func TestAliasBomb_ReaderCounterArm(t *testing.T) {
 	top := root.Content[0]
 	done := make(chan struct{})
 	go func() {
-		// Call normalizeMapping directly — this is the yaml.Node walker path that
-		// runs after the ML-4G check and would hang without it.
-		normalizeMapping(top, make(map[*yaml.Node]bool))
+		// Counter-arm: bypass the normal budget with an effectively unlimited limit.
+		// This demonstrates that cycle guard alone does not stop a fan-out bomb —
+		// only the budget (ML-4H) does.
+		unlimitedCtx := &walkCtx{
+			visiting: make(map[*yaml.Node]bool),
+			limit:    1 << 30, // ~1B visits, budget not the control here
+		}
+		normalizeMapping(top, unlimitedCtx)
 		close(done)
 	}()
 	select {
 	case <-done:
-		t.Fatal("counter-arm FAIL: normalizeMapping completed on 25-level bomb within 2 s — " +
+		t.Fatal("counter-arm FAIL: normalizeMapping with unlimited budget should hang on 25-level bomb — " +
 			"verify aliasBombSequence(25) generates an effective bomb on this machine")
 	case <-time.After(2 * time.Second):
-		// Expected: without the interface{} check, normalizeMapping takes >>2 s.
-		// Goroutine terminates naturally after ~0.9 s more; test process continues. ML-4G.
+		// Expected: without budget limit, normalizeMapping on a 25-level bomb takes >>2 s.
+		// Goroutine terminates naturally after ~0.9 s more; test process continues. ML-4H.
+	}
+}
+
+// --- ML-4H: node-visit budget tests ---
+//
+// These tests verify that the node-visit budget inside the walker (ML-4H) stops bomb
+// forms that the ML-4G interface{} first-pass missed: cycle-before-bomb and
+// duplicate-merge-key-before-bomb. They also verify that every direct caller of
+// parse() — which previously bypassed the ML-4G first-pass in Load() — is now
+// protected by the walker budget.
+//
+// Precondition pattern: each fixture is first verified to parse without error by
+// yaml.Unmarshal into yaml.Node (otherwise Load()'s pre-check would fire first and
+// the test would pass for the wrong reason). For desvio fixtures, interface{} unmarshal
+// is verified to give an error WITHOUT "excessive aliasing" (proving ML-4G would miss it).
+
+// cycleThenBomb prepends a self-referential cyclic anchor to an alias bomb sequence.
+// When unmarshaled to interface{}, yaml.v3 gives "anchor value contains itself" (from
+// the cycle), NOT "excessive aliasing" — so the ML-4G string-match would have let the
+// bomb through to the walker. ML-4H's budget stops it.
+func cycleThenBomb(levels int) string {
+	cycle := "cycle: &cycle\n  wip_limit: \"1\"\n  <<: *cycle\n"
+	return cycle + aliasBombSequence(levels)
+}
+
+// dupMergeKeyThenBomb creates a YAML with a small anchor merged first (<<: *small),
+// followed by the bomb as a second merge key (<<: [*nN, *nN]). yaml.v3 may report
+// "duplicate key <<" before even evaluating the bomb sequence, so the ML-4G
+// "excessive aliasing" string-match would not fire. ML-4H's budget stops it.
+func dupMergeKeyThenBomb(levels int) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "small: &small\n  req_dir: docs/req\n")
+	fmt.Fprintf(&sb, "n00: &n00\n  wip_limit: 1\n")
+	for i := 1; i < levels; i++ {
+		fmt.Fprintf(&sb, "n%02d: &n%02d\n  <<: [*n%02d, *n%02d]\n", i, i, i-1, i-1)
+	}
+	fmt.Fprintf(&sb, "adr_dirs:\n  - docs/adr\n<<: *small\n<<: [*n%02d, *n%02d]\n",
+		levels-1, levels-1)
+	return sb.String()
+}
+
+// TestAliasBomb_Budget_CycleBeforeBomb asserts:
+// A YAML with a cyclic anchor BEFORE an alias bomb is rejected by Load() (osExit(1) +
+// MalformedConfigMessage) within 2 s via the walker budget. ML-4G would have missed this
+// because yaml.v3's interface{} unmarshal gives "anchor value contains itself" (not
+// "excessive aliasing") for the cyclic anchor.
+func TestAliasBomb_Budget_CycleBeforeBomb(t *testing.T) {
+	fixture := cycleThenBomb(25)
+	// Precondition 1: yaml.Node unmarshal succeeds (Load's probe won't reject it).
+	var probe yaml.Node
+	if err := yaml.Unmarshal([]byte(fixture), &probe); err != nil {
+		t.Fatalf("precondition: yaml.Node unmarshal must succeed: %v", err)
+	}
+	// Precondition 2: interface{} unmarshal gives an error without "excessive aliasing" —
+	// proving that ML-4G's string-match would have let the bomb reach the walker.
+	var iface interface{}
+	ifaceErr := yaml.Unmarshal([]byte(fixture), &iface)
+	if ifaceErr == nil {
+		t.Log("note: interface{} unmarshal succeeded (cycle not detected before bomb); ML-4G gap still demonstrated by missing excessive-aliasing match")
+	} else if strings.Contains(ifaceErr.Error(), "excessive aliasing") {
+		t.Logf("note: interface{} gave 'excessive aliasing' — ML-4G would catch this form; ML-4H budget still stops it (defense in depth): %v", ifaceErr)
+	}
+	// Main assertion: Load() rejects within 2 s.
+	done := make(chan struct{})
+	go func() {
+		assertLoadFailsLoud(t, fixture)
+		close(done)
+	}()
+	select {
+	case <-done:
+		// Load() called osExit(1) + MalformedConfigMessage within 2 s.
+	case <-time.After(2 * time.Second):
+		t.Fatal("Load() must reject cycle-before-bomb within 2 s (ML-4H budget)")
+	}
+}
+
+// TestAliasBomb_Budget_DupMergeKeyBeforeBomb asserts:
+// A YAML with a duplicate merge key (<<:) before an alias bomb is rejected by Load()
+// within 2 s via the walker budget. The yaml.v3 interface{} unmarshal may give
+// "duplicate key <<" (not "excessive aliasing"), so ML-4G's string-match would have
+// missed this form. ML-4H's budget stops it regardless of the error text.
+func TestAliasBomb_Budget_DupMergeKeyBeforeBomb(t *testing.T) {
+	fixture := dupMergeKeyThenBomb(25)
+	// Precondition: yaml.Node unmarshal succeeds.
+	var probe yaml.Node
+	if err := yaml.Unmarshal([]byte(fixture), &probe); err != nil {
+		t.Fatalf("precondition: yaml.Node unmarshal must succeed: %v", err)
+	}
+	// Desvio check: interface{} error should NOT be "excessive aliasing" for the
+	// duplicate-<<: form; if it is, ML-4G already handles it (ML-4H is defense in depth).
+	var iface interface{}
+	ifaceErr := yaml.Unmarshal([]byte(fixture), &iface)
+	if ifaceErr != nil && !strings.Contains(ifaceErr.Error(), "excessive aliasing") {
+		t.Logf("desvio confirmed: interface{} gave %q — ML-4G would have missed this", ifaceErr.Error())
+	} else if ifaceErr != nil {
+		t.Logf("note: interface{} gave 'excessive aliasing' — ML-4G would catch this; ML-4H is defense in depth")
+	}
+	// Main assertion: Load() rejects within 2 s.
+	done := make(chan struct{})
+	go func() {
+		assertLoadFailsLoud(t, fixture)
+		close(done)
+	}()
+	select {
+	case <-done:
+		// Load() called osExit(1) + MalformedConfigMessage within 2 s.
+	case <-time.After(2 * time.Second):
+		t.Fatal("Load() must reject dup-merge-key-before-bomb within 2 s (ML-4H budget)")
+	}
+}
+
+// TestAliasBomb_Budget_ParseRulesFromContent asserts:
+// ParseRulesFromContent called with a 25-level alias bomb returns within 2 s.
+// ParseRulesFromContent bypasses Load() (and thus the ML-4G first-pass that lived there);
+// only the walker budget (ML-4H) protects it.
+func TestAliasBomb_Budget_ParseRulesFromContent(t *testing.T) {
+	bomb := aliasBombSequence(25)
+	done := make(chan struct{})
+	go func() {
+		ParseRulesFromContent(bomb)
+		close(done)
+	}()
+	select {
+	case <-done:
+		// Returned within 2 s — budget fired.
+	case <-time.After(2 * time.Second):
+		t.Fatal("ParseRulesFromContent must return within 2 s on alias bomb (ML-4H budget)")
+	}
+}
+
+// TestAliasBomb_Budget_ParseDirsFromContent asserts:
+// ParseDirsFromContent called with a 25-level alias bomb returns within 2 s.
+// Same bypass as ParseRulesFromContent — only the walker budget protects it.
+func TestAliasBomb_Budget_ParseDirsFromContent(t *testing.T) {
+	bomb := aliasBombSequence(25)
+	done := make(chan struct{})
+	go func() {
+		ParseDirsFromContent(bomb)
+		close(done)
+	}()
+	select {
+	case <-done:
+		// Returned within 2 s — budget fired.
+	case <-time.After(2 * time.Second):
+		t.Fatal("ParseDirsFromContent must return within 2 s on alias bomb (ML-4H budget)")
+	}
+}
+
+// TestAliasBomb_Budget_ReadNamespacingConfig asserts:
+// ReadNamespacingConfig called with a 25-level alias bomb in a temp dir returns within 2 s.
+func TestAliasBomb_Budget_ReadNamespacingConfig(t *testing.T) {
+	bomb := aliasBombSequence(25)
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "trackfw.yaml"), []byte(bomb), 0644); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		ReadNamespacingConfig(tmp)
+		close(done)
+	}()
+	select {
+	case <-done:
+		// Returned within 2 s — budget fired.
+	case <-time.After(2 * time.Second):
+		t.Fatal("ReadNamespacingConfig must return within 2 s on alias bomb (ML-4H budget)")
+	}
+}
+
+// TestAliasBomb_Budget_ReadAgentConventions asserts:
+// ReadAgentConventions called with a 25-level alias bomb in a temp dir returns within 2 s.
+func TestAliasBomb_Budget_ReadAgentConventions(t *testing.T) {
+	bomb := aliasBombSequence(25)
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "trackfw.yaml"), []byte(bomb), 0644); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		ReadAgentConventions(tmp)
+		close(done)
+	}()
+	select {
+	case <-done:
+		// Returned within 2 s — budget fired.
+	case <-time.After(2 * time.Second):
+		t.Fatal("ReadAgentConventions must return within 2 s on alias bomb (ML-4H budget)")
+	}
+}
+
+// TestAliasBomb_Budget_RealTrackfwYaml asserts:
+// The repo's own trackfw.yaml is well below the node-visit budget and loads with the
+// same field values before and after ML-4H.
+func TestAliasBomb_Budget_RealTrackfwYaml(t *testing.T) {
+	data, err := os.ReadFile("../../trackfw.yaml")
+	if os.IsNotExist(err) {
+		t.Skip("trackfw.yaml not at ../../trackfw.yaml — skipping real-file test")
+		return
+	}
+	if err != nil {
+		t.Skipf("cannot read ../../trackfw.yaml: %v", err)
+		return
+	}
+	cfg := defaults()
+	if parseErr := parse(string(data), &cfg); parseErr != nil {
+		t.Fatalf("parse() returned error on real trackfw.yaml (budget too low?): %v", parseErr)
+	}
+	// Compare key fields — these values are known from the repo's trackfw.yaml.
+	if cfg.REQDir != "docs/req" {
+		t.Errorf("REQDir: want docs/req, got %q", cfg.REQDir)
+	}
+	if cfg.RoadmapDir != "docs/roadmaps" {
+		t.Errorf("RoadmapDir: want docs/roadmaps, got %q", cfg.RoadmapDir)
+	}
+	if len(cfg.ADRDirs) == 0 || cfg.ADRDirs[0] != "docs/adr" {
+		t.Errorf("ADRDirs: want [docs/adr], got %v", cfg.ADRDirs)
+	}
+	if cfg.GovernanceMode != "lenient" {
+		t.Errorf("GovernanceMode: want lenient, got %q", cfg.GovernanceMode)
+	}
+	if cfg.RoadmapNamespacing != "flat" {
+		t.Errorf("RoadmapNamespacing: want flat, got %q", cfg.RoadmapNamespacing)
 	}
 }

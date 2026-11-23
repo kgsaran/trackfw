@@ -1186,9 +1186,8 @@ func aliasBombSequenceWriter(levels int) string {
 
 // TestAliasBomb_WriterFallback asserts:
 // presentTopLevelKeys on a 30-level sequence alias bomb returns ok=false (fallback path)
-// within 2 s. This confirms that the ML-4G interface{} first-pass check in
-// presentTopLevelKeys intercepts the bomb before the yaml.Node walker runs.
-// The fallback text detector must still find the column-0 keys req_dir and adr_dirs.
+// within 2 s. The walker's node-visit budget (ML-4H) fires, presentTopLevelKeys falls
+// back to the text detector. req_dir and adr_dirs (at column 0) must still be detected.
 func TestAliasBomb_WriterFallback(t *testing.T) {
 	bomb := aliasBombSequenceWriter(30)
 	type res struct {
@@ -1203,7 +1202,7 @@ func TestAliasBomb_WriterFallback(t *testing.T) {
 	select {
 	case r := <-ch:
 		if r.ok {
-			t.Fatal("bomb must return ok=false (fallback triggered by ML-4G interface{} check)")
+			t.Fatal("bomb must return ok=false (fallback triggered by ML-4H budget)")
 		}
 		// The fallback text detector scans lines at column 0; req_dir is at column 0.
 		if !r.keys["req_dir"] {
@@ -1213,14 +1212,15 @@ func TestAliasBomb_WriterFallback(t *testing.T) {
 			t.Error("fallback must detect adr_dirs (column-0 key in bomb fixture)")
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("presentTopLevelKeys must handle alias bomb within 2 s (ML-4G)")
+		t.Fatal("presentTopLevelKeys must handle alias bomb within 2 s (ML-4H budget)")
 	}
 }
 
 // TestAliasBomb_WriterLegitimateAlias asserts:
 // presentTopLevelKeys on a YAML where the same anchor is used 3 times (legitimate
 // aliasing) returns ok=true (yaml.Node path, not fallback) and detects both the
-// explicit keys and the key inherited via <<: *c.
+// explicit keys and the key inherited via <<: *c. Legitimate use stays below the
+// ML-4H budget (3 uses ≪ 10 000 visits).
 func TestAliasBomb_WriterLegitimateAlias(t *testing.T) {
 	content := "c: &c\n  wip_limit: \"5\"\nreq_dir: docs/req\nadr_dirs:\n  - docs/adr\n<<: *c\na: *c\nb: *c\n"
 	keys, ok := presentTopLevelKeys(content)
@@ -1236,12 +1236,11 @@ func TestAliasBomb_WriterLegitimateAlias(t *testing.T) {
 }
 
 // TestAliasBomb_WriterCounterArm asserts:
-// Without the ML-4G interface{} pre-check, expandTopLevelKeys on a 25-level sequence
-// bomb takes >2 s — demonstrating the attack vector the fix addresses. Uses 25 levels
-// (~2.9 s without the guard) so the goroutine terminates naturally within ~1 s after
-// the 2 s deadline fires.
+// The cycle guard alone does not stop a fan-out bomb: expandTopLevelKeys with an
+// effectively unlimited budget (ML-4H limit field) on a 25-level sequence bomb
+// takes >2 s. This demonstrates that the budget (ML-4H) is the control.
 func TestAliasBomb_WriterCounterArm(t *testing.T) {
-	// 25 levels: 2^25 ≈ 33 M yaml.Node walker steps — takes ~2.9 s without the guard.
+	// 25 levels: 2^25 ≈ 33 M yaml.Node walker steps — takes ~2.9 s without budget limit.
 	bomb := aliasBombSequenceWriter(25)
 	var root yaml.Node
 	if err := yaml.Unmarshal([]byte(bomb), &root); err != nil {
@@ -1253,17 +1252,104 @@ func TestAliasBomb_WriterCounterArm(t *testing.T) {
 	top := root.Content[0]
 	done := make(chan struct{})
 	go func() {
-		// Call expandTopLevelKeys directly — this is the yaml.Node walker path that
-		// runs after the ML-4G check and would hang without it.
-		expandTopLevelKeys(top, make(map[string]bool), make(map[*yaml.Node]bool))
+		// Counter-arm: bypass the normal budget with an effectively unlimited limit.
+		// This demonstrates that cycle guard alone does not stop a fan-out bomb —
+		// only the budget (ML-4H) does.
+		unlimitedCtx := &scaffoldCtx{
+			visiting: make(map[*yaml.Node]bool),
+			limit:    1 << 30, // ~1B visits, budget not the control here
+		}
+		expandTopLevelKeys(top, make(map[string]bool), unlimitedCtx)
 		close(done)
 	}()
 	select {
 	case <-done:
-		t.Fatal("counter-arm FAIL: expandTopLevelKeys completed on 25-level bomb within 2 s — " +
+		t.Fatal("counter-arm FAIL: expandTopLevelKeys with unlimited budget should hang on 25-level bomb — " +
 			"verify aliasBombSequenceWriter(25) generates an effective bomb on this machine")
 	case <-time.After(2 * time.Second):
-		// Expected: without the interface{} check, expandTopLevelKeys takes >>2 s.
-		// Goroutine terminates naturally after ~0.9 s more; test process continues. ML-4G.
+		// Expected: without budget limit, expandTopLevelKeys on a 25-level bomb takes >>2 s.
+		// Goroutine terminates naturally after ~0.9 s more; test process continues. ML-4H.
+	}
+}
+
+// --- ML-4H: writer budget tests ---
+
+// cycleWriterThenBomb prepends a cyclic anchor to an alias bomb sequence (writer-side).
+// This is the same desvio as the reader: interface{} gives "anchor value contains itself",
+// not "excessive aliasing", so the ML-4G first-pass would have missed it.
+func cycleWriterThenBomb(levels int) string {
+	cycle := "cycle: &cycle\n  req_dir: docs/req\n  <<: *cycle\n"
+	return cycle + aliasBombSequenceWriter(levels)
+}
+
+// dupMergeKeyWriterThenBomb creates a YAML with a small anchor merged first, followed
+// by the bomb as a second merge key. See the reader-side equivalent for the desvio
+// explanation.
+func dupMergeKeyWriterThenBomb(levels int) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "small: &small\n  req_dir: docs/req\n")
+	fmt.Fprintf(&sb, "n00: &n00\n  wip_limit: 1\n")
+	for i := 1; i < levels; i++ {
+		fmt.Fprintf(&sb, "n%02d: &n%02d\n  <<: [*n%02d, *n%02d]\n", i, i, i-1, i-1)
+	}
+	fmt.Fprintf(&sb, "adr_dirs:\n  - docs/adr\n<<: *small\n<<: [*n%02d, *n%02d]\n",
+		levels-1, levels-1)
+	return sb.String()
+}
+
+// TestAliasBomb_WriterBudget_CycleBeforeBomb asserts:
+// presentTopLevelKeys on a YAML with a cyclic anchor before an alias bomb returns
+// ok=false (fallback) within 2 s. The ML-4H walker budget fires. The fallback text
+// detector finds the column-0 keys.
+func TestAliasBomb_WriterBudget_CycleBeforeBomb(t *testing.T) {
+	fixture := cycleWriterThenBomb(25)
+	var probe yaml.Node
+	if err := yaml.Unmarshal([]byte(fixture), &probe); err != nil {
+		t.Fatalf("precondition: yaml.Node must succeed: %v", err)
+	}
+	type res struct {
+		keys map[string]bool
+		ok   bool
+	}
+	ch := make(chan res, 1)
+	go func() {
+		k, ok := presentTopLevelKeys(fixture)
+		ch <- res{k, ok}
+	}()
+	select {
+	case r := <-ch:
+		if r.ok {
+			t.Fatal("cycle-before-bomb must return ok=false (ML-4H budget or yaml.Node error)")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("presentTopLevelKeys must handle cycle-before-bomb within 2 s (ML-4H budget)")
+	}
+}
+
+// TestAliasBomb_WriterBudget_DupMergeKeyBeforeBomb asserts:
+// presentTopLevelKeys on a YAML with a duplicate <<: before an alias bomb returns
+// ok=false (fallback) within 2 s. ML-4H budget fires regardless of interface{} error.
+func TestAliasBomb_WriterBudget_DupMergeKeyBeforeBomb(t *testing.T) {
+	fixture := dupMergeKeyWriterThenBomb(25)
+	var probe yaml.Node
+	if err := yaml.Unmarshal([]byte(fixture), &probe); err != nil {
+		t.Fatalf("precondition: yaml.Node must succeed: %v", err)
+	}
+	type res struct {
+		keys map[string]bool
+		ok   bool
+	}
+	ch := make(chan res, 1)
+	go func() {
+		k, ok := presentTopLevelKeys(fixture)
+		ch <- res{k, ok}
+	}()
+	select {
+	case r := <-ch:
+		if r.ok {
+			t.Fatal("dup-merge-key-before-bomb must return ok=false (ML-4H budget or yaml.Node error)")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("presentTopLevelKeys must handle dup-merge-key-before-bomb within 2 s (ML-4H budget)")
 	}
 }

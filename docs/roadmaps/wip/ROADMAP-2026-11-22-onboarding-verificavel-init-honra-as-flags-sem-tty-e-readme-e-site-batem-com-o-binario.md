@@ -443,7 +443,13 @@ bomba volta a travar — além de `ParseRulesFromContent`, `ParseDirsFromContent
 - [x] `go test ./internal/config/` e `go test ./internal/generators/` rc=0
 
 ### ML-4H — Orçamento de visitas no caminhador (apolo-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — `walkCtx`/`scaffoldCtx` com `visiting` e contador; orçamento de 10 000 visitas (o `trackfw.yaml` do
+repositório faz ~15); `parse()` passa a devolver erro: `Load()` sai como YAML malformado, os demais chamadores seguem
+com o que foi lido; o escritor cai no detector de texto. A primeira passada do ML-4G foi removida (o orçamento é o
+controle). 9 testes novos (`TestAliasBomb_Budget_*`, `TestAliasBomb_WriterBudget_*`), contra-braços com limite 1<<30.
+Auditoria do arquiteto no binário, contra o 11.8.0: bomba sozinha, ciclo antes e `<<` duplicado antes — `validate` e
+`init` com rc=1 e "malformed YAML" em até 0,41 s (no 11.8.0: timeout de 30 s ou estouro de pilha, rc=2); o
+`trackfw.yaml` do repositório segue com rc=0. O relatório do apolo dizia `EXIT:0` na ponta a ponta; o rc medido é 1.
 **Files affected:** `internal/config/config.go`; `internal/config/config_merge_key_test.go`;
 `internal/generators/scaffold.go`; `internal/generators/trackfw_config_merge_test.go`
 **Actions:**
@@ -457,8 +463,8 @@ bomba volta a travar — além de `ParseRulesFromContent`, `ParseDirsFromContent
    (`ParseRulesFromContent`, `ParseDirsFromContent`, `ReadNamespacingConfig`, `ReadAgentConventions`); all return
    within 2 s. Legitimate alias use keeps working.
 **Acceptance criteria:**
-- [ ] nenhuma das 4 formas (bomba, ciclo antes, `<<` duplicado antes, chamador direto de `parse()`) passa de 2 s
-- [ ] `go test ./internal/config/` e `go test ./internal/generators/` rc=0
+- [x] nenhuma das 4 formas (bomba, ciclo antes, `<<` duplicado antes, chamador direto de `parse()`) passa de 2 s
+- [x] `go test ./internal/config/` e `go test ./internal/generators/` rc=0
 
 **Wave gates:**
 ```bash

@@ -924,29 +924,58 @@ type configBlock struct {
 	text string
 }
 
+// scaffoldNodeBudget is the per-call node-visit budget for the writer's yaml.Node walkers
+// (expandTopLevelKeys / expandMergeValue). Same rationale as config.nodeVisitBudget:
+// well above any real trackfw.yaml or lefthook.yml key count, stops a bomb instantly. ML-4H.
+const scaffoldNodeBudget = 10_000
+
+// scaffoldCtx carries per-call state for the writer's yaml.Node walkers: a path-based cycle
+// guard (ML-4E) and a visit budget (ML-4H). limit overrides scaffoldNodeBudget when non-zero
+// (counter-arm tests only).
+type scaffoldCtx struct {
+	visiting map[*yaml.Node]bool
+	visits   int
+	exceeded bool
+	limit    int // 0 → use scaffoldNodeBudget; non-zero → use this value (tests only)
+}
+
+func newScaffoldCtx() *scaffoldCtx {
+	return &scaffoldCtx{visiting: make(map[*yaml.Node]bool)}
+}
+
+func (c *scaffoldCtx) step() bool {
+	if c.exceeded {
+		return false
+	}
+	c.visits++
+	lim := scaffoldNodeBudget
+	if c.limit != 0 {
+		lim = c.limit
+	}
+	if c.visits > lim {
+		c.exceeded = true
+		return false
+	}
+	return true
+}
+
 // presentTopLevelKeys returns the set of top-level keys present in the YAML
 // content, using a yaml.Node parse (ADR-2026-11-22, D2a). This correctly
 // handles quoted keys, keys with leading/trailing spaces, BOM-prefixed keys,
 // and anchor/alias indirection. The second return value is false when the
-// content is not valid YAML.
+// content is not valid YAML or when the walker's visit budget is exceeded.
 //
-// When yaml.Unmarshal fails (invalid content), the function falls back to the
-// pre-D2a text-based detector (presentTopLevelKeysFallback) so that invalid
-// files keep exactly the pre-REQ behavior: a key visible at column 0 is treated
-// as present, preventing the merge from appending a duplicate. ok is false in
-// this case.
+// When yaml.Unmarshal fails (invalid content), or when the visit budget is
+// exceeded (alias bomb), the function falls back to the pre-D2a text-based
+// detector so that invalid files keep exactly the pre-REQ behavior. ok is
+// false in both cases.
+//
+// The ML-4G interface{} alias-bomb first-pass that lived here has been removed:
+// the walker now carries a node-visit budget (ML-4H) which stops every bomb
+// form (fan-out, cycle-prefixed, duplicate-merge-key-prefixed) without
+// depending on yaml.v3's error text.
 func presentTopLevelKeys(content string) (map[string]bool, bool) {
 	keys := make(map[string]bool)
-	// ML-4G: first-pass with interface{} to detect alias bomb before yaml.Node walking.
-	// yaml.Node ignores yaml.v3's aliasing limiter; interface{} carries it. Only
-	// "excessive aliasing" (fan-out bomb) triggers the fallback here — cyclic anchors
-	// produce "anchor value contains itself" and are handled by the cycle guard (ML-4E).
-	// All other interface{} errors fall through to the yaml.Node path below.
-	var aliasprobe interface{}
-	if err := yaml.Unmarshal([]byte(content), &aliasprobe); err != nil &&
-		strings.Contains(err.Error(), "excessive aliasing") {
-		return presentTopLevelKeysFallback(content), false
-	}
 	var root yaml.Node
 	if err := yaml.Unmarshal([]byte(content), &root); err != nil {
 		// Fall back to the pre-D2a text detector so invalid content keeps its
@@ -962,7 +991,13 @@ func presentTopLevelKeys(content string) (map[string]bool, bool) {
 	if top.Kind != yaml.MappingNode {
 		return keys, false
 	}
-	expandTopLevelKeys(top, keys, make(map[*yaml.Node]bool))
+	ctx := newScaffoldCtx()
+	expandTopLevelKeys(top, keys, ctx)
+	if ctx.exceeded {
+		// Budget exceeded (alias bomb): fall back to text detector. ok=false
+		// signals the caller not to trust the key set. ML-4H.
+		return presentTopLevelKeysFallback(content), false
+	}
 	return keys, true
 }
 
@@ -972,27 +1007,29 @@ func presentTopLevelKeys(content string) (map[string]bool, bool) {
 // themselves contain nested << merge keys.
 // F-9 fix (ML-4C, REQ-2026-11-22).
 //
-// visiting is the set of *yaml.Node pointers currently on the expansion path.
-// A node found already in visiting is a back-edge of a cycle: return without
-// adding more keys so the caller keeps whatever was collected before the cycle.
-// Path semantics (insert on entry, delete on exit via defer) prevent blocking
-// the same alias used twice in unrelated positions. ML-4E.
-func expandTopLevelKeys(node *yaml.Node, keys map[string]bool, visiting map[*yaml.Node]bool) {
+// ctx carries the path-based cycle guard (ML-4E) and the visit budget (ML-4H).
+func expandTopLevelKeys(node *yaml.Node, keys map[string]bool, ctx *scaffoldCtx) {
 	if node.Kind != yaml.MappingNode {
 		return
 	}
-	if visiting[node] {
+	if !ctx.step() {
+		return // budget exhausted (ML-4H)
+	}
+	if ctx.visiting[node] {
 		// Cycle: this mapping is already on the expansion path. ML-4E.
 		return
 	}
-	visiting[node] = true
-	defer delete(visiting, node)
+	ctx.visiting[node] = true
+	defer delete(ctx.visiting, node)
 	for i := 0; i+1 < len(node.Content); i += 2 {
+		if ctx.exceeded {
+			break
+		}
 		k := resolveScaffoldAlias(node.Content[i])
 		if k.Tag == "!!merge" {
 			// YAML merge key: expand the value (alias or sequence of aliases)
 			// and add all inherited keys to the set.
-			expandMergeValue(node.Content[i+1], keys, visiting)
+			expandMergeValue(node.Content[i+1], keys, ctx)
 		} else {
 			keys[k.Value] = true
 		}
@@ -1006,20 +1043,27 @@ func expandTopLevelKeys(node *yaml.Node, keys map[string]bool, visiting map[*yam
 //
 // Nested merge keys inside the target mapping are handled because
 // expandTopLevelKeys is called recursively on each resolved MappingNode.
-func expandMergeValue(val *yaml.Node, keys map[string]bool, visiting map[*yaml.Node]bool) {
+// ctx carries the path-based cycle guard (ML-4E) and the visit budget (ML-4H).
+func expandMergeValue(val *yaml.Node, keys map[string]bool, ctx *scaffoldCtx) {
+	if !ctx.step() {
+		return // budget exhausted (ML-4H)
+	}
 	resolved := resolveScaffoldAlias(val)
 	switch resolved.Kind {
 	case yaml.MappingNode:
-		expandTopLevelKeys(resolved, keys, visiting)
+		expandTopLevelKeys(resolved, keys, ctx)
 	case yaml.SequenceNode:
-		if visiting[resolved] {
+		if ctx.visiting[resolved] {
 			// Cycle in a merge-value sequence: skip to avoid infinite recursion. ML-4E.
 			return
 		}
-		visiting[resolved] = true
-		defer delete(visiting, resolved)
+		ctx.visiting[resolved] = true
+		defer delete(ctx.visiting, resolved)
 		for _, elem := range resolved.Content {
-			expandMergeValue(elem, keys, visiting)
+			if ctx.exceeded {
+				break
+			}
+			expandMergeValue(elem, keys, ctx)
 		}
 	}
 }
