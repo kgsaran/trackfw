@@ -17,12 +17,12 @@ A auditoria `docs/qualidade/2026-11-22-auditoria-onboarding.md` registrou 25 ach
 fixa D1–D6. Varredura de issues abertos em 2026-11-22: nenhum aberto.
 
 ## Acceptance Criteria
-- [ ] AC1: `init` honra cada flag com e sem TTY; limites do brownfield (D2) afirmados por teste
-- [ ] AC2: teste do Quick start confere README e guia do site em inglês contra os comandos que executa
-- [ ] AC3: site em inglês na raiz e pt-BR em `/pt/`; build do site e capturas headless verdes
-- [ ] AC4: bloqueantes e atritos da auditoria corrigidos ou justificados um a um
-- [ ] AC5: README com Quick start contíguo, Windows fora de *Installation*, sem âncora quebrada
-- [ ] AC6: `make quality` rc=0 e CI verde no PR
+- [x] AC1: `init` honra cada flag com e sem TTY; limites do brownfield (D2) afirmados por teste
+- [x] AC2: teste do Quick start confere README e guia do site em inglês contra os comandos que executa
+- [x] AC3: site em inglês na raiz e pt-BR em `/pt/`; build do site e capturas headless verdes
+- [x] AC4: bloqueantes e atritos da auditoria corrigidos ou justificados um a um
+- [x] AC5: README com Quick start contíguo, Windows fora de *Installation*, sem âncora quebrada
+- [x] AC6: `make quality` rc=0 e CI verde no PR
 
 ## Status Legend
 ⬜ Pending · 🔄 In progress · ✅ Done · ❌ Blocked
@@ -480,13 +480,13 @@ TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 5m ./internal/config/
 > Dependencies: Wave 4 audited.
 
 ### ML-FB — make quality e CI (zeus-tf)
-**Status:** 🔄 In progress — `make quality` MQ_RC=0 em 2026-11-23 com a máquina ociosa (carga ~4; 3297 linhas de
-log; `internal/commands` 64,4 s; as linhas `FAIL` do log são dos contra-braços dos self-tests). Falta o CI do PR.
+**Status:** ✅ Done — `make quality` MQ_RC=0 em 2026-11-23 com a máquina ociosa (carga ~4; 3297 linhas de
+log; `internal/commands` 64,4 s; as linhas `FAIL` do log são dos contra-braços dos self-tests). CI do PR #700 verde em 9f63da34: 24/24, incluindo `windows-full-suites`.
 **Files affected:** `docs/req/REQ-2026-11-23-guard-write-scope-re-enraizado-por-trackfw-yaml-aninhado-permite-ao-subagente-desligar-os-proprios-hooks.md`;
 `docs/roadmaps/backlog/ROADMAP-2026-11-23-guard-write-scope-re-enraizado-por-trackfw-yaml-aninhado-permite-ao-subagente-desligar-os-proprios-hooks.md`
 (REQ do F-5 aberta no backlog a pedido do KG; outra causa, outra REQ); `docs/roadmaps/.trackfw-log-entries/`
 **Acceptance criteria:**
-- [ ] AC6: `make quality` rc=0 com a máquina ociosa; CI verde no PR
+- [x] AC6: `make quality` rc=0 com a máquina ociosa; CI verde no PR
 
 **Wave gates:**
 ```bash
