@@ -247,7 +247,9 @@ test -f site/guide/getting-started.md
 ```
 
 ### ML-2C — Corretivo do ML-2A (afrodite-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — `adr new "Decision title"` e `req new "Requirement title"` na referência dos dois idiomas, com a
+frase de que o título é obrigatório; nota do `install.ps1` trocada por "publicado em toda release" (asset conferido na
+v11.8.1). Grep vazio (conferido pelo arquiteto); build rc=0.
 **Files affected:** `site/guide/commands.md`; `site/pt/guide/commands.md`; `site/guide/getting-started.md`;
 `site/pt/guide/getting-started.md`
 **Actions:**
@@ -256,8 +258,8 @@ test -f site/guide/getting-started.md
 2. Stale note at `getting-started.md:38` (both locales): `install.ps1` is already a release asset (measured on
    v11.8.1); the note says it ships "after 11.1.0" and tells Windows users to avoid it.
 **Acceptance criteria:**
-- [ ] `grep -nE 'trackfw (adr|req) new$' site/guide/*.md site/pt/guide/*.md` vazio
-- [ ] `npm run build` em `site/` rc=0
+- [x] `grep -nE 'trackfw (adr|req) new$' site/guide/*.md site/pt/guide/*.md` vazio
+- [x] `npm run build` em `site/` rc=0
 
 **Wave gates:**
 ```bash

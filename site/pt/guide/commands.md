@@ -255,10 +255,10 @@ trackfw update harness --install-missing
 
 ## `trackfw adr new`
 
-Cria um novo Architecture Decision Record via wizard interativo.
+Cria um novo Architecture Decision Record. O título é obrigatório; o wizard abre em terminais interativos para preencher as demais seções.
 
 ```bash
-trackfw adr new
+trackfw adr new "Título da decisão"
 ```
 
 ### Saída esperada
@@ -289,10 +289,10 @@ ADR-2026-06-01-provider-oauth.md          Draft
 
 ## `trackfw req new`
 
-Cria um novo requisito via wizard interativo com probes contextuais.
+Cria um novo requisito. O título é obrigatório; o wizard abre em terminais interativos com probes contextuais.
 
 ```bash
-trackfw req new
+trackfw req new "Título do requisito"
 ```
 
 O wizard detecta domínios (autenticação, UI, persistência, API, deploy, eventos) com base no título e motivação e apresenta perguntas específicas por domínio. ADR Drafts são criados automaticamente quando a resposta indica decisão arquitetural pendente.

@@ -35,7 +35,7 @@ curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.s
 irm https://github.com/kgsaran/trackfw/releases/latest/download/install.ps1 | iex
 ```
 
-> Note: `install.ps1` ships as a release asset starting from the release after 11.1.0. For Windows installations today, use npm (`npm install -g trackfw`), pip (`pip install trackfw`), or the shell script in Git Bash.
+> `install.ps1` is published with every release.
 
 ### Verify installation
 
