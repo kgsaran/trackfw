@@ -306,21 +306,53 @@ TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 5m -run 'TestQuickStart' ./
 > Dependencies: Wave 3 audited.
 
 ### ML-4A — Revisão de qualidade (hefesto-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — APROVA com ressalvas; 0 bloqueante. R1 (`presentTopLevelKeysFallback` guarda a chave com aspas:
+`lefthook.yml` inválido com `"pre-commit":` duplica o bloco) vai para o ML-4C. O1 (rodar `go test
+./internal/generators/` alteraria o `trackfw.yaml` do repositório) **não reproduzido** pelo arquiteto: `-count=1` no
+pacote inteiro, rc=0, md5 do `trackfw.yaml` idêntico antes e depois.
 **Files affected:** `docs/qualidade/2026-11-22-onboarding-review.md`
 **Acceptance criteria:**
-- [ ] Parecer escrito; achados bloqueantes corrigidos por ML corretivo
+- [x] Parecer escrito; achados bloqueantes corrigidos por ML corretivo
 
 ### ML-4B — Red team (hades-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done, REPROVA corrigido no ML-4C — D1 com pty real fechado: `--ai-tools claude` instala 12 agentes sem
+perguntar; `--brownfield` grava lenient pelo caminho TTY (residuais 9 e 10 da Wave 0). D2: symlink, symlink quebrado e
+diretório abortam com rc=1 (falha fechada). F-9 (bloqueante, mesma causa do D2a): `presentTopLevelKeys` não expande
+merge key `<<: *anchor`, então o `init` acrescenta o padrão de chaves herdadas por âncora, e o leitor fica com o
+explícito (`require_req_in_commit: true` → `false`; `wip_limit: 3` → `1`). Pré-existente no detector antigo, mas é a
+causa do D2a: ML-4C. F-10 e R1 (mesmo detector, lado texto) e F-8 (conferência de `2 warning(s)` no site aceita prosa
+fora do bloco de saída) também no ML-4C. F-4 (`trackfw.yml` ignorado; o leitor também o ignora) e F-6 (BOM no meio do
+arquivo; o leitor também falha) ficam como residuais: não há rebaixamento. F-5 (write-scope re-enraizado por
+`trackfw.yaml` aninhado, `internal/guard/writescope.go:504`) é outra causa, pré-existente: REQ própria. **Incidente:**
+o hades rodou um `init --brownfield` com o HOME real, contra o handoff. O arquiteto conferiu: nenhum arquivo de
+`~/.claude`, `~/.codex`, `~/.agents`, `~/.gemini` ou `~/.config/opencode` com mtime de hoje (fora o sync do app em
+`~/.claude/skills/synced`); `~/.trackfw/integrations-manifest.json` tem mtime 20:32, anterior ao red team.
 **Files affected:** `docs/seguranca/2026-11-22-red-team-onboarding.md`
 **Acceptance criteria:**
-- [ ] Reimplementa a falsificação de D1, D2 e D4 a partir do contrato, não do diff; residual declarado
+- [x] Reimplementa a falsificação de D1, D2 e D4 a partir do contrato, não do diff; residual declarado
+
+### ML-4C — Corretivo da Wave 4 (apolo-tf)
+**Status:** ⬜ Pending
+**Files affected:** `internal/generators/scaffold.go`; `internal/generators/trackfw_config_merge_test.go`;
+`internal/commands/quickstart_e2e_test.go`
+**Actions:**
+1. F-9: `presentTopLevelKeys` expands merge keys (`<<: *a` and `<<: [*a, *b]`) and adds every inherited key.
+2. One key normalizer: `normalizeYAMLTopLevelKey` derives the key of a column-0 line through the YAML parser (so
+   escapes such as `"pre\x2dcommit"` decode, F-10), with the text rules only as fallback;
+   `presentTopLevelKeysFallback` uses it (R1).
+3. F-8: the site check asserts `2 warning(s)` inside the output block that follows the Quick start run, not anywhere
+   in the page.
+4. Tests with counter-arm for each item; reconciliation sentence per test.
+**Acceptance criteria:**
+- [ ] `trackfw.yaml` com chave de governança herdada por âncora mantém o valor do usuário após `init`
+- [ ] `go test ./internal/generators/` e `go test ./internal/commands/` rc=0
 
 **Wave gates:**
 ```bash
 test -s docs/qualidade/2026-11-22-onboarding-review.md
 test -s docs/seguranca/2026-11-22-red-team-onboarding.md
+TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 5m ./internal/generators/
+TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 5m ./internal/commands/
 ```
 
 ## Wave 5 — Fechamento
