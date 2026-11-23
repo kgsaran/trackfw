@@ -105,12 +105,6 @@ mantém a governança, imprime o aviso e instala 12 agentes. O apolo não entreg
 - [ ] AC1 da REQ (D1 e D2)
 - [ ] `go build ./...` e `go test ./internal/commands/` verdes
 
-**Wave gates:**
-```bash
-go build ./...
-TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 5m ./internal/commands/
-```
-
 ### ML-1C — Merge do `trackfw.yaml` reconhece chaves pelo parse YAML (apolo-tf)
 **Status:** ✅ Done, com corretivo no ML-1D — `presentTopLevelKeys` usa parse `yaml.Node` nos dois chamadores.
 Sonda do arquiteto contra o 11.8.0: `"adr_dirs":`, `adr_dirs :` e BOM deixam de ganhar um segundo `adr_dirs`
@@ -131,12 +125,6 @@ por texto o achava); o teste antigo `TestPresentTopLevelKeys_P1P2P3` (comentári
 **Acceptance criteria:**
 - [ ] AC1 da REQ (D2a)
 - [ ] `bash scripts/check-init-preserves-user-config.sh` rc=0
-
-**Wave gates:**
-```bash
-TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 5m ./internal/generators/
-bash scripts/check-init-preserves-user-config.sh
-```
 
 ### ML-1D — Corretivo do ML-1C (apolo-tf)
 **Status:** ✅ Done — com YAML inválido, `presentTopLevelKeys` cai no detector antigo
@@ -161,12 +149,6 @@ não é instalado e sai um aviso falso.
 - [x] AC1 da REQ (D2a), afirmado de ponta a ponta
 - [x] `go test ./internal/generators/` e `bash scripts/check-init-preserves-user-config.sh` rc=0
 
-**Wave gates:**
-```bash
-TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 5m ./internal/generators/
-bash scripts/check-init-preserves-user-config.sh
-```
-
 ### ML-1E — Inserção do lefthook reconhece a chave pelo parse YAML (apolo-tf)
 **Status:** ✅ Done — helper `normalizeYAMLTopLevelKey` (BOM, aspas simples e duplas, espaço antes do `:`) nos dois
 sítios. `TestGenerateLefthookHook_D2a_QuotedPreCommit` afirma também a instalação do `trackfw-validate` e a ausência
@@ -183,11 +165,6 @@ reprovam. `internal/generators` rc=0 e `check-init-preserves-user-config.sh` rc=
 **Acceptance criteria:**
 - [x] `trackfw-validate` instalado e detectado com a chave `pre-commit` em qualquer grafia aceita pelo YAML
 - [x] `go test ./internal/generators/` rc=0
-
-**Wave gates:**
-```bash
-TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 5m ./internal/generators/
-```
 
 ### ML-1B — Inglês na raiz do site (afrodite-tf)
 **Status:** ✅ Done — inglês em `site/` e pt-BR em `site/pt/`; `site/en/` removido; `config.mts` com `root` en-US e
@@ -216,6 +193,10 @@ de arquivos dela, e deixou um Chromium órfão, que encerrei. A nav do pt mostra
 
 **Wave gates:**
 ```bash
+go build ./...
+TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 5m ./internal/commands/
+TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 5m ./internal/generators/
+bash scripts/check-init-preserves-user-config.sh
 test -f site/guide/getting-started.md
 test -f site/pt/guide/getting-started.md
 test ! -e site/en
@@ -241,11 +222,6 @@ Quick start, so ML-3A can pin both.
 - [ ] Cada achado listado corrigido, ou justificado no relatório
 - [ ] `npm ci && npm run build` em `site/` rc=0; capturas headless das duas raízes
 
-**Wave gates:**
-```bash
-test -f site/guide/getting-started.md
-```
-
 ### ML-2C — Corretivo do ML-2A (afrodite-tf)
 **Status:** ✅ Done — `adr new "Decision title"` e `req new "Requirement title"` na referência dos dois idiomas, com a
 frase de que o título é obrigatório; nota do `install.ps1` trocada por "publicado em toda release" (asset conferido na
@@ -260,11 +236,6 @@ v11.8.1). Grep vazio (conferido pelo arquiteto); build rc=0.
 **Acceptance criteria:**
 - [x] `grep -nE 'trackfw (adr|req) new$' site/guide/*.md site/pt/guide/*.md` vazio
 - [x] `npm run build` em `site/` rc=0
-
-**Wave gates:**
-```bash
-test -f site/guide/commands.md
-```
 
 ### ML-2B — README contíguo (atena-tf)
 **Status:** ✅ Done, com corretivo no ML-2D — Quick start e continuação contíguos (linhas 19 e 40); Windows virou
@@ -286,11 +257,6 @@ que eu escrevi mal; a intenção era tirar o Windows do caminho de leitura de ma
 - [x] AC5 da REQ; lista das âncoras antes/depois no relatório
 - [x] `bash scripts/check-wheel-metadata-readme.sh` rc=0
 
-**Wave gates:**
-```bash
-bash scripts/check-wheel-metadata-readme.sh
-```
-
 ### ML-2D — Windows depois de *Installation* (atena-tf)
 **Status:** ✅ Done — ordem de topo: Quick start (19), continued (40), The problem (59), Installation (74), Windows
 support (partial) (136), Commands (456). Diff ordenado vazio: só reordenação. wheel-metadata e `guardforms` rc=0. A
@@ -307,6 +273,8 @@ como OK. Pelo algoritmo do GitHub (github-slugger: minúsculas, remove pontuaç�
 
 **Wave gates:**
 ```bash
+test -f site/guide/getting-started.md
+test -f site/guide/commands.md
 bash scripts/check-wheel-metadata-readme.sh
 ```
 
