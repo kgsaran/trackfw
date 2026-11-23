@@ -358,7 +358,13 @@ leitor reconhece"). ML-4D corrige o leitor.
 - [x] `go test ./internal/generators/` e `go test ./internal/commands/` rc=0
 
 ### ML-4D — Leitor de config expande merge key (apolo-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done, com sítio de mesma família no ML-4E — `normalizeMapping` em duas passadas (explícitas, depois
+merge preenchendo lacunas), `applyMergeNode`/`applyMergeMapping` com sequência e aninhamento. 6 testes em
+`config_merge_key_test.go`; contra-braço do apolo: 5 reprovam sem a mudança (`TestMergeKey_QuotedKeyIsNotMerge` passa
+nos dois, por desenho). Ponta a ponta: com âncora `wip_limit: 3`, o aviso "limit: 1" some. `internal/config`,
+`internal/validator` e `internal/generators` rc=0. Residual do apolo, medido pelo arquiteto: âncora auto-referente
+(`d: &d` / `<<: *d`) derruba o binário com estouro de pilha (rc=2) **já no 11.8.0** (`normalizeMapping` ↔
+`normalizeNode`), e continua derrubando depois do ML-4D (`applyMergeNode` ↔ `applyMergeMapping`). ML-4E.
 **Files affected:** `internal/config/config.go`; `internal/config/config_merge_key_test.go` (novo)
 **Actions:**
 1. `normalizeMapping` honors YAML merge keys (tag `!!merge`, `<<: *a` and `<<: [*a, *b]`, nested) with YAML
@@ -368,8 +374,26 @@ leitor reconhece"). ML-4D corrige o leitor.
    sequence precedence; nested merge. Counter-arm: without the change, the tests fail.
 3. End-to-end: the anchored `trackfw.yaml` makes `validate` respect `wip_limit: 3`.
 **Acceptance criteria:**
-- [ ] o leitor e o escritor reconhecem as mesmas chaves num `trackfw.yaml` com âncora (ADR D2a)
-- [ ] `go test ./internal/config/` e `go test ./internal/validator/` rc=0
+- [x] o leitor e o escritor reconhecem as mesmas chaves num `trackfw.yaml` com âncora (ADR D2a)
+- [x] `go test ./internal/config/` e `go test ./internal/validator/` rc=0
+
+### ML-4E — Âncora cíclica não derruba leitor nem escritor (apolo-tf)
+**Status:** ⬜ Pending
+**Files affected:** `internal/config/config.go`; `internal/config/config_merge_key_test.go`;
+`internal/generators/scaffold.go`; `internal/generators/trackfw_config_merge_test.go`
+**Actions:**
+1. Cycle guard in the config reader (`normalizeNode`, `normalizeMapping`, `applyMergeNode`, `applyMergeMapping`) and in
+   the writer's key detector (`presentTopLevelKeys`, `expandTopLevelKeys`, `expandMergeValue`): a node already on the
+   current expansion path is not expanded again.
+2. Contract for a cyclic `trackfw.yaml`: no crash; the reader keeps every key it can read without following the cycle;
+   the writer treats the cyclic key as present (no append).
+3. Tests: `d: &d` / `<<: *d`; `x: &x [*x]`; mutual cycle `a: &a {<<: *b}` / `b: &b {<<: *a}`; counter-arm: without the
+   guard the test process overflows (run the counter-arm as a subprocess or assert by timeout, never crashing the
+   package run).
+4. End-to-end: `bin/trackfw validate` and `init` on a cyclic `trackfw.yaml` return without a stack overflow.
+**Acceptance criteria:**
+- [ ] nenhum `trackfw.yaml` derruba o binário por ciclo de âncora (medido no binário)
+- [ ] `go test ./internal/config/` e `go test ./internal/generators/` rc=0
 
 **Wave gates:**
 ```bash

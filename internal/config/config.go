@@ -656,14 +656,70 @@ func parse(content string, cfg *ProjectConfig) {
 // normalizeMapping converts a *yaml.Node of Kind MappingNode into a map[string]interface{}
 // whose values are strings (scalars), []interface{} of strings (sequences of scalars) or
 // map[string]interface{} (nested mappings) — recursively, via normalizeNode.
+//
+// YAML merge keys (tag !!merge, i.e. <<: *anchor and <<: [*a, *b]) are expanded with
+// standard YAML merge semantics (ML-4D, REQ-2026-11-22):
+//   - explicit keys of this mapping win over inherited ones, in any order;
+//   - in <<: [*a, *b], earlier sources take precedence over later ones;
+//   - nested merge keys inside anchors are expanded recursively.
+//
+// A quoted key "<<" (tag !!str) is not a merge key and is kept as a literal map entry.
 func normalizeMapping(n *yaml.Node) map[string]interface{} {
 	result := make(map[string]interface{}, len(n.Content)/2)
+	// Pass 1: collect explicit (non-merge) keys so they win regardless of position.
 	for i := 0; i+1 < len(n.Content); i += 2 {
 		k := resolveAlias(n.Content[i])
-		v := n.Content[i+1]
-		result[k.Value] = normalizeNode(v)
+		if k.Tag == "!!merge" {
+			continue
+		}
+		result[k.Value] = normalizeNode(n.Content[i+1])
+	}
+	// Pass 2: expand merge keys, filling gaps left by explicit keys.
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		k := resolveAlias(n.Content[i])
+		if k.Tag == "!!merge" {
+			applyMergeNode(n.Content[i+1], result)
+		}
 	}
 	return result
+}
+
+// applyMergeNode expands a YAML merge value (the right-hand side of <<:) into dst,
+// skipping keys already present. Handles:
+//   - AliasNode (<<: *anchor) — resolved to a MappingNode;
+//   - SequenceNode (<<: [*a, *b]) — each element expanded in order (earlier wins).
+func applyMergeNode(val *yaml.Node, dst map[string]interface{}) {
+	resolved := resolveAlias(val)
+	switch resolved.Kind {
+	case yaml.MappingNode:
+		applyMergeMapping(resolved, dst)
+	case yaml.SequenceNode:
+		for _, elem := range resolved.Content {
+			applyMergeNode(elem, dst)
+		}
+	}
+}
+
+// applyMergeMapping copies keys from a MappingNode into dst, skipping keys already present.
+// The source mapping's own explicit keys win over that mapping's own nested merge keys
+// (two-pass, same semantics as normalizeMapping).
+func applyMergeMapping(node *yaml.Node, dst map[string]interface{}) {
+	var mergeVals []*yaml.Node
+	// Pass 1: fill dst from explicit keys of the source mapping.
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		k := resolveAlias(node.Content[i])
+		if k.Tag == "!!merge" {
+			mergeVals = append(mergeVals, node.Content[i+1])
+			continue
+		}
+		if _, exists := dst[k.Value]; !exists {
+			dst[k.Value] = normalizeNode(node.Content[i+1])
+		}
+	}
+	// Pass 2: expand nested merge keys from the source, filling remaining gaps.
+	for _, mv := range mergeVals {
+		applyMergeNode(mv, dst)
+	}
 }
 
 // resolveAlias walks alias chains (b: *x) to the anchor's underlying node. Reading .Value on
