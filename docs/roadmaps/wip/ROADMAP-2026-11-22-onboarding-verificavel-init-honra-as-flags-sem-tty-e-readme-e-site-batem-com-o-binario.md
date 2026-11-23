@@ -403,6 +403,39 @@ continua respeitada. Varredura do apolo: nenhum outro caminhador de alias em `in
 - [x] nenhum `trackfw.yaml` derruba o binário por ciclo de âncora (medido no binário)
 - [x] `go test ./internal/config/` e `go test ./internal/generators/` rc=0
 
+### ML-4F — Red team dos corretivos ML-4C a ML-4E (hades-tf)
+**Status:** ✅ Done, ressalva R-A no ML-4G — APROVA com ressalvas. Nenhuma divergência entre leitor e escritor em 10
+grafias (escalar e sequência em merge, `!!merge` explícito, `<<` duplicado, merge aninhado, escape, multi-documento,
+chave número, chave complexa). Âncora de `governance_mode: lenient` agora vale (o 11.8.0 ignorava); chave explícita
+`strict` vence a herdada. Ciclos via sequência protegidos. Guards: write-scope falha fechado (faz um primeiro
+`yaml.Unmarshal` em `interface{}`, que tem limitador de alias), credential e git-branch não leem o YAML como nó.
+R-A: bomba de alias (30 níveis) trava `validate` e `init` por mais de 30 s **já no 11.8.0**; decodificar para
+`yaml.Node` ignora o limitador do yaml.v3, e depois do ML-4C o escritor também percorre o merge. R-B (`credential_guard`
+`mode:` via âncora não detectado) é residual já declarado no ADR D9. HOME isolado em todos os comandos. O hades
+escreveu a nota de vault `vault/notes/yaml-node-alias-bomb-bypass-interface-limit-2026-11-22.md` e a entrada no
+`vault/notes/index.md`, fora da lista do handoff; aceitas, porque a regra de vault pede a nota.
+**Files affected:** `docs/seguranca/2026-11-22-red-team-onboarding-corretivos.md`;
+`vault/notes/yaml-node-alias-bomb-bypass-interface-limit-2026-11-22.md`; `vault/notes/index.md`
+**Acceptance criteria:**
+- [x] Falsifica D2a no leitor e no escritor depois de ML-4C/4D/4E (merge key, ciclo, normalizador único) a partir do
+  contrato; residual declarado
+
+### ML-4G — Limite de alias no leitor e no escritor (apolo-tf)
+**Status:** ⬜ Pending
+**Files affected:** `internal/config/config.go`; `internal/config/config_merge_key_test.go`;
+`internal/generators/scaffold.go`; `internal/generators/trackfw_config_merge_test.go`
+**Actions:**
+1. Before walking the `yaml.Node` tree, both the reader (`config` parse path) and the writer (`presentTopLevelKeys`)
+   run the same first pass the write-scope guard uses: `yaml.Unmarshal` into `interface{}`, which carries yaml.v3's
+   aliasing limiter. On "excessive aliasing" the reader handles the file as invalid YAML (same path and message style
+   as any other parse error) and the writer falls back to the text detector (no append on keys it sees).
+2. Tests: a 30-level sequence alias bomb returns within 2 s on both sides; counter-arm: without the first pass, the
+   same fixture exceeds the timeout (run as subprocess or with a short deadline, never hanging the package run).
+3. End-to-end: `validate` and `init` with the bomb return in under 2 s with a clear error.
+**Acceptance criteria:**
+- [ ] bomba de alias de 30 níveis: `validate` e `init` terminam em menos de 2 s (medido no binário)
+- [ ] `go test ./internal/config/` e `go test ./internal/generators/` rc=0
+
 **Wave gates:**
 ```bash
 test -s docs/qualidade/2026-11-22-onboarding-review.md
@@ -412,13 +445,6 @@ TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 5m ./internal/generators/
 TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 5m ./internal/commands/
 TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 5m ./internal/config/
 ```
-
-### ML-4F — Red team dos corretivos ML-4C a ML-4E (hades-tf)
-**Status:** ⬜ Pending
-**Files affected:** `docs/seguranca/2026-11-22-red-team-onboarding-corretivos.md`
-**Acceptance criteria:**
-- [ ] Falsifica D2a no leitor e no escritor depois de ML-4C/4D/4E (merge key, ciclo, normalizador único) a partir do
-  contrato; residual declarado
 
 ## Wave 5 — Fechamento
 > Dependencies: Wave 4 audited.
