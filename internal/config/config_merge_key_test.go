@@ -13,6 +13,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // loadFromYAML writes content to a temp trackfw.yaml, resets the config singleton,
@@ -107,5 +109,106 @@ func TestMergeKey_QuotedKeyIsNotMerge(t *testing.T) {
 	cfg := loadFromYAML(t, "adr_dirs: [docs/adr]\nreq_dir: docs/req\nroadmap_dir: docs/roadmaps\nwip_limit: \"5\"\n\"<<\": \"not-a-merge\"\n")
 	if cfg.WipLimit != 5 {
 		t.Errorf("WipLimit: want 5 (quoted << is not a merge key), got %d", cfg.WipLimit)
+	}
+}
+
+// --- ML-4E tests: cycle guard ---
+//
+// These tests verify that cyclic YAML anchors do not overflow the goroutine stack.
+// The cycle guard uses a path-based visiting set (insert on entry, delete on exit)
+// so the same alias used twice in unrelated positions is not falsely blocked.
+//
+// Precondition pattern: each cyclic fixture is first verified to parse without error
+// by yaml.Unmarshal (into a yaml.Node) before being handed to Load(). If the fixture
+// does not parse, Load()'s pre-check would call osExit(1) and kill the test process —
+// an unrelated failure mode that the cycle guard does not address.
+//
+// Counter-arm (without the guard): the ML-4D implementation (this branch, prior to
+// ML-4E) crashes with "goroutine stack exceeds" when given the self-referential fixture.
+// The counter-arm was measured by building the pre-ML-4E binary from `git archive HEAD`
+// in a $TMPDIR copy, running it with the cyclic trackfw.yaml and observing rc=2 and the
+// "goroutine stack exceeds" message. The post-ML-4E binary returns rc=0 on the same input.
+// See the ponta-a-ponta section of the ML-4E report for the exact commands and output.
+
+// TestCyclicAnchor_SelfRefMapping asserts:
+// A self-referential mapping anchor (d: &d {wip_limit: "3", <<: *d} / <<: *d) does not
+// overflow the stack and the reader delivers the explicit keys that are reachable before
+// the cycle (wip_limit == 3). ML-4E.
+func TestCyclicAnchor_SelfRefMapping(t *testing.T) {
+	content := "d: &d\n  wip_limit: \"3\"\n  <<: *d\n<<: *d\nreq_dir: docs/req\n"
+	// Precondition: fixture must parse as valid YAML (otherwise Load() exits, not cycles).
+	var probe yaml.Node
+	if err := yaml.Unmarshal([]byte(content), &probe); err != nil {
+		t.Fatalf("precondition: fixture must parse as valid YAML: %v", err)
+	}
+	cfg := loadFromYAML(t, content)
+	// The explicit wip_limit: "3" in the anchor is reachable from the top-level <<: *d.
+	if cfg.WipLimit != 3 {
+		t.Errorf("WipLimit: want 3 (from anchor via <<: *d), got %d", cfg.WipLimit)
+	}
+	if cfg.REQDir != "docs/req" {
+		t.Errorf("REQDir: want docs/req, got %q", cfg.REQDir)
+	}
+}
+
+// TestCyclicAnchor_SelfRefSequenceValue asserts:
+// A self-referential sequence anchor (adr_dirs: &a [docs/adr, *a]) does not overflow
+// the stack. The cyclic element (*a) is returned as nil and filtered out by stringListRec,
+// leaving adr_dirs == ["docs/adr"]. ML-4E.
+func TestCyclicAnchor_SelfRefSequenceValue(t *testing.T) {
+	content := "adr_dirs: &a\n  - docs/adr\n  - *a\nreq_dir: docs/req\n"
+	var probe yaml.Node
+	if err := yaml.Unmarshal([]byte(content), &probe); err != nil {
+		t.Fatalf("precondition: fixture must parse as valid YAML: %v", err)
+	}
+	cfg := loadFromYAML(t, content)
+	// The non-cyclic element "docs/adr" must be retained; the cyclic *a must be dropped.
+	if len(cfg.ADRDirs) != 1 || cfg.ADRDirs[0] != "docs/adr" {
+		t.Errorf("ADRDirs: want [docs/adr], got %v", cfg.ADRDirs)
+	}
+	if cfg.REQDir != "docs/req" {
+		t.Errorf("REQDir: want docs/req, got %q", cfg.REQDir)
+	}
+}
+
+// TestCyclicAnchor_MutualCycle asserts:
+// A nested mutual-cycle anchor (a: &a {b: &b {wip_limit:"3", <<: *a}, <<: *b} / <<: *a)
+// does not overflow the stack and the reader delivers the keys reachable before the cycle.
+// Note: a forward-reference mutual cycle (a→b, b→a at the same level) is rejected by
+// yaml.v3 as "unknown anchor 'b' referenced", so the fixture uses nested anchors where
+// &b is declared inside &a — both anchors are visible before the back-reference. ML-4E.
+func TestCyclicAnchor_MutualCycle(t *testing.T) {
+	content := "a: &a\n  b: &b\n    wip_limit: \"3\"\n    <<: *a\n  <<: *b\n<<: *a\nreq_dir: docs/req\n"
+	var probe yaml.Node
+	if err := yaml.Unmarshal([]byte(content), &probe); err != nil {
+		t.Fatalf("precondition: fixture must parse as valid YAML: %v", err)
+	}
+	cfg := loadFromYAML(t, content)
+	// wip_limit: "3" is inside b, which is merged into a and then into the top level.
+	// The cycle guard terminates the recursion; the question is whether the key arrives
+	// before the cycle fires. The exact value depends on expansion order; we assert only
+	// that Load() returns without crashing and that the top-level req_dir is readable.
+	if cfg.REQDir != "docs/req" {
+		t.Errorf("REQDir: want docs/req, got %q", cfg.REQDir)
+	}
+}
+
+// TestCyclicAnchor_SameAliasTwiceNoCycle asserts:
+// The cycle guard does NOT block a valid double-use of the same alias
+// (<<: [*c, *c] is redundant but not a cycle — c is not being expanded while c is
+// already on the path). wip_limit must arrive as 3. ML-4E counter-arm.
+func TestCyclicAnchor_SameAliasTwiceNoCycle(t *testing.T) {
+	content := "c: &c\n  wip_limit: \"3\"\n<<: [*c, *c]\nreq_dir: docs/req\n"
+	var probe yaml.Node
+	if err := yaml.Unmarshal([]byte(content), &probe); err != nil {
+		t.Fatalf("precondition: fixture must parse as valid YAML: %v", err)
+	}
+	cfg := loadFromYAML(t, content)
+	// A global (non-path) visited set would mark c as visited on the first expansion and
+	// skip it on the second — leaving wip_limit absent and falling back to the default 1.
+	// A path-based set removes c after the first expansion finishes, so the second use
+	// still sees c as unvisited and correctly skips the already-present key (no duplicate).
+	if cfg.WipLimit != 3 {
+		t.Errorf("WipLimit: want 3 (path-based guard must not block second use of *c), got %d", cfg.WipLimit)
 	}
 }

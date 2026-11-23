@@ -1003,6 +1003,160 @@ func TestPresentTopLevelKeysFallback_QuotedKey(t *testing.T) {
 	}
 }
 
+// --- ML-4E tests: cycle guard for the writer's key detector ---
+//
+// presentTopLevelKeys (via expandTopLevelKeys / expandMergeValue) can reach a cycle
+// when the top-level mapping has a <<: that transitively points back to itself.
+// The fixtures below all include a top-level <<: *anchor so that expandMergeValue is
+// called on the cyclic node — without that, the writer's traversal never enters the
+// anchor's content and the cycle is not reachable from the writer path.
+//
+// Counter-arm (without the guard): the ML-4D implementation crashes with
+// "goroutine stack exceeds" for the self-referential mapping fixture. Measured by
+// running the pre-ML-4E test binary (from `git archive HEAD` in $TMPDIR) with
+// -run TestPresentTopLevelKeys_Cyclic -timeout 10s and observing rc!=0.
+//
+// T20 PresentTopLevelKeys_CyclicSelfRefMapping    — d: &d / <<: *d doesn't overflow; explicit keys returned
+// T21 PresentTopLevelKeys_CyclicSequence          — <<: *x where x is a self-ref sequence doesn't overflow
+// T22 PresentTopLevelKeys_CyclicMutualNested      — nested mutual cycle doesn't overflow; explicit keys returned
+// T23 PresentTopLevelKeys_SameAliasTwice          — same alias used twice (no cycle) is not blocked by the guard
+// T24 WriteTrackfwConfig_CyclicMergeKey           — E2E: cyclic trackfw.yaml does not trigger a duplicate key append
+
+// T20 — presentTopLevelKeys on a self-referential mapping anchor does not overflow the
+// stack and returns all keys reachable before the cycle.
+//
+// Reconciliation: this test asserts that the cycle guard in expandTopLevelKeys (ML-4E)
+// breaks the d→d back-edge, preventing infinite recursion, and that explicit keys
+// declared before the cycle (d, req_dir) are still detected as present.
+func TestPresentTopLevelKeys_CyclicSelfRefMapping(t *testing.T) {
+	// Fixture: d has explicit wip_limit and a self-referential merge; top level merges d in.
+	// The top-level <<: *d is required to exercise the cycle in the writer path.
+	content := "d: &d\n  wip_limit: \"3\"\n  <<: *d\n<<: *d\nreq_dir: docs/req\n"
+	// Precondition: valid YAML (otherwise yaml.Unmarshal fails and expandTopLevelKeys is not called).
+	keys, ok := presentTopLevelKeys(content)
+	if !ok {
+		t.Fatal("cyclic fixture must parse as valid YAML (ok=true)")
+	}
+	// Keys reachable before the cycle must be detected.
+	if !keys["d"] {
+		t.Error("T20: explicit key 'd' must be detected")
+	}
+	if !keys["wip_limit"] {
+		t.Error("T20: wip_limit inherited via <<: *d must be detected (cycle guard must not block first visit)")
+	}
+	if !keys["req_dir"] {
+		t.Error("T20: explicit key 'req_dir' must be detected")
+	}
+}
+
+// T21 — presentTopLevelKeys on a self-referential sequence anchor (<<: *x where x=[*x])
+// does not overflow the stack.
+//
+// Reconciliation: this test asserts that the cycle guard in expandMergeValue (ML-4E)
+// breaks the sequence→sequence back-edge, preventing infinite recursion when the
+// merge-value sequence contains an alias to itself.
+func TestPresentTopLevelKeys_CyclicSequence(t *testing.T) {
+	// x is a sequence containing an alias to itself; <<: *x at top level exercises
+	// the SequenceNode path in expandMergeValue.
+	content := "x: &x\n  - *x\n<<: *x\nreq_dir: docs/req\n"
+	keys, ok := presentTopLevelKeys(content)
+	if !ok {
+		t.Fatal("cyclic sequence fixture must parse as valid YAML (ok=true)")
+	}
+	// The writer does not add sequence-element values as keys; it only enumerates
+	// top-level key names. The important assertion is that the call returns at all.
+	if !keys["x"] {
+		t.Error("T21: explicit key 'x' must be detected")
+	}
+	if !keys["req_dir"] {
+		t.Error("T21: explicit key 'req_dir' must be detected")
+	}
+}
+
+// T22 — presentTopLevelKeys on a nested mutual cycle does not overflow the stack
+// and returns the explicit keys.
+//
+// Reconciliation: this test asserts that the cycle guard in expandTopLevelKeys (ML-4E)
+// handles the nested a→b→a cycle, terminating at the back-edge and returning the keys
+// that were reachable on the first traversal of the cycle.
+func TestPresentTopLevelKeys_CyclicMutualNested(t *testing.T) {
+	// a: &a {b: &b {wip_limit: "3", <<: *a}, <<: *b} / <<: *a
+	// &b is declared inside &a so there is no forward-anchor reference.
+	content := "a: &a\n  b: &b\n    wip_limit: \"3\"\n    <<: *a\n  <<: *b\n<<: *a\nreq_dir: docs/req\n"
+	keys, ok := presentTopLevelKeys(content)
+	if !ok {
+		t.Fatal("nested mutual cycle fixture must parse as valid YAML (ok=true)")
+	}
+	if !keys["a"] {
+		t.Error("T22: explicit key 'a' must be detected")
+	}
+	if !keys["req_dir"] {
+		t.Error("T22: explicit key 'req_dir' must be detected")
+	}
+}
+
+// T23 — same alias used twice without a cycle is not blocked by the path-based guard.
+//
+// Reconciliation: this test asserts that the path-based cycle guard (ML-4E) does not
+// over-block: when the same alias is used twice in <<: [*c, *c] without any back-edge,
+// the guard removes *c from the visiting set after the first use, so the second use is
+// processed normally. For key-set enumeration, this means keys["wip_limit"] is true.
+// Note: a global (non-path) visited set would leave wip_limit absent after the first
+// expansion and would still set it on the second (since we're only accumulating keys,
+// not preventing re-reads). So the path/global distinction is observable here only via
+// the reader test (TestCyclicAnchor_SameAliasTwiceNoCycle) where the actual value matters.
+// This test confirms the writer also sees the key.
+func TestPresentTopLevelKeys_SameAliasTwice(t *testing.T) {
+	content := "c: &c\n  wip_limit: \"3\"\n<<: [*c, *c]\nreq_dir: docs/req\n"
+	keys, ok := presentTopLevelKeys(content)
+	if !ok {
+		t.Fatal("double-alias fixture must parse as valid YAML (ok=true)")
+	}
+	if !keys["wip_limit"] {
+		t.Error("T23: wip_limit inherited via <<: [*c, *c] must be detected as present")
+	}
+	if !keys["req_dir"] {
+		t.Error("T23: req_dir must be detected")
+	}
+}
+
+// T24 — end-to-end: writeTrackfwConfig on a cyclic trackfw.yaml does not append a
+// duplicate wip_limit line, because presentTopLevelKeys detects wip_limit as already
+// present via the cycle-guarded merge expansion.
+//
+// Reconciliation: this test asserts that the writer's key detector (ML-4E) handles a
+// cyclic trackfw.yaml without crashing AND correctly identifies wip_limit as present —
+// so writeTrackfwConfig performs a no-op for that key instead of appending
+// "wip_limit: 1" (the template default) which would silently downgrade the user value.
+func TestWriteTrackfwConfig_CyclicMergeKey(t *testing.T) {
+	dir := chdirTemp(t)
+	path := filepath.Join(dir, "trackfw.yaml")
+
+	// Fixture: wip_limit is set via a cyclic anchor and the top-level <<: *d.
+	// All template keys except wip_limit are present explicitly.
+	fixture := "d: &d\n  wip_limit: \"3\"\n  <<: *d\n<<: *d\nadr_dirs:\n  - docs/adr\nreq_dir: docs/req\nroadmap_dir: docs/roadmaps\nroadmap_namespacing: flat\nhooks: none\nci: github-actions\nfrontend: \"\"\nbackend: go\nbackend_framework: \"\"\npkg_manager: \"\"\nwip_by_squad: false\nrequire_req_in_commit: false\nrules:\n  branch_has_wip_roadmap: error\n"
+	if err := os.WriteFile(path, []byte(fixture), 0644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	if err := writeTrackfwConfig(Config{}); err != nil {
+		t.Fatalf("writeTrackfwConfig on cyclic YAML: %v", err)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	content := string(got)
+
+	// No "wip_limit: 1" (template default) should have been appended.
+	for _, line := range strings.Split(content, "\n") {
+		if line == "wip_limit: 1" {
+			t.Fatalf("T24: wip_limit: 1 was appended (cycle guard failed to detect wip_limit as present)\ncontent:\n%s", content)
+		}
+	}
+}
+
 // min é um auxiliar para evitar índice fora de intervalo em mensagens de erro.
 func min(a, b int) int {
 	if a < b {

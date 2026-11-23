@@ -486,7 +486,7 @@ func parse(content string, cfg *ProjectConfig) {
 		return
 	}
 
-	m := normalizeMapping(top)
+	m := normalizeMapping(top, make(map[*yaml.Node]bool))
 
 	// --- Scalar keys — driven by scalarKeyTable; no literal-keyed reads here.
 	// The table is the only place to add a new scalar key. ML-1C, REQ-2026-10-24.
@@ -664,21 +664,35 @@ func parse(content string, cfg *ProjectConfig) {
 //   - nested merge keys inside anchors are expanded recursively.
 //
 // A quoted key "<<" (tag !!str) is not a merge key and is kept as a literal map entry.
-func normalizeMapping(n *yaml.Node) map[string]interface{} {
+//
+// visiting is the set of *yaml.Node pointers currently on the expansion path (call stack).
+// A node found already in visiting is a back-edge of a cycle: return an empty map so the
+// caller keeps every key that was reachable without following the cycle. The set uses path
+// semantics (insert on entry, delete on exit via defer) so the same alias used twice in
+// unrelated positions is not falsely blocked. ML-4E.
+func normalizeMapping(n *yaml.Node, visiting map[*yaml.Node]bool) map[string]interface{} {
 	result := make(map[string]interface{}, len(n.Content)/2)
+	if visiting[n] {
+		// Cycle: this node is already being expanded on the current path.
+		// Return the empty result so the caller keeps whatever it collected before
+		// reaching this back-edge. ML-4E.
+		return result
+	}
+	visiting[n] = true
+	defer delete(visiting, n)
 	// Pass 1: collect explicit (non-merge) keys so they win regardless of position.
 	for i := 0; i+1 < len(n.Content); i += 2 {
 		k := resolveAlias(n.Content[i])
 		if k.Tag == "!!merge" {
 			continue
 		}
-		result[k.Value] = normalizeNode(n.Content[i+1])
+		result[k.Value] = normalizeNode(n.Content[i+1], visiting)
 	}
 	// Pass 2: expand merge keys, filling gaps left by explicit keys.
 	for i := 0; i+1 < len(n.Content); i += 2 {
 		k := resolveAlias(n.Content[i])
 		if k.Tag == "!!merge" {
-			applyMergeNode(n.Content[i+1], result)
+			applyMergeNode(n.Content[i+1], result, visiting)
 		}
 	}
 	return result
@@ -688,14 +702,21 @@ func normalizeMapping(n *yaml.Node) map[string]interface{} {
 // skipping keys already present. Handles:
 //   - AliasNode (<<: *anchor) — resolved to a MappingNode;
 //   - SequenceNode (<<: [*a, *b]) — each element expanded in order (earlier wins).
-func applyMergeNode(val *yaml.Node, dst map[string]interface{}) {
+func applyMergeNode(val *yaml.Node, dst map[string]interface{}, visiting map[*yaml.Node]bool) {
 	resolved := resolveAlias(val)
 	switch resolved.Kind {
 	case yaml.MappingNode:
-		applyMergeMapping(resolved, dst)
+		applyMergeMapping(resolved, dst, visiting)
 	case yaml.SequenceNode:
+		if visiting[resolved] {
+			// Cycle in a merge-value sequence: the sequence is already on the
+			// expansion path. Skip it to avoid infinite recursion. ML-4E.
+			return
+		}
+		visiting[resolved] = true
+		defer delete(visiting, resolved)
 		for _, elem := range resolved.Content {
-			applyMergeNode(elem, dst)
+			applyMergeNode(elem, dst, visiting)
 		}
 	}
 }
@@ -703,7 +724,15 @@ func applyMergeNode(val *yaml.Node, dst map[string]interface{}) {
 // applyMergeMapping copies keys from a MappingNode into dst, skipping keys already present.
 // The source mapping's own explicit keys win over that mapping's own nested merge keys
 // (two-pass, same semantics as normalizeMapping).
-func applyMergeMapping(node *yaml.Node, dst map[string]interface{}) {
+func applyMergeMapping(node *yaml.Node, dst map[string]interface{}, visiting map[*yaml.Node]bool) {
+	if visiting[node] {
+		// Cycle: this mapping node is already on the expansion path.
+		// Return without adding any keys so the caller keeps whatever it collected
+		// before reaching this back-edge. ML-4E.
+		return
+	}
+	visiting[node] = true
+	defer delete(visiting, node)
 	var mergeVals []*yaml.Node
 	// Pass 1: fill dst from explicit keys of the source mapping.
 	for i := 0; i+1 < len(node.Content); i += 2 {
@@ -713,12 +742,12 @@ func applyMergeMapping(node *yaml.Node, dst map[string]interface{}) {
 			continue
 		}
 		if _, exists := dst[k.Value]; !exists {
-			dst[k.Value] = normalizeNode(node.Content[i+1])
+			dst[k.Value] = normalizeNode(node.Content[i+1], visiting)
 		}
 	}
 	// Pass 2: expand nested merge keys from the source, filling remaining gaps.
 	for _, mv := range mergeVals {
-		applyMergeNode(mv, dst)
+		applyMergeNode(mv, dst, visiting)
 	}
 }
 
@@ -734,19 +763,32 @@ func resolveAlias(n *yaml.Node) *yaml.Node {
 
 // normalizeNode converts a single *yaml.Node into a string (scalar, using the pre-coercion
 // raw text in Node.Value), a []interface{} (sequence) or a map[string]interface{} (mapping).
-func normalizeNode(n *yaml.Node) interface{} {
+//
+// A node pointer already in visiting is a cycle in a value position (e.g. a sequence
+// element that is an alias to its own parent sequence). The cyclic element is returned as
+// nil so that stringListRec skips it silently. ML-4E.
+func normalizeNode(n *yaml.Node, visiting map[*yaml.Node]bool) interface{} {
 	n = resolveAlias(n)
+	if visiting[n] {
+		// Cycle in value position: return nil so list/scalar consumers drop this
+		// element silently. For sequences, the non-cyclic elements are retained.
+		// For mappings, normalizeMapping's own cycle guard fires first and returns
+		// an empty map; this branch catches the same back-edge earlier. ML-4E.
+		return nil
+	}
 	switch n.Kind {
 	case yaml.ScalarNode:
 		return n.Value
 	case yaml.SequenceNode:
+		visiting[n] = true
+		defer delete(visiting, n)
 		items := make([]interface{}, 0, len(n.Content))
 		for _, c := range n.Content {
-			items = append(items, normalizeNode(c))
+			items = append(items, normalizeNode(c, visiting))
 		}
 		return items
 	case yaml.MappingNode:
-		return normalizeMapping(n)
+		return normalizeMapping(n, visiting)
 	default:
 		return nil
 	}

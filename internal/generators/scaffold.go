@@ -952,7 +952,7 @@ func presentTopLevelKeys(content string) (map[string]bool, bool) {
 	if top.Kind != yaml.MappingNode {
 		return keys, false
 	}
-	expandTopLevelKeys(top, keys)
+	expandTopLevelKeys(top, keys, make(map[*yaml.Node]bool))
 	return keys, true
 }
 
@@ -961,16 +961,28 @@ func presentTopLevelKeys(content string) (map[string]bool, bool) {
 // This handles <<: *anchor and <<: [*a, *b], including anchors that
 // themselves contain nested << merge keys.
 // F-9 fix (ML-4C, REQ-2026-11-22).
-func expandTopLevelKeys(node *yaml.Node, keys map[string]bool) {
+//
+// visiting is the set of *yaml.Node pointers currently on the expansion path.
+// A node found already in visiting is a back-edge of a cycle: return without
+// adding more keys so the caller keeps whatever was collected before the cycle.
+// Path semantics (insert on entry, delete on exit via defer) prevent blocking
+// the same alias used twice in unrelated positions. ML-4E.
+func expandTopLevelKeys(node *yaml.Node, keys map[string]bool, visiting map[*yaml.Node]bool) {
 	if node.Kind != yaml.MappingNode {
 		return
 	}
+	if visiting[node] {
+		// Cycle: this mapping is already on the expansion path. ML-4E.
+		return
+	}
+	visiting[node] = true
+	defer delete(visiting, node)
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		k := resolveScaffoldAlias(node.Content[i])
 		if k.Tag == "!!merge" {
 			// YAML merge key: expand the value (alias or sequence of aliases)
 			// and add all inherited keys to the set.
-			expandMergeValue(node.Content[i+1], keys)
+			expandMergeValue(node.Content[i+1], keys, visiting)
 		} else {
 			keys[k.Value] = true
 		}
@@ -984,14 +996,20 @@ func expandTopLevelKeys(node *yaml.Node, keys map[string]bool) {
 //
 // Nested merge keys inside the target mapping are handled because
 // expandTopLevelKeys is called recursively on each resolved MappingNode.
-func expandMergeValue(val *yaml.Node, keys map[string]bool) {
+func expandMergeValue(val *yaml.Node, keys map[string]bool, visiting map[*yaml.Node]bool) {
 	resolved := resolveScaffoldAlias(val)
 	switch resolved.Kind {
 	case yaml.MappingNode:
-		expandTopLevelKeys(resolved, keys)
+		expandTopLevelKeys(resolved, keys, visiting)
 	case yaml.SequenceNode:
+		if visiting[resolved] {
+			// Cycle in a merge-value sequence: skip to avoid infinite recursion. ML-4E.
+			return
+		}
+		visiting[resolved] = true
+		defer delete(visiting, resolved)
 		for _, elem := range resolved.Content {
-			expandMergeValue(elem, keys)
+			expandMergeValue(elem, keys, visiting)
 		}
 	}
 }

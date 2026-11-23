@@ -378,7 +378,15 @@ nos dois, por desenho). Ponta a ponta: com âncora `wip_limit: 3`, o aviso "limi
 - [x] `go test ./internal/config/` e `go test ./internal/validator/` rc=0
 
 ### ML-4E — Âncora cíclica não derruba leitor nem escritor (apolo-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — conjunto `visiting` por caminho (entra na chegada, sai com `defer`) nas 4 funções do leitor e
+nas 2 do detector do escritor; elemento cíclico de valor vira `nil` (descartado nas listas). O ciclo mútuo com
+referência adiante (`a: &a {<<: *b}`) não é YAML válido para o yaml.v3 ("unknown anchor"); o apolo usou a forma
+aninhada. Testes: `TestCyclicAnchor_SelfRefMapping`, `_SelfRefSequenceValue`, `_MutualCycle`,
+`_SameAliasTwiceNoCycle`; `TestPresentTopLevelKeys_CyclicSelfRefMapping`, `_CyclicSequence`,
+`_CyclicMutualNested`, `_SameAliasTwice`; `TestWriteTrackfwConfig_CyclicMergeKey`. Contra-braço do apolo por binário
+do HEAD anterior: estouro de pilha, rc=2. Auditoria do arquiteto no binário novo: os três `trackfw.yaml` cíclicos
+(auto-referente, sequência, mútuo aninhado) com `validate` e `init` rc=0, sem estouro; a âncora `wip_limit: 3`
+continua respeitada. Varredura do apolo: nenhum outro caminhador de alias em `internal/`.
 **Files affected:** `internal/config/config.go`; `internal/config/config_merge_key_test.go`;
 `internal/generators/scaffold.go`; `internal/generators/trackfw_config_merge_test.go`
 **Actions:**
@@ -392,17 +400,25 @@ nos dois, por desenho). Ponta a ponta: com âncora `wip_limit: 3`, o aviso "limi
    package run).
 4. End-to-end: `bin/trackfw validate` and `init` on a cyclic `trackfw.yaml` return without a stack overflow.
 **Acceptance criteria:**
-- [ ] nenhum `trackfw.yaml` derruba o binário por ciclo de âncora (medido no binário)
-- [ ] `go test ./internal/config/` e `go test ./internal/generators/` rc=0
+- [x] nenhum `trackfw.yaml` derruba o binário por ciclo de âncora (medido no binário)
+- [x] `go test ./internal/config/` e `go test ./internal/generators/` rc=0
 
 **Wave gates:**
 ```bash
 test -s docs/qualidade/2026-11-22-onboarding-review.md
 test -s docs/seguranca/2026-11-22-red-team-onboarding.md
+test -s docs/seguranca/2026-11-22-red-team-onboarding-corretivos.md
 TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 5m ./internal/generators/
 TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 5m ./internal/commands/
 TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 5m ./internal/config/
 ```
+
+### ML-4F — Red team dos corretivos ML-4C a ML-4E (hades-tf)
+**Status:** ⬜ Pending
+**Files affected:** `docs/seguranca/2026-11-22-red-team-onboarding-corretivos.md`
+**Acceptance criteria:**
+- [ ] Falsifica D2a no leitor e no escritor depois de ML-4C/4D/4E (merge key, ciclo, normalizador único) a partir do
+  contrato; residual declarado
 
 ## Wave 5 — Fechamento
 > Dependencies: Wave 4 audited.
