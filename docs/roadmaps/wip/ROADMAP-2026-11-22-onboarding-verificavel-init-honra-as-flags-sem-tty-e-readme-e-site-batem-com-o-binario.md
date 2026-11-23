@@ -314,15 +314,20 @@ bash scripts/check-wheel-metadata-readme.sh
 > Dependencies: Wave 2 audited (the test pins the final text).
 
 ### ML-3A — Teste do Quick start confere README e site (apolo-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — lista única `quickStartLines`; `TestQuickStartEndToEnd` executa a partir dela;
+`TestQuickStartDocsPinned` exige as 5 linhas como bloco contíguo no README e em `site/guide/getting-started.md`,
+`2 warning(s)` nos dois e nenhum `✓ No violations found.` na linha do `validate` do README. Contra-braços permanentes
+(`_CounterArm_README`, `_CounterArm_SiteGuide`) com cópia em `t.TempDir()`; o bloco contíguo evita falso verde pela
+linha `init` repetida no site. Contra-braço do arquiteto no arquivo real: trocar a linha `roadmap move` do site pela
+forma antiga (`REQ-... wip`) → rc=1; restaurado → rc=0. `internal/commands` rc=0 (62 s).
 **Files affected:** `internal/commands/quickstart_e2e_test.go`
 **Actions:** ADR D4: the test keeps the list of commands it runs and asserts that each one appears literally in
 `README.md` and `site/guide/getting-started.md`, and that the promised `validate` output in both documents is what
 the run produces. No markdown parsing: a line-presence check. Counter-arm: removing or editing one command line
 in either document makes the test fail.
 **Acceptance criteria:**
-- [ ] AC2 da REQ
-- [ ] contra-braço medido: editar uma linha do Quick start em cada documento reprova o teste
+- [x] AC2 da REQ
+- [x] contra-braço medido: editar uma linha do Quick start em cada documento reprova o teste
 
 **Wave gates:**
 ```bash

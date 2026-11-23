@@ -6,20 +6,27 @@ package commands
 //	trackfw adr new "User Authentication Strategy"
 //	trackfw req new "User Authentication" --adr ADR-<date>-user-authentication-strategy.md
 //	trackfw roadmap move ROADMAP-<date>-user-authentication.md wip
-//	trackfw validate   →  0 violations
+//	trackfw validate   →  0 violations, 2 warning(s)
+//
+// The sequence is derived from quickStartLines (the single-list authority for both
+// the execution and the document pin). $(date +%F) is substituted with the actual
+// date before tokenising.
 //
 // The sequence is run in-process inside a t.TempDir() with HOME and XDG_CONFIG_HOME
-// redirected so init writes are contained (not serializable: no t.Parallel).
+// redirected so init writes are contained (not serialisable: no t.Parallel).
 //
-// Counter-arm (TestQuickStartEndToEnd_CounterArm_NoADRFlagFails):
+// Counter-arms:
+//   - TestQuickStartEndToEnd_CounterArm_NoADRFlagFails: same sequence without --adr
+//     → validate emits req_has_adr violation.
+//   - TestQuickStartDocsPinned_CounterArm_README: modified README copy → run check fails.
+//   - TestQuickStartDocsPinned_CounterArm_SiteGuide: modified site copy → run check fails.
 //
-//	same sequence but without --adr → validate emits req_has_adr violation.
-//
-// Both tests assert: AC4 — Quick start passes end-to-end with --adr;
+// Both execution tests assert: AC4 — Quick start passes end-to-end with --adr;
 //
 //	without --adr, req_has_adr fires.
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -30,6 +37,142 @@ import (
 	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/validator"
 )
+
+// ── Single-list authority (ADR D4) ────────────────────────────────────────────
+//
+// quickStartLines is the single source of truth for the Quick start commands.
+// Every entry is the literal line as it appears in README.md and in
+// site/guide/getting-started.md. Two uses:
+//  1. TestQuickStartDocsPinned checks that these lines appear as a contiguous
+//     block in both documents (after stripping inline shell comments).
+//  2. TestQuickStartEndToEnd derives its runCmd arguments by tokenising each
+//     entry and substituting $(date +%F) with the actual date.
+//
+// When quickStartLines changes, both the document pin and the execution change.
+var quickStartLines = []string{
+	`trackfw init --ai-tools claude --forge github`,
+	`trackfw adr new "User Authentication Strategy"`,
+	`trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md`,
+	`trackfw roadmap move ROADMAP-$(date +%F)-user-authentication.md wip`,
+	`trackfw validate`,
+}
+
+// repoRoot returns the repository root by walking up from this source file's
+// location (internal/commands/ → ../../). Safe when -trimpath is not set;
+// this project's Makefile and CI do not set -trimpath.
+func repoRoot() string {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		panic("runtime.Caller(0) failed — cannot determine repo root")
+	}
+	return filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+}
+
+// tokenizeQuickStartLine expands $(date +%F) to date, then splits the resulting
+// string into shell tokens, handling double-quoted strings. The first token must
+// be "trackfw"; it is stripped. Returns an error on unsupported shell syntax
+// (backslash, single quotes, or $( other than $(date +%F)) so that a future doc
+// edit with unsupported syntax fails loudly instead of splitting wrong.
+func tokenizeQuickStartLine(line, date string) ([]string, error) {
+	expanded := strings.ReplaceAll(line, "$(date +%F)", date)
+	if strings.ContainsAny(expanded, "\\'") {
+		return nil, fmt.Errorf("unsupported shell syntax (backslash or single quote) in %q", line)
+	}
+	if strings.Contains(expanded, "$(") {
+		return nil, fmt.Errorf("unsupported shell expansion in %q", line)
+	}
+	var tokens []string
+	var cur strings.Builder
+	inQuote := false
+	for _, r := range expanded {
+		switch {
+		case r == '"' && !inQuote:
+			inQuote = true
+		case r == '"' && inQuote:
+			inQuote = false
+		case r == ' ' && !inQuote:
+			if cur.Len() > 0 {
+				tokens = append(tokens, cur.String())
+				cur.Reset()
+			}
+		default:
+			cur.WriteRune(r)
+		}
+	}
+	if cur.Len() > 0 {
+		tokens = append(tokens, cur.String())
+	}
+	if len(tokens) == 0 || tokens[0] != "trackfw" {
+		return nil, fmt.Errorf("expected 'trackfw <cmd> ...', got %v from %q", tokens, line)
+	}
+	return tokens[1:], nil // strip "trackfw"
+}
+
+// normalizeDocLine strips leading/trailing whitespace and an inline shell comment
+// (a " #..." suffix). This lets "trackfw validate   # 0 violations, 2 warning(s)..."
+// compare equal to the bare "trackfw validate" in quickStartLines.
+func normalizeDocLine(line string) string {
+	trimmed := strings.TrimSpace(line)
+	if idx := strings.Index(trimmed, " #"); idx >= 0 {
+		trimmed = strings.TrimRight(trimmed[:idx], " \t")
+	}
+	return trimmed
+}
+
+// findQuickStartRun scans docLines for the five quickStartLines appearing as a
+// consecutive block (each document line normalised with normalizeDocLine).
+// Returns the start index, or -1 if not found.
+func findQuickStartRun(docLines []string) int {
+	n := len(quickStartLines)
+	for i := 0; i <= len(docLines)-n; i++ {
+		match := true
+		for j, want := range quickStartLines {
+			if normalizeDocLine(docLines[i+j]) != want {
+				match = false
+				break
+			}
+		}
+		if match {
+			return i
+		}
+	}
+	return -1
+}
+
+// docChecker is the minimal testing.T subset used by assertDocContainsRun,
+// allowing counter-arm tests to pass a recorder that captures failures without
+// propagating them to the real *testing.T.
+type docChecker interface {
+	Helper()
+	Errorf(string, ...interface{})
+}
+
+// assertDocContainsRun reads the file at path and fails (via dc) if the Quick
+// start block is not found as a contiguous run of normalised lines.
+func assertDocContainsRun(dc docChecker, path string) {
+	dc.Helper()
+	content, err := os.ReadFile(path)
+	if err != nil {
+		dc.Errorf("assertDocContainsRun: read %s: %v", path, err)
+		return
+	}
+	lines := strings.Split(string(content), "\n")
+	if findQuickStartRun(lines) < 0 {
+		dc.Errorf("document %s: Quick start commands not found as a contiguous block\n  want (each normalised):\n    %s",
+			filepath.Base(path), strings.Join(quickStartLines, "\n    "))
+	}
+}
+
+// failRecorder implements docChecker for counter-arm tests: it records whether
+// Errorf was called without propagating failures to the real *testing.T.
+type failRecorder struct {
+	failed bool
+}
+
+func (r *failRecorder) Helper() {}
+func (r *failRecorder) Errorf(_ string, _ ...interface{}) { r.failed = true }
+
+// ── Core helpers ───────────────────────────────────────────────────────────────
 
 // quickstartSetup creates an isolated project root and HOME, chdirs into the project,
 // calls config.Reset(), and registers cleanup. Returns (projectDir, homeDir).
@@ -79,60 +222,85 @@ func runCmd(t *testing.T, args ...string) error {
 	return root.Execute()
 }
 
+// ── Tests ──────────────────────────────────────────────────────────────────────
+
 // TestQuickStartEndToEnd — the complete Quick Start sequence ends with 0 violations.
+// Args are derived from quickStartLines (the single-list authority); $(date +%F) is
+// substituted with the actual date before tokenising.
 // Asserts: AC4 — req new --adr links the ADR so that validate passes without req_has_adr.
 func TestQuickStartEndToEnd(t *testing.T) {
 	quickstartSetup(t)
 
-	// Step 1: init
-	if err := runCmd(t, "init", "--ai-tools", "claude", "--forge", "github"); err != nil {
+	// quickStartLines is the authority for the execution below AND for the document
+	// pin in TestQuickStartDocsPinned. Changing the doc lines without updating
+	// quickStartLines causes TestQuickStartDocsPinned to fail; changing quickStartLines
+	// without updating the docs causes TestQuickStartDocsPinned to fail too.
+	date := time.Now().Format("2006-01-02")
+
+	mustTokenize := func(idx int) []string {
+		t.Helper()
+		args, err := tokenizeQuickStartLine(quickStartLines[idx], date)
+		if err != nil {
+			t.Fatalf("tokenize quickStartLines[%d]: %v", idx, err)
+		}
+		return args
+	}
+
+	// Step 1: init — derived from quickStartLines[0]
+	if err := runCmd(t, mustTokenize(0)...); err != nil {
 		t.Fatalf("init: %v", err)
 	}
 	// config.Reset() after init so subsequent commands read the just-created trackfw.yaml.
 	config.Reset()
 
-	// Step 2: adr new — record date before the call so the expected filename uses the same day.
-	adrDate := time.Now().Format("2006-01-02")
-	if err := runCmd(t, "adr", "new", "User Authentication Strategy"); err != nil {
+	// Step 2: adr new — derived from quickStartLines[1]
+	if err := runCmd(t, mustTokenize(1)...); err != nil {
 		t.Fatalf("adr new: %v", err)
 	}
 
 	// Verify the expected ADR basename matches the README's `ADR-$(date +%F)-user-authentication-strategy.md`.
-	adrBasename := "ADR-" + adrDate + "-user-authentication-strategy.md"
+	adrBasename := "ADR-" + date + "-user-authentication-strategy.md"
 	if _, err := os.Stat(filepath.Join("docs", "adr", adrBasename)); err != nil {
 		t.Fatalf("expected ADR file %s to exist after adr new: %v", adrBasename, err)
 	}
 
-	// Step 3: req new --adr
-	if err := runCmd(t, "req", "new", "User Authentication", "--adr", adrBasename); err != nil {
+	// Step 3: req new --adr — derived from quickStartLines[2]
+	if err := runCmd(t, mustTokenize(2)...); err != nil {
 		t.Fatalf("req new --adr: %v", err)
 	}
 
-	// Discover the roadmap basename.
+	// Step 4: roadmap move wip — derived from quickStartLines[3]
+	roadmapArgs := mustTokenize(3) // ["roadmap", "move", "ROADMAP-<date>-user-authentication.md", "wip"]
+	roadmapBasenameDerived := roadmapArgs[2]
+
+	// Cross-check: glob to verify the file req new created matches the name the doc predicts.
 	roadmapMatches, err := filepath.Glob(filepath.Join("docs", "roadmaps", "backlog", "ROADMAP-*.md"))
 	if err != nil || len(roadmapMatches) == 0 {
 		t.Fatalf("expected roadmap after req new, found %d (err=%v)", len(roadmapMatches), err)
 	}
-	roadmapBasename := filepath.Base(roadmapMatches[0])
+	if got := filepath.Base(roadmapMatches[0]); got != roadmapBasenameDerived {
+		t.Errorf("roadmap name mismatch: quickStartLines predicts %s, req new created %s",
+			roadmapBasenameDerived, got)
+	}
 
-	// Step 4: roadmap move wip
-	if err := runCmd(t, "roadmap", "move", roadmapBasename, "wip"); err != nil {
+	if err := runCmd(t, roadmapArgs...); err != nil {
 		t.Fatalf("roadmap move wip: %v", err)
 	}
 
 	// Determine the REQ basename (REQ-<date>-user-authentication.md).
-	// Same date as adrDate — both files are created during the same test run.
-	reqBasename := "REQ-" + adrDate + "-user-authentication.md"
+	reqBasename := "REQ-" + date + "-user-authentication.md"
 
-	// Step 5: validate — must pass with 0 violations and exactly 2 warnings,
-	// both adr_req_has_content: the freshly-created ADR and REQ contain only
-	// model/template content (no user-supplied text yet). Any other warning or
-	// any violation is a regression.
-	//
+	// Step 5: validate — quickStartLines[4] = "trackfw validate"
+	// Executed in-process via ValidateTagged for precise assertion of violations/warnings.
 	// Rule reconciliation (Regra Dura de Reconciliação): this test affirms that
 	// freshly-scaffolded ADR and REQ files both trigger adr_req_has_content warnings,
 	// one per file, naming the specific file — which is the conclusion from ML-1A
 	// (rule fires on template content, is silent on filled content, names the file).
+	validateArgs := mustTokenize(4)
+	if len(validateArgs) != 1 || validateArgs[0] != "validate" {
+		t.Fatalf("quickStartLines[4]: expected [validate], got %v (the doc line must be bare 'trackfw validate')", validateArgs)
+	}
+
 	violations, warnings, err := validator.ValidateTagged()
 	if err != nil {
 		t.Fatalf("ValidateTagged error: %v", err)
@@ -234,5 +402,123 @@ func TestQuickStartEndToEnd_CounterArm_NoADRFlagFails(t *testing.T) {
 		}
 		t.Errorf("expected req_has_adr violation for %s without --adr, got:\n  %s",
 			reqBase, strings.Join(msgs, "\n  "))
+	}
+}
+
+// ── ADR D4 — doc-pinning tests ─────────────────────────────────────────────────
+
+// TestQuickStartDocsPinned — ADR D4: each Quick start command line appears as a
+// contiguous block in README.md and in site/guide/getting-started.md; the README
+// validate line promises "2 warning(s)" and does not promise "✓ No violations found.";
+// the site guide contains "2 warning(s)" in the output block after the run.
+//
+// Asserts (ML-3A): documentation matches the commands the binary executes; a doc
+// edit without a matching test edit is detected at test time.
+func TestQuickStartDocsPinned(t *testing.T) {
+	root := repoRoot()
+
+	// --- README ---
+	readmeBytes, err := os.ReadFile(filepath.Join(root, "README.md"))
+	if err != nil {
+		t.Fatalf("read README.md: %v", err)
+	}
+	readmeLines := strings.Split(string(readmeBytes), "\n")
+	readmeIdx := findQuickStartRun(readmeLines)
+	if readmeIdx < 0 {
+		t.Errorf("README.md: Quick start block not found as contiguous run\n  want (each normalised):\n    %s",
+			strings.Join(quickStartLines, "\n    "))
+	} else {
+		// The validate line (run[4]) must promise the right output.
+		validateLine := readmeLines[readmeIdx+len(quickStartLines)-1]
+		if !strings.Contains(validateLine, "2 warning(s)") {
+			t.Errorf("README.md: validate line must contain \"2 warning(s)\", got:\n  %s", validateLine)
+		}
+		if strings.Contains(validateLine, "✓ No violations found.") {
+			t.Errorf("README.md: validate line must not contain \"✓ No violations found.\", got:\n  %s", validateLine)
+		}
+	}
+
+	// --- Site guide ---
+	siteBytes, err := os.ReadFile(filepath.Join(root, "site", "guide", "getting-started.md"))
+	if err != nil {
+		t.Fatalf("read site/guide/getting-started.md: %v", err)
+	}
+	siteLines := strings.Split(string(siteBytes), "\n")
+	if findQuickStartRun(siteLines) < 0 {
+		t.Errorf("site/guide/getting-started.md: Quick start block not found as contiguous run\n  want (each normalised):\n    %s",
+			strings.Join(quickStartLines, "\n    "))
+	}
+	// The output block immediately after the run promises "2 warning(s)".
+	if !strings.Contains(string(siteBytes), "2 warning(s)") {
+		t.Errorf("site/guide/getting-started.md must contain \"2 warning(s)\"")
+	}
+}
+
+// TestQuickStartDocsPinned_CounterArm_README — removing or editing a Quick start
+// line in README makes TestQuickStartDocsPinned fail.
+//
+// Asserts (ML-3A counter-arm): the doc pin is not vacuous for README; a stale
+// README is detected even when the same line appears elsewhere in the file.
+func TestQuickStartDocsPinned_CounterArm_README(t *testing.T) {
+	root := repoRoot()
+	src, err := os.ReadFile(filepath.Join(root, "README.md"))
+	if err != nil {
+		t.Fatalf("read README.md: %v", err)
+	}
+	lines := strings.Split(string(src), "\n")
+
+	// Find the run to edit the first line by index (not by ReplaceAll, which
+	// could also replace duplicates outside the Quick start block).
+	idx := findQuickStartRun(lines)
+	if idx < 0 {
+		t.Fatal("counter-arm setup: Quick start run not found in README.md — test fixture is broken")
+	}
+	lines[idx] = strings.ReplaceAll(lines[idx], "--forge github", "--forge gitlab")
+
+	tmpFile := filepath.Join(t.TempDir(), "README.md")
+	if err := os.WriteFile(tmpFile, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
+		t.Fatalf("write modified README to temp: %v", err)
+	}
+
+	rec := &failRecorder{}
+	assertDocContainsRun(rec, tmpFile)
+	if !rec.failed {
+		t.Errorf("counter-arm: modified README.md passed the run check — the doc pin is not detecting changes")
+	}
+}
+
+// TestQuickStartDocsPinned_CounterArm_SiteGuide — same as the README counter-arm
+// but for site/guide/getting-started.md, which has a second occurrence of the init
+// line (line 89) outside the Quick start block. The contiguous-run check correctly
+// rejects a copy where only the block's init line is changed.
+//
+// Asserts (ML-3A counter-arm): the doc pin is not vacuous for the site guide;
+// contiguous-run matching avoids false passes from repeated lines elsewhere.
+func TestQuickStartDocsPinned_CounterArm_SiteGuide(t *testing.T) {
+	root := repoRoot()
+	src, err := os.ReadFile(filepath.Join(root, "site", "guide", "getting-started.md"))
+	if err != nil {
+		t.Fatalf("read site/guide/getting-started.md: %v", err)
+	}
+	lines := strings.Split(string(src), "\n")
+
+	// Find the Quick start block and edit its first line by index.
+	// The site guide has a second "--forge github" at line 89 (1-indexed); editing
+	// only the block's copy proves the contiguous-run check catches it despite the duplicate.
+	idx := findQuickStartRun(lines)
+	if idx < 0 {
+		t.Fatal("counter-arm setup: Quick start run not found in site guide — test fixture is broken")
+	}
+	lines[idx] = strings.ReplaceAll(lines[idx], "--forge github", "--forge gitlab")
+
+	tmpFile := filepath.Join(t.TempDir(), "getting-started.md")
+	if err := os.WriteFile(tmpFile, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
+		t.Fatalf("write modified site guide to temp: %v", err)
+	}
+
+	rec := &failRecorder{}
+	assertDocContainsRun(rec, tmpFile)
+	if !rec.failed {
+		t.Errorf("counter-arm: modified site guide passed the run check — the doc pin is not detecting changes")
 	}
 }
