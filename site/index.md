@@ -295,9 +295,17 @@ title: "trackfw — Delivery governance for AI agents and teams"
       <p>You use Claude Code or Codex. Your agent ships fast — trackfw makes it traceable. Guard hooks block raw git operations; <code>trackfw context --format=json</code> feeds the full governance state to the agent.</p>
       <img
         class="terminal-img"
-        src="/img/guard.gif"
+        src="/img/guard-poster.png"
         alt="trackfw guard blocking a raw git push sent by an AI agent tool call — exits with code 2"
       >
+      <details style="margin-top:0.75rem;font-size:0.85rem;">
+        <summary>Play the full animation</summary>
+        <img
+          class="terminal-img"
+          src="/img/guard.gif"
+          alt="trackfw guard blocking a raw git push sent by an AI agent tool call — exits with code 2"
+        >
+      </details>
       <a class="scenario-link" href="/trackfw/guide/ai-agents">See the commands →</a>
     </div>
     <div class="scenario-card">

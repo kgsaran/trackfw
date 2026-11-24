@@ -295,9 +295,17 @@ title: "trackfw — Governança de entrega para agentes de IA e times"
       <p>Você usa Claude Code ou Codex. Seu agente entrega rápido — trackfw faz isso com rastreabilidade. Guards bloqueiam operações git diretas; <code>trackfw context --format=json</code> alimenta o estado completo de governança para o agente.</p>
       <img
         class="terminal-img"
-        src="/img/guard.gif"
+        src="/img/guard-poster.png"
         alt="trackfw guard bloqueando um git push direto na main enviado por ferramenta de agente — sai com código 2"
       >
+      <details style="margin-top:0.75rem;font-size:0.85rem;">
+        <summary>Reproduzir a animação completa</summary>
+        <img
+          class="terminal-img"
+          src="/img/guard.gif"
+          alt="trackfw guard bloqueando um git push direto na main enviado por ferramenta de agente — sai com código 2"
+        >
+      </details>
       <a class="scenario-link" href="/trackfw/pt/guide/ai-agents">Ver os comandos →</a>
     </div>
     <div class="scenario-card">

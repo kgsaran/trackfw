@@ -797,11 +797,11 @@ $ trackfw adr new "User Authentication Strategy"
 $ # Project set up with: trackfw init --ai-tools claude --forge github
 $ # 1. Record a decision
 $ trackfw adr new "User Authentication Strategy"
+┃ Context
+┃ What is the situation that motivates this decision?
+┃ >
 
-
-
-
-
+enter next
 
 
 

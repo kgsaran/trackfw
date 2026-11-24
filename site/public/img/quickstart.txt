@@ -608,7 +608,7 @@ $
 
 
 ────────────────────────────────────────────────────────────────────────────────
-$ # 1. Record a decision
+$ trackfw init --ai-tools claude --forge github
 
 
 
@@ -639,7 +639,38 @@ $ # 1. Record a decision
 
 
 ────────────────────────────────────────────────────────────────────────────────
-$ # 1. Record a decision
+$ trackfw init --ai-tools claude --forge github
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ trackfw init --ai-tools claude --forge github
 $
 
 
@@ -670,8 +701,8 @@ $
 
 
 ────────────────────────────────────────────────────────────────────────────────
+$ trackfw init --ai-tools claude --forge github
 $ # 1. Record a decision
-$ trackfw adr new "User Authentication Strategy" < /dev/null
 
 
 
@@ -701,8 +732,71 @@ $ trackfw adr new "User Authentication Strategy" < /dev/null
 
 
 ────────────────────────────────────────────────────────────────────────────────
+$ trackfw init --ai-tools claude --forge github
 $ # 1. Record a decision
-$ trackfw adr new "User Authentication Strategy" < /dev/null
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ trackfw init --ai-tools claude --forge github
+$ # 1. Record a decision
+$ trackfw adr new "User Authentication Strategy"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ trackfw init --ai-tools claude --forge github
+$ # 1. Record a decision
+$ trackfw adr new "User Authentication Strategy"
 created docs/adr/ADR-2026-11-24-user-authentication-strategy.md
 $
 
@@ -730,10 +824,10 @@ $
 
 
 
-
 ────────────────────────────────────────────────────────────────────────────────
+$ trackfw init --ai-tools claude --forge github
 $ # 1. Record a decision
-$ trackfw adr new "User Authentication Strategy" < /dev/null
+$ trackfw adr new "User Authentication Strategy"
 created docs/adr/ADR-2026-11-24-user-authentication-strategy.md
 $
 
@@ -761,7 +855,6 @@ $
 
 
 
-
 ────────────────────────────────────────────────────────────────────────────────
 $
 
@@ -888,7 +981,7 @@ $
 
 ────────────────────────────────────────────────────────────────────────────────
 $ # 2. A requirement linked to that decision
-$ trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md < /dev/null
+$ trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md
 
 
 
@@ -919,7 +1012,7 @@ $ trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authenticatio
 
 ────────────────────────────────────────────────────────────────────────────────
 $ # 2. A requirement linked to that decision
-$ trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md < /dev/null
+$ trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md
 created docs/req/REQ-2026-11-24-user-authentication.md
 ✓ created docs/roadmaps/backlog/ROADMAP-2026-11-24-user-authentication.md
 ✓ linked REQ-2026-11-24-user-authentication.md → docs/roadmaps/backlog/ROADMAP-2026-11-24-user-authentication.m
@@ -950,7 +1043,7 @@ $
 
 ────────────────────────────────────────────────────────────────────────────────
 $ # 2. A requirement linked to that decision
-$ trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md < /dev/null
+$ trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md
 created docs/req/REQ-2026-11-24-user-authentication.md
 ✓ created docs/roadmaps/backlog/ROADMAP-2026-11-24-user-authentication.md
 ✓ linked REQ-2026-11-24-user-authentication.md → docs/roadmaps/backlog/ROADMAP-2026-11-24-user-authentication.m
@@ -1201,7 +1294,7 @@ $ # 3. Start the work
 $ trackfw roadmap move ROADMAP-$(date +%F)-user-authentication.md wip
 ✓ moved ROADMAP-2026-11-24-user-authentication.md → docs/roadmaps/wip
 ✓ synced REQ-2026-11-24-user-authentication.md → docs/roadmaps/wip/ROADMAP-2026-11-24-user-authentication.md
-$ trackfw validate
+$ trackfw validate                  # 0 violations, 2 warning(s) until you fill in the ADR and REQ sections
 
 
 
@@ -1232,7 +1325,7 @@ $ # 3. Start the work
 $ trackfw roadmap move ROADMAP-$(date +%F)-user-authentication.md wip
 ✓ moved ROADMAP-2026-11-24-user-authentication.md → docs/roadmaps/wip
 ✓ synced REQ-2026-11-24-user-authentication.md → docs/roadmaps/wip/ROADMAP-2026-11-24-user-authentication.md
-$ trackfw validate
+$ trackfw validate                  # 0 violations, 2 warning(s) until you fill in the ADR and REQ sections
 
 
 
@@ -1263,7 +1356,7 @@ $ # 3. Start the work
 $ trackfw roadmap move ROADMAP-$(date +%F)-user-authentication.md wip
 ✓ moved ROADMAP-2026-11-24-user-authentication.md → docs/roadmaps/wip
 ✓ synced REQ-2026-11-24-user-authentication.md → docs/roadmaps/wip/ROADMAP-2026-11-24-user-authentication.md
-$ trackfw validate
+$ trackfw validate                  # 0 violations, 2 warning(s) until you fill in the ADR and REQ sections
 ⚠  adr_req_has_content: "docs/adr/ADR-2026-11-24-user-authentication-strategy.md" has mandatory section(s) with
  only model content: ## Context, ## Decision, ## Consequences, ## Alternatives Considered — fill in or set rule
 s.adr_req_has_content: off
@@ -1294,7 +1387,7 @@ $ # 3. Start the work
 $ trackfw roadmap move ROADMAP-$(date +%F)-user-authentication.md wip
 ✓ moved ROADMAP-2026-11-24-user-authentication.md → docs/roadmaps/wip
 ✓ synced REQ-2026-11-24-user-authentication.md → docs/roadmaps/wip/ROADMAP-2026-11-24-user-authentication.md
-$ trackfw validate
+$ trackfw validate                  # 0 violations, 2 warning(s) until you fill in the ADR and REQ sections
 ⚠  adr_req_has_content: "docs/adr/ADR-2026-11-24-user-authentication-strategy.md" has mandatory section(s) with
  only model content: ## Context, ## Decision, ## Consequences, ## Alternatives Considered — fill in or set rule
 s.adr_req_has_content: off

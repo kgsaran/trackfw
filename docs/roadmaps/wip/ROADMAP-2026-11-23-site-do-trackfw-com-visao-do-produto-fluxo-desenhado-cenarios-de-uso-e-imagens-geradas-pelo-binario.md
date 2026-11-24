@@ -180,7 +180,10 @@ primeiro quadro vazio do `guard.gif` (o pôster existe e não é usado ali). ML-
 - [x] `TestQuickStart*` rc=0; `site/prototype.md` não existe
 
 ### ML-3D — Corretivo do ML-3A/3B (afrodite-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — função `trackfw` no setup escondido do tape (stdin sem TTY; saída do `init` descartada); as
+linhas digitadas são as do README (diff vazio, conferido pelo arquiteto), e a transcrição termina com 2 warnings. Card
+do cenário 1 com `guard-poster.png` e a animação atrás de `<details>` (captura conferida). O gerador regenerou também
+`guard.gif`, `demo.webm` e as transcrições (variação de data). Scanner: 10 arquivos limpos.
 **Files affected:** `scripts/site-images/quickstart.tape`; `scripts/site-images/generate.sh`; `site/index.md`;
 `site/pt/index.md`; `site/public/img/quickstart.gif`; `site/public/img/quickstart.txt`;
 `site/public/img/quickstart-poster.png`
@@ -190,8 +193,8 @@ primeiro quadro vazio do `guard.gif` (o pôster existe e não é usado ali). ML-
    not into the visible commands. The transcript still ends with 0 violations and 2 warnings.
 2. Scenario 1 card shows `guard-poster.png`, with the animation behind `<details>`, as in the Quick start.
 **Acceptance criteria:**
-- [ ] cada linha de comando da transcrição do Quick start é igual à do README; transcrição termina com 2 warnings
-- [ ] scanner e build rc=0; captura do card do cenário 1 com a mensagem de bloqueio visível
+- [x] cada linha de comando da transcrição do Quick start é igual à do README; transcrição termina com 2 warnings
+- [x] scanner e build rc=0; captura do card do cenário 1 com a mensagem de bloqueio visível
 
 ### ML-3C — Permissões por job no deploy do site (ares-tf)
 **Status:** ✅ Done — bloco `permissions` do nível do workflow removido; `build`: `contents: read`; `deploy`:
