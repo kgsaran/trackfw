@@ -189,11 +189,11 @@ func TestCredentialGuardScript_DetectionCoreIdenticalBetweenProjectAndGlobal(t *
 }
 
 // ---------------------------------------------------------------------------
-// Comportamento do script global — invoca como subprocesso, mesmo padrão dos testes de
-// comportamento do script de projeto acima. Prova que a detecção é idêntica (mesmo payload de
-// JWT sintético) e que o modo global agora reusa a mesma leitura de credential_guard.mode de
-// trackfw.yaml que a variante de projeto (ADR-2026-08-06 emenda 6, 2026-08-08) — com fallback
-// "block" (em vez de "warn") quando não há trackfw.yaml no cwd, ou trackfw.yaml sem essa chave.
+// Comportamento do script global — braço bash via subprocesso para cenários onde .sh e Go
+// concordam; binário Go diretamente para cenários pós-D4 onde o .sh congelado diverge.
+// D4 (ADR-2026-11-24): o escopo global SEMPRE bloqueia — credWalkStrictestMode(cwd, "block")
+// parte de "block" e nenhum credential_guard.mode: warn em yaml ancestral pode rebaixar esse
+// padrão (ratchet unidirecional block > warn).
 // ---------------------------------------------------------------------------
 
 func setupGlobalCredentialGuardFixture(t *testing.T) (cwd, scriptPath string) {
@@ -258,9 +258,10 @@ func TestGlobalCredentialGuardScript_NoMatch_SilentPass(t *testing.T) {
 }
 
 func TestGlobalCredentialGuardScript_RespectsExplicitProjectMode(t *testing.T) {
-	// O script global agora reusa a mesma leitura de credential_guard.mode de trackfw.yaml que a
-	// variante de projeto já faz (ADR-2026-08-06 emenda 6, 2026-08-08): quando o cwd tem
-	// trackfw.yaml com mode explícito, esse valor é respeitado — tanto block quanto warn.
+	// O script chama `trackfw guard credential` (projeto), que respeita mode: block no cwd
+	// (rc=2). Esta função não exerce RunCredentialGlobal — o nome "Global" refere-se ao
+	// fixture de invocação via script, não ao escopo do guard chamado.
+	// Assertion: script + trackfw.yaml mode: block + JWT → rc=2, "blocked" em stderr.
 	cwd, scriptPath := setupGlobalCredentialGuardFixture(t)
 	if err := os.WriteFile(filepath.Join(cwd, "trackfw.yaml"), []byte("credential_guard:\n  mode: block\n"), 0644); err != nil {
 		t.Fatal(err)
@@ -276,56 +277,72 @@ func TestGlobalCredentialGuardScript_RespectsExplicitProjectMode(t *testing.T) {
 	}
 }
 
-func TestGlobalCredentialGuardScript_RespectsExplicitProjectModeWarn(t *testing.T) {
-	// Mesma decisão, sentido contrário: mode: warn explícito continua produzindo warn (exit 0),
-	// não block — não é o fallback que muda de warn para block, é só o default sem chave/arquivo.
-	cwd, scriptPath := setupGlobalCredentialGuardFixture(t)
+func TestGlobalCredentialGuardScript_ProjectModeWarnDoesNotDowngradeGlobalBlock(t *testing.T) {
+	// D4 (ADR-2026-11-24): RunCredentialGlobal hardcodes block sem chamar
+	// credWalkStrictestMode — mode: warn em trackfw.yaml não é lido nem avaliado.
+	// O .sh congelado diverge intencionalmente (comportamento pré-D4: retornava rc=0 com
+	// mode: warn); este teste exercita apenas o binário Go diretamente.
+	//
+	// Assertion: RunCredentialGlobal (escopo global) + trackfw.yaml mode: warn + JWT → rc=2,
+	// "blocked" em stderr, nenhum arquivo de attention — sem ler yaml (D4, ADR-2026-11-24).
+	cwd := t.TempDir()
 	if err := os.WriteFile(filepath.Join(cwd, "trackfw.yaml"), []byte("credential_guard:\n  mode: warn\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	payload := `{"tool_name":"Bash","tool_input":{"command":"echo ` + syntheticJWT + `"}}`
 
-	code, _, stderr := runCredentialGuard(t, cwd, scriptPath, payload)
-	if code != 0 {
-		t.Errorf("trackfw.yaml com mode: warn explícito: exit code want 0, got %d (stderr: %s)", code, stderr)
+	code, _, stderr := runGuardBinaryCredential(t, cwd, payload, true)
+	if code != 2 {
+		t.Errorf("global + mode: warn explícito: exit code want 2 (D4 — block sempre), got %d (stderr: %s)", code, stderr)
 	}
-	if !strings.Contains(stderr, "warning") {
-		t.Errorf("esperava mensagem de warning, got: %s", stderr)
+	if !strings.Contains(stderr, "blocked") {
+		t.Errorf("esperava mensagem de bloqueio, got: %s", stderr)
+	}
+	if attentionFileExists(cwd) {
+		t.Error("modo block nunca escreve .trackfw-credential-guard.json")
 	}
 }
 
-func TestGlobalCredentialGuardScript_WritesAttentionOnlyWhenRoadmapsDirExists(t *testing.T) {
-	// O attention signal só é gravado em modo warn (modo block nunca grava, mesma decisão da
-	// variante de projeto) -- usa mode: warn explícito no cwd para exercitar essa checagem
-	// independente do fallback default de modo global (block, ADR-2026-08-06 emenda 6).
-	cwd, scriptPath := setupGlobalCredentialGuardFixture(t)
+func TestGlobalCredentialGuardScript_AlwaysBlocksNeverWritesAttention(t *testing.T) {
+	// D4 (ADR-2026-11-24): o escopo global sempre bloqueia (rc=2) e nunca escreve o
+	// arquivo de attention — mesmo com mode: warn em trackfw.yaml e mesmo com docs/roadmaps
+	// existente. O ramo warn ficou inalcançável após a remoção do dead code em RunCredentialGlobal.
+	// O .sh congelado diverge intencionalmente (pré-D4 escrevia attention com mode: warn);
+	// este teste exercita apenas o binário Go diretamente.
+	//
+	// Assertion: global scope, mode: warn em cwd yaml, payload com JWT → rc=2, "blocked"
+	// em stderr, nenhum arquivo de attention — independente de docs/roadmaps existir.
+	cwd := t.TempDir()
 	if err := os.WriteFile(filepath.Join(cwd, "trackfw.yaml"), []byte("credential_guard:\n  mode: warn\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	payload := `{"tool_name":"Bash","tool_input":{"command":"echo ` + syntheticJWT + `"}}`
 
-	// Sem docs/roadmaps no cwd: warning em stderr, mas nenhum arquivo de attention.
-	code, _, stderr := runCredentialGuard(t, cwd, scriptPath, payload)
-	if code != 0 {
-		t.Fatalf("exit code: want 0, got %d (stderr: %s)", code, stderr)
+	// Sem docs/roadmaps: rc=2, nenhum arquivo de attention.
+	code, _, stderr := runGuardBinaryCredential(t, cwd, payload, true)
+	if code != 2 {
+		t.Errorf("global sem docs/roadmaps: exit code want 2, got %d (stderr: %s)", code, stderr)
 	}
-	if !strings.Contains(stderr, "JWT") {
-		t.Errorf("esperava warning em stderr mesmo sem docs/roadmaps, got: %s", stderr)
+	if !strings.Contains(stderr, "blocked") {
+		t.Errorf("esperava mensagem de bloqueio, got: %s", stderr)
 	}
 	if attentionFileExists(cwd) {
-		t.Error("não deveria criar docs/roadmaps/.trackfw-credential-guard.json quando docs/roadmaps não existe (evita criar estrutura trackfw num projeto qualquer)")
+		t.Error("não deveria criar .trackfw-credential-guard.json (global sempre bloqueia, nunca escreve attention)")
 	}
 
-	// Com docs/roadmaps existente no cwd: escreve o attention signal normalmente.
+	// Com docs/roadmaps existente: ainda rc=2 e nenhum arquivo de attention.
 	if err := os.MkdirAll(filepath.Join(cwd, "docs", "roadmaps"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	code, _, stderr = runCredentialGuard(t, cwd, scriptPath, payload)
-	if code != 0 {
-		t.Fatalf("exit code: want 0, got %d (stderr: %s)", code, stderr)
+	code, _, stderr = runGuardBinaryCredential(t, cwd, payload, true)
+	if code != 2 {
+		t.Errorf("global com docs/roadmaps: exit code want 2, got %d (stderr: %s)", code, stderr)
 	}
-	if !attentionFileExists(cwd) {
-		t.Error(".trackfw-credential-guard.json deveria ter sido escrito quando docs/roadmaps já existe")
+	if !strings.Contains(stderr, "blocked") {
+		t.Errorf("esperava mensagem de bloqueio, got: %s", stderr)
+	}
+	if attentionFileExists(cwd) {
+		t.Error(".trackfw-credential-guard.json não deveria ser escrito (block nunca grava attention)")
 	}
 }
 
@@ -854,21 +871,23 @@ func TestSyntheticTokenFragments_NoneMatchCredentials(t *testing.T) {
 // that detection depends on each specific pattern — altering the pattern causes the
 // corresponding detection to fail.
 // TestCredentialGuardScript_SecondLayer_AttentionMessageParityNoPath asserts that
-// when a JWT is found via the second detection layer (cat <file>) in warn mode,
-// both the .sh fixture and the Go binary write the same attention JSON message,
-// and neither message contains the fixture file path (D1 — ADR-2026-11-06).
+// when a JWT is found via the second detection layer (cat <file>) in warn mode
+// (project scope only), both the .sh fixture and the Go binary write the same
+// attention JSON message, and neither message contains the fixture file path
+// (D1 — ADR-2026-11-06).
 //
-// Assertion: with a finding from a referenced file in warn mode (both project and
-// global scopes), the .sh oracle's attention signal and the Go binary's attention signal
-// carry the same origin ("in a file referenced by the command") and neither exposes
-// the file path (D1 — ADR-2026-11-06).
+// Assertion: with a finding from a referenced file in project-scope warn mode,
+// the .sh oracle's attention signal and the Go binary's attention signal carry the
+// same origin ("in a file referenced by the command") and neither exposes the file
+// path (D1 — ADR-2026-11-06).
+// D4 (ADR-2026-11-24): global scope always blocks and never writes attention; that
+// behavior is covered by TestGlobalCredentialGuardScript_SecondLayer_AlwaysBlocksNoAttentionPath.
 func TestCredentialGuardScript_SecondLayer_AttentionMessageParityNoPath(t *testing.T) {
 	cases := []struct {
 		name   string
 		global bool
 	}{
 		{"project", false},
-		{"global", true},
 	}
 
 	payload := `{"tool_name":"Bash","tool_input":{"command":"cat token-fixture.txt"}}`
@@ -1004,5 +1023,113 @@ func TestSyntheticTokenAssembled_Detected(t *testing.T) {
 					tc.label, tc.wantMsg, stderr)
 			}
 		})
+	}
+}
+
+// TestGlobalCredentialGuardScript_SecondLayer_AlwaysBlocksNoAttentionPath asserts that
+// when a JWT is found via the second detection layer (cat <file>) in global scope,
+// the binary returns rc=2, writes "blocked" and "detected in file" to stderr, and does
+// NOT write the attention file — regardless of mode: warn in cwd trackfw.yaml and
+// regardless of docs/roadmaps existing (D4, ADR-2026-11-24).
+//
+// Assertion: global scope, file-origin finding via second layer (cat token-fixture.txt),
+// mode: warn in cwd yaml, docs/roadmaps present → rc=2, "blocked" in stderr, "detected in
+// file" in stderr, no attention file. The .sh fixture diverges (pré-D4); Go binary only.
+func TestGlobalCredentialGuardScript_SecondLayer_AlwaysBlocksNoAttentionPath(t *testing.T) {
+	cwd := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cwd, "trackfw.yaml"), []byte("credential_guard:\n  mode: warn\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(cwd, "docs", "roadmaps"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cwd, "token-fixture.txt"), []byte(syntheticJWT+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"tool_name":"Bash","tool_input":{"command":"cat token-fixture.txt"}}`
+
+	code, _, stderr := runGuardBinaryCredential(t, cwd, payload, true)
+	if code != 2 {
+		t.Errorf("global scope: rc want 2 (D4 — always block), got %d (stderr: %s)", code, stderr)
+	}
+	if !strings.Contains(stderr, "blocked") {
+		t.Errorf("esperava 'blocked' em stderr, got: %s", stderr)
+	}
+	if !strings.Contains(stderr, "detected in file") {
+		t.Errorf("esperava 'detected in file' em stderr (origem do arquivo), got: %s", stderr)
+	}
+	if attentionFileExists(cwd) {
+		t.Error("global scope: modo block não escreve .trackfw-credential-guard.json")
+	}
+}
+
+// TestCredentialGuardScript_DirectoryYaml_CallsTrackfw asserts that when the only
+// trackfw.yaml in the ancestor chain is a directory, the generated project-scope wrapper
+// DOES call trackfw (and exits with its exit code), rather than exiting 0 silently.
+// Asserts: D3 wrapper fix (ML-2C) — the check changes from "[ -f ]" to "[ -e ] || [ -L ]",
+// so a directory-named trackfw.yaml triggers the break and the wrapper executes trackfw;
+// the stub trackfw exits 2, so the wrapper exits 2. Before the fix, "[ -f ]" returned
+// false for a directory, the loop fell through to "exit 0", and rc=0.
+func TestCredentialGuardScript_DirectoryYaml_CallsTrackfw(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test requires sh — not available on Windows")
+	}
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh not found in PATH")
+	}
+
+	// Generate the project-scope wrapper script into a temp dir.
+	genDir := t.TempDir()
+	if err := GenerateCredentialGuardScript(genDir); err != nil {
+		t.Fatalf("GenerateCredentialGuardScript: %v", err)
+	}
+	scriptPath := filepath.Join(genDir, "scripts", "trackfw-credential-guard.sh")
+
+	// Create a project dir where trackfw.yaml is a DIRECTORY, not a regular file.
+	projDir := t.TempDir()
+	yamlDir := filepath.Join(projDir, "trackfw.yaml")
+	if err := os.Mkdir(yamlDir, 0700); err != nil {
+		t.Fatalf("mkdir trackfw.yaml: %v", err)
+	}
+
+	// Create a stub trackfw that always exits 2, to signal "I was called".
+	stubDir := t.TempDir()
+	stubPath := filepath.Join(stubDir, "trackfw")
+	stubContent := "#!/bin/sh\nexit 2\n"
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0755); err != nil {
+		t.Fatalf("write stub trackfw: %v", err)
+	}
+
+	// Use a minimal PATH: stub dir first (so our stub is found before any real trackfw),
+	// plus system utilities needed by the script (sh, dirname, command).
+	minimalPATH := stubDir + ":/usr/bin:/bin:/usr/sbin:/sbin"
+
+	cmd := exec.Command("sh", scriptPath)
+	cmd.Dir = projDir
+	cmd.Env = []string{
+		"PATH=" + minimalPATH,
+		"HOME=" + t.TempDir(),
+		"USERPROFILE=" + t.TempDir(),
+		"CODEX_HOME=" + t.TempDir(),
+		"XDG_CONFIG_HOME=" + t.TempDir(),
+	}
+	cmd.Stdin = strings.NewReader("")
+	var errBuf strings.Builder
+	cmd.Stderr = &errBuf
+
+	err := cmd.Run()
+	var exitCode int
+	if err == nil {
+		exitCode = 0
+	} else if exitErr, ok := err.(*exec.ExitError); ok {
+		exitCode = exitErr.ExitCode()
+	} else {
+		t.Fatalf("running script: %v", err)
+	}
+
+	// After fix: wrapper finds directory-named yaml → breaks → calls stub → rc=2.
+	// Before fix: wrapper's "[ -f ]" returns false for a directory → loop exits 0.
+	if exitCode != 2 {
+		t.Fatalf("directory yaml: want rc=2 (wrapper calls trackfw stub), got %d (stderr=%q)", exitCode, errBuf.String())
 	}
 }

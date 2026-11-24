@@ -1,17 +1,17 @@
 ---
 status: backlog
-date: 2026-11-23
-req: "docs/req/REQ-2026-11-23-guard-write-scope-re-enraizado-por-trackfw-yaml-aninhado-permite-ao-subagente-desligar-os-proprios-hooks.md"
+date: 2026-11-24
+req: "docs/req/REQ-2026-11-24-guard-de-write-scope-nao-cobre-multiedit-no-claude-code-nem-o-opencode.md"
 squad: ""
 ---
 
-# Roadmap: Guard write-scope re-enraizado por trackfw.yaml aninhado permite ao subagente desligar os próprios hooks
+# Roadmap: Guard de write-scope não cobre MultiEdit no Claude Code nem o OpenCode
 
-> Created: 2026-11-23 | Status: backlog
+> Created: 2026-11-24 | Status: backlog
 
 ## Context
-<!-- Derived from REQ: REQ-2026-11-23-guard-write-scope-re-enraizado-por-trackfw-yaml-aninhado-permite-ao-subagente-desligar-os-proprios-hooks.md -->
-REQ: docs/req/REQ-2026-11-23-guard-write-scope-re-enraizado-por-trackfw-yaml-aninhado-permite-ao-subagente-desligar-os-proprios-hooks.md
+<!-- Derived from REQ: REQ-2026-11-24-guard-de-write-scope-nao-cobre-multiedit-no-claude-code-nem-o-opencode.md -->
+REQ: docs/req/REQ-2026-11-24-guard-de-write-scope-nao-cobre-multiedit-no-claude-code-nem-o-opencode.md
 
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->

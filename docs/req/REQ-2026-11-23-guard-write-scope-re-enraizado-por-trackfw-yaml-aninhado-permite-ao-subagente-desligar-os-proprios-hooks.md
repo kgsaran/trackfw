@@ -2,8 +2,8 @@
 status: Open
 date: 2026-11-23
 author: "zeus-tf (aberta a pedido do KG em 2026-11-23)"
-adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-11-23-guard-write-scope-re-enraizado-por-trackfw-yaml-aninhado-permite-ao-subagente-desligar-os-proprios-hooks.md"
+adr: "docs/adr/ADR-2026-11-24-guards-resolvem-trackfw-yaml-de-forma-monotonica-subagente-nao-cria-raiz-nem-afrouxa-regra.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-11-23-guard-write-scope-re-enraizado-por-trackfw-yaml-aninhado-permite-ao-subagente-desligar-os-proprios-hooks.md"
 ---
 
 # REQ: Guard write-scope re-enraizado por trackfw.yaml aninhado permite ao subagente desligar os próprios hooks
@@ -38,11 +38,11 @@ enraizamento pelo ancestral mais próximo, mas não declara este efeito.
 
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->
-ADR: 
+ADR: docs/adr/ADR-2026-11-24-guards-resolvem-trackfw-yaml-de-forma-monotonica-subagente-nao-cria-raiz-nem-afrouxa-regra.md
 
 ## Blocked by ADRs
 <!-- none -->
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/backlog/ROADMAP-2026-11-23-guard-write-scope-re-enraizado-por-trackfw-yaml-aninhado-permite-ao-subagente-desligar-os-proprios-hooks.md
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-11-23-guard-write-scope-re-enraizado-por-trackfw-yaml-aninhado-permite-ao-subagente-desligar-os-proprios-hooks.md

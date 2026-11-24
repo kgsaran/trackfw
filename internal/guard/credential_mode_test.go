@@ -185,7 +185,7 @@ func TestReadCredentialGuardMode_UnitVectors(t *testing.T) {
 
 // TestReadCredentialGuardMode_EndToEnd_ProjectScope exercises the CRLF block vector
 // through the full RunCredential stack (project scope), confirming that the guard's
-// credReadModeWithDefault → ReadCredentialGuardMode path produces rc=2 for CRLF block.
+// credWalkStrictestMode → ReadCredentialGuardMode path produces rc=2 for CRLF block.
 // Assertion: CRLF block yaml → RunCredential returns rc=2 (not rc=0 as before the fix).
 func TestReadCredentialGuardMode_EndToEnd_ProjectScope(t *testing.T) {
 	dir := t.TempDir()
@@ -219,12 +219,18 @@ func TestReadCredentialGuardMode_EndToEnd_ProjectScope(t *testing.T) {
 	}
 }
 
-// TestReadCredentialGuardMode_EndToEnd_GlobalScope exercises the CRLF warn vector
-// through RunCredentialGlobal, confirming warn\r is stripped to warn and produces rc=0.
-// Assertion: CRLF warn yaml → RunCredentialGlobal returns rc=0 (warn, not block default).
-func TestReadCredentialGuardMode_EndToEnd_GlobalScope(t *testing.T) {
+// TestReadCredentialGuardMode_EndToEnd_ProjectScope_CRLFBlockWorks exercises the CRLF
+// vector through RunCredential in project scope. A CRLF-terminated "mode: block\r\n"
+// is correctly parsed as "block" because strings.TrimSpace (applied to each line after
+// splitting on "\n") removes the trailing "\r" before the value is compared; without
+// TrimSpace, "block\r" ≠ "block" and credWalkStrictestMode would fall back to "warn",
+// returning rc=0 instead of rc=2.
+// Assertion: CRLF mode:block yaml in project scope → RunCredential returns rc=2;
+// the TrimSpace call in ReadCredentialGuardMode is what removes "\r" in this scenario.
+func TestReadCredentialGuardMode_EndToEnd_ProjectScope_CRLFBlockWorks(t *testing.T) {
 	dir := t.TempDir()
-	yaml := "credential_guard:\r\n  mode: warn\r\nroadmap_dir: docs/roadmaps\r\n"
+	// CRLF line endings throughout — the mode value "block\r" must be stripped to "block".
+	yaml := "credential_guard:\r\n  mode: block\r\nroadmap_dir: docs/roadmaps\r\n"
 	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte(yaml), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +242,6 @@ func TestReadCredentialGuardMode_EndToEnd_GlobalScope(t *testing.T) {
 
 	stdin := strings.NewReader(payload)
 
-	// Change to dir so RunCredentialGlobal reads trackfw.yaml from cwd.
 	origDir, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
@@ -246,10 +251,12 @@ func TestReadCredentialGuardMode_EndToEnd_GlobalScope(t *testing.T) {
 	}
 	defer func() { _ = os.Chdir(origDir) }()
 
-	rc := guard.RunCredentialGlobal(stdin, io.Discard, io.Discard)
+	rc := guard.RunCredential(stdin, io.Discard, io.Discard)
 
-	// CRLF warn\r → stripped to warn → rc=0 (not block default).
-	if rc != 0 {
-		t.Fatalf("CRLF warn global: expected rc=0, got %d", rc)
+	// CRLF "block\r" → stripped to "block" by the reader; mode=block → rc=2.
+	// Without the strip, "block\r" ≠ "block" → credWalkStrictestMode falls back to "warn"
+	// (project-scope default) → rc=0.
+	if rc != 2 {
+		t.Fatalf("CRLF block project scope: expected rc=2 (CRLF stripped; mode=block), got %d", rc)
 	}
 }

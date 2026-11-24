@@ -6632,22 +6632,27 @@ mecanismo ativo.
 
 `scripts/trackfw-credential-guard.sh` é um thin shim que chama `trackfw guard credential` (projeto)
 ou `trackfw guard credential --global` (global). A lógica de detecção e leitura de `mode` vive
-inteiramente em Go (`internal/guard/credential.go`). Os dois escopos divergem no **fallback** quando
-`credential_guard.mode` não está presente no `trackfw.yaml`:
+inteiramente em Go (`internal/guard/credential.go`). Os dois escopos têm **padrão de modo** diferentes
+e calculam o **modo efetivo** de forma monotônica (D4, ADR-2026-11-24):
 
-| Escopo | Função Go | Fallback sem `trackfw.yaml`/sem a chave | `trackfw.yaml` com `credential_guard.mode` explícito no cwd |
+| Escopo | Função Go | Padrão sem yaml/sem chave | Modo efetivo |
 |---|---|---|---|
-| Projeto | `RunCredential` | `warn` | Respeitado (`warn` ou `block`) |
-| Global | `RunCredentialGlobal` | `block` | Respeitado (`warn` ou `block`) |
+| Projeto | `RunCredential` | `warn` | O mais estrito entre `warn` e todos os valores lidos do cwd até a raiz do FS via `credWalkStrictestMode` |
+| Global | `RunCredentialGlobal` | `block` | Hardcoded `block` — não chama `credWalkStrictestMode`, não lê nenhum yaml |
 
 Pontos pinados:
 
-- **A leitura de `credential_guard.mode` é a mesma nos dois escopos** via `ReadCredentialGuardMode`
-  (`internal/guard/credential.go`) — lê `trackfw.yaml` **do cwd de onde o hook disparou** (o projeto
-  atual), não de um arquivo de config global (`~/.trackfw/config.yaml` não existe — decisão mantida:
-  não vale a complexidade de uma segunda fonte de configuração só para isto). Um usuário que já
-  configurou `credential_guard.mode: warn` explicitamente em `trackfw.yaml` **não vê nenhuma
-  mudança de comportamento**.
+- **D4 — modo efetivo de projeto é o mais estrito da cadeia:** `credWalkStrictestMode` sobe do cwd
+  até a raiz do sistema de arquivos lendo `credential_guard.mode` de cada `trackfw.yaml` encontrado;
+  o modo efetivo é o mais estrito entre `warn` (padrão de projeto) e todos os valores lidos
+  (`block` > `warn`). Um yaml não-regular (diretório, FIFO) na cadeia de raiz nega via rc=2
+  antes da seleção de modo — `findProjectRootSafe` retorna erro e o chamador nega imediatamente
+  (D3).
+  **Escopo global não usa este mecanismo:** `RunCredentialGlobal` hardcodes `block` diretamente.
+- **A leitura de `credential_guard.mode` é usada apenas no escopo de projeto** via
+  `ReadCredentialGuardMode` (`internal/guard/credential.go`). Escopo global não lê yaml.
+  Config global (`~/.trackfw/config.yaml`) não existe — decisão mantida: não vale a complexidade de
+  uma segunda fonte de configuração só para isto.
 - **Comportamento do leitor** (spec de 8 passos, D1 ADR-2026-11-05, emendado pelo ML-2C/C9):
   cabeçalho `credential_guard:` na coluna 0 (BOM removido); a varredura continua até a próxima
   chave de topo (linha não-indentada, não comentada, não-vazia) — sem limite fixo de linhas (C9:
@@ -6656,11 +6661,15 @@ Pontos pinados:
   (`internal/guard/credential_mode_test.go`) e
   `TestConvergence_ExtractCredentialGuardMode_ValidatorEqualsGuard`
   (`internal/validator/validator_credential_guard_integrity_test.go`).
-- **Só o fallback (ausência de `trackfw.yaml`, ou `trackfw.yaml` sem a chave) diverge entre escopos**:
-  projeto → `warn`; global → `block` (abortar a tool call, exit 2).
-- **`ROADMAP_DIR` em escopo global permanece o caminho fixo `docs/roadmaps`** (sem ler
-  `roadmap_dir:` de `trackfw.yaml`, já que não há garantia de o arquivo existir) e o attention
-  signal só é gravado se esse diretório já existir.
+- **Padrão por escopo:** projeto → `warn` (sem yaml ou sem chave); global → `block`. O modo efetivo
+  nunca fica abaixo do padrão do escopo.
+- **Escopo global nunca grava attention JSON** (D4, ADR-2026-11-24): `RunCredentialGlobal`
+  hardcodes `block` e retorna rc=2 diretamente via `os.Exit(2)` — o ramo `warn` (que gravaria o
+  attention signal) é inalcançável. O attention signal só é gravado no escopo de projeto em modo
+  `warn`.
+- **O shim de projeto sobe pelos ancestrais** (D4, ADR-2026-11-24): `scripts/trackfw-credential-guard.sh`
+  substitui `[ -f trackfw.yaml ] || exit 0` por uma subida de ancestrais em POSIX sh; o cwd num
+  subdiretório não desliga mais o guard de projeto.
 - **v8 tem implementação única em Go** — as constantes `credentialGuardProjectTail`,
   `credentialGuardGlobalTail` e `credentialGuardModeResolution` foram removidas do
   `internal/generators/scaffold.go` em ML-1A (ADR-2026-11-05): eram código morto, pois o script

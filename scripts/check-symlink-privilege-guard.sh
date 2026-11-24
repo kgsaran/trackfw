@@ -163,6 +163,7 @@ EXCEPTIONS["internal/validator/regularfile_fifo_unix_test.go"]="FIFO_BUILD_TAG_N
 EXCEPTIONS["internal/validator/validator_credential_guard_integrity_fifo_unix_test.go"]="FIFO_BUILD_TAG_NOT_WINDOWS"
 EXCEPTIONS["internal/fileutil/fileutil_fifo_unix_test.go"]="FIFO_BUILD_TAG_NOT_WINDOWS"
 EXCEPTIONS["internal/agentconfig/agentconfig_fifo_unix_test.go"]="FIFO_BUILD_TAG_NOT_WINDOWS"
+EXCEPTIONS["internal/guard/writescope_nested_root_fifo_unix_test.go"]="FIFO_BUILD_TAG_NOT_WINDOWS"
 
 # mkfifo não existe no Windows em absoluto; guarda de plataforma é correta
 # (platform=win32 skip não é antipadrão aqui — a syscall não existe no SO).

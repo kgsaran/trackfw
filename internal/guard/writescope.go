@@ -12,12 +12,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
+	"regexp" // already used by agentTypeSlugRE; also used by trackfwYAML8dot3RE (D1 8dot3)
 	"runtime"
 	"strings"
 	"time"
 
 	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/fileutil"
 )
 
 // agentTypeSlugRE validates agent_type as a safe filename component.
@@ -53,6 +54,14 @@ var writeScopeWriteTools = map[string]struct{}{
 // a panic and verify that the defer catches it and returns exit 2.
 // ML-3A2: panic → 2 seam.
 var writeScopeInternalHook func()
+
+// frozenEntry pairs a frozen-path relative entry with the project root it belongs to.
+// D2 (ADR-2026-11-24): buildFrozenList collects entries from multiple ancestor roots;
+// each entry is judged against its own root so that the frozen-path resolution is correct.
+type frozenEntry struct {
+	root string // the project root that owns this entry
+	rel  string // relative path; trailing "/" → directory prefix match
+}
 
 // writeScopeSubagentFrozenRelPaths are the paths frozen ONLY for subagents
 // (agent_id present), relative to the project root.
@@ -157,12 +166,31 @@ func RunWriteScope(stdin io.Reader, idleTimeout time.Duration, stderr io.Writer)
 		return 2
 	}
 
+	// Step 5d: D1 (ADR-2026-11-24) — subagents may not write to any path whose
+	// normalized components include "trackfw.yaml".
+	// This check runs AFTER normalization (Step 5b) and BEFORE the project-root lookup
+	// (Step 7), so it applies even when the target is outside any project.
+	// EqualFold is unconditional — GOOS is not a reliable proxy for case sensitivity
+	// (APFS can be case-sensitive configured; ext4+casefold and mounted NTFS/exFAT volumes
+	// can be case-insensitive on Linux). The false-positive cost on a truly case-sensitive FS
+	// is zero in practice (no legitimate subagent writes trackfw.yaml).
+	if payloadHasAgentID(root) && hasTrackfwYAMLComponent(rawFilePath) {
+		fmt.Fprintf(stderr, "trackfw guard write-scope: denied: %q targets a trackfw.yaml component (D1)\n", rawFilePath)
+		return 2
+	}
+
 	// Step 6: Resolve the physical path of the target.
 	resolved := resolveWriteScopePath(rawFilePath)
 
 	// Step 7: Find project root of the resolved target path.
 	// Item 3: root of the TARGET, not the cwd.
-	projectRoot, found := findProjectRoot(resolved)
+	// findProjectRootSafe returns an error when trackfw.yaml exists but is not a regular file
+	// (D3: directory, FIFO → deny, not skip).
+	projectRoot, found, rootErr := findProjectRootSafe(resolved)
+	if rootErr != nil {
+		fmt.Fprintf(stderr, "trackfw guard write-scope: denied: %v\n", rootErr)
+		return 2
+	}
 	if !found {
 		// Target is outside any trackfw project → allow.
 		return 0
@@ -172,6 +200,9 @@ func RunWriteScope(stdin io.Reader, idleTimeout time.Duration, stderr io.Writer)
 	isSubagent := payloadHasAgentID(root)
 
 	// Step 9: Build the frozen list for this call. YAML errors → deny (item 6).
+	// D2 (ADR-2026-11-24): buildFrozenList collects the FULL frozen list from projectRoot
+	// and every ancestor that has trackfw.yaml (monotonic union). Each entry is resolved
+	// against its own root, so plantar a nested yaml can only ADD protection.
 	frozen, yamlErr := buildFrozenList(projectRoot, isSubagent)
 	if yamlErr != nil {
 		fmt.Fprintf(stderr, "trackfw guard write-scope: denied: %v\n", yamlErr)
@@ -180,7 +211,7 @@ func RunWriteScope(stdin io.Reader, idleTimeout time.Duration, stderr io.Writer)
 
 	// Step 10: Check whether the resolved path hits a frozen entry.
 	// D3 always runs before D4. A frozen path is denied even if it appears in the D4 allow list.
-	if rel, hit := frozenHit(resolved, projectRoot, frozen); hit {
+	if rel, hit := frozenHit(resolved, frozen); hit {
 		fmt.Fprintf(stderr, "trackfw guard write-scope: denied: %q is a frozen path (%s)\n", rawFilePath, rel)
 		return 2
 	}
@@ -223,14 +254,23 @@ func RunWriteScope(stdin io.Reader, idleTimeout time.Duration, stderr io.Writer)
 		cwdStr = normalizeTargetPath(cwdStr, runtime.GOOS)
 		if filepath.IsAbs(cwdStr) {
 			cwdResolved := resolveWriteScopePath(cwdStr)
-			if cr, ok := findProjectRoot(cwdResolved); ok {
+			cr, ok, cwdRootErr := findProjectRootSafe(cwdResolved)
+			if cwdRootErr != nil {
+				fmt.Fprintf(stderr, "trackfw guard write-scope: denied: cwd project root: %v\n", cwdRootErr)
+				return 2
+			}
+			if ok {
 				cwdProjectRoot = cr
 			}
 		}
 	}
 
 	// Step 11b: collect deduplicated roots to search.
-	leaseRoots := collectLeaseRoots(projectRoot, cwdProjectRoot)
+	leaseRoots, lrErr := collectLeaseRoots(projectRoot, cwdProjectRoot)
+	if lrErr != nil {
+		fmt.Fprintf(stderr, "trackfw guard write-scope: denied: %v\n", lrErr)
+		return 2
+	}
 
 	// Step 11c: load leases from all roots.
 	type leaseEntry struct {
@@ -337,13 +377,44 @@ func RunWriteScope(stdin io.Reader, idleTimeout time.Duration, stderr io.Writer)
 
 // collectLeaseRoots returns the deduplicated ordered list of project roots to search for leases.
 // Always includes targetRoot. Adds cwdRoot if it is non-empty and not path-equal to targetRoot.
-// ML-3C: two-root lease search.
-func collectLeaseRoots(targetRoot, cwdRoot string) []string {
-	if cwdRoot == "" || pathEqual(cwdRoot, targetRoot) {
-		return []string{targetRoot}
+// D5 (ADR-2026-11-24, emenda da Wave 2, F-LEASE-MONO): also includes every ancestor of
+// targetRoot that has a trackfw.yaml, so that an outer project's restrictive lease gates
+// access into a legitimately-nested inner project.  Error policy (D3): a non-regular
+// trackfw.yaml in an ancestor stops the walk and returns an error so the caller can deny.
+// ML-3C: two-root lease search (extended by D5 to N roots).
+func collectLeaseRoots(targetRoot, cwdRoot string) ([]string, error) {
+	seen := map[string]struct{}{targetRoot: {}}
+	roots := []string{targetRoot}
+
+	// D5: walk up from targetRoot's parent and add ancestor roots.
+	dir := filepath.Dir(targetRoot)
+	for {
+		_, readErr := fileutil.ReadRegularFile(filepath.Join(dir, "trackfw.yaml"))
+		if readErr == nil {
+			if _, already := seen[dir]; !already {
+				seen[dir] = struct{}{}
+				roots = append(roots, dir)
+			}
+		} else if !os.IsNotExist(readErr) {
+			// D3: non-regular trackfw.yaml in ancestor (directory, FIFO, permission error)
+			// is not "absent" — fail-closed so the caller denies (rc=2).
+			return nil, fmt.Errorf("collectLeaseRoots: non-regular trackfw.yaml at %q: %w", dir, readErr)
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
 	}
-	// targetRoot first so the error message names it first when both are present.
-	return []string{targetRoot, cwdRoot}
+
+	// Add cwdRoot if distinct from all roots already collected.
+	if cwdRoot != "" {
+		if _, already := seen[cwdRoot]; !already {
+			roots = append(roots, cwdRoot)
+		}
+	}
+
+	return roots, nil
 }
 
 // loadWriteScopeLease reads and parses the lease file for agentType.
@@ -499,28 +570,41 @@ func joinPathParts(parts []string) string {
 	return result
 }
 
-// findProjectRoot walks up from p to find the first ancestor directory containing
-// trackfw.yaml. Returns ("", false) if none found.
-func findProjectRoot(p string) (string, bool) {
+
+// findProjectRootSafe walks up from p to find the first ancestor directory containing a
+// trackfw.yaml file, using fileutil.ReadRegularFile to probe each candidate.
+//
+// Returns:
+//   - (dir, true, nil)  — regular trackfw.yaml found at dir.
+//   - ("", false, nil)  — no trackfw.yaml in any ancestor; target is outside any project.
+//   - (dir, true, err)  — trackfw.yaml exists at dir but is not a regular file (directory,
+//     FIFO, permission denied). Callers must deny (rc=2).
+//
+// D3, ADR-2026-11-24: ErrNotRegularFile and permission errors deny; os.IsNotExist continues
+// the walk. The fail-closed design means a FIFO named trackfw.yaml triggers an immediate deny
+// rather than a hang.
+func findProjectRootSafe(p string) (string, bool, error) {
 	dir := p
 	// If p is a file (the common case), start from its directory.
-	// But we don't know if it exists — use the cleaned path's directory.
 	info, err := os.Lstat(p)
 	if err != nil || !info.IsDir() {
 		dir = filepath.Dir(p)
 	}
-	// Clean dir for consistent ancestor walking (this is safe since we already resolved symlinks above).
 	dir = filepath.Clean(dir)
 
 	for {
 		yamlPath := filepath.Join(dir, "trackfw.yaml")
-		if _, err := os.Lstat(yamlPath); err == nil {
-			return dir, true
+		_, readErr := fileutil.ReadRegularFile(yamlPath)
+		if readErr == nil {
+			return dir, true, nil // regular file found
+		} else if !os.IsNotExist(readErr) {
+			// ErrNotRegularFile (directory, FIFO) or permission error → deny.
+			return dir, true, fmt.Errorf("findProjectRootSafe: trackfw.yaml at %q: %w", dir, readErr)
 		}
+		// os.IsNotExist → continue walking up.
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			// reached filesystem root
-			return "", false
+			return "", false, nil // reached filesystem root
 		}
 		dir = parent
 	}
@@ -545,39 +629,86 @@ func payloadHasAgentID(root map[string]json.RawMessage) bool {
 	return s != "" // empty string → not a subagent
 }
 
-// buildFrozenList returns the list of frozen path entries for this call.
-// Entries may be:
-//   - relative paths (no trailing slash): exact file match relative to projectRoot
-//   - relative paths with trailing slash: directory prefix match
-//
-// The list reads extra entries from trackfw.yaml (write_scope.frozen_paths).
+// buildFrozenListForRoot returns the frozen path entries for a single project root.
+// Entries are relative to root (trailing "/" → directory prefix match).
 // YAML is read directly (not via config.Load() singleton) to avoid osExit on malformed config.
 // Returns a non-nil error when trackfw.yaml exists but contains invalid YAML (item 6: YAML inválido nega).
-func buildFrozenList(projectRoot string, isSubagent bool) ([]string, error) {
-	var frozen []string
+func buildFrozenListForRoot(root string, isSubagent bool) ([]frozenEntry, error) {
+	var frozen []frozenEntry
 
 	// All-session frozen paths (item 4): docs/agents-working-context.md, IF frozen marker present.
-	if fileHasFrozenMarker(filepath.Join(projectRoot, "docs/agents-working-context.md")) {
-		frozen = append(frozen, "docs/agents-working-context.md")
+	if fileHasFrozenMarker(filepath.Join(root, "docs/agents-working-context.md")) {
+		frozen = append(frozen, frozenEntry{root: root, rel: "docs/agents-working-context.md"})
 	}
 
 	// Subagent extra frozen paths (item 5): always freeze docs/agents-working-context.md
 	// plus the hook/settings files.
 	if isSubagent {
-		frozen = append(frozen, writeScopeSubagentFrozenRelPaths...)
+		for _, rel := range writeScopeSubagentFrozenRelPaths {
+			frozen = append(frozen, frozenEntry{root: root, rel: rel})
+		}
 	}
 
 	// Extra paths from trackfw.yaml (item 6): append, never remove. Invalid YAML → return error.
-	extraAll, extraSub, err := readWriteScopeFromYAML(projectRoot)
+	extraAll, extraSub, err := readWriteScopeFromYAML(root)
 	if err != nil {
 		return nil, err
 	}
-	frozen = append(frozen, extraAll...)
+	for _, rel := range extraAll {
+		frozen = append(frozen, frozenEntry{root: root, rel: rel})
+	}
 	if isSubagent {
-		frozen = append(frozen, extraSub...)
+		for _, rel := range extraSub {
+			frozen = append(frozen, frozenEntry{root: root, rel: rel})
+		}
 	}
 
 	return frozen, nil
+}
+
+// buildFrozenList returns the unified frozen list from projectRoot and every ancestor
+// directory containing trackfw.yaml, up to the filesystem root (D2: monotonic union,
+// ADR-2026-11-24). Each entry carries its owning root so it is resolved correctly by
+// pathMatchesFrozen.
+//
+// Monotonicity property: planting a new trackfw.yaml in a subdirectory can only ADD
+// to the frozen list; the outer project's entries remain because the walk continues up
+// past the new yaml.
+//
+// Error policy (D3, ADR-2026-11-24): any trackfw.yaml that is not a regular file
+// (directory, FIFO, permission error) in any ancestor → deny.
+func buildFrozenList(projectRoot string, isSubagent bool) ([]frozenEntry, error) {
+	// Collect from the target's project root first.
+	allFrozen, err := buildFrozenListForRoot(projectRoot, isSubagent)
+	if err != nil {
+		return nil, err
+	}
+
+	// Walk up from projectRoot's parent to find ancestor roots.
+	dir := filepath.Dir(projectRoot)
+	for {
+		_, readErr := fileutil.ReadRegularFile(filepath.Join(dir, "trackfw.yaml"))
+		if readErr == nil {
+			// Ancestor with valid yaml found — collect its full frozen list.
+			ancestorFrozen, aerr := buildFrozenListForRoot(dir, isSubagent)
+			if aerr != nil {
+				return nil, aerr
+			}
+			allFrozen = append(allFrozen, ancestorFrozen...)
+		} else if !os.IsNotExist(readErr) {
+			// Non-regular file or permission error in ancestor → deny.
+			return nil, fmt.Errorf("ancestor trackfw.yaml at %q: %w", dir, readErr)
+		}
+		// os.IsNotExist → no yaml here, continue walking up.
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break // reached filesystem root
+		}
+		dir = parent
+	}
+
+	return allFrozen, nil
 }
 
 // fileHasFrozenMarker reports whether the first 10 lines of the file contain frozenMarker.
@@ -612,9 +743,15 @@ func fileHasFrozenMarker(path string) bool {
 // Invalid YAML → (nil, nil, error): contract item 6 says YAML inválido nega.
 // IMPORTANT: does NOT use config.Load() to avoid the osExit(1) on malformed YAML.
 func readWriteScopeFromYAML(projectRoot string) (all, subagent []string, err error) {
-	data, readErr := os.ReadFile(filepath.Join(projectRoot, "trackfw.yaml"))
+	// D3 (ADR-2026-11-24): use fileutil.ReadRegularFile so that a directory, FIFO, or other
+	// non-regular file named trackfw.yaml triggers a deny rather than being treated as absent.
+	// Only os.IsNotExist is "absent"; ErrNotRegularFile and all other errors deny.
+	data, readErr := fileutil.ReadRegularFile(filepath.Join(projectRoot, "trackfw.yaml"))
 	if readErr != nil {
-		return nil, nil, nil // file absent → not an error
+		if os.IsNotExist(readErr) {
+			return nil, nil, nil // file absent → not an error
+		}
+		return nil, nil, readErr // ErrNotRegularFile, permission denied, etc. → deny
 	}
 
 	// ParseWriteScopeConfig validates YAML (including duplicate mapping keys) and returns error
@@ -629,13 +766,38 @@ func readWriteScopeFromYAML(projectRoot string) (all, subagent []string, err err
 
 // frozenHit checks whether the resolved target path matches any entry in the frozen list.
 // Returns (relPath, true) if a match is found.
-func frozenHit(resolved, projectRoot string, frozen []string) (string, bool) {
-	for _, entry := range frozen {
-		if pathMatchesFrozen(resolved, projectRoot, entry) {
-			return entry, true
+// D2 (ADR-2026-11-24): frozen is now []frozenEntry; each entry carries its own root.
+// D6 (ADR-2026-11-24, emenda da Wave 2): also checks the path with each component
+// normalised by normalizePathComponent (strip ADS, trailing dot/space) so that
+// "settings.json." and "settings.json::$DATA" match the frozen "settings.json"
+// even when the file does not yet exist (os.SameFile only works for existing files).
+func frozenHit(resolved string, frozen []frozenEntry) (string, bool) {
+	for _, e := range frozen {
+		if pathMatchesFrozen(resolved, e.root, e.rel) {
+			return e.rel, true
+		}
+		// D6: also try the path with each component normalised.
+		if norm := normalizePathComponents(resolved); norm != resolved {
+			if pathMatchesFrozen(norm, e.root, e.rel) {
+				return e.rel, true
+			}
 		}
 	}
 	return "", false
+}
+
+// normalizePathComponents returns a copy of absPath where each path component has been
+// normalised by normalizePathComponent (strip ADS suffix and trailing dots/spaces).
+// The volume name (e.g. "C:") is preserved intact; only the path components change.
+// D6 (ADR-2026-11-24, emenda da Wave 2).
+func normalizePathComponents(absPath string) string {
+	vol := filepath.VolumeName(absPath)
+	rest := absPath[len(vol):]
+	parts := strings.FieldsFunc(rest, func(r rune) bool { return r == filepath.Separator })
+	for i, p := range parts {
+		parts[i] = normalizePathComponent(p)
+	}
+	return vol + string(filepath.Separator) + strings.Join(parts, string(filepath.Separator))
 }
 
 // pathMatchesFrozen reports whether the resolved absolute path matches a frozen entry.
@@ -738,3 +900,65 @@ func normalizeTargetPath(p, goos string) string {
 func isWindowsDriveLetter(c byte) bool {
 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 }
+
+// normalizePathComponent normalises a single path component for the trackfw.yaml D1 check.
+// Two transformations are applied, in order:
+//  1. NTFS alternate data streams (R-8b, ADR-2026-11-24): cut at the first ':'.
+//     "trackfw.yaml::$DATA" → "trackfw.yaml".  On POSIX, ':' is a legal filename
+//     character; treating "trackfw.yaml:x" as the base file is a false positive that the
+//     ADR explicitly accepts (no legitimate subagent writes "trackfw.yaml:x" on POSIX).
+//     "C:" (Windows drive letter component) → "C", which is inoffensive: EqualFold("C",
+//     "trackfw.yaml") = false.
+//  2. Trailing dots and spaces: strip them (Windows filesystem behaviour where
+//     "trackfw.yaml." and "trackfw.yaml " create "trackfw.yaml").
+//
+// Used ONLY for component matching — never to rewrite the actual path.
+// D1, ADR-2026-11-24 (emenda da Wave 2, R-8b).
+func normalizePathComponent(c string) string {
+	// Step 1: cut at first colon (NTFS ADS).
+	if idx := strings.IndexByte(c, ':'); idx >= 0 {
+		c = c[:idx]
+	}
+	// Step 2: strip trailing dots and spaces (Windows 8.3 / trailing-dot behaviour).
+	return strings.TrimRight(c, ". ")
+}
+
+// hasTrackfwYAMLComponent reports whether any path component of p equals "trackfw.yaml"
+// after component normalisation (D1: strip ADS suffix, strip trailing dots/spaces),
+// using EqualFold unconditionally. EqualFold is used regardless of GOOS because GOOS is
+// not a reliable proxy for filesystem case-sensitivity (APFS can be case-sensitive
+// configured; ext4+casefold and mounted NTFS/exFAT volumes on Linux are case-insensitive).
+//
+// Also matches 8dot3 short names of the form TRACKF~<n>.YAM (case-insensitive regexp,
+// emenda da Wave 2). A short name only points to an already-existing file; a subagent
+// using it could rewrite a nested trackfw.yaml that the architect created.
+//
+// Splits on both "/" and "\" to handle mixed separators that may survive normalizeTargetPath
+// (e.g. "C:\proj\P/trackfw.yaml" after a partial normalisation). This is a pure string
+// operation; it does NOT touch the filesystem.
+//
+// D1, ADR-2026-11-24.
+func hasTrackfwYAMLComponent(p string) bool {
+	parts := strings.FieldsFunc(p, func(r rune) bool { return r == '/' || r == '\\' })
+	for _, part := range parts {
+		norm := normalizePathComponent(part)
+		if strings.EqualFold(norm, "trackfw.yaml") {
+			return true
+		}
+		// 8dot3 short name: TRACKF~<digits>.YAM (case-insensitive).
+		if trackfwYAML8dot3RE.MatchString(norm) {
+			return true
+		}
+	}
+	return false
+}
+
+// trackfwYAML8dot3RE matches the 8dot3 short name that Windows generates for trackfw.yaml:
+// TRACKF~<n>.YAM (any single digit or sequence of digits, case-insensitive).
+// When a directory already contains a name starting with "TRACKF" (or any prefix up to 6
+// non-special characters), Windows appends a hash to disambiguate, producing names like
+// TR1A2B~1.YAM.  The pattern [^~\/:]{1,6} covers both the plain prefix and hash forms.
+// A short name only resolves to an existing file (Windows generates it lazily), so blocking
+// it prevents a subagent from overwriting a pre-existing trackfw.yaml via its short name.
+// D1 (ADR-2026-11-24, 8dot3 emenda da Wave 2).
+var trackfwYAML8dot3RE = regexp.MustCompile(`(?i)^[^~\\/:]{1,6}~[0-9]+\.yam$`)

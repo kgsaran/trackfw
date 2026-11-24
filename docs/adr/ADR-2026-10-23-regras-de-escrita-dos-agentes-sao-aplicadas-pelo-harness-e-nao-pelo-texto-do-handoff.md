@@ -119,3 +119,5 @@ congelados da D3. Isso evita quebrar o uso sem orquestração. Vale onde o CLI e
   impede que um projeto falso, com uma permissão ampla no `cwd`, sobreponha a permissão restrita do projeto do alvo. A
   identidade de arquivo usa `os.SameFile`, que cobre hardlink. `docs/agents-working-context/` fica congelado para
   subagentes, e a D1 deixa de depender de obediência. Sem `origin/main`, o `ml_scope` sai `blocked`, e não `skipped`.
+- **Emendado por ADR-2026-11-24:** os congelados (D2 de lá) e os leases (D5 de lá) passam a valer para todo ancestral
+  do alvo que tem `trackfw.yaml`, e não só para a raiz do alvo e a do cwd. A raiz do alvo continua sendo a do D3 acima.
