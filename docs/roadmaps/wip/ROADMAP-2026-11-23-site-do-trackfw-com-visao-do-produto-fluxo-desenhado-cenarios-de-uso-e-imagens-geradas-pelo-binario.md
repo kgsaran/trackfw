@@ -19,7 +19,7 @@ REQ: docs/req/REQ-2026-11-23-site-do-trackfw-com-visao-do-produto-fluxo-desenhad
 - [x] AC3: ADR e waves de implementação escritos após a validação
 - [x] AC4: site final en + pt-BR com imagens geradas por script, sem dado pessoal
 - [x] AC5: teste do Quick start verde; build do site rc=0; capturas headless
-- [ ] AC6: `make quality` rc=0 e CI verde
+- [x] AC6: `make quality` rc=0 e CI verde
 
 ## Status Legend
 ⬜ Pending · 🔄 In progress · ✅ Done · ❌ Blocked
@@ -285,9 +285,9 @@ test -s docs/seguranca/2026-11-23-red-team-site-novo.md
 > Dependencies: Wave 4 audited.
 
 ### ML-FB — make quality e CI (zeus-tf)
-**Status:** 🔄 In progress — `make quality` MQ_RC=0 em 2026-11-24 com a máquina ociosa. Falta o CI do PR.
+**Status:** ✅ Done — `make quality` MQ_RC=0 em 2026-11-24 com a máquina ociosa. CI do PR #702 verde em 31fe4980: 24/24.
 **Acceptance criteria:**
-- [ ] AC6: `make quality` rc=0 com a máquina ociosa; CI verde no PR
+- [x] AC6: `make quality` rc=0 com a máquina ociosa; CI verde no PR
 
 **Wave gates:**
 ```bash
