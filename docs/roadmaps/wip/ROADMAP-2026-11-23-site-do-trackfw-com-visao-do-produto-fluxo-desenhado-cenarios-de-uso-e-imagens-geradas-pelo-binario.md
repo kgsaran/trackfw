@@ -261,11 +261,12 @@ e inspeção visual, com o usuário real como canário natural. ML-4C e ML-4D.
 - [ ] build do site rc=0
 
 ### ML-4D — Checkout do deploy sem credencial persistida (ares-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — `persist-credentials: false` no `actions/checkout` do `build`; nenhum step posterior usa git
+autenticado. `actionlint` rc=0 (rodado também pelo arquiteto); check de required checks rc=0.
 **Files affected:** `.github/workflows/deploy-docs.yml`
 **Actions:** `persist-credentials: false` on the `actions/checkout` step of `build`; nothing else changes.
 **Acceptance criteria:**
-- [ ] `actionlint` rc=0; `python3 scripts/check-required-status-checks.py --scope dw` rc=0
+- [x] `actionlint` rc=0; `python3 scripts/check-required-status-checks.py --scope dw` rc=0
 
 **Wave gates:**
 ```bash
