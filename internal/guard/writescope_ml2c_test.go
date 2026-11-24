@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"regexp"
 	"testing"
 	"time"
 )
@@ -331,10 +330,11 @@ func TestD5_AncestorLeaseConsulted_Deny(t *testing.T) {
 	}
 }
 
-// TestD5_AncestorLeaseConsulted_AllowCounterArm asserts that when the target IS within
-// the outer lease's allow list, the write is permitted.
-// Asserts: D5 — the ancestor lease is consulted AND its allow list is honoured; a target
-// that is in the allow list must not be denied by the ancestor lease check.
+// TestD5_AncestorLeaseConsulted_AllowCounterArm asserts that when D5's ancestor walk
+// reaches outer/ and the outer lease explicitly allows the target, the write is permitted.
+// Asserts: D5 — collectLeaseRoots walks up from the target's project root (svc/) to outer/,
+// reads the outer lease, and honours the allow entry for svc/main.go; without the ancestor
+// walk, the outer lease would not be consulted at all (svc/ has no lease of its own).
 func TestD5_AncestorLeaseConsulted_AllowCounterArm(t *testing.T) {
 	outer := t.TempDir()
 	outer, _ = filepath.EvalSymlinks(outer)
@@ -342,19 +342,6 @@ func TestD5_AncestorLeaseConsulted_AllowCounterArm(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(outer, "trackfw.yaml"), []byte("project_name: outer\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-
-	// docs/x.md is both the allowed target AND what the agent will write
-	allowedPath := filepath.Join(outer, "docs", "x.md")
-	if err := os.MkdirAll(filepath.Dir(allowedPath), 0700); err != nil {
-		t.Fatal(err)
-	}
-
-	makeLeaseFileML2C(t, outer, "apolo-tf", map[string]interface{}{
-		"version":    1,
-		"agent_type": "apolo-tf",
-		"expires":    futureRFC3339ML2C(),
-		"allow":      []string{allowedPath},
-	})
 
 	svc := filepath.Join(outer, "svc")
 	if err := os.MkdirAll(svc, 0700); err != nil {
@@ -364,12 +351,22 @@ func TestD5_AncestorLeaseConsulted_AllowCounterArm(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Target = outer/docs/x.md — inside outer's allow list
-	// cwd = svc
-	p := payloadFullWithCwd("Write", allowedPath, "agent-123", "apolo-tf", svc)
+	// Target is svc/main.go — it lives inside the inner project (svc/).
+	// The outer lease (not the inner one) explicitly allows this exact path.
+	// svc/ has no lease of its own, so without the D5 walk, no lease would be found.
+	target := filepath.Join(svc, "main.go")
+	makeLeaseFileML2C(t, outer, "apolo-tf", map[string]interface{}{
+		"version":    1,
+		"agent_type": "apolo-tf",
+		"expires":    futureRFC3339ML2C(),
+		"allow":      []string{target},
+	})
+
+	// cwd = svc (inner project); target = svc/main.go
+	p := payloadFullWithCwd("Write", target, "agent-123", "apolo-tf", svc)
 	rc, stderr := runWS(t, p)
 	if rc != 0 {
-		t.Fatalf("D5 counter-arm: target in outer allow list: want rc=0, got %d (stderr=%q)", rc, stderr)
+		t.Fatalf("D5 counter-arm: outer allows svc/main.go, ancestor walk active: want rc=0, got %d (stderr=%q)", rc, stderr)
 	}
 }
 
@@ -415,21 +412,20 @@ func TestD3_CollectLeaseRoots_NonRegularAncestorYAML_Error(t *testing.T) {
 // D1 8dot3 regex — package-level compile check
 // ─────────────────────────────────────────────────────────────
 
-// TestD1_8dot3Regex_CompileAndMatch checks that the 8dot3 pattern compiles and
-// matches the expected inputs.
-// Asserts: the regexp (?i)^trackf~[0-9]+\.yam$ matches TRACKF~1.YAM and trackf~999.yam
-// but not trackfw.yaml or trackfw.yaml.bak.
+// TestD1_8dot3Regex_CompileAndMatch checks that the production variable trackfwYAML8dot3RE
+// matches the expected inputs, including the hash form Windows generates after collisions.
+// Asserts: trackfwYAML8dot3RE matches TRACKF~1.YAM, trackf~999.yam, and the hash form
+// TR1A2B~1.YAM, but not trackfw.yaml, trackfw.yaml.bak, or notes~1.yaml (wrong extension).
 func TestD1_8dot3Regex_CompileAndMatch(t *testing.T) {
-	re := regexp.MustCompile(`(?i)^trackf~[0-9]+\.yam$`)
-	hits := []string{"TRACKF~1.YAM", "trackf~2.yam", "trackf~999.yam"}
-	misses := []string{"trackfw.yaml", "trackfw.yaml.bak", "trackf~1.yaml", "TRACKFW.YAML"}
+	hits := []string{"TRACKF~1.YAM", "trackf~2.yam", "trackf~999.yam", "TR1A2B~1.YAM"}
+	misses := []string{"trackfw.yaml", "trackfw.yaml.bak", "trackf~1.yaml", "TRACKFW.YAML", "notes~1.yaml"}
 	for _, s := range hits {
-		if !re.MatchString(s) {
+		if !trackfwYAML8dot3RE.MatchString(s) {
 			t.Errorf("8dot3 regex: expected match for %q", s)
 		}
 	}
 	for _, s := range misses {
-		if re.MatchString(s) {
+		if trackfwYAML8dot3RE.MatchString(s) {
 			t.Errorf("8dot3 regex: expected no match for %q", s)
 		}
 	}

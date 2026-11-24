@@ -599,7 +599,7 @@ func findProjectRootSafe(p string) (string, bool, error) {
 			return dir, true, nil // regular file found
 		} else if !os.IsNotExist(readErr) {
 			// ErrNotRegularFile (directory, FIFO) or permission error → deny.
-			return dir, true, fmt.Errorf("findProjectRoot: trackfw.yaml at %q: %w", dir, readErr)
+			return dir, true, fmt.Errorf("findProjectRootSafe: trackfw.yaml at %q: %w", dir, readErr)
 		}
 		// os.IsNotExist → continue walking up.
 		parent := filepath.Dir(dir)
@@ -955,7 +955,10 @@ func hasTrackfwYAMLComponent(p string) bool {
 
 // trackfwYAML8dot3RE matches the 8dot3 short name that Windows generates for trackfw.yaml:
 // TRACKF~<n>.YAM (any single digit or sequence of digits, case-insensitive).
+// When a directory already contains a name starting with "TRACKF" (or any prefix up to 6
+// non-special characters), Windows appends a hash to disambiguate, producing names like
+// TR1A2B~1.YAM.  The pattern [^~\/:]{1,6} covers both the plain prefix and hash forms.
 // A short name only resolves to an existing file (Windows generates it lazily), so blocking
 // it prevents a subagent from overwriting a pre-existing trackfw.yaml via its short name.
 // D1 (ADR-2026-11-24, 8dot3 emenda da Wave 2).
-var trackfwYAML8dot3RE = regexp.MustCompile(`(?i)^trackf~[0-9]+\.yam$`)
+var trackfwYAML8dot3RE = regexp.MustCompile(`(?i)^[^~\\/:]{1,6}~[0-9]+\.yam$`)

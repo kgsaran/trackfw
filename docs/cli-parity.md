@@ -6645,7 +6645,9 @@ Pontos pinados:
 - **D4 — modo efetivo de projeto é o mais estrito da cadeia:** `credWalkStrictestMode` sobe do cwd
   até a raiz do sistema de arquivos lendo `credential_guard.mode` de cada `trackfw.yaml` encontrado;
   o modo efetivo é o mais estrito entre `warn` (padrão de projeto) e todos os valores lidos
-  (`block` > `warn`). Um yaml não-regular (diretório, FIFO) conta como `block` (D3).
+  (`block` > `warn`). Um yaml não-regular (diretório, FIFO) na cadeia de raiz nega via rc=2
+  antes da seleção de modo — `findProjectRootSafe` retorna erro e o chamador nega imediatamente
+  (D3).
   **Escopo global não usa este mecanismo:** `RunCredentialGlobal` hardcodes `block` diretamente.
 - **A leitura de `credential_guard.mode` é usada apenas no escopo de projeto** via
   `ReadCredentialGuardMode` (`internal/guard/credential.go`). Escopo global não lê yaml.

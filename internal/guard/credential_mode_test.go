@@ -221,11 +221,12 @@ func TestReadCredentialGuardMode_EndToEnd_ProjectScope(t *testing.T) {
 
 // TestReadCredentialGuardMode_EndToEnd_ProjectScope_CRLFBlockWorks exercises the CRLF
 // vector through RunCredential in project scope. A CRLF-terminated "mode: block\r\n"
-// must be correctly parsed as "block" after CRLF stripping; without the strip the value
-// would be "block\r" (not equal to "block"), credWalkStrictestMode would treat it as an
-// unrecognised value, fall back to the project-scope default "warn", and rc would be 0.
+// is correctly parsed as "block" because strings.TrimSpace (applied to each line after
+// splitting on "\n") removes the trailing "\r" before the value is compared; without
+// TrimSpace, "block\r" ≠ "block" and credWalkStrictestMode would fall back to "warn",
+// returning rc=0 instead of rc=2.
 // Assertion: CRLF mode:block yaml in project scope → RunCredential returns rc=2;
-// the CRLF strip in ReadCredentialGuardMode is essential and exercised here.
+// the TrimSpace call in ReadCredentialGuardMode is what removes "\r" in this scenario.
 func TestReadCredentialGuardMode_EndToEnd_ProjectScope_CRLFBlockWorks(t *testing.T) {
 	dir := t.TempDir()
 	// CRLF line endings throughout — the mode value "block\r" must be stripped to "block".

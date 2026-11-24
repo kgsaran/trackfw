@@ -280,7 +280,11 @@ Ressalva: nome 8dot3 com hash (`TR1A2B~1.YAM`) escapa da regex; vai para o ML-2F
 - [x] relatório com braço e contra-braço para D3-raiz, wrapper, R-8b, 8dot3, D5 e D6
 
 ### ML-2F — Ressalvas da re-revisão (apolo-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — regex 8dot3 com a forma de hash; mensagem com `findProjectRootSafe:`; teste 8dot3 usa
+`trackfwYAML8dot3RE`; contra-braço do D5 com alvo em `svc/` e lease só em `outer/`; frase do CRLF cita `TrimSpace`;
+`cli-parity` diz rc=2 antes do modo. Desvio aceito: o vetor `TR1A2B~1.YAM` ficou no teste unitário da regex de produção,
+não ponta a ponta (o caminho ponta a ponta é o mesmo de `TestD1_8dot3TrackfwYAML_Deny`). Gates rodados pelo arquiteto:
+build, vet, `go test ./internal/guard/` rc=0.
 **Files affected:** `internal/guard/writescope.go`; `internal/guard/writescope_ml2c_test.go`;
 `internal/guard/credential_mode_test.go`; `docs/cli-parity.md`
 **Actions:**
@@ -292,8 +296,8 @@ Ressalva: nome 8dot3 com hash (`TR1A2B~1.YAM`) escapa da regex; vai para o ML-2F
 5. BAIXO-9: frase do teste CRLF cita o mecanismo real.
 6. `cli-parity.md`: a frase "yaml não regular conta como block" passa a dizer que nega (rc=2) antes da escolha do modo.
 **Acceptance criteria:**
-- [ ] `go build ./...`; `go vet ./internal/guard/`; `go test ./internal/guard/ -count=1` rc=0
-- [ ] nenhum arquivo fora de "Files affected" alterado
+- [x] `go build ./...`; `go vet ./internal/guard/`; `go test ./internal/guard/ -count=1` rc=0
+- [x] nenhum arquivo fora de "Files affected" alterado
 
 **Wave gates:**
 ```bash
