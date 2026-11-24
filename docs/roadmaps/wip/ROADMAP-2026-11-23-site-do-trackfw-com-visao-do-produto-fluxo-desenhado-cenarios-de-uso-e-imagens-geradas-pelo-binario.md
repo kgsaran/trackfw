@@ -177,7 +177,7 @@ bash scripts/check-site-images-leak.sh
 `pages: write`, `id-token: write`. Keep actions pinned as they are today. `actionlint` if available.
 **Acceptance criteria:**
 - [ ] nenhuma permissão no nível do workflow; `build` só com `contents: read`
-- [ ] `make check-required-checks` rc=0 (o nome dos jobs não muda)
+- [ ] `python3 scripts/check-required-status-checks.py --scope dw` rc=0 (o nome dos jobs não muda)
 
 **Wave gates:**
 ```bash
