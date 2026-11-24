@@ -70,9 +70,27 @@ IMG_DIR="$REPO_ROOT/site/public/img"
 #   - Allowlist (github.com/kgsaran/trackfw) has no @ so it is unaffected
 _EMAIL_TLDS='com|io|dev|org|net|sh|app|co|me|edu|gov|br|de|fr|uk|nl|us|ca|au|info|biz|tech|cloud|ai'
 # Base patterns in single quotes (preserves backslashes for C:\Users\)
-_LEAK_BASE='/Users/[a-zA-Z]|/home/[a-zA-Z]|C:\\Users\\[a-zA-Z]|ghp_[A-Za-z0-9]+|gho_[A-Za-z0-9]+|github_pat_[A-Za-z0-9]+|Bearer [A-Za-z0-9]'
+# sk- and xox[abp]- require word boundary + minimum length to avoid matching inside words like
+# "task-" or "disk-". (^|[^A-Za-z0-9]) is the ERE word-start boundary.
+_LEAK_BASE='/Users/[a-zA-Z]|/home/[a-zA-Z]|C:\\Users\\[a-zA-Z]|ghp_[A-Za-z0-9]+|gho_[A-Za-z0-9]+|github_pat_[A-Za-z0-9]+|Bearer [A-Za-z0-9]|(^|[^A-Za-z0-9])sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|(^|[^A-Za-z0-9])xox[abp]-[A-Za-z0-9]+'
 # Email pattern appended via concatenation; \. is literal dot in ERE
 LEAK_RE="${_LEAK_BASE}|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.(${_EMAIL_TLDS})"
+
+# Dynamic patterns: machine hostname (short form) and real user from UID lookup.
+# id -un reads from the UID (kernel), not from $USER env — survives generate.sh's
+# "export USER=demo" isolation.  Skipped when equal to the demo value "demo".
+# Dots (common in .local suffixes) are escaped for ERE.
+_re_escape() { printf '%s\n' "$1" | sed 's/[.^$*+?{}[()|\\]/\\&/g'; }
+
+_host=$(hostname -s 2>/dev/null || hostname 2>/dev/null || printf '' )
+_real_user=$(id -un 2>/dev/null || printf '%s' "${USER:-}" || true)
+
+if [ -n "$_host" ] && [ "$_host" != "demo" ] && [ ${#_host} -ge 4 ]; then
+  LEAK_RE="${LEAK_RE}|$(_re_escape "$_host")"
+fi
+if [ -n "$_real_user" ] && [ "$_real_user" != "demo" ] && [ ${#_real_user} -ge 4 ]; then
+  LEAK_RE="${LEAK_RE}|$(_re_escape "$_real_user")"
+fi
 
 # The allowlist substitution string: remove this substring before checking
 ALLOWLIST_SUB='github.com/kgsaran/trackfw'
@@ -120,6 +138,61 @@ scan_text_file() {
     return 1  # leak found
   fi
   return 0
+}
+
+# ---------------------------------------------------------------------------
+# scan_dir <dir>: scan every file in <dir> for leaks and transcript coverage.
+#
+# Prints per-file results to stdout (OK / LEAK / MISSING-TRANSCRIPT).
+# Returns 0 if all files are clean, 1 if any issue is found.
+#
+# Used by: (1) the main scan; (2) canary G in self_test to verify that the
+# requires_transcript check is exercised (mutation guard).
+# ---------------------------------------------------------------------------
+scan_dir() {
+  local dir="$1"
+  local FILES=()
+  local FAIL=0
+  local f bname ext base
+
+  while IFS= read -r f; do
+    FILES+=("$f")
+  done < <(find "$dir" -type f ! -name ".gitkeep" | sort)
+
+  if [ "${#FILES[@]}" -eq 0 ]; then
+    return 1
+  fi
+
+  for f in "${FILES[@]}"; do
+    bname="$(basename "$f")"
+    ext="${f##*.}"
+
+    if [ "$ext" = "txt" ]; then
+      if scan_text_file "$f"; then
+        echo "  OK   $bname (transcript)"
+      else
+        echo "  LEAK $bname (transcript — text scan)"
+        FAIL=$((FAIL + 1))
+      fi
+    else
+      if scan_file "$f"; then
+        echo "  OK   $bname"
+      else
+        echo "  LEAK $bname"
+        FAIL=$((FAIL + 1))
+      fi
+
+      if requires_transcript "$f"; then
+        base="${f%.*}"
+        if [ ! -f "${base}.txt" ]; then
+          echo "  MISSING-TRANSCRIPT $bname — expected ${base##*/}.txt"
+          FAIL=$((FAIL + 1))
+        fi
+      fi
+    fi
+  done
+
+  [ "$FAIL" -gt 0 ] && return 1 || return 0
 }
 
 # ---------------------------------------------------------------------------
@@ -206,16 +279,22 @@ self_test() {
   fi
 
   # Canary G — media stub (.gif) without its transcript sibling (.txt) must FAIL.
-  # Asserts: a media file without a transcript is not permitted.
-  printf '\x47\x49\x46' > "$tmpdir/canary-g.gif"      # GIF89a magic, no transcript
-  # (no canary-g.txt created)
-  local transcript_g="$tmpdir/canary-g.txt"
-  if [ -e "$transcript_g" ]; then
-    echo "SELF-TEST FAIL: canary G setup error — transcript should not exist" >&2
-    fail=$((fail + 1))
-  else
-    echo "  SELF-TEST OK: canary G (media without transcript) would be flagged by transcript check"
+  # Asserts: the requires_transcript check in scan_dir catches a media file with no .txt.
+  # Uses a dedicated subdirectory under tmpdir (cleaned by existing trap).
+  # Mutation guard: removing the requires_transcript block from scan_dir makes this FAIL.
+  local canary_g_dir="$tmpdir/canary-g-dir"
+  mkdir -p "$canary_g_dir"
+  printf '\x47\x49\x46' > "$canary_g_dir/canary-g.gif"   # GIF stub, no .txt sibling
+  local canary_g_out="$tmpdir/canary-g-output.txt"
+  local _scan_exit=0
+  scan_dir "$canary_g_dir" > "$canary_g_out" 2>&1 || _scan_exit=$?
+  if [ "$_scan_exit" -ne 0 ] && grep -E "MISSING-TRANSCRIPT" "$canary_g_out" >/dev/null 2>&1; then
+    echo "  SELF-TEST OK: canary G (media sem transcript) correctly caught by scan_dir"
     pass=$((pass + 1))
+  else
+    echo "SELF-TEST FAIL: canary G — scan_dir did not catch media sem transcript (exit=$_scan_exit)" >&2
+    cat "$canary_g_out" >&2
+    fail=$((fail + 1))
   fi
 
   echo "  Self-test: $pass passed, $fail failed"
@@ -280,42 +359,12 @@ fi
 
 echo "  Scanning ${#FILES[@]} file(s)..."
 
-FAIL=0
-for f in "${FILES[@]}"; do
-  bname="$(basename "$f")"
-  ext="${f##*.}"
-
-  if [ "$ext" = "txt" ]; then
-    # Transcript: scan as plain text
-    if scan_text_file "$f"; then
-      echo "  OK   $bname (transcript)"
-    else
-      echo "  LEAK $bname (transcript — text scan)"
-      FAIL=$((FAIL + 1))
-    fi
-  else
-    # Binary/media: scan with strings
-    if scan_file "$f"; then
-      echo "  OK   $bname"
-    else
-      echo "  LEAK $bname"
-      FAIL=$((FAIL + 1))
-    fi
-
-    # For media files, verify transcript sibling exists
-    if requires_transcript "$f"; then
-      base="${f%.*}"
-      if [ ! -f "${base}.txt" ]; then
-        echo "  MISSING-TRANSCRIPT $bname — expected ${base##*/}.txt"
-        FAIL=$((FAIL + 1))
-      fi
-    fi
-  fi
-done
+SCAN_FAIL=0
+scan_dir "$IMG_DIR" || SCAN_FAIL=$?
 
 echo ""
-if [ "$FAIL" -gt 0 ]; then
-  echo "check-site-images-leak.sh: FAIL — $FAIL issue(s) found"
+if [ "$SCAN_FAIL" -gt 0 ]; then
+  echo "check-site-images-leak.sh: FAIL — issue(s) found"
   exit 1
 fi
 

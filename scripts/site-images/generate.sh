@@ -35,7 +35,39 @@ BINARY="$REPO_ROOT/bin/trackfw"
 OUTPUT_DIR="$REPO_ROOT/site/public/img"
 TAPES_DIR="$SCRIPT_DIR"
 DEMO_TAPE="$REPO_ROOT/demo.tape"
-CHROME="/Users/kgsaran/Library/Caches/ms-playwright/chromium_headless_shell-1208/chrome-headless-shell-mac-arm64/chrome-headless-shell"
+
+# ---------------------------------------------------------------------------
+# Chrome discovery — must happen before HOME isolation (uses the real $HOME).
+# Resolution order:
+#   1. $CHROME from the caller's environment
+#   2. Newest Playwright chromium_headless_shell-* under $HOME/Library/Caches/ms-playwright/
+#      (macOS arm64; version suffix sorted numerically, picks the highest)
+#   3. chrome-headless-shell or chromium on PATH
+# If none found, board.png is skipped (non-fatal warning below).
+# ---------------------------------------------------------------------------
+CHROME="${CHROME:-}"
+if [ -z "$CHROME" ]; then
+  _playwright_dir="$HOME/Library/Caches/ms-playwright"
+  if [ -d "$_playwright_dir" ]; then
+    # Pick the highest numeric version: list subdirectory names, strip prefix, sort -n, reconstruct path
+    _best_ver=$(ls "$_playwright_dir" 2>/dev/null \
+      | grep '^chromium_headless_shell-' \
+      | sed 's/chromium_headless_shell-//' \
+      | sort -n | tail -1 || true)
+    if [ -n "$_best_ver" ]; then
+      _candidate="$_playwright_dir/chromium_headless_shell-${_best_ver}/chrome-headless-shell-mac-arm64/chrome-headless-shell"
+      [ -x "$_candidate" ] && CHROME="$_candidate" || true
+    fi
+  fi
+fi
+if [ -z "$CHROME" ]; then
+  for _cname in chrome-headless-shell chromium; do
+    if command -v "$_cname" >/dev/null 2>&1; then
+      CHROME=$(command -v "$_cname")
+      break
+    fi
+  done
+fi
 
 # ---------------------------------------------------------------------------
 # Cleanup
@@ -65,13 +97,11 @@ if ! command -v vhs >/dev/null 2>&1; then
   exit 1
 fi
 
-if [ ! -x "$CHROME" ]; then
-  echo "WARNING: chrome-headless-shell not found at $CHROME — board screenshot will be skipped" >&2
+if [ -z "$CHROME" ] || [ ! -x "$CHROME" ]; then
+  echo "WARNING: chrome-headless-shell not found — board.png will be skipped" >&2
+  echo "         (set CHROME=<path> or install Playwright: npx playwright install chromium)" >&2
   CHROME=""
 fi
-
-echo "=== generate.sh: bin/trackfw version ==="
-"$BINARY" version
 
 mkdir -p "$OUTPUT_DIR"
 
@@ -89,14 +119,18 @@ export GIT_COMMITTER_NAME="Demo User"
 export GIT_COMMITTER_EMAIL="demo@example.invalid"
 export TZ=UTC
 export PS1='$ '
+export USER=demo
+export LOGNAME=demo
 unset GH_TOKEN   || true
 unset GITHUB_TOKEN || true
 
 # Add bin/ to PATH so VHS tapes find the right binary
 export PATH="$REPO_ROOT/bin:$PATH"
 
-# Verify isolation: bin/trackfw must run with this isolated HOME
-"$BINARY" version >/dev/null
+# Pre-flight: every command of bin/trackfw now runs inside a fully isolated
+# environment (HOME, USER, LOGNAME, GIT identity, TZ, PS1). Verify it starts.
+echo "=== generate.sh: bin/trackfw version ==="
+"$BINARY" version
 
 # ---------------------------------------------------------------------------
 # rewrite_tape <src> <gif_or_webm_path> <txt_path> <screenshot_png_path>

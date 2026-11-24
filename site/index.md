@@ -384,22 +384,22 @@ title: "trackfw — Delivery governance for AI agents and teams"
 
   <div class="features-grid">
     <div class="feature-card">
-      <div class="icon">🔗</div>
+      <div class="icon" aria-hidden="true">🔗</div>
       <h3>Governance chain</h3>
       <p>ADR → REQ → ROADMAP → backlog/wip/done. Every line of code traces back to a decision.</p>
     </div>
     <div class="feature-card">
-      <div class="icon">🤖</div>
+      <div class="icon" aria-hidden="true">🤖</div>
       <h3>AI-agent native</h3>
       <p>Guard hooks block raw git operations in every major AI CLI. <code>trackfw context --format=json</code> feeds the full governance state to your agent at session start.</p>
     </div>
     <div class="feature-card">
-      <div class="icon">🌐</div>
+      <div class="icon" aria-hidden="true">🌐</div>
       <h3>Multi-stack, single binary</h3>
       <p>Go, Java, Node, Python. React/Vue/Angular. husky, lefthook, GitHub Actions, GitLab CI. One Go binary, delivered via npm, pip, Homebrew or curl.</p>
     </div>
     <div class="feature-card">
-      <div class="icon">📦</div>
+      <div class="icon" aria-hidden="true">📦</div>
       <h3>No lock-in</h3>
       <p>Markdown files in your own repo. No server, no database, no mandatory account. <code>trackfw serve</code> gives you a local Kanban board — no cloud required.</p>
     </div>

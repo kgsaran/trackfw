@@ -12,7 +12,7 @@ Set Shell "bash"
 Set FontSize 20
 Set FontFamily "JetBrainsMono Nerd Font"
 Set Width 820
-Set Height 320
+Set Height 560
 Set Theme "Catppuccin Mocha"
 Set Padding 24
 Set Margin 8

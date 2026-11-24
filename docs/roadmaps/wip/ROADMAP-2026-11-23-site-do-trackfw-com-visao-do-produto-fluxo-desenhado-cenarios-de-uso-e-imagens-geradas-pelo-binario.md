@@ -239,7 +239,14 @@ e inspeção visual, com o usuário real como canário natural. ML-4C e ML-4D.
 - [x] Falsifica D2, D3 e D6 a partir do contrato (vazamento em imagem, scanner, permissões do deploy); residual declarado
 
 ### ML-4C — Corretivo da Wave 4 nos scripts e na home (afrodite-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — o Chrome é descoberto em tempo de execução (cache do Playwright no `$HOME`, antes do isolamento;
+depois o PATH); nenhum `kgsaran` fora de `github.com/kgsaran` nos scripts (conferido pelo arquiteto). Pre-flight depois
+do isolamento; `USER`/`LOGNAME=demo`. Scanner: `scan_dir` extraído, canário G chama a varredura real (mutação do laço
+principal → rc=1), padrões `sk-`, `AKIA`, `xox[abp]-`, hostname e usuário da máquina (`id -un`). `guard.tape` com
+altura 560 (transcrição com `exit=`). `aria-hidden` nos 8 ícones. Gates rc=0. Notas do arquiteto: o
+`guard-poster.png` veio de uma rodada de teste da afrodite, porque o `Screenshot` do VHS não sobrescreveu o arquivo
+no `generate.sh` completo (residual: o pôster não é reproduzível por esse caminho); o VHS deixou 6 processos do Chrome
+vivos, encerrados pelo arquiteto.
 **Files affected:** `scripts/site-images/generate.sh`; `scripts/site-images/guard.tape`;
 `scripts/check-site-images-leak.sh`; `site/index.md`; `site/pt/index.md`
 **Actions:**
@@ -256,9 +263,9 @@ e inspeção visual, com o usuário real como canário natural. ML-4C e ML-4D.
 5. Decorative icons with `aria-hidden="true"` in both homes.
 6. Do not regenerate the versioned images unless needed for item 4; if `guard.*` is regenerated, run the scanner.
 **Acceptance criteria:**
-- [ ] `grep -rn "/Users/" scripts/site-images scripts/check-site-images-leak.sh` só em canários do autoteste
-- [ ] autoteste do scanner reprova com o laço principal removido (mutação medida); `make parity-rest` rc=0
-- [ ] build do site rc=0
+- [x] `grep -rn "/Users/" scripts/site-images scripts/check-site-images-leak.sh` só em canários do autoteste
+- [x] autoteste do scanner reprova com o laço principal removido (mutação medida); `make parity-rest` rc=0
+- [x] build do site rc=0
 
 ### ML-4D — Checkout do deploy sem credencial persistida (ares-tf)
 **Status:** ✅ Done — `persist-credentials: false` no `actions/checkout` do `build`; nenhum step posterior usa git
