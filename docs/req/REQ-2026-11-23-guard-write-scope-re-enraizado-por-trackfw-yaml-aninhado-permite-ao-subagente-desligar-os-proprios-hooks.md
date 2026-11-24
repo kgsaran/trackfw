@@ -2,7 +2,7 @@
 status: Open
 date: 2026-11-23
 author: "zeus-tf (aberta a pedido do KG em 2026-11-23)"
-adr: ""
+adr: "docs/adr/ADR-2026-11-24-guards-resolvem-trackfw-yaml-de-forma-monotonica-subagente-nao-cria-raiz-nem-afrouxa-regra.md"
 roadmap: "docs/roadmaps/wip/ROADMAP-2026-11-23-guard-write-scope-re-enraizado-por-trackfw-yaml-aninhado-permite-ao-subagente-desligar-os-proprios-hooks.md"
 ---
 
@@ -38,7 +38,7 @@ enraizamento pelo ancestral mais próximo, mas não declara este efeito.
 
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->
-ADR: 
+ADR: docs/adr/ADR-2026-11-24-guards-resolvem-trackfw-yaml-de-forma-monotonica-subagente-nao-cria-raiz-nem-afrouxa-regra.md
 
 ## Blocked by ADRs
 <!-- none -->

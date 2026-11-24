@@ -37,7 +37,11 @@ Varredura de issues abertos em 2026-11-24: nenhum.
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model, medição e varredura (hades-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — F-5 reproduzido no binário pelo hades e pelo arquiteto (baseline 2, planta 0, braço 0,
+contra-braço 2). Variantes do mesmo mecanismo: diretório `trackfw.yaml`, `TRACKFW.YAML` em FS sem caixa, FIFO (trava).
+Mesma causa no guard de credencial (`RunCredentialGlobal`: pre=2, braço=0; `RunCredential` lê só o yaml do cwd, por
+leitura). Comandos leem o yaml do cwd sem subir e não decidem permissão de subagente. Recomendação (a)+(d)+(e) e piso
+de credencial, registrada em ADR-2026-11-24 (D1–D4).
 **Files affected:** `docs/seguranca/2026-11-24-wave0-write-scope-raiz-aninhada-threat-model.md` (novo; único arquivo)
 **Actions:**
 1. Reproduce F-5 on the binary with an isolated HOME: the two writes (`.claude/trackfw.yaml`, then
@@ -55,19 +59,115 @@ Varredura de issues abertos em 2026-11-24: nenhum.
    (ADR-2026-10-23 residual); recommend the D for the ADR.
 5. Falsification targets in both directions and declared residual.
 **Acceptance criteria:**
-- [ ] The sections above answered with evidence (commands and output), not a one-line assertion
-- [ ] No implementation line written for this ML
+- [x] The sections above answered with evidence (commands and output), not a one-line assertion
+- [x] No implementation line written for this ML
 
 **Wave gates:**
 ```bash
 test -s docs/seguranca/2026-11-24-wave0-write-scope-raiz-aninhada-threat-model.md
 ```
 
-## Wave 1 — Implementation
-> Dependencies: Wave 0 audited and ADR written. Planned after the Wave 0.
+## Wave 1 — Implementation (2 MLs em paralelo)
+> Dependencies: Wave 0 audited; ADR-2026-11-24 written. ML-1A and ML-1B touch disjoint files and run in parallel; each
+> runs only `go test ./internal/guard/` (no `make quality` in this wave).
 
-## Wave 2 — Review and red team
+### ML-1A — Write-scope monotônico: D1, D2, D3 do ADR-2026-11-24 (apolo-tf)
+**Status:** ⬜ Pending
+**Files affected:** `internal/guard/writescope.go`; `internal/guard/writescope_nested_root_test.go` (novo)
+**Actions:**
+1. D1: for payloads with `agent_id`, deny (rc=2) any write whose path has a component equal to `trackfw.yaml` under
+   `strings.EqualFold`, after path normalization and BEFORE the project-root lookup (Step 7), so it also applies outside
+   any project. Normalization strips trailing `.` and spaces from every component (Windows creates `trackfw.yaml` from
+   `trackfw.yaml.`); apply that normalization as a pure function covered by unit tests on every OS.
+2. D2: the frozen list is the union of the FULL `buildFrozenList` of every ancestor that has `trackfw.yaml`, from the
+   target up to the filesystem root, each entry resolved against its own root. Never a union of only
+   `write_scope.frozen_paths`: the protection of `.claude/settings.json` comes from the hard-coded subagent list.
+3. D3: every `trackfw.yaml` read by write-scope goes through `fileutil.ReadRegularFile`. Only `os.IsNotExist` is absent;
+   `ErrNotRegularFile` and any other error deny. `findProjectRoot` must not accept a directory or FIFO as a root.
+   Never `if err != nil { return nil, nil, nil }`.
+4. Keep the target's root (ADR-2026-10-23 worktree contract) and every existing test green.
+**Tests (AC1 vectors from the Wave 0, each test with one sentence stating what it asserts):**
+- Write `<proj>/.claude/trackfw.yaml` (subagent, no lease) → rc=2; also under lease `allow=[".claude/"]`
+- Write `<proj>/x/trackfw.yaml/y` (subagent) → rc=2 (component, not basename)
+- Write `<proj>/P/trackfw.yaml` under exact-file lease `allow=["P/trackfw.yaml"]` → rc=2
+- Write `<proj>/.claude/TRACKFW.YAML` (subagent) → rc=2 (string comparison, runs on every FS)
+- Write `trackfw.yaml` in a directory with no project → rc=2
+- Outer yaml WITHOUT `write_scope`, nested yaml written by the test into the fixture (not via the guard), then Write
+  `<proj>/.claude/settings.json` → rc=2
+- Directory named `trackfw.yaml` created in the fixture, then Write `.claude/settings.json` → rc=2
+- FIFO named `trackfw.yaml` (skip on Windows) → rc=2 without hanging (test with timeout)
+- Symlink `trackfw.yaml → real.yaml` at the root → protection kept (rc=2 on `.claude/settings.json`)
+- Worktree counter-arm (agent cwd in worktree, target in main checkout) → rc=2, as today
+- Monorepo with pre-existing nested yamls → rc=2 on both `svc/.claude/settings.json` and `.claude/settings.json`
+- Main session (no `agent_id`) writing `<proj>/sub/trackfw.yaml` → rc=0 (D1 is subagent-only)
+- Normalization unit test: `trackfw.yaml.`, `trackfw.yaml ` and `TRACKFW.YAML` all match; `trackfw.yaml.bak` does not
+**Acceptance criteria:**
+- [ ] all vectors above pass; arm reproduced as rc=0 before the change and rc=2 after (report both)
+- [ ] `go test ./internal/guard/` rc=0; `go vet ./internal/guard/` rc=0; `go build ./...` rc=0
+- [ ] no file outside "Files affected" changed
+
+### ML-1B — Guard de credencial: modo mais estrito da cadeia, D4 do ADR-2026-11-24 (apolo-tf)
+**Status:** ⬜ Pending
+**Files affected:** `internal/guard/credential.go`; `internal/guard/credential_nested_mode_test.go` (novo)
+**Actions:**
+1. `RunCredential` (project scope): detect the project by the nearest ancestor of the cwd with `trackfw.yaml` (today it
+   only checks `<cwd>/trackfw.yaml`, so a cwd in a subdirectory turns the guard off). Keep the Antigravity payload-cwd
+   rule (ADR-2026-11-18 D3).
+2. Both scopes: the effective mode is the strictest of the caller's default and the `credential_guard.mode` of every
+   `trackfw.yaml` from the cwd up to the filesystem root (`block` > `warn`). Defaults stay per caller: `warn` in
+   `RunCredential`, `block` in `RunCredentialGlobal`. TRAP: `credReadModeWithDefault` has two callers; never put a
+   literal `"block"` floor inside the shared function.
+3. Reads go through `fileutil.ReadRegularFile`; a non-regular `trackfw.yaml` counts as `block`.
+**Tests (each with one sentence stating what it asserts):**
+- global, cwd=sub with planted `mode: warn` → blocks (was rc=0)
+- global, no yaml anywhere → blocks (unchanged)
+- project, root `mode: block`, cwd=sub without yaml → blocks (was off)
+- project, root `mode: block`, cwd=sub with planted `mode: warn` → blocks
+- project counter-arm, root `mode: warn` only → warns, rc=0 (the default `warn` is kept)
+- project, no yaml in any ancestor → rc=0 (not a project)
+- Antigravity payload cwd still used
+**Acceptance criteria:**
+- [ ] all tests above pass; `go test ./internal/guard/` rc=0; `go build ./...` rc=0
+- [ ] no file outside "Files affected" changed
+
+**Wave gates:**
+```bash
+go build ./...
+go vet ./internal/guard/
+go test ./internal/guard/
+```
+
+## Wave 2 — Review and red team (2 MLs em paralelo)
 > Dependencies: Wave 1 audited.
+
+### ML-2A — Revisão de qualidade (hefesto-tf)
+**Status:** ⬜ Pending
+**Files affected:** `docs/seguranca/2026-11-24-revisao-write-scope-raiz-aninhada.md` (novo)
+**Actions:** review ML-1A and ML-1B against ADR-2026-11-24 D1–D4: each test's sentence matches what it asserts; no
+`err != nil → absent`; no `"block"` literal in the shared function; dead code; Windows normalization.
+**Acceptance criteria:**
+- [ ] review written; blocking findings fixed by a corrective ML
+
+### ML-2B — Red team (hades-tf)
+**Status:** ⬜ Pending
+**Files affected:** `docs/seguranca/2026-11-24-red-team-write-scope-raiz-aninhada.md` (novo)
+**Actions:** falsify D1–D4 from the contract on the built binary with an isolated HOME: every Wave 0 vector, the six
+"Formas" of the Wave 0, and new variants; both directions (worktree, monorepo, main session must keep working).
+**Acceptance criteria:**
+- [ ] report written with arm and counter-arm; residual declared
+
+**Wave gates:**
+```bash
+test -s docs/seguranca/2026-11-24-revisao-write-scope-raiz-aninhada.md
+test -s docs/seguranca/2026-11-24-red-team-write-scope-raiz-aninhada.md
+```
 
 ## Wave 3 — Fechamento
 > Dependencies: Wave 2 audited.
+
+### ML-3A — `make quality` e CI (zeus-tf)
+**Status:** ⬜ Pending
+**Files affected:** `docs/roadmaps/wip/ROADMAP-2026-11-23-guard-write-scope-re-enraizado-por-trackfw-yaml-aninhado-permite-ao-subagente-desligar-os-proprios-hooks.md`
+**Actions:** `make quality` with an idle machine; push; CI green on all jobs (Windows included).
+**Acceptance criteria:**
+- [ ] `make quality` rc=0; CI green
