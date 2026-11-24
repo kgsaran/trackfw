@@ -185,7 +185,7 @@ func TestReadCredentialGuardMode_UnitVectors(t *testing.T) {
 
 // TestReadCredentialGuardMode_EndToEnd_ProjectScope exercises the CRLF block vector
 // through the full RunCredential stack (project scope), confirming that the guard's
-// credReadModeWithDefault → ReadCredentialGuardMode path produces rc=2 for CRLF block.
+// credWalkStrictestMode → ReadCredentialGuardMode path produces rc=2 for CRLF block.
 // Assertion: CRLF block yaml → RunCredential returns rc=2 (not rc=0 as before the fix).
 func TestReadCredentialGuardMode_EndToEnd_ProjectScope(t *testing.T) {
 	dir := t.TempDir()

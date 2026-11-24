@@ -136,5 +136,11 @@
     "classification": "c",
     "reason": "Build tag //go:build !windows; tests that InertCodexGuardPath and InertClaudeGuardPath do not block when ~/.codex/hooks.json or ~/.claude/settings.json is a FIFO. Windows does not have POSIX FIFOs.",
     "evidence": "File header: //go:build !windows. Mechanism: POSIX named pipes (FIFOs) are created with mkfifo(2) / syscall.Mkfifo and exposed as special files in the filesystem. Windows named pipes use a completely different API (CreateNamedPipe with \\\\.\\pipe\\ prefix) and are not accessible as filesystem paths in the same way. syscall.Mkfifo is not available on Windows."
+  },
+  {
+    "test": "internal/guard/writescope_nested_root_fifo_unix_test.go:TestD3_FIFONamedTrackfwYAML_DenyWithoutHanging",
+    "classification": "c",
+    "reason": "Build tag //go:build !windows; tests that a FIFO named trackfw.yaml triggers deny without blocking (D3: fileutil.ReadRegularFile opens with O_NONBLOCK). Windows does not have POSIX FIFOs.",
+    "evidence": "File header: //go:build !windows. Mechanism: POSIX named pipes (FIFOs) are created with mkfifo(2) / syscall.Mkfifo and exposed as special files in the filesystem. Windows named pipes use a completely different API (CreateNamedPipe with \\\\.\\pipe\\ prefix) and are not accessible as filesystem paths in the same way. syscall.Mkfifo is not available on Windows."
   }
 ]
