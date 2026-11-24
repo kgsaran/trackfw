@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-11-23
 author: "zeus-tf (aberta a pedido do KG em 2026-11-23)"
 adr: "docs/adr/ADR-2026-11-24-guards-resolvem-trackfw-yaml-de-forma-monotonica-subagente-nao-cria-raiz-nem-afrouxa-regra.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-11-23-guard-write-scope-re-enraizado-por-trackfw-yaml-aninhado-permite-ao-subagente-desligar-os-proprios-hooks.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-11-23-guard-write-scope-re-enraizado-por-trackfw-yaml-aninhado-permite-ao-subagente-desligar-os-proprios-hooks.md"
 ---
 
 # REQ: Guard write-scope re-enraizado por trackfw.yaml aninhado permite ao subagente desligar os próprios hooks
 
-> Date: 2026-11-23 | Status: Open
+> Date: 2026-11-23 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -25,12 +25,16 @@ Em duas escritas, o subagente desliga os próprios hooks do Claude Code. O ADR-2
 enraizamento pelo ancestral mais próximo, mas não declara este efeito.
 
 ## Acceptance Criteria
-- [ ] Criar um `trackfw.yaml` aninhado não muda a raiz nem as regras que o guard write-scope aplica a um subagente
-  (braço e contra-braço medidos no binário)
-- [ ] Um `trackfw.yaml` novo fora da raiz do projeto, escrito por subagente, é tratado como caminho congelado ou
-  bloqueado, decisão registrada em ADR
-- [ ] Mesmo mecanismo varrido nos outros guards e nos comandos que resolvem a raiz pelo `trackfw.yaml` mais próximo
-- [ ] `make quality` rc=0 e CI verde
+- [x] Criar um `trackfw.yaml` aninhado não muda a raiz nem as regras que o guard write-scope aplica a um subagente
+  (braço e contra-braço medidos no binário). Evidência: o red team mediu nos binários `3ae8d29c` (antes) e `7613c035`
+  (depois), relatório `docs/seguranca/2026-11-24-red-team-write-scope-raiz-aninhada.md`. O delta do ML-2C foi medido
+  em `docs/seguranca/2026-11-24-red-team-ml-2c-write-scope.md`, com 22 vetores e nenhum escape.
+- [x] Um `trackfw.yaml` novo fora da raiz do projeto, escrito por subagente, é tratado como caminho congelado ou
+  bloqueado, decisão registrada em ADR (ADR-2026-11-24 D1: bloqueado em qualquer lugar)
+- [x] Mesmo mecanismo varrido nos outros guards e nos comandos que resolvem a raiz pelo `trackfw.yaml` mais próximo
+  (Wave 0). O guard de credencial tinha a mesma causa e foi corrigido (D4 e D3). Os comandos leem o yaml do cwd e não
+  decidem permissão de subagente.
+- [x] `make quality` rc=0 e CI verde (PR #706: 24/24 checks, Windows incluído; merge `c80543d4`)
 
 ## Negative scope
 - Não muda `trackfw init` nem o leitor de config (REQ-2026-11-22).
@@ -45,4 +49,4 @@ ADR: docs/adr/ADR-2026-11-24-guards-resolvem-trackfw-yaml-de-forma-monotonica-su
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-11-23-guard-write-scope-re-enraizado-por-trackfw-yaml-aninhado-permite-ao-subagente-desligar-os-proprios-hooks.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-11-23-guard-write-scope-re-enraizado-por-trackfw-yaml-aninhado-permite-ao-subagente-desligar-os-proprios-hooks.md
