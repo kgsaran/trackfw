@@ -7,6 +7,32 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [11.9.0] - 2026-11-23
+
+Onboarding verificável: cada comando que o README e o site mandam rodar funciona com o binário e é conferido por teste. O `init` passa a ler o `trackfw.yaml` como o leitor o lê (#700).
+
+### Breaking Changes
+
+Nenhum comando ou flag muda. Três mudanças de comportamento pedem atenção e estão em *Changed*.
+
+### Changed
+
+- **Site em inglês na raiz.** A documentação em inglês fica em `https://kgsaran.github.io/trackfw/`, e a em português em `/trackfw/pt/`. Links antigos para páginas internas em português (`/trackfw/guide/...`) passam a abrir a versão em inglês, e os links antigos para `/trackfw/en/...` deixam de existir (#700).
+- **`init --brownfield` não rebaixa projeto existente.** Num projeto sem `trackfw.yaml`, grava `governance_mode: lenient` e `lenient_until`. Com o arquivo existente, avisa e não altera a governança: para ativar o modo lenient, edite o `trackfw.yaml` (#700).
+- **Âncoras YAML no `trackfw.yaml` passam a valer.** Chaves herdadas por merge key (`<<: *defaults`) eram ignoradas em silêncio e agora são lidas, com a chave explícita vencendo a herdada. Se o seu `trackfw.yaml` usa âncoras, confira os valores herdados (#700).
+
+### Fixed
+
+- **`init` honra as flags com e sem terminal:** `--brownfield` era ignorado sem TTY (agentes de IA, CI), e `--ai-tools` era ignorado num terminal interativo (#700).
+- **`init` não duplica chaves do `trackfw.yaml`:** uma chave escrita com aspas, com espaço antes do `:` ou com BOM ganhava um segundo valor padrão, que vencia o do usuário. O mesmo vale para a seção `pre-commit` do `lefthook.yml` (#700).
+- **`trackfw.yaml` com âncora cíclica ou bomba de alias** derrubava o binário (estouro de pilha) ou o travava por mais de 30 s. Agora o comando falha em milissegundos com "malformed YAML" (#700).
+- **README e site:** comandos que saíam com erro (`adr new` e `req new` sem título, `roadmap move REQ-...`), saída prometida do `validate`, âncoras quebradas e estrutura gerada pelo `init` corrigidos; o Quick start ficou contíguo e o bloco de Windows saiu de *Installation* (#700).
+- **`trackfw guard` sem subcomando** lista os três guards (`git-branch`, `write-scope`, `credential`) (#700).
+
+### Internal
+
+- O teste do Quick start executa uma lista única de comandos e exige que ela apareça, como bloco contíguo, no README e no guia do site, com a saída prometida no bloco de saída (#700).
+
 ## [11.8.1] - 2026-11-22
 
 `agents install` e `skills install` com escopo global deixam de alterar o projeto em que o comando roda (#697).

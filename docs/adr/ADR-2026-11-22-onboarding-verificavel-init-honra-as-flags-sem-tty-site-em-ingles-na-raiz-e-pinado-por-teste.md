@@ -1,12 +1,12 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-11-22
 author: "zeus-tf (decisões do KG em 2026-11-22)"
 ---
 
 # ADR: Onboarding verificável: init honra as flags sem TTY, site em inglês na raiz e pinado por teste
 
-> Date: 2026-11-22 | Status: Proposed
+> Date: 2026-11-22 | Status: Accepted
 
 ## Context
 
