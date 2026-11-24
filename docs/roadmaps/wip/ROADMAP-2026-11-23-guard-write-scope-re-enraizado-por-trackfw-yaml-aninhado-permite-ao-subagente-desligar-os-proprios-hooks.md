@@ -299,6 +299,14 @@ build, vet, `go test ./internal/guard/` rc=0.
 - [x] `go build ./...`; `go vet ./internal/guard/`; `go test ./internal/guard/ -count=1` rc=0
 - [x] nenhum arquivo fora de "Files affected" alterado
 
+### ML-2G — Teste do wrapper no inventário de skips do Windows (apolo-tf)
+**Status:** ✅ Done — o `make quality` (ML-3A) reprovou em `TestGate_RealTree`: o teste
+`TestCredentialGuardScript_DirectoryYaml_CallsTrackfw` pula no Windows (exige `sh`) e faltava no inventário. Entrada
+classe `c`, no modelo de `TestCredentialGuardScript_GeneratedScript_WindowsPathRedirectDetectsJWTInFile`.
+**Files affected:** `.github/windows-skips.json`
+**Acceptance criteria:**
+- [x] `go test ./internal/winskips/ -count=1` rc=0
+
 **Wave gates:**
 ```bash
 test -s docs/seguranca/2026-11-24-revisao-write-scope-raiz-aninhada.md

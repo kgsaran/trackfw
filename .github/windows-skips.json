@@ -18,6 +18,12 @@
     "evidence": "File header: //go:build !windows. Mechanism: POSIX process group kill (kill(-pgid, SIGKILL)) relies on Unix process group IDs set via setpgid/setsid. Windows has no POSIX process groups; TerminateProcess targets a single PID. The test exercises Unix-specific kill-group semantics unavailable on Windows."
   },
   {
+    "test": "internal/generators/credential_guard_test.go:TestCredentialGuardScript_DirectoryYaml_CallsTrackfw",
+    "classification": "c",
+    "reason": "The test invokes the generated project-scope wrapper scripts/trackfw-credential-guard.sh via sh to verify that a directory-named trackfw.yaml triggers the trackfw call (D3 of ADR-2026-11-24, ML-2C). sh is not natively available on Windows; the test is skipped rather than ported.",
+    "evidence": "runtime.GOOS == \"windows\" branch with t.Skip(\"test requires sh — not available on Windows\"). Mechanism: the test executes GenerateCredentialGuardScript, then runs the emitted scripts/trackfw-credential-guard.sh through sh with a stub trackfw in PATH. Windows does not ship sh; Git-for-Windows provides one but it is not guaranteed in CI. The D3 fix (ancestor-loop uses [ -e ] || [ -L ] instead of [ -f ]) is a shell-script contract and cannot be tested without a POSIX sh interpreter."
+  },
+  {
     "test": "internal/generators/credential_guard_test.go:TestCredentialGuardScript_GeneratedScript_WindowsPathRedirectDetectsJWTInFile",
     "classification": "c",
     "reason": "NTFS reserves ':' in filenames; the fixture creates a path like 'C:/Users/x/s.env' as a directory tree, which requires a directory named 'C:' — illegal on Windows.",
