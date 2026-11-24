@@ -1,0 +1,2563 @@
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # Project set up with: trackfw init --ai-tools claude --forge github
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # Project set up with: trackfw init --ai-tools claude --forge github
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # Project set up with: trackfw init --ai-tools claude --forge github
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # Project set up with: trackfw init --ai-tools claude --forge github
+$ # 1. Record a decision
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # Project set up with: trackfw init --ai-tools claude --forge github
+$ # 1. Record a decision
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # Project set up with: trackfw init --ai-tools claude --forge github
+$ # 1. Record a decision
+$ trackfw adr new "User Authentication Strategy"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # Project set up with: trackfw init --ai-tools claude --forge github
+$ # 1. Record a decision
+$ trackfw adr new "User Authentication Strategy"
+┃ Context
+┃ What is the situation that motivates this decision?
+┃ >
+
+enter next
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # Project set up with: trackfw init --ai-tools claude --forge github
+$ # 1. Record a decision
+$ trackfw adr new "User Authentication Strategy"
+┃ Context
+┃ What is the situation that motivates this decision?
+┃ >
+
+enter next
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # Project set up with: trackfw init --ai-tools claude --forge github
+$ # 1. Record a decision
+$ trackfw adr new "User Authentication Strategy"
+┃ Context
+┃ What is the situation that motivates this decision?
+┃ > Users need to sign in to see their own data.
+
+enter next
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # Project set up with: trackfw init --ai-tools claude --forge github
+$ # 1. Record a decision
+$ trackfw adr new "User Authentication Strategy"
+┃ Decision
+┃ What was decided?
+┃ >
+
+shift+tab back • enter next
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # Project set up with: trackfw init --ai-tools claude --forge github
+$ # 1. Record a decision
+$ trackfw adr new "User Authentication Strategy"
+┃ Decision
+┃ What was decided?
+┃ >
+
+shift+tab back • enter next
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # Project set up with: trackfw init --ai-tools claude --forge github
+$ # 1. Record a decision
+$ trackfw adr new "User Authentication Strategy"
+┃ Decision
+┃ What was decided?
+┃ > Email and password, hashed with bcrypt.
+
+shift+tab back • enter next
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # Project set up with: trackfw init --ai-tools claude --forge github
+$ # 1. Record a decision
+$ trackfw adr new "User Authentication Strategy"
+┃ Consequences
+┃ What are the positive and negative consequences?
+┃ >
+
+shift+tab back • enter next
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # Project set up with: trackfw init --ai-tools claude --forge github
+$ # 1. Record a decision
+$ trackfw adr new "User Authentication Strategy"
+┃ Consequences
+┃ What are the positive and negative consequences?
+┃ >
+
+shift+tab back • enter next
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # Project set up with: trackfw init --ai-tools claude --forge github
+$ # 1. Record a decision
+$ trackfw adr new "User Authentication Strategy"
+┃ Consequences
+┃ What are the positive and negative consequences?
+┃ > Simple to ship now; SSO can come later.
+
+shift+tab back • enter next
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # Project set up with: trackfw init --ai-tools claude --forge github
+$ # 1. Record a decision
+$ trackfw adr new "User Authentication Strategy"
+┃ Alternatives Considered
+┃ What other options were evaluated and why were they rejected?
+┃ >
+
+shift+tab back • enter submit
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # Project set up with: trackfw init --ai-tools claude --forge github
+$ # 1. Record a decision
+$ trackfw adr new "User Authentication Strategy"
+┃ Alternatives Considered
+┃ What other options were evaluated and why were they rejected?
+┃ >
+
+shift+tab back • enter submit
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # Project set up with: trackfw init --ai-tools claude --forge github
+$ # 1. Record a decision
+$ trackfw adr new "User Authentication Strategy"
+┃ Alternatives Considered
+┃ What other options were evaluated and why were they rejected?
+┃ > SSO only: rejected for the first release.
+
+shift+tab back • enter submit
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # Project set up with: trackfw init --ai-tools claude --forge github
+$ # 1. Record a decision
+$ trackfw adr new "User Authentication Strategy"
+created docs/adr/ADR-2026-11-24-user-authentication-strategy.md
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # Project set up with: trackfw init --ai-tools claude --forge github
+$ # 1. Record a decision
+$ trackfw adr new "User Authentication Strategy"
+created docs/adr/ADR-2026-11-24-user-authentication-strategy.md
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 2. A requirement linked to that decision
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 2. A requirement linked to that decision
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 2. A requirement linked to that decision
+$ trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 2. A requirement linked to that decision
+$ trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 2. A requirement linked to that decision
+$ trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md
+┃ Project requirement
+┃ Describe what you want to build or change
+┃ > User Authentication
+
+  Motivation
+  Why is this requirement needed?
+  >
+
+enter next
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 2. A requirement linked to that decision
+$ trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md
+  Project requirement
+  Describe what you want to build or change
+  > User Authentication
+
+┃ Motivation
+┃ Why is this requirement needed?
+┃ >
+
+shift+tab back • enter submit
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 2. A requirement linked to that decision
+$ trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md
+  Project requirement
+  Describe what you want to build or change
+  > User Authentication
+
+┃ Motivation
+┃ Why is this requirement needed?
+┃ >
+
+shift+tab back • enter submit
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 2. A requirement linked to that decision
+$ trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md
+  Project requirement
+  Describe what you want to build or change
+  > User Authentication
+
+┃ Motivation
+┃ Why is this requirement needed?
+┃ > Users must log in before reaching their dashboard.
+
+shift+tab back • enter submit
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 2. A requirement linked to that decision
+$ trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md
+┃ Scope of ADRs for this REQ
+┃ > Local (default)
+┃   Global (~/.trackfw/adr, cross-project)
+
+↑ up • ↓ down • / filter • enter submit
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 2. A requirement linked to that decision
+$ trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md
+┃ Scope of ADRs for this REQ
+┃ > Local (default)
+┃   Global (~/.trackfw/adr, cross-project)
+
+↑ up • ↓ down • / filter • enter submit
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 2. A requirement linked to that decision
+$ trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md
+┃ Scope of ADRs for this REQ
+┃   Local (default)
+┃ > Global (~/.trackfw/adr, cross-project)
+
+↑ up • ↓ down • / filter • enter submit
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 2. A requirement linked to that decision
+$ trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md
+┃ Acceptance Criteria
+┃ List acceptance criteria, one per line
+┃ >
+
+
+
+enter next
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 2. A requirement linked to that decision
+$ trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md
+┃ Acceptance Criteria
+┃ List acceptance criteria, one per line
+┃ >
+
+
+
+enter next
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 2. A requirement linked to that decision
+$ trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md
+┃ How will users authenticate?
+┃ > Local login (email + password)
+┃   SSO (Google, Azure AD, Okta...)
+┃   Both (local + SSO)
+┃   Not decided yet
+
+↑ up • ↓ down • / filter • shift+tab back • enter select
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 2. A requirement linked to that decision
+$ trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md
+┃ How will users authenticate?
+┃ > Local login (email + password)
+┃   SSO (Google, Azure AD, Okta...)
+┃   Both (local + SSO)
+┃   Not decided yet
+
+↑ up • ↓ down • / filter • shift+tab back • enter select
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 2. A requirement linked to that decision
+$ trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md
+┃ How will sessions be managed?
+┃ > JWT (stateless)
+┃   Server-side sessions (cookies)
+┃   Not decided yet
+
+
+↑ up • ↓ down • / filter • shift+tab back • enter submit
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 2. A requirement linked to that decision
+$ trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md
+┃ How will sessions be managed?
+┃ > JWT (stateless)
+┃   Server-side sessions (cookies)
+┃   Not decided yet
+
+
+↑ up • ↓ down • / filter • shift+tab back • enter submit
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 2. A requirement linked to that decision
+$ trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md
+created docs/req/REQ-2026-11-24-user-authentication.md
+✓ created docs/roadmaps/backlog/ROADMAP-2026-11-24-user-authentication.md
+✓ linked REQ-2026-11-24-user-authentication.md → docs/roadmaps/backlog/ROADMAP-2026-11-24-user-authentication.m
+d
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 2. A requirement linked to that decision
+$ trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md
+created docs/req/REQ-2026-11-24-user-authentication.md
+✓ created docs/roadmaps/backlog/ROADMAP-2026-11-24-user-authentication.md
+✓ linked REQ-2026-11-24-user-authentication.md → docs/roadmaps/backlog/ROADMAP-2026-11-24-user-authentication.m
+d
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 3. Start the work and check the chain
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 3. Start the work and check the chain
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 3. Start the work and check the chain
+$ trackfw roadmap move ROADMAP-$(date +%F)-user-authentication.md wip
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 3. Start the work and check the chain
+$ trackfw roadmap move ROADMAP-$(date +%F)-user-authentication.md wip
+✓ moved ROADMAP-2026-11-24-user-authentication.md → docs/roadmaps/wip
+✓ synced REQ-2026-11-24-user-authentication.md → docs/roadmaps/wip/ROADMAP-2026-11-24-user-authentication.md
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 3. Start the work and check the chain
+$ trackfw roadmap move ROADMAP-$(date +%F)-user-authentication.md wip
+✓ moved ROADMAP-2026-11-24-user-authentication.md → docs/roadmaps/wip
+✓ synced REQ-2026-11-24-user-authentication.md → docs/roadmaps/wip/ROADMAP-2026-11-24-user-authentication.md
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 3. Start the work and check the chain
+$ trackfw roadmap move ROADMAP-$(date +%F)-user-authentication.md wip
+✓ moved ROADMAP-2026-11-24-user-authentication.md → docs/roadmaps/wip
+✓ synced REQ-2026-11-24-user-authentication.md → docs/roadmaps/wip/ROADMAP-2026-11-24-user-authentication.md
+$ trackfw validate
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 3. Start the work and check the chain
+$ trackfw roadmap move ROADMAP-$(date +%F)-user-authentication.md wip
+✓ moved ROADMAP-2026-11-24-user-authentication.md → docs/roadmaps/wip
+✓ synced REQ-2026-11-24-user-authentication.md → docs/roadmaps/wip/ROADMAP-2026-11-24-user-authentication.md
+$ trackfw validate
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 3. Start the work and check the chain
+$ trackfw roadmap move ROADMAP-$(date +%F)-user-authentication.md wip
+✓ moved ROADMAP-2026-11-24-user-authentication.md → docs/roadmaps/wip
+✓ synced REQ-2026-11-24-user-authentication.md → docs/roadmaps/wip/ROADMAP-2026-11-24-user-authentication.md
+$ trackfw validate
+⚠  adr_req_has_content: "docs/req/REQ-2026-11-24-user-authentication.md" has mandatory section(s) with only mod
+el content: ## Acceptance Criteria — fill in or set rules.adr_req_has_content: off
+1 warning(s)
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 4. Your AI agent tries to push straight to main. The hook says no:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 4. Your AI agent tries to push straight to main. The hook says no:
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 4. Your AI agent tries to push straight to main. The hook says no:
+$ echo '{"tool_name":"Bash","tool_input":{"command":"git push origin main"}}' | trackfw guard git-branch >/dev/
+null; echo "exit=$?"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 4. Your AI agent tries to push straight to main. The hook says no:
+$ echo '{"tool_name":"Bash","tool_input":{"command":"git push origin main"}}' | trackfw guard git-branch >/dev/
+null; echo "exit=$?"
+trackfw: raw git push blocked. Use `trackfw push` (push existing commits), `trackfw ship` (commit + push + PR i
+n one step) or `trackfw release tag` (publish a release tag). Nothing before this command was executed (a compo
+und command is blocked as a whole).
+exit=2
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 4. Your AI agent tries to push straight to main. The hook says no:
+$ echo '{"tool_name":"Bash","tool_input":{"command":"git push origin main"}}' | trackfw guard git-branch >/dev/
+null; echo "exit=$?"
+trackfw: raw git push blocked. Use `trackfw push` (push existing commits), `trackfw ship` (commit + push + PR i
+n one step) or `trackfw release tag` (publish a release tag). Nothing before this command was executed (a compo
+und command is blocked as a whole).
+exit=2
+$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 4. Your AI agent tries to push straight to main. The hook says no:
+$ echo '{"tool_name":"Bash","tool_input":{"command":"git push origin main"}}' | trackfw guard git-branch >/dev/
+null; echo "exit=$?"
+trackfw: raw git push blocked. Use `trackfw push` (push existing commits), `trackfw ship` (commit + push + PR i
+n one step) or `trackfw release tag` (publish a release tag). Nothing before this command was executed (a compo
+und command is blocked as a whole).
+exit=2
+$ trackfw status
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 4. Your AI agent tries to push straight to main. The hook says no:
+$ echo '{"tool_name":"Bash","tool_input":{"command":"git push origin main"}}' | trackfw guard git-branch >/dev/
+null; echo "exit=$?"
+trackfw: raw git push blocked. Use `trackfw push` (push existing commits), `trackfw ship` (commit + push + PR i
+n one step) or `trackfw release tag` (publish a release tag). Nothing before this command was executed (a compo
+und command is blocked as a whole).
+exit=2
+$ trackfw status
+── trackfw status ──────────────────────
+
+📊 Inventory
+   ADRs        1
+   REQs        1  (1 Open · 0 Done · 0 Closed)
+   Roadmaps    1
+     backlog 0 · analyzing 0 · wip 1
+     blocked 0 · done 0 · abandoned 0
+
+🔄 WIP (1)
+   ROADMAP-2026-11-24-user-authentication.md
+
+❌ Blocked (0)
+
+✅ Done (last 5)
+
+────────────────────────────────────────
+$
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 4. Your AI agent tries to push straight to main. The hook says no:
+$ echo '{"tool_name":"Bash","tool_input":{"command":"git push origin main"}}' | trackfw guard git-branch >/dev/
+null; echo "exit=$?"
+trackfw: raw git push blocked. Use `trackfw push` (push existing commits), `trackfw ship` (commit + push + PR i
+n one step) or `trackfw release tag` (publish a release tag). Nothing before this command was executed (a compo
+und command is blocked as a whole).
+exit=2
+$ trackfw status
+── trackfw status ──────────────────────
+
+📊 Inventory
+   ADRs        1
+   REQs        1  (1 Open · 0 Done · 0 Closed)
+   Roadmaps    1
+     backlog 0 · analyzing 0 · wip 1
+     blocked 0 · done 0 · abandoned 0
+
+🔄 WIP (1)
+   ROADMAP-2026-11-24-user-authentication.md
+
+❌ Blocked (0)
+
+✅ Done (last 5)
+
+────────────────────────────────────────
+$
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 4. Your AI agent tries to push straight to main. The hook says no:
+$ echo '{"tool_name":"Bash","tool_input":{"command":"git push origin main"}}' | trackfw guard git-branch >/dev/
+null; echo "exit=$?"
+trackfw: raw git push blocked. Use `trackfw push` (push existing commits), `trackfw ship` (commit + push + PR i
+n one step) or `trackfw release tag` (publish a release tag). Nothing before this command was executed (a compo
+und command is blocked as a whole).
+exit=2
+$ trackfw status
+── trackfw status ──────────────────────
+
+📊 Inventory
+   ADRs        1
+   REQs        1  (1 Open · 0 Done · 0 Closed)
+   Roadmaps    1
+     backlog 0 · analyzing 0 · wip 1
+     blocked 0 · done 0 · abandoned 0
+
+🔄 WIP (1)
+   ROADMAP-2026-11-24-user-authentication.md
+
+❌ Blocked (0)
+
+✅ Done (last 5)
+
+────────────────────────────────────────
+$
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+$ # 4. Your AI agent tries to push straight to main. The hook says no:
+$ echo '{"tool_name":"Bash","tool_input":{"command":"git push origin main"}}' | trackfw guard git-branch >/dev/
+null; echo "exit=$?"
+trackfw: raw git push blocked. Use `trackfw push` (push existing commits), `trackfw ship` (commit + push + PR i
+n one step) or `trackfw release tag` (publish a release tag). Nothing before this command was executed (a compo
+und command is blocked as a whole).
+exit=2
+$ trackfw status
+── trackfw status ──────────────────────
+
+📊 Inventory
+   ADRs        1
+   REQs        1  (1 Open · 0 Done · 0 Closed)
+   Roadmaps    1
+     backlog 0 · analyzing 0 · wip 1
+     blocked 0 · done 0 · abandoned 0
+
+🔄 WIP (1)
+   ROADMAP-2026-11-24-user-authentication.md
+
+❌ Blocked (0)
+
+✅ Done (last 5)
+
+────────────────────────────────────────
+$
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 ---
 name: goatcounter-apos-onboarding
-description: Sequência combinada em 2026-11-22 — onboarding → GoatCounter no site → site novo (protótipo primeiro); REQ do GoatCounter só após merge da REQ-2026-11-22
+description: Site novo (protótipo primeiro, inglês primeiro) decidido pelo KG; GoatCounter foi pulado em 2026-11-23
 metadata:
   type: project
 ---
@@ -19,3 +19,5 @@ Em 2026-11-22 o KG escolheu **GoatCounter** como analytics do site (`site/`, Git
 - O site novo terá imagens, cenários de uso (dev solo com agente, time com CI, empresa só com npm/pip) e o desenho do fluxo ADR → REQ → ROADMAP → waves → barrier.
 - Segue o método de protótipo primeiro (§9 das regras globais): conceito da atena-tf → protótipo descartável validado visualmente pelo KG → ADR/roadmap.
 - Imagens geradas a partir do binário, não feitas à mão.
+
+**Atualização 2026-11-23:** o KG decidiu **pular o GoatCounter** e ir direto ao site novo (sem medição antes/depois). Protótipo do site novo em **inglês primeiro**; pt-BR entra na implementação final. Não reabrir o GoatCounter sem o KG pedir.
