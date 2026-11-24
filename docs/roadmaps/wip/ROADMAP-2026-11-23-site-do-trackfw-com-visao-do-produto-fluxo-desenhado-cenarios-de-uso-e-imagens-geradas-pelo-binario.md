@@ -87,7 +87,12 @@ test -s docs/visao-projeto/2026-11-23-site-novo-conceito.md
 > Dependencies: Wave 0 audited and Wave 1 approved by the KG. One agent, sequential (ML-2B uses ML-2A's images).
 
 ### ML-2A — Gerador de imagens e scanner de vazamento (afrodite-tf)
-**Status:** ⬜ Pending
+**Status:** 🔄 Primeira rodada — `generate.sh` com o ambiente fixo, tapes `quickstart`/`guard` e o demo em `.webm`;
+`board.png` só do painel Kanban; scanner com 5 canários (`5 passed`) e varredura limpa (rodada também pelo arquiteto,
+rc=0); `make parity-rest` rc=0. Pendências da auditoria: (1) o `quickstart.gif` termina com "1 violation" (um Enter
+às cegas no wizard do `req new` cria um ADR draft); (2) o scanner lê os bytes com `strings`, e o texto que aparece
+numa imagem é pixel: ele pega metadado, não o que o terminal mostra. O controle real é o ambiente fixo; a
+verificação tem de ler a saída em texto do VHS (`Output *.txt`) de cada tape.
 **Files affected:** `scripts/site-images/generate.sh` (novo); `scripts/site-images/*.tape` (novos);
 `scripts/check-site-images-leak.sh` (novo); `site/public/img/` (gerados)
 **Actions:**
@@ -105,8 +110,13 @@ test -s docs/visao-projeto/2026-11-23-site-novo-conceito.md
 - [ ] `make parity-rest` rc=0 (script novo)
 
 ### ML-2B — Protótipo da home (afrodite-tf)
-**Status:** ⬜ Pending
-**Files affected:** `site/prototype.md` (descartável; removido antes do PR final)
+**Status:** 🔄 Rodada 1 entregue ao KG — `site/prototype.md` com hero, problema, fluxo, 3 cenários, board, vídeo com
+controles, features e Quick start (linhas idênticas ao README). Build rc=0; `TestQuickStart` rc=0. Notas do arquiteto
+na captura desktop: o fluxo quebra o texto em nós estreitos; o vídeo e o GIF do Quick start mostram o primeiro quadro
+vazio (falta pôster); o board aparece pequeno e com colunas quase vazias; o card do cenário 1 tem o GIF do guard
+sem conteúdo visível.
+**Files affected:** `site/prototype.md` (descartável; removido antes do PR final); `site/public/img/board.png`;
+`site/public/img/demo.webm`; `site/public/img/guard.gif`; `site/public/img/quickstart.gif`
 **Actions:** an isolated page, outside the nav and with `noindex`, implementing the concept's home in English with
 the KG's decisions: hero, problem, drawn flow (static, no runtime plugin), three scenario cards, board screenshot,
 demo video with controls, updated feature cards and the pinned Quick start. Build and headless screenshots at 1280 px
