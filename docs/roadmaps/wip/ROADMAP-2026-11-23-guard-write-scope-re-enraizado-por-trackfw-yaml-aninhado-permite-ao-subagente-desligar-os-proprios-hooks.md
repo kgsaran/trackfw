@@ -240,7 +240,9 @@ dos 4 pacotes, `make build`, `make parity-rest`, todos rc=0.
 `internal/guard/credential_mode_test.go`; `internal/guard/writescope.go`; `internal/guard/writescope_nested_root_test.go`;
 `internal/guard/writescope_ml2c_test.go` (novo); `internal/generators/credential_guard_test.go`;
 `internal/generators/scaffold.go`; `scripts/trackfw-credential-guard.sh`;
-`internal/validator/validator_credential_guard_integrity_reference.go`; `docs/cli-parity.md`
+`internal/validator/validator_credential_guard_integrity_reference.go`; `docs/cli-parity.md`;
+`docs/adr/ADR-2026-10-23-regras-de-escrita-dos-agentes-sao-aplicadas-pelo-harness-e-nao-pelo-texto-do-handoff.md`
+(linha "Emendado por ADR-2026-11-24", escrita pelo arquiteto para o D5)
 **Actions:**
 1. MÉDIO-1 (D3, detecção de raiz): `credFindNearestProjectRoot` para em qualquer `trackfw.yaml` que exista (inclusive
    diretório, FIFO, ilegível) e `RunCredential` nega (rc=2) quando esse yaml não é arquivo regular legível. Só
