@@ -15,10 +15,10 @@ REQ: docs/req/REQ-2026-11-23-site-do-trackfw-com-visao-do-produto-fluxo-desenhad
 
 ## Acceptance Criteria
 - [x] AC1: conceito aprovado pelo KG
-- [ ] AC2: protótipo validado visualmente pelo KG e descartado
+- [x] AC2: protótipo validado visualmente pelo KG e descartado
 - [x] AC3: ADR e waves de implementação escritos após a validação
-- [ ] AC4: site final en + pt-BR com imagens geradas por script, sem dado pessoal
-- [ ] AC5: teste do Quick start verde; build do site rc=0; capturas headless
+- [x] AC4: site final en + pt-BR com imagens geradas por script, sem dado pessoal
+- [x] AC5: teste do Quick start verde; build do site rc=0; capturas headless
 - [ ] AC6: `make quality` rc=0 e CI verde
 
 ## Status Legend
@@ -285,7 +285,7 @@ test -s docs/seguranca/2026-11-23-red-team-site-novo.md
 > Dependencies: Wave 4 audited.
 
 ### ML-FB — make quality e CI (zeus-tf)
-**Status:** ⬜ Pending
+**Status:** 🔄 In progress — `make quality` MQ_RC=0 em 2026-11-24 com a máquina ociosa. Falta o CI do PR.
 **Acceptance criteria:**
 - [ ] AC6: `make quality` rc=0 com a máquina ociosa; CI verde no PR
 
