@@ -218,16 +218,54 @@ TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 5m -run 'TestQuickStart' ./
 > Dependencies: Wave 3 audited.
 
 ### ML-4A — Revisão de qualidade (hefesto-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — APROVA com ressalvas, 0 bloqueante. (1) `generate.sh:38` tem o caminho do Chrome com
+`/Users/kgsaran/...` no código versionado, o que expõe o usuário no repositório e só funciona nesta máquina; (2) o
+canário G do scanner é vazio (não exercita o laço principal); (3) ícones decorativos sem `aria-hidden` (8 ocorrências).
+Paridade en/pt, D6, D7 e D8 conferidos; imagens ~1,5 MB. ML-4C.
 **Files affected:** `docs/qualidade/2026-11-23-site-novo-review.md`
 **Acceptance criteria:**
-- [ ] Parecer escrito; achados bloqueantes corrigidos por ML corretivo
+- [x] Parecer escrito; achados bloqueantes corrigidos por ML corretivo
 
 ### ML-4B — Red team (hades-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — APROVA com ressalvas, 0 bloqueante. Nenhum dado pessoal nas imagens versionadas (bytes,
+transcrições, 4 pôsteres e 19 quadros do `guard.gif` extraídos com ffmpeg); D6 e D7 conferidos. Para corrigir: canário G
+vazio (teste de mutação confirma), pre-flight do `generate.sh` antes do isolamento (linha 74), `USER`/`LOGNAME` não
+fixados, caminho do Chrome com o usuário, `persist-credentials` no checkout do deploy. Residuais: transcrição e GIF
+são vistas diferentes; scanner sem hostname e sem `sk-`/`AKIA`/`xoxb-`; `board.png` sem transcrição; ações sem pin
+por SHA. O hades não conseguiu rodar o VHS com canários no ambiente (3 tentativas); a ausência foi inferida por grep
+e inspeção visual, com o usuário real como canário natural. ML-4C e ML-4D.
 **Files affected:** `docs/seguranca/2026-11-23-red-team-site-novo.md`
 **Acceptance criteria:**
-- [ ] Falsifica D2, D3 e D6 a partir do contrato (vazamento em imagem, scanner, permissões do deploy); residual declarado
+- [x] Falsifica D2, D3 e D6 a partir do contrato (vazamento em imagem, scanner, permissões do deploy); residual declarado
+
+### ML-4C — Corretivo da Wave 4 nos scripts e na home (afrodite-tf)
+**Status:** ⬜ Pending
+**Files affected:** `scripts/site-images/generate.sh`; `scripts/site-images/guard.tape`;
+`scripts/check-site-images-leak.sh`; `site/index.md`; `site/pt/index.md`
+**Actions:**
+1. Chrome: no personal path in the versioned script. `CHROME` comes from the environment; otherwise discover the
+   Playwright headless shell under `$HOME/Library/Caches/ms-playwright/chromium_headless_shell-*/` (newest) or a
+   `chrome-headless-shell`/`chromium` on PATH; otherwise warn and skip the board, as today.
+2. Isolation before anything runs: the pre-flight (line ~74) moves after the isolated environment; `USER`, `LOGNAME`
+   fixed to `demo` inside the isolated block.
+3. Scanner: canary G runs the real main scan over a temp dir with a media file and no transcript and expects rc=1;
+   patterns also for `sk-`, `AKIA[0-9A-Z]{16}`, `xox[abp]-`, and the current `hostname` and `$USER` of the machine
+   running the scan (dynamic, skipped when they equal the demo values); a mutation of the main loop must make the
+   self-test fail.
+4. `guard.tape`: height enough for the transcript to include `exit=`.
+5. Decorative icons with `aria-hidden="true"` in both homes.
+6. Do not regenerate the versioned images unless needed for item 4; if `guard.*` is regenerated, run the scanner.
+**Acceptance criteria:**
+- [ ] `grep -rn "/Users/" scripts/site-images scripts/check-site-images-leak.sh` só em canários do autoteste
+- [ ] autoteste do scanner reprova com o laço principal removido (mutação medida); `make parity-rest` rc=0
+- [ ] build do site rc=0
+
+### ML-4D — Checkout do deploy sem credencial persistida (ares-tf)
+**Status:** ⬜ Pending
+**Files affected:** `.github/workflows/deploy-docs.yml`
+**Actions:** `persist-credentials: false` on the `actions/checkout` step of `build`; nothing else changes.
+**Acceptance criteria:**
+- [ ] `actionlint` rc=0; `python3 scripts/check-required-status-checks.py --scope dw` rc=0
 
 **Wave gates:**
 ```bash
