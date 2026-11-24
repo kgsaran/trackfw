@@ -171,13 +171,15 @@ bash scripts/check-site-images-leak.sh
 - [ ] `TestQuickStart*` rc=0; `site/prototype.md` não existe
 
 ### ML-3C — Permissões por job no deploy do site (ares-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — bloco `permissions` do nível do workflow removido; `build`: `contents: read`; `deploy`:
+`pages: write`, `id-token: write` (sem checkout, não precisa de `contents`). `actionlint` rc=0 (rodado também pelo
+arquiteto); `check-required-status-checks.py --scope dw` rc=0. O efeito real só se confirma no deploy depois do merge.
 **Files affected:** `.github/workflows/deploy-docs.yml`
 **Actions:** ADR D6: move permissions from workflow level to job level — `build`: `contents: read`; `deploy`:
 `pages: write`, `id-token: write`. Keep actions pinned as they are today. `actionlint` if available.
 **Acceptance criteria:**
-- [ ] nenhuma permissão no nível do workflow; `build` só com `contents: read`
-- [ ] `python3 scripts/check-required-status-checks.py --scope dw` rc=0 (o nome dos jobs não muda)
+- [x] nenhuma permissão no nível do workflow; `build` só com `contents: read`
+- [x] `python3 scripts/check-required-status-checks.py --scope dw` rc=0 (o nome dos jobs não muda)
 
 **Wave gates:**
 ```bash
