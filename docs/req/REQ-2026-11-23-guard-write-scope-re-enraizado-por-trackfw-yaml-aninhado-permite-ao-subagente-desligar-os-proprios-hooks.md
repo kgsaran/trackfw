@@ -3,7 +3,7 @@ status: Open
 date: 2026-11-23
 author: "zeus-tf (aberta a pedido do KG em 2026-11-23)"
 adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-11-23-guard-write-scope-re-enraizado-por-trackfw-yaml-aninhado-permite-ao-subagente-desligar-os-proprios-hooks.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-11-23-guard-write-scope-re-enraizado-por-trackfw-yaml-aninhado-permite-ao-subagente-desligar-os-proprios-hooks.md"
 ---
 
 # REQ: Guard write-scope re-enraizado por trackfw.yaml aninhado permite ao subagente desligar os próprios hooks
@@ -45,4 +45,4 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/backlog/ROADMAP-2026-11-23-guard-write-scope-re-enraizado-por-trackfw-yaml-aninhado-permite-ao-subagente-desligar-os-proprios-hooks.md
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-11-23-guard-write-scope-re-enraizado-por-trackfw-yaml-aninhado-permite-ao-subagente-desligar-os-proprios-hooks.md
