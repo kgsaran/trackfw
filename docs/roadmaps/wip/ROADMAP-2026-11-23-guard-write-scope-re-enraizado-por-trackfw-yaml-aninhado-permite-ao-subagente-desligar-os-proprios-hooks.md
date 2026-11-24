@@ -208,25 +208,75 @@ go test ./internal/guard/
 > Dependencies: Wave 1 audited.
 
 ### ML-2A — Revisão de qualidade (hefesto-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — veredito REPROVA. MÉDIO-1 (confirmado pelo arquiteto): `credFindNearestProjectRoot` pula yaml não
+regular ou ilegível e, se for o único da cadeia, o guard de projeto sai com 0 (viola D3). MÉDIO-2: cinco frases de
+reconciliação do escopo global citam leitura de yaml que não ocorre. BAIXO-1 a 4: `cli-parity`, `::$DATA`, comentário de
+teste, wrapper `findProjectRoot` em produção. Corretivo: ML-2C.
 **Files affected:** `docs/seguranca/2026-11-24-revisao-write-scope-raiz-aninhada.md` (novo)
 **Actions:** review ML-1A and ML-1B against ADR-2026-11-24 D1–D4: each test's sentence matches what it asserts; no
 `err != nil → absent`; no `"block"` literal in the shared function; dead code; Windows normalization.
 **Acceptance criteria:**
-- [ ] review written; blocking findings fixed by a corrective ML
+- [x] review written; blocking findings fixed by a corrective ML (ML-2C)
 
 ### ML-2B — Red team (hades-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — APROVA COM RESSALVAS. D1–D3 passam contra os binários antes (`3ae8d29c`) e depois (`7613c035`);
+FIFO antes travava >30 s, depois rc=2 em 0 s. Abertos: R-8b (`trackfw.yaml::$DATA` contorna D1, rc=0 nos dois) e
+F-LEASE-MONO (lease só na raiz do alvo e na do cwd). D4 verificado por leitura e pelos 8 testes, não falsificado no
+binário. Revisão do arquiteto: o wrapper de credencial testa `-f` e repete o MÉDIO-1 no shell; a lista de congelados
+compara o caminho cru (mesma causa do R-8b). ADR-2026-11-24 emendado (D1 ADS/8dot3, D3 detecção de raiz, D5, D6).
 **Files affected:** `docs/seguranca/2026-11-24-red-team-write-scope-raiz-aninhada.md` (novo)
 **Actions:** falsify D1–D4 from the contract on the built binary with an isolated HOME: every Wave 0 vector, the six
 "Formas" of the Wave 0, and new variants; both directions (worktree, monorepo, main session must keep working).
 **Acceptance criteria:**
-- [ ] report written with arm and counter-arm; residual declared
+- [x] report written with arm and counter-arm; residual declared
+
+### ML-2C — Corretivo da Wave 2 (apolo-tf)
+**Status:** ⬜ Pending
+**Files affected:** `internal/guard/credential.go`; `internal/guard/credential_nested_mode_test.go`;
+`internal/guard/credential_mode_test.go`; `internal/guard/writescope.go`; `internal/guard/writescope_nested_root_test.go`;
+`internal/guard/writescope_ml2c_test.go` (novo); `internal/generators/credential_guard_test.go`;
+`internal/generators/scaffold.go`; `scripts/trackfw-credential-guard.sh`;
+`internal/validator/validator_credential_guard_integrity_reference.go`; `docs/cli-parity.md`
+**Actions:**
+1. MÉDIO-1 (D3, detecção de raiz): `credFindNearestProjectRoot` para em qualquer `trackfw.yaml` que exista (inclusive
+   diretório, FIFO, ilegível) e `RunCredential` nega (rc=2) quando esse yaml não é arquivo regular legível. Só
+   `os.IsNotExist` continua subindo.
+2. Wrapper (D3): nas três cópias byte-idênticas, `[ -f "${d%/}/trackfw.yaml" ]` vira
+   `[ -e "${d%/}/trackfw.yaml" ] || [ -L "${d%/}/trackfw.yaml" ]`.
+3. D1 (R-8b, 8dot3): `normalizePathComponent` corta no primeiro `:` e depois remove `.` e espaço finais;
+   `hasTrackfwYAMLComponent` também casa `TRACKF~<dígitos>.YAM` (EqualFold).
+4. D6: `frozenHit` casa também a grafia com cada componente normalizado pela mesma função.
+5. D5: leases consultados em todo ancestral do alvo com `trackfw.yaml`, além da raiz do cwd; todo lease encontrado
+   autoriza; inválido nega.
+6. MÉDIO-2: corrigir as frases dos 4 testes citados; `TestReadCredentialGuardMode_EndToEnd_GlobalScope_WarnCRLFStillBlocks`
+   é removido ou passa a exercitar o escopo de projeto (onde o CRLF importa).
+7. BAIXO-1: `cli-parity.md` diz que o escopo global nunca grava attention. BAIXO-3: comentário de
+   `TestD3_DirectoryNamedTrackfwYAML_Deny`. BAIXO-4: `findProjectRoot` sai do código de produção.
+**Acceptance criteria:**
+- [ ] cada teste novo com braço antes (rc=0 ou falha) e depois, e uma frase de reconciliação
+- [ ] `go build ./...`, `go vet ./internal/guard/ ./internal/generators/` rc=0
+- [ ] `go test ./internal/guard/ ./internal/generators/ ./internal/discover/ ./internal/validator/ -count=1` rc=0
+- [ ] `make build && make parity-rest` rc=0
+- [ ] nenhum arquivo fora de "Files affected" alterado
+
+### ML-2D — Re-revisão estreita do delta do ML-2C (hefesto-tf)
+**Status:** ⬜ Pending
+**Files affected:** `docs/seguranca/2026-11-24-revisao-ml-2c-write-scope.md` (novo)
+**Acceptance criteria:**
+- [ ] revisão escrita; nenhum achado bloqueante aberto
+
+### ML-2E — Red team estreito do delta do ML-2C (hades-tf)
+**Status:** ⬜ Pending
+**Files affected:** `docs/seguranca/2026-11-24-red-team-ml-2c-write-scope.md` (novo)
+**Acceptance criteria:**
+- [ ] relatório com braço e contra-braço para D3-raiz, wrapper, R-8b, 8dot3, D5 e D6
 
 **Wave gates:**
 ```bash
 test -s docs/seguranca/2026-11-24-revisao-write-scope-raiz-aninhada.md
 test -s docs/seguranca/2026-11-24-red-team-write-scope-raiz-aninhada.md
+go build ./...
+go test ./internal/guard/ ./internal/generators/ ./internal/discover/ ./internal/validator/ -count=1
 ```
 
 ## Wave 3 — Fechamento

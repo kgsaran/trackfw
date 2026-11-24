@@ -45,6 +45,11 @@ decidem permissão de subagente. Ficam fora.
   qualquer projeto.
 - **Windows:** a normalização remove ponto e espaço finais de cada componente, porque o Windows cria `trackfw.yaml` a
   partir de `trackfw.yaml.`.
+- **Fluxo NTFS (emenda da Wave 2, R-8b):** antes de remover ponto e espaço, a normalização corta o componente no
+  primeiro `:`. No Windows, `trackfw.yaml::$DATA` é o próprio arquivo. No POSIX, `:` é legal em nome, então negar
+  `trackfw.yaml:x` ao subagente é falso positivo aceito.
+- **Nome curto 8dot3 (emenda da Wave 2):** o componente `TRACKF~<n>.YAM` (EqualFold) também nega. Um nome curto só
+  aponta para arquivo que já existe; sem a regra, ele reescreveria um yaml aninhado existente.
 - **Rota legítima:** `trackfw init` num subdiretório é coisa da sessão principal. Teste Go que precisa de um
   `trackfw.yaml` o cria em `t.TempDir()` pelo próprio código do teste.
 
@@ -61,6 +66,10 @@ decidem permissão de subagente. Ficam fora.
   arquivo regular e não trava em FIFO.
 - **Ausente:** só `os.IsNotExist` é ausente.
 - **Nega:** `ErrNotRegularFile` (diretório, FIFO) e qualquer outro erro negam.
+- **Detecção de raiz (emenda da Wave 2, MÉDIO-1 da revisão):** a regra vale também para achar o projeto. Um
+  `trackfw.yaml` que existe mas não é arquivo regular, ou não é legível, marca a raiz e nega; nunca é pulado. Isso
+  inclui o wrapper de shell do guard de credencial, que testava `-f` e saía com 0 diante de um diretório: ele passa a
+  parar em qualquer entrada existente com esse nome e deixa o binário decidir.
 
 **D4: o modo do guard de credencial é o mais estrito da cadeia.**
 - **Cálculo:** o guard sobe do cwd até a raiz do sistema de arquivos e lê o `credential_guard.mode` de cada
@@ -68,8 +77,23 @@ decidem permissão de subagente. Ficam fora.
 - **Padrões:** `warn` no escopo de projeto e `block` no global.
 - **Escopo de projeto:** o projeto é detectado pelo ancestral mais próximo com yaml, então o cwd num subdiretório não
   desliga mais o guard.
-- **Implementação:** a regra vale para os dois chamadores de `credReadModeWithDefault`. O piso é o padrão de cada
-  chamador, nunca um `"block"` fixo dentro da função compartilhada.
+- **Implementação:** o piso é o padrão de cada chamador, nunca um `"block"` fixo dentro da função compartilhada
+  (`credWalkStrictestMode`). Com o padrão `block`, o escopo global não lê mais o yaml.
+
+**D5 (emenda da Wave 2, F-LEASE-MONO do red team): leases seguem a mesma monotonia do D2.**
+- **Cálculo:** além da raiz do alvo e da raiz do cwd (ADR-2026-10-23, revisões da Wave 4), o guard consulta o lease em
+  todo ancestral do alvo que tem `trackfw.yaml`. A regra existente não muda: todo lease encontrado precisa autorizar o
+  alvo, e lease inválido em qualquer raiz nega.
+- **Por quê:** sem isso, um projeto aninhado legítimo sem lease deixa o subagente escrever em qualquer caminho dele,
+  mesmo com um lease restrito na raiz de fora, quando cwd e alvo estão no aninhado.
+
+**D6 (emenda da Wave 2): a lista de congelados compara também a grafia normalizada.**
+- **Regra:** no Step 10, o caminho alvo casa com um congelado se o caminho cru casar ou se o caminho com cada
+  componente normalizado pela regra do D1 (corte no `:`, sem ponto e espaço finais) casar. Vale em todos os sistemas.
+- **Por quê:** é a mesma causa do R-8b. No Windows, `.claude/settings.json.` e `.claude/settings.json::$DATA` gravam
+  `.claude/settings.json`; a comparação só pelo caminho cru deixava passar quando o arquivo ainda não existe (o
+  `os.SameFile` só pega arquivo existente).
+- **Falso positivo aceito:** no POSIX, o subagente não grava `.claude/settings.json.` nem `settings.json:x`.
 
 **Mudança de comportamento:** um `credential_guard: mode: warn` no projeto deixa de rebaixar o hook global, que continua
 `block`. O `init` não gera esse campo, então só quem o escreveu à mão perde o efeito. O KG pode reverter esta parte sem
