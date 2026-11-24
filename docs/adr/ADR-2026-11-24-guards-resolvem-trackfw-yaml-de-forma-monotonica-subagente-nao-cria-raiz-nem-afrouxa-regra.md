@@ -48,8 +48,11 @@ decidem permissão de subagente. Ficam fora.
 - **Fluxo NTFS (emenda da Wave 2, R-8b):** antes de remover ponto e espaço, a normalização corta o componente no
   primeiro `:`. No Windows, `trackfw.yaml::$DATA` é o próprio arquivo. No POSIX, `:` é legal em nome, então negar
   `trackfw.yaml:x` ao subagente é falso positivo aceito.
-- **Nome curto 8dot3 (emenda da Wave 2):** o componente `TRACKF~<n>.YAM` (EqualFold) também nega. Um nome curto só
-  aponta para arquivo que já existe; sem a regra, ele reescreveria um yaml aninhado existente.
+- **Nome curto 8dot3 (emenda da Wave 2):** nega todo componente na forma de nome curto com extensão `.YAM`
+  (`<1 a 6 caracteres>~<dígitos>.YAM`, EqualFold). Isso cobre `TRACKF~1.YAM` e também a forma com hash que o Windows
+  gera depois de várias colisões no mesmo diretório (ex.: `TR1A2B~1.YAM`). Um nome curto só aponta para arquivo que já
+  existe; sem a regra, ele reescreveria um yaml aninhado existente. Falso positivo aceito: o subagente não grava nenhum
+  arquivo com nome nessa forma.
 - **Rota legítima:** `trackfw init` num subdiretório é coisa da sessão principal. Teste Go que precisa de um
   `trackfw.yaml` o cria em `t.TempDir()` pelo próprio código do teste.
 
@@ -93,7 +96,10 @@ decidem permissão de subagente. Ficam fora.
 - **Por quê:** é a mesma causa do R-8b. No Windows, `.claude/settings.json.` e `.claude/settings.json::$DATA` gravam
   `.claude/settings.json`; a comparação só pelo caminho cru deixava passar quando o arquivo ainda não existe (o
   `os.SameFile` só pega arquivo existente).
-- **Falso positivo aceito:** no POSIX, o subagente não grava `.claude/settings.json.` nem `settings.json:x`.
+- **Falso positivo aceito:** no POSIX, o subagente não grava `.claude/settings.json.` nem `settings.json:x`, nem
+  escreve abaixo de um diretório cujo nome normalizado coincide com o de um congelado (ex.: `.claude:x/settings.json`).
+- **Medição:** no macOS, os vetores de fluxo NTFS e ponto final provam o casamento de strings (rc 0→2), não o sistema
+  de arquivos; o efeito real é só no Windows e não foi medido em Windows nesta REQ.
 
 **Mudança de comportamento:** um `credential_guard: mode: warn` no projeto deixa de rebaixar o hook global, que continua
 `block`. O `init` não gera esse campo, então só quem o escreveu à mão perde o efeito. O KG pode reverter esta parte sem

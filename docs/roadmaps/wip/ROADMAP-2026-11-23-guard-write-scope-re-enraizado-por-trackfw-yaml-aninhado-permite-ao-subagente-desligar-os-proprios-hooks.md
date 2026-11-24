@@ -264,16 +264,36 @@ dos 4 pacotes, `make build`, `make parity-rest`, todos rc=0.
 - [x] nenhum arquivo fora de "Files affected" alterado (exceto o status do próprio ML no roadmap)
 
 ### ML-2D — Re-revisão estreita do delta do ML-2C (hefesto-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — APROVA COM RESSALVAS; MÉDIO-1/2 e BAIXO-1..4 fechados. Novos BAIXO-5..9 (mensagem com nome antigo,
+teste 8dot3 com regex própria, contra-braço do D5 que não ativa a subida, falso positivo de diretório não declarado,
+frase do teste CRLF). BAIXO-8 resolvido no ADR pelo arquiteto; os outros no ML-2F.
 **Files affected:** `docs/seguranca/2026-11-24-revisao-ml-2c-write-scope.md` (novo)
 **Acceptance criteria:**
-- [ ] revisão escrita; nenhum achado bloqueante aberto
+- [x] revisão escrita; nenhum achado bloqueante aberto
 
 ### ML-2E — Red team estreito do delta do ML-2C (hades-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — APROVA COM RESSALVAS; nenhum escape. 22 vetores com antes e depois (D3 diretório e chmod 000,
+wrapper com diretório e symlink quebrado, D1 ADS/8dot3/Unicode, D6, D5 com lease inválido e monorepo, regressões).
+Ressalva: nome 8dot3 com hash (`TR1A2B~1.YAM`) escapa da regex; vai para o ML-2F (decisão: corrigir, não declarar).
 **Files affected:** `docs/seguranca/2026-11-24-red-team-ml-2c-write-scope.md` (novo)
 **Acceptance criteria:**
-- [ ] relatório com braço e contra-braço para D3-raiz, wrapper, R-8b, 8dot3, D5 e D6
+- [x] relatório com braço e contra-braço para D3-raiz, wrapper, R-8b, 8dot3, D5 e D6
+
+### ML-2F — Ressalvas da re-revisão (apolo-tf)
+**Status:** ⬜ Pending
+**Files affected:** `internal/guard/writescope.go`; `internal/guard/writescope_ml2c_test.go`;
+`internal/guard/credential_mode_test.go`; `docs/cli-parity.md`
+**Actions:**
+1. Regex 8dot3 vira `(?i)^[^~\/:]{1,6}~[0-9]+\.yam$` (ADR D1, forma com hash); vetor `TR1A2B~1.YAM` → rc=2.
+2. BAIXO-5: mensagem de erro com `findProjectRoot:` passa a citar `findProjectRootSafe:`.
+3. BAIXO-6: o teste de 8dot3 usa `trackfwYAML8dot3RE` (ou `hasTrackfwYAMLComponent`), não uma regex própria.
+4. BAIXO-7: contra-braço do D5 com alvo `svc/main.go` e lease externo que o permite, cwd em `svc/` → rc=0 (a subida
+   precisa estar ativa).
+5. BAIXO-9: frase do teste CRLF cita o mecanismo real.
+6. `cli-parity.md`: a frase "yaml não regular conta como block" passa a dizer que nega (rc=2) antes da escolha do modo.
+**Acceptance criteria:**
+- [ ] `go build ./...`; `go vet ./internal/guard/`; `go test ./internal/guard/ -count=1` rc=0
+- [ ] nenhum arquivo fora de "Files affected" alterado
 
 **Wave gates:**
 ```bash
