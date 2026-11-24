@@ -286,6 +286,8 @@ test -s docs/seguranca/2026-11-23-red-team-site-novo.md
 
 ### ML-FB — make quality e CI (zeus-tf)
 **Status:** ✅ Done — `make quality` MQ_RC=0 em 2026-11-24 com a máquina ociosa. CI do PR #702 verde em 31fe4980: 24/24.
+**Files affected:** `docs/agents-working-context/20261124T110513Z-zeus-fim-site-novo.md`;
+`docs/agents-working-context/20261124T003805Z-zeus-inicio-site-novo.md`
 **Acceptance criteria:**
 - [x] AC6: `make quality` rc=0 com a máquina ociosa; CI verde no PR
 
