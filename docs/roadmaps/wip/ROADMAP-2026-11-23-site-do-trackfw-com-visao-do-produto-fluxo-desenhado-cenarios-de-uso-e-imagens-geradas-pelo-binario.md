@@ -14,9 +14,9 @@ squad: ""
 REQ: docs/req/REQ-2026-11-23-site-do-trackfw-com-visao-do-produto-fluxo-desenhado-cenarios-de-uso-e-imagens-geradas-pelo-binario.md
 
 ## Acceptance Criteria
-- [ ] AC1: conceito aprovado pelo KG
+- [x] AC1: conceito aprovado pelo KG
 - [ ] AC2: protótipo validado visualmente pelo KG e descartado
-- [ ] AC3: ADR e waves de implementação escritos após a validação
+- [x] AC3: ADR e waves de implementação escritos após a validação
 - [ ] AC4: site final en + pt-BR com imagens geradas por script, sem dado pessoal
 - [ ] AC5: teste do Quick start verde; build do site rc=0; capturas headless
 - [ ] AC6: `make quality` rc=0 e CI verde
@@ -87,7 +87,7 @@ test -s docs/visao-projeto/2026-11-23-site-novo-conceito.md
 > Dependencies: Wave 0 audited and Wave 1 approved by the KG. One agent, sequential (ML-2B uses ML-2A's images).
 
 ### ML-2A — Gerador de imagens e scanner de vazamento (afrodite-tf)
-**Status:** 🔄 Primeira rodada — `generate.sh` com o ambiente fixo, tapes `quickstart`/`guard` e o demo em `.webm`;
+**Status:** ✅ Done (rodada 1; pendências no ML-3A) — `generate.sh` com o ambiente fixo, tapes `quickstart`/`guard` e o demo em `.webm`;
 `board.png` só do painel Kanban; scanner com 5 canários (`5 passed`) e varredura limpa (rodada também pelo arquiteto,
 rc=0); `make parity-rest` rc=0. Pendências da auditoria: (1) o `quickstart.gif` termina com "1 violation" (um Enter
 às cegas no wizard do `req new` cria um ADR draft); (2) o scanner lê os bytes com `strings`, e o texto que aparece
@@ -105,12 +105,12 @@ verificação tem de ler a saída em texto do VHS (`Output *.txt`) de cada tape.
    e-mail addresses (allowlist `example.invalid`), `ghp_`/`gho_`/`github_pat_`, `Bearer `; allowlist
    `github.com/kgsaran/trackfw`. Self-test with a canary that must fail and one that must pass.
 **Acceptance criteria:**
-- [ ] `bash scripts/site-images/generate.sh` rc=0 e `bash scripts/check-site-images-leak.sh` rc=0
-- [ ] contra-braço: canário com `/Users/` reprova o scanner
-- [ ] `make parity-rest` rc=0 (script novo)
+- [x] `bash scripts/site-images/generate.sh` rc=0 e `bash scripts/check-site-images-leak.sh` rc=0
+- [x] contra-braço: canário com `/Users/` reprova o scanner
+- [x] `make parity-rest` rc=0 (script novo)
 
 ### ML-2B — Protótipo da home (afrodite-tf)
-**Status:** 🔄 Rodada 1 entregue ao KG — `site/prototype.md` com hero, problema, fluxo, 3 cenários, board, vídeo com
+**Status:** ✅ Done — **aprovado pelo KG em 2026-11-23** na rodada 1 ("pode seguir, aprovado"). Ajustes do arquiteto no ML-3B. `site/prototype.md` com hero, problema, fluxo, 3 cenários, board, vídeo com
 controles, features e Quick start (linhas idênticas ao README). Build rc=0; `TestQuickStart` rc=0. Notas do arquiteto
 na captura desktop: o fluxo quebra o texto em nós estreitos; o vídeo e o GIF do Quick start mostram o primeiro quadro
 vazio (falta pôster); o board aparece pequeno e com colunas quase vazias; o card do cenário 1 tem o GIF do guard
@@ -122,13 +122,100 @@ the KG's decisions: hero, problem, drawn flow (static, no runtime plugin), three
 demo video with controls, updated feature cards and the pinned Quick start. Build and headless screenshots at 1280 px
 and 390 px.
 **Acceptance criteria:**
-- [ ] `npm run build` em `site/` rc=0; capturas headless desktop e mobile conferidas pelo arquiteto
-- [ ] o KG valida visualmente (rodadas curtas até a aprovação)
+- [x] `npm run build` em `site/` rc=0; capturas headless desktop e mobile conferidas pelo arquiteto
+- [x] o KG valida visualmente (rodadas curtas até a aprovação)
 
 **Wave gates:**
 ```bash
 bash scripts/check-site-images-leak.sh
 ```
 
-## Wave 3 — Implementation (Fase C)
-> Dependencies: Wave 2 validated by the KG. ADR and microbatches written after validation.
+## Wave 3 — Implementation (Fase C) (2 agents in parallel)
+> Dependencies: Wave 2 approved by the KG; ADR-2026-11-23 (site) D1–D8. afrodite-tf runs ML-3A then ML-3B
+> (ML-3B uses ML-3A's images); ares-tf runs ML-3C in parallel (only `.github/workflows/deploy-docs.yml`).
+
+### ML-3A — Imagens finais e scanner que lê texto (afrodite-tf)
+**Status:** ⬜ Pending
+**Files affected:** `scripts/site-images/generate.sh`; `scripts/site-images/quickstart.tape`;
+`scripts/site-images/guard.tape`; `scripts/check-site-images-leak.sh`; `site/public/img/board.png`;
+`site/public/img/demo.webm`; `site/public/img/guard.gif`; `site/public/img/quickstart.gif`; `site/public/img/*.png`
+(pôsteres, novos); `site/public/img/*.txt` (transcrições, novas)
+**Actions:**
+1. ADR D3: each tape also writes a text transcript (VHS `Output <name>.txt`); the scanner reads the transcripts and
+   the bytes; self-test canaries cover a transcript with `/Users/x` (must fail).
+2. `quickstart.tape` ends with the promised `validate` output (0 violations, 2 warnings): no blind Enter that picks a
+   wizard option; drive the wizard deterministically or use non-TTY input.
+3. Poster images (first meaningful frame) for the demo video and the Quick start animation.
+4. Board fixture with roadmaps in every column, so the captured Kanban is readable; capture at a size that stays
+   legible at the site width.
+5. Guard animation shows the block message clearly at card size.
+**Acceptance criteria:**
+- [ ] `generate.sh` e `check-site-images-leak.sh` rc=0; autoteste com canário de transcrição reprovando
+- [ ] transcrição do Quick start termina com 0 violations e 2 warnings
+- [ ] `make parity-rest` rc=0
+
+### ML-3B — Home e guia em inglês e português; protótipo removido (afrodite-tf)
+**Status:** ⬜ Pending
+**Files affected:** `site/index.md`; `site/pt/index.md`; `site/prototype.md` (removido);
+`site/.vitepress/config.mts` (só se o layout da home exigir)
+**Actions:**
+1. ADR D1/D5: port the approved prototype into `site/index.md` (English) and `site/pt/index.md` (Portuguese, same
+   structure). The "In 30 seconds" block is replaced by the pinned Quick start.
+2. Fixes from the KG round: flow nodes wide enough for their text on desktop and stacked on mobile; posters on video
+   and Quick start animation; board readable.
+3. ADR D7: `<video controls>` with poster, no autoplay loop; transcript below.
+4. Delete `site/prototype.md` (ADR D8).
+5. `site/guide/getting-started.md` does not change (pinned by `TestQuickStartDocsPinned`).
+**Acceptance criteria:**
+- [ ] `npm run build` rc=0; capturas headless de `/trackfw/` e `/trackfw/pt/` a 1280 e 390 px conferidas
+- [ ] `TestQuickStart*` rc=0; `site/prototype.md` não existe
+
+### ML-3C — Permissões por job no deploy do site (ares-tf)
+**Status:** ⬜ Pending
+**Files affected:** `.github/workflows/deploy-docs.yml`
+**Actions:** ADR D6: move permissions from workflow level to job level — `build`: `contents: read`; `deploy`:
+`pages: write`, `id-token: write`. Keep actions pinned as they are today. `actionlint` if available.
+**Acceptance criteria:**
+- [ ] nenhuma permissão no nível do workflow; `build` só com `contents: read`
+- [ ] `make check-required-checks` rc=0 (o nome dos jobs não muda)
+
+**Wave gates:**
+```bash
+bash scripts/check-site-images-leak.sh
+test ! -e site/prototype.md
+TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 5m -run 'TestQuickStart' ./internal/commands/
+```
+
+## Wave 4 — Review and red team (2 MLs in parallel)
+> Dependencies: Wave 3 audited.
+
+### ML-4A — Revisão de qualidade (hefesto-tf)
+**Status:** ⬜ Pending
+**Files affected:** `docs/qualidade/2026-11-23-site-novo-review.md`
+**Acceptance criteria:**
+- [ ] Parecer escrito; achados bloqueantes corrigidos por ML corretivo
+
+### ML-4B — Red team (hades-tf)
+**Status:** ⬜ Pending
+**Files affected:** `docs/seguranca/2026-11-23-red-team-site-novo.md`
+**Acceptance criteria:**
+- [ ] Falsifica D2, D3 e D6 a partir do contrato (vazamento em imagem, scanner, permissões do deploy); residual declarado
+
+**Wave gates:**
+```bash
+test -s docs/qualidade/2026-11-23-site-novo-review.md
+test -s docs/seguranca/2026-11-23-red-team-site-novo.md
+```
+
+## Wave 5 — Fechamento
+> Dependencies: Wave 4 audited.
+
+### ML-FB — make quality e CI (zeus-tf)
+**Status:** ⬜ Pending
+**Acceptance criteria:**
+- [ ] AC6: `make quality` rc=0 com a máquina ociosa; CI verde no PR
+
+**Wave gates:**
+```bash
+go build ./...
+```

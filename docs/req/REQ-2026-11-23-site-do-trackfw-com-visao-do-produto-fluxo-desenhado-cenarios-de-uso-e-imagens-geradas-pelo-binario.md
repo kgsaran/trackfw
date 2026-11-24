@@ -2,7 +2,7 @@
 status: Open
 date: 2026-11-23
 author: "zeus-tf (pedido do KG em 2026-11-22 e 2026-11-23)"
-adr: ""
+adr: "docs/adr/ADR-2026-11-23-site-do-trackfw-home-com-visao-do-produto-e-imagens-geradas-pelo-binario.md"
 roadmap: "docs/roadmaps/wip/ROADMAP-2026-11-23-site-do-trackfw-com-visao-do-produto-fluxo-desenhado-cenarios-de-uso-e-imagens-geradas-pelo-binario.md"
 ---
 
@@ -42,7 +42,7 @@ Cenários de uso iniciais, a validar no conceito: dev solo com agente de IA; tim
 
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->
-ADR: 
+ADR: docs/adr/ADR-2026-11-23-site-do-trackfw-home-com-visao-do-produto-e-imagens-geradas-pelo-binario.md
 
 ## Blocked by ADRs
 <!-- none -->
