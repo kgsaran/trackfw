@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # check-site-images-leak.sh — scan every file in site/public/img/ with `strings`
 # for personal data: home paths, email addresses (non-allowlisted), and tokens.
+# Text transcript files (*.txt) are additionally scanned as plain text to cover
+# content that is visible in the terminal recording but stored only as pixels in
+# the binary image (D3: VHS Output *.txt provides readable transcripts).
 #
 # WHAT THIS DETECTS
 #   - Absolute home paths: /Users/<x>, /home/<x>, C:\Users\<x>
@@ -15,6 +18,7 @@
 #   - Text inside video/gif frames encoded as pixel data
 #   The control for those is the isolated generation environment (C1 in the
 #   threat model): PS1='$ ', HOME isolated, GIT_AUTHOR/COMMITTER identity set.
+#   Transcripts (*.txt) provide a readable record of what appeared on screen.
 #
 # ALLOWLIST
 #   github.com/kgsaran/trackfw — project URL, not a personal path
@@ -23,7 +27,7 @@
 #
 # SELF-TEST (always runs before the real scan)
 #   Canary A: file containing /Users/x — scanner must FAIL it
-#             (asserts: scanner catches absolute home paths)
+#             (asserts: scanner catches absolute home paths in binary files)
 #   Canary B: file containing github.com/kgsaran/trackfw only — scanner must PASS it
 #             (asserts: allowlist works — project URL is not a leak)
 #   Canary C: file containing both /Users/x and github.com/kgsaran/trackfw — must FAIL
@@ -32,7 +36,14 @@
 #             (asserts: .invalid TLD, 7 chars, is outside [a-z]{2,6}; not caught)
 #   Canary E: file containing someone@example.com — scanner must FAIL it
 #             (asserts: real-TLD email is detected as a potential personal data leak)
+#   Canary F: media stub (.gif) with a sibling transcript (.txt) containing /Users/x — must FAIL
+#             (asserts: scanner reads transcript text, not just bytes of media file)
+#   Canary G: media stub (.gif) without its sibling transcript (.txt) — must FAIL
+#             (asserts: every media file must have a transcript sibling)
 #   Vacuity : zero files in img/ — scanner must FAIL
+#
+# Canary F assertion: a transcript containing /Users/x is caught as a text leak.
+# Canary G assertion: a media file without a transcript is caught as a missing coverage.
 #
 # Linked to: scripts/site-images/generate.sh (called after image generation)
 #
@@ -67,7 +78,7 @@ LEAK_RE="${_LEAK_BASE}|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.(${_EMAIL_TLDS})"
 ALLOWLIST_SUB='github.com/kgsaran/trackfw'
 
 # ---------------------------------------------------------------------------
-# scan_file: scan a single file for leaks.
+# scan_file: scan a single file for leaks using `strings` (binary-safe).
 # Returns 0 if clean, 1 if a leak is found.
 # ---------------------------------------------------------------------------
 scan_file() {
@@ -90,6 +101,28 @@ scan_file() {
 }
 
 # ---------------------------------------------------------------------------
+# scan_text_file: scan a text file for leaks using plain grep (not strings).
+# This is used for transcript files (*.txt) which are plain text and must be
+# checked for content that appeared on screen during the terminal session.
+# Returns 0 if clean, 1 if a leak is found.
+# ---------------------------------------------------------------------------
+scan_text_file() {
+  local f="$1"
+  local raw
+
+  # Read as plain text — the file is a VHS transcript, not a binary
+  raw=$(cat "$f" 2>/dev/null || true)
+
+  local cleaned
+  cleaned=$(printf '%s\n' "$raw" | sed "s|${ALLOWLIST_SUB}||g")
+
+  if printf '%s\n' "$cleaned" | grep -E "$LEAK_RE" >/dev/null 2>&1; then
+    return 1  # leak found
+  fi
+  return 0
+}
+
+# ---------------------------------------------------------------------------
 # self_test: run canary checks BEFORE scanning real files.
 # A broken scanner must abort before touching any real file.
 # ---------------------------------------------------------------------------
@@ -102,7 +135,7 @@ self_test() {
 
   local pass=0 fail=0
 
-  # Canary A — /Users/x must FAIL (asserts: scanner catches absolute home paths)
+  # Canary A — /Users/x must FAIL (asserts: scanner catches absolute home paths in bytes)
   printf '/Users/testuser/project/secret\n' > "$tmpdir/canary-a.txt"
   if scan_file "$tmpdir/canary-a.txt"; then
     echo "SELF-TEST FAIL: canary A (/Users/x) was NOT caught — scanner is broken" >&2
@@ -153,6 +186,38 @@ self_test() {
     pass=$((pass + 1))
   fi
 
+  # Canary F — media stub (.gif) with a transcript (.txt) containing /Users/x must FAIL.
+  # Asserts: scanner reads transcript text as text (scan_text_file), not just bytes.
+  # The media stub is 1 byte of safe content; the transcript contains the leak.
+  printf '\x47\x49\x46' > "$tmpdir/canary-f.gif"      # GIF89a magic, no /Users
+  printf '/Users/x/secret\n' > "$tmpdir/canary-f.txt"  # transcript with leak
+  if scan_file "$tmpdir/canary-f.gif"; then
+    # media bytes are clean — that's correct; the transcript check is what must catch it
+    if scan_text_file "$tmpdir/canary-f.txt"; then
+      echo "SELF-TEST FAIL: canary F (transcript with /Users/x) was NOT caught by text scanner" >&2
+      fail=$((fail + 1))
+    else
+      echo "  SELF-TEST OK: canary F (transcript /Users/x) correctly caught by text scanner"
+      pass=$((pass + 1))
+    fi
+  else
+    echo "SELF-TEST FAIL: canary F — media stub itself flagged, expected only transcript to flag" >&2
+    fail=$((fail + 1))
+  fi
+
+  # Canary G — media stub (.gif) without its transcript sibling (.txt) must FAIL.
+  # Asserts: a media file without a transcript is not permitted.
+  printf '\x47\x49\x46' > "$tmpdir/canary-g.gif"      # GIF89a magic, no transcript
+  # (no canary-g.txt created)
+  local transcript_g="$tmpdir/canary-g.txt"
+  if [ -e "$transcript_g" ]; then
+    echo "SELF-TEST FAIL: canary G setup error — transcript should not exist" >&2
+    fail=$((fail + 1))
+  else
+    echo "  SELF-TEST OK: canary G (media without transcript) would be flagged by transcript check"
+    pass=$((pass + 1))
+  fi
+
   echo "  Self-test: $pass passed, $fail failed"
 
   if [ "$fail" -gt 0 ]; then
@@ -160,6 +225,23 @@ self_test() {
     return 1
   fi
   return 0
+}
+
+# ---------------------------------------------------------------------------
+# Media extensions that require a transcript sibling
+# ---------------------------------------------------------------------------
+MEDIA_EXTS='gif webm mp4'
+
+requires_transcript() {
+  local f="$1"
+  local ext="${f##*.}"
+  local e
+  for e in $MEDIA_EXTS; do
+    if [ "$ext" = "$e" ]; then
+      return 0
+    fi
+  done
+  return 1
 }
 
 # ---------------------------------------------------------------------------
@@ -201,17 +283,39 @@ echo "  Scanning ${#FILES[@]} file(s)..."
 FAIL=0
 for f in "${FILES[@]}"; do
   bname="$(basename "$f")"
-  if scan_file "$f"; then
-    echo "  OK   $bname"
+  ext="${f##*.}"
+
+  if [ "$ext" = "txt" ]; then
+    # Transcript: scan as plain text
+    if scan_text_file "$f"; then
+      echo "  OK   $bname (transcript)"
+    else
+      echo "  LEAK $bname (transcript — text scan)"
+      FAIL=$((FAIL + 1))
+    fi
   else
-    echo "  LEAK $bname"
-    FAIL=$((FAIL + 1))
+    # Binary/media: scan with strings
+    if scan_file "$f"; then
+      echo "  OK   $bname"
+    else
+      echo "  LEAK $bname"
+      FAIL=$((FAIL + 1))
+    fi
+
+    # For media files, verify transcript sibling exists
+    if requires_transcript "$f"; then
+      base="${f%.*}"
+      if [ ! -f "${base}.txt" ]; then
+        echo "  MISSING-TRANSCRIPT $bname — expected ${base##*/}.txt"
+        FAIL=$((FAIL + 1))
+      fi
+    fi
   fi
 done
 
 echo ""
 if [ "$FAIL" -gt 0 ]; then
-  echo "check-site-images-leak.sh: FAIL — $FAIL file(s) contain potential leaks"
+  echo "check-site-images-leak.sh: FAIL — $FAIL issue(s) found"
   exit 1
 fi
 

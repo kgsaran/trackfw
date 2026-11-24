@@ -3,15 +3,16 @@
 # a relative path; vhs is invoked with cwd=REPO_ROOT so the path resolves correctly).
 
 Output site/public/img/guard.gif
+Output site/public/img/guard.txt
 
 Require trackfw
 Require git
 
 Set Shell "bash"
-Set FontSize 16
+Set FontSize 20
 Set FontFamily "JetBrainsMono Nerd Font"
-Set Width 1200
-Set Height 450
+Set Width 820
+Set Height 320
 Set Theme "Catppuccin Mocha"
 Set Padding 24
 Set Margin 8
@@ -29,8 +30,9 @@ Sleep 3s
 Ctrl+L
 Show
 
-Type "# Your AI agent tries to push straight to main. The hook says no:"
+Type "# AI agent tries to push straight to main. The hook says no:"
 Enter
-Type `echo '{"tool_name":"Bash","tool_input":{"command":"git push origin main"}}' | trackfw guard git-branch >/dev/null; echo "exit=$?"`
+Type `printf '{"tool_name":"Bash","tool_input":{"command":"git push origin main"}}' | trackfw guard git-branch; echo "exit=$?"`
 Enter
 Sleep 4s
+Screenshot site/public/img/guard-poster.png

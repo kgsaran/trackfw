@@ -135,7 +135,12 @@ bash scripts/check-site-images-leak.sh
 > (ML-3B uses ML-3A's images); ares-tf runs ML-3C in parallel (only `.github/workflows/deploy-docs.yml`).
 
 ### ML-3A — Imagens finais e scanner que lê texto (afrodite-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done, com corretivo no ML-3D — transcrições `.txt` por tape; scanner lê transcrições e bytes, com
+autoteste de 7 canários (F: transcrição com `/Users/x` reprova; G: mídia sem transcrição reprova); Quick start termina
+com 0 violations e 2 warnings (conferido na transcrição); pôsteres do demo, do Quick start e do guard; board com as
+6 colunas preenchidas a 2x. Gates do agente rc=0. Auditoria do arquiteto: a animação do Quick start mostra os comandos
+com `< /dev/null` (e o `init` com `--identity-preset neutral < /dev/null > /dev/null 2>&1`), diferentes das linhas do
+README que a página pina. ML-3D.
 **Files affected:** `scripts/site-images/generate.sh`; `scripts/site-images/quickstart.tape`;
 `scripts/site-images/guard.tape`; `scripts/check-site-images-leak.sh`; `site/public/img/board.png`;
 `site/public/img/demo.webm`; `site/public/img/guard.gif`; `site/public/img/quickstart.gif`; `site/public/img/*.png`
@@ -150,12 +155,16 @@ bash scripts/check-site-images-leak.sh
    legible at the site width.
 5. Guard animation shows the block message clearly at card size.
 **Acceptance criteria:**
-- [ ] `generate.sh` e `check-site-images-leak.sh` rc=0; autoteste com canário de transcrição reprovando
-- [ ] transcrição do Quick start termina com 0 violations e 2 warnings
-- [ ] `make parity-rest` rc=0
+- [x] `generate.sh` e `check-site-images-leak.sh` rc=0; autoteste com canário de transcrição reprovando
+- [x] transcrição do Quick start termina com 0 violations e 2 warnings
+- [x] `make parity-rest` rc=0
 
 ### ML-3B — Home e guia em inglês e português; protótipo removido (afrodite-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done, com corretivo no ML-3D — `site/index.md` e `site/pt/index.md` com a estrutura aprovada (layout
+`doc`), fluxo em grade 2×3 no desktop e coluna no celular, vídeo com pôster e controles, animação do Quick start atrás
+de `<details>`, Quick start literal; `site/prototype.md` removido. Build e `TestQuickStart` rc=0. Capturas do
+arquiteto (inglês e português a 1280 px, inglês a 390 px): estrutura e traduções certas; o card do cenário 1 mostra o
+primeiro quadro vazio do `guard.gif` (o pôster existe e não é usado ali). ML-3D.
 **Files affected:** `site/index.md`; `site/pt/index.md`; `site/prototype.md` (removido);
 `site/.vitepress/config.mts` (só se o layout da home exigir)
 **Actions:**
@@ -167,8 +176,22 @@ bash scripts/check-site-images-leak.sh
 4. Delete `site/prototype.md` (ADR D8).
 5. `site/guide/getting-started.md` does not change (pinned by `TestQuickStartDocsPinned`).
 **Acceptance criteria:**
-- [ ] `npm run build` rc=0; capturas headless de `/trackfw/` e `/trackfw/pt/` a 1280 e 390 px conferidas
-- [ ] `TestQuickStart*` rc=0; `site/prototype.md` não existe
+- [x] `npm run build` rc=0; capturas headless de `/trackfw/` e `/trackfw/pt/` a 1280 e 390 px conferidas
+- [x] `TestQuickStart*` rc=0; `site/prototype.md` não existe
+
+### ML-3D — Corretivo do ML-3A/3B (afrodite-tf)
+**Status:** ⬜ Pending
+**Files affected:** `scripts/site-images/quickstart.tape`; `scripts/site-images/generate.sh`; `site/index.md`;
+`site/pt/index.md`; `site/public/img/quickstart.gif`; `site/public/img/quickstart.txt`;
+`site/public/img/quickstart-poster.png`
+**Actions:**
+1. The Quick start animation types exactly the README lines. Non-TTY input and the identity preset go into the hidden
+   setup (for example a shell function `trackfw() { command trackfw "$@" </dev/null; }` and the preset in the fixture),
+   not into the visible commands. The transcript still ends with 0 violations and 2 warnings.
+2. Scenario 1 card shows `guard-poster.png`, with the animation behind `<details>`, as in the Quick start.
+**Acceptance criteria:**
+- [ ] cada linha de comando da transcrição do Quick start é igual à do README; transcrição termina com 2 warnings
+- [ ] scanner e build rc=0; captura do card do cenário 1 com a mensagem de bloqueio visível
 
 ### ML-3C — Permissões por job no deploy do site (ares-tf)
 **Status:** ✅ Done — bloco `permissions` do nível do workflow removido; `build`: `contents: read`; `deploy`:

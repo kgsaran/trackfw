@@ -1,8 +1,11 @@
 # trackfw quick start demo — regenerate with scripts/site-images/generate.sh
-# Output path is overridden at runtime by generate.sh (Output line replaced with
-# a relative path; vhs is invoked with cwd=REPO_ROOT so the path resolves correctly).
+# Output path is overridden at runtime by generate.sh (Output lines replaced with
+# relative paths; vhs is invoked with cwd=REPO_ROOT so paths resolve correctly).
+# Commands run non-interactively (< /dev/null) so validate ends with the promised
+# 0 violations, 2 warnings (unfilled ADR and REQ sections).
 
 Output site/public/img/quickstart.gif
+Output site/public/img/quickstart.txt
 
 Require trackfw
 Require git
@@ -31,38 +34,15 @@ Show
 
 Type "# 1. Record a decision"
 Enter
-Type `trackfw adr new "User Authentication Strategy"`
+Type `trackfw adr new "User Authentication Strategy" < /dev/null`
 Enter
-Sleep 1.2s
-Type "Users need to sign in to see their own data."
-Enter
-Sleep 500ms
-Type "Email and password, hashed with bcrypt."
-Enter
-Sleep 500ms
-Type "Simple to ship now; SSO can come later."
-Enter
-Sleep 500ms
-Type "SSO only: rejected for the first release."
-Enter
-Sleep 1.5s
+Sleep 2s
 Ctrl+L
 Sleep 300ms
 
 Type "# 2. A requirement linked to that decision"
 Enter
-Type `trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md`
-Enter
-Sleep 1.5s
-Enter
-Sleep 500ms
-Type "Users must log in before reaching their dashboard."
-Enter
-Sleep 800ms
-Enter
-Sleep 700ms
-Enter
-Sleep 700ms
+Type `trackfw req new "User Authentication" --adr ADR-$(date +%F)-user-authentication-strategy.md < /dev/null`
 Enter
 Sleep 2s
 Ctrl+L
@@ -76,3 +56,4 @@ Sleep 1.5s
 Type "trackfw validate"
 Enter
 Sleep 2.5s
+Screenshot site/public/img/quickstart-poster.png
