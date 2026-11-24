@@ -141,7 +141,12 @@ attention e `roadmap_dir` agora pela raiz do projeto. 8 testes; braço antes rc=
 - [x] no file outside "Files affected" changed
 
 ### ML-1C — Quem afirma o contrato antigo do modo global (apolo-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — três testes reescritos e renomeados para D4 (`..._WarnYamlDoesNotLowerGlobalBlock`,
+`..._WarnYamlBlocksEvenWithoutRoadmapDir`, `..._GlobalScope_WarnCRLFStillBlocks`); `cli-parity.md` com D4; wrapper de
+projeto sobe ancestrais (script, gerador e referência de integridade idênticos). `guard`, `discover`, `validator`
+verdes. Ficaram: 3 testes de `internal/generators/credential_guard_test.go` com o contrato antigo, a exceção do teste
+de FIFO no `check-symlink-privilege-guard.sh` (reprova o `make parity-rest`) e o ramo `warn` do global, agora
+inalcançável (ML-1D).
 **Files affected:** `internal/guard/credential_test.go`; `internal/guard/credential_mode_test.go`; `docs/cli-parity.md`;
 `scripts/trackfw-credential-guard.sh`; `internal/generators/scaffold.go`;
 `internal/validator/validator_credential_guard_integrity_reference.go`
@@ -157,7 +162,25 @@ attention e `roadmap_dir` agora pela raiz do projeto. 8 testes; braço antes rc=
 4. Search `scripts/check-gates-falsify.sh` and `scripts/check-*.sh` for scenarios that assert the old global mode or the
    wrapper's cwd check; list what you found (update only if they assert the old contract).
 **Acceptance criteria:**
-- [ ] `go test ./internal/guard/ ./internal/discover/` rc=0; `go build ./...` rc=0; `make parity-rest` rc=0
+- [x] `go test ./internal/guard/ ./internal/discover/` rc=0; `go build ./...` rc=0; `make parity-rest` rc=0 (após ML-1D)
+
+### ML-1D — Restante do contrato antigo e código morto do modo global (apolo-tf)
+**Status:** ⬜ Pending
+**Files affected:** `internal/generators/credential_guard_test.go`; `scripts/check-symlink-privilege-guard.sh`;
+`internal/guard/credential.go`; `internal/validator/validator_credential_guard_global_reference.go`
+**Actions:**
+1. `TestGlobalCredentialGuardScript_RespectsExplicitProjectModeWarn`,
+   `TestGlobalCredentialGuardScript_WritesAttentionOnlyWhenRoadmapsDirExists` and the global subtest of
+   `TestCredentialGuardScript_SecondLayer_AttentionMessageParityNoPath` assert the old contract; rewrite to D4.
+2. `EXCEPTIONS["internal/guard/writescope_nested_root_fifo_unix_test.go"]="FIFO_BUILD_TAG_NOT_WINDOWS"` beside the four
+   existing FIFO entries.
+3. `RunCredentialGlobal`: with default `block`, the effective mode is always `block`; remove the unreachable `warn`
+   branch (attention write, roadmap dir) and make the code say what it does, keeping D4 documented.
+4. The comment in `validator_credential_guard_global_reference.go` that quotes the old project wrapper line.
+5. Run `go test ./... -count=1` once to find any other site that asserts the old contract; list it, change only files
+   above.
+**Acceptance criteria:**
+- [ ] `go test ./... -count=1` rc=0; `make build && make parity-rest` rc=0
 
 **Wave gates:**
 ```bash

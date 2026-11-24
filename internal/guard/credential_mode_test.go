@@ -219,10 +219,13 @@ func TestReadCredentialGuardMode_EndToEnd_ProjectScope(t *testing.T) {
 	}
 }
 
-// TestReadCredentialGuardMode_EndToEnd_GlobalScope exercises the CRLF warn vector
-// through RunCredentialGlobal, confirming warn\r is stripped to warn and produces rc=0.
-// Assertion: CRLF warn yaml → RunCredentialGlobal returns rc=0 (warn, not block default).
-func TestReadCredentialGuardMode_EndToEnd_GlobalScope(t *testing.T) {
+// TestReadCredentialGuardMode_EndToEnd_GlobalScope_WarnCRLFStillBlocks exercises the
+// CRLF warn vector through RunCredentialGlobal. CRLF mode:warn\r is stripped to warn by
+// the reader, but D4 (ADR-2026-11-24) means warn never lowers the global default of
+// block: the effective mode is the strictest of "block" (caller default) and all yaml
+// values in the chain.
+// Assertion: CRLF mode:warn yaml → RunCredentialGlobal returns rc=2 (global block wins).
+func TestReadCredentialGuardMode_EndToEnd_GlobalScope_WarnCRLFStillBlocks(t *testing.T) {
 	dir := t.TempDir()
 	yaml := "credential_guard:\r\n  mode: warn\r\nroadmap_dir: docs/roadmaps\r\n"
 	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte(yaml), 0644); err != nil {
@@ -248,8 +251,9 @@ func TestReadCredentialGuardMode_EndToEnd_GlobalScope(t *testing.T) {
 
 	rc := guard.RunCredentialGlobal(stdin, io.Discard, io.Discard)
 
-	// CRLF warn\r → stripped to warn → rc=0 (not block default).
-	if rc != 0 {
-		t.Fatalf("CRLF warn global: expected rc=0, got %d", rc)
+	// CRLF warn\r → stripped to warn by the reader, but global scope default is "block";
+	// warn cannot lower it (D4, ADR-2026-11-24). rc must be 2.
+	if rc != 2 {
+		t.Fatalf("CRLF warn global: expected rc=2 (global block wins over warn), got %d", rc)
 	}
 }

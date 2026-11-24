@@ -1513,13 +1513,18 @@ func GenerateGlobalCredentialGuardScript(home string) error {
 // ADR-2026-10-04). A lógica de detecção migrou para `trackfw guard credential` (Go). O shim
 // sonda o binário e executa o subcomando. Fail-closed (exit 2) se o binário não for encontrado
 // ou não tiver o subcomando guard — o invólucro não deve silenciar falhas. A guarda de projeto
-// (`[ -f trackfw.yaml ] || exit 0`) é mantida: o escopo de projeto deve ser no-op fora da
-// raiz do projeto trackfw, antes da sonda.
+// sobe pelos ancestrais do cwd até encontrar trackfw.yaml (D4, ADR-2026-11-24): o cwd num
+// subdiretório não desliga mais o guard.
 const credentialGuardScript = `#!/usr/bin/env bash
 # trackfw-credential-guard.sh — thin wrapper; delegates to ` + "`" + `trackfw guard credential` + "`" + `.
-# Script is intentionally a no-op when executed outside the project root
+# Script is intentionally a no-op when executed outside any project (no trackfw.yaml in any ancestor)
 set -euo pipefail
-[ -f trackfw.yaml ] || exit 0
+d=$PWD
+while :; do
+  if [ -f "${d%/}/trackfw.yaml" ]; then break; fi
+  if [ "$d" = / ]; then exit 0; fi
+  d=$(dirname "$d")
+done
 if ! command -v trackfw >/dev/null 2>&1; then
   echo "trackfw-credential-guard: trackfw not found in PATH — install trackfw to enable this guard." >&2
   exit 2

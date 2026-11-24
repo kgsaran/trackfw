@@ -527,15 +527,16 @@ func TestRunCredentialGlobal_CleanPayloadAllows(t *testing.T) {
 	}
 }
 
-// TestRunCredentialGlobal_WarnModeFromYamlWritesJSON asserts that in global scope,
-// when trackfw.yaml exists with mode=warn, the guard exits 0 and writes the attention
-// JSON to the fixed "docs/roadmaps" directory (ignoring roadmap_dir from yaml).
-// Assertion: RunCredentialGlobal reads mode from trackfw.yaml → warn → exit 0 + JSON in
-// docs/roadmaps (not in yaml's roadmap_dir value "custom/dir").
-func TestRunCredentialGlobal_WarnModeFromYamlWritesJSON(t *testing.T) {
-	// Create project dir with trackfw.yaml (warn mode, custom roadmap_dir that should be ignored).
+// TestRunCredentialGlobal_WarnYamlDoesNotLowerGlobalBlock asserts that in global scope,
+// mode: warn in trackfw.yaml does NOT lower the global default of "block" (D4,
+// ADR-2026-11-24): the effective mode is the strictest of the caller default ("block") and
+// all yaml values in the chain, so warn never overrides block.
+// Assertion: RunCredentialGlobal + yaml mode:warn → global block default wins → exit 2,
+// no attention JSON written, custom roadmap_dir not created.
+func TestRunCredentialGlobal_WarnYamlDoesNotLowerGlobalBlock(t *testing.T) {
+	// Create project dir with trackfw.yaml (warn mode, custom roadmap_dir).
 	dir := makeCredProjectDir(t, "credential_guard:\n  mode: warn\nroadmap_dir: custom/dir\n")
-	// Create the fixed docs/roadmaps directory.
+	// Create docs/roadmaps to prove no JSON is written even when the dir exists.
 	rdDir := filepath.Join(dir, "docs", "roadmaps")
 	if err := os.MkdirAll(rdDir, 0755); err != nil {
 		t.Fatal(err)
@@ -544,25 +545,18 @@ func TestRunCredentialGlobal_WarnModeFromYamlWritesJSON(t *testing.T) {
 	payload := `{"tool_input":{"command":"echo ` + jwtToken + `"}}`
 	code, _, errOut := runCredGlobal(t, dir, payload)
 
-	if code != 0 {
-		t.Fatalf("global warn mode: expected exit 0, got %d (stderr=%q)", code, errOut)
+	// D4: global default is "block"; mode:warn in yaml cannot lower it.
+	if code != 2 {
+		t.Fatalf("global warn yaml: expected exit 2 (global block not lowered by warn), got %d (stderr=%q)", code, errOut)
 	}
-	if !strings.Contains(errOut, "warning") {
-		t.Errorf("expected warning message, got %q", errOut)
+	if !strings.Contains(errOut, "blocked") {
+		t.Errorf("expected 'blocked' message in stderr, got %q", errOut)
 	}
 
-	// JSON must be in docs/roadmaps (fixed constant), NOT in custom/dir.
+	// Block mode must NOT write any attention JSON.
 	jsonPath := filepath.Join(rdDir, ".trackfw-credential-guard.json")
-	raw, err := os.ReadFile(jsonPath)
-	if err != nil {
-		t.Fatalf("attention JSON not written to docs/roadmaps: %v", err)
-	}
-	var obj map[string]string
-	if err := json.Unmarshal(raw, &obj); err != nil {
-		t.Fatalf("attention JSON not valid: %v", err)
-	}
-	if obj["level"] != "action_required" {
-		t.Errorf("JSON level=%q want %q", obj["level"], "action_required")
+	if _, err := os.Stat(jsonPath); err == nil {
+		t.Error("global guard must NOT write attention JSON in block mode")
 	}
 
 	// Verify custom/dir was NOT created.
@@ -633,22 +627,28 @@ func isSymlinkPrivilegeError(err error) bool {
 	return false
 }
 
-// TestRunCredentialGlobal_WarnNoDirNoFileCreated asserts that in global warn mode
-// when docs/roadmaps does not exist, no file or directory is created and exit is 0.
-// Assertion: RunCredentialGlobal warn mode + absent docs/roadmaps → no write + exit 0.
-func TestRunCredentialGlobal_WarnNoDirNoFileCreated(t *testing.T) {
+// TestRunCredentialGlobal_WarnYamlBlocksEvenWithoutRoadmapDir asserts that in global
+// scope, mode: warn in trackfw.yaml does NOT lower the global default of "block" (D4,
+// ADR-2026-11-24), regardless of whether docs/roadmaps exists.
+// Assertion: RunCredentialGlobal + yaml mode:warn + absent docs/roadmaps → global block
+// wins → exit 2, no directory created.
+func TestRunCredentialGlobal_WarnYamlBlocksEvenWithoutRoadmapDir(t *testing.T) {
 	dir := makeCredProjectDir(t, "credential_guard:\n  mode: warn\n")
 	// Intentionally do NOT create docs/roadmaps.
 
 	payload := `{"tool_input":{"command":"echo ` + jwtToken + `"}}`
 	code, _, errOut := runCredGlobal(t, dir, payload)
 
-	if code != 0 {
-		t.Fatalf("global warn no-dir: expected exit 0, got %d (stderr=%q)", code, errOut)
+	// D4: global default is "block"; mode:warn in yaml cannot lower it.
+	if code != 2 {
+		t.Fatalf("global warn no-dir: expected exit 2 (global block not lowered), got %d (stderr=%q)", code, errOut)
 	}
-	// docs/roadmaps must not have been created.
+	if !strings.Contains(errOut, "blocked") {
+		t.Errorf("expected 'blocked' message in stderr, got %q", errOut)
+	}
+	// docs/roadmaps must not have been created (block mode does not write attention).
 	if _, err := os.Stat(filepath.Join(dir, "docs", "roadmaps")); err == nil {
-		t.Error("global guard must NOT create docs/roadmaps when it doesn't exist")
+		t.Error("global guard must NOT create docs/roadmaps")
 	}
 }
 
