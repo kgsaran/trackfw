@@ -37,7 +37,10 @@ painel, e o defeito do serve é outra causa; (2) script de imagem sem `PS1` fixo
 `build` do `deploy-docs.yml` herda `pages: write` e `id-token: write` (conferido pelo arquiteto: permissões no nível
 do workflow); (4) o `serve` carrega CDN sem SRI (pré-existente, outra causa). Controles adotados no ML-2A e no ML-3x:
 ambiente fixo de geração, scanner de vazamento com canário, permissões por job, diagrama sem plugin de runtime.
-**Files affected:** `docs/seguranca/2026-11-23-wave0-site-novo-threat-model.md` (novo; único arquivo)
+**Files affected:** `docs/seguranca/2026-11-23-wave0-site-novo-threat-model.md` (novo; único arquivo);
+`docs/req/REQ-2026-11-23-trackfw-serve-expoe-caminho-absoluto-de-adr-global-no-api-chain.md` e
+`docs/roadmaps/backlog/ROADMAP-2026-11-23-trackfw-serve-expoe-caminho-absoluto-de-adr-global-no-api-chain.md` (REQ
+do risco (1), aberta no backlog a pedido do KG; outra causa, outra REQ); `docs/roadmaps/.trackfw-log-entries/`
 **Actions:**
 1. Enumeration completeness: every surface the new site adds or changes — images and GIFs generated from the binary
    (what they can capture: home paths, usernames, tokens, hostnames, git remotes, dates), new npm dependencies
