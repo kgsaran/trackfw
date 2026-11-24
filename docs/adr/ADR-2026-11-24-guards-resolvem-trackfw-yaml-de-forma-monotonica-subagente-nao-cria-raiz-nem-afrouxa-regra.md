@@ -102,8 +102,7 @@ decidem permissão de subagente. Ficam fora.
   de arquivos; o efeito real é só no Windows e não foi medido em Windows nesta REQ.
 
 **Mudança de comportamento:** um `credential_guard: mode: warn` no projeto deixa de rebaixar o hook global, que continua
-`block`. O `init` não gera esse campo, então só quem o escreveu à mão perde o efeito. O KG pode reverter esta parte sem
-mexer em D1–D3.
+`block`. O `init` não gera esse campo, então só quem o escreveu à mão perde o efeito. Confirmado pelo KG em 2026-11-24.
 
 ## Consequences
 
@@ -124,7 +123,9 @@ mexer em D1–D3.
     minúsculas não chega a ele.
   - **`MultiEdit`:** fica fora do matcher. Um teste público de 2026 indica que as versões atuais do Claude Code não a emitem mais; não há confirmação oficial.
 
-  Os dois últimos são outra causa (cobertura de ferramenta, não resolução de raiz).
+  Os dois últimos são outra causa (cobertura de ferramenta, não resolução de raiz) e seguem na
+  REQ-2026-11-24 (`docs/req/REQ-2026-11-24-guard-de-write-scope-nao-cobre-multiedit-no-claude-code-nem-o-opencode.md`),
+  por decisão do KG.
 
 ## Alternatives Considered
 
