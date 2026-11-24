@@ -27,7 +27,10 @@ REQ: docs/req/REQ-2026-11-24-aviso-gemini-cli-legacy-sugere-comando-sem-scope-pr
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model for this roadmap (hades-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — sítio único: `validator_gemini_cli_legacy.go:48`. S2–S7 foram classificados: condição global com
+`update harness`, `trackfw update` (só de projeto) ou escopo interpolado no `doctor`. A correção silencia o aviso
+(`InjectAntigravityHooks` grava `.agents/hooks.json`). Residual declarado: sem `--items`, o remédio instala os 12
+agentes do catálogo no projeto, o que vira problema quando o ML-3A pendente de `integrations_flags.go:329` entrar.
 **Files affected:** `docs/seguranca/2026-11-24-wave0-correcoes-de-consumidor-704-705.md` (novo; compartilhado com o roadmap irmão da mesma branch)
 **Actions:**
 1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed. Do not limit the search to the files already named by the REQ — before declaring the list closed, search the repository for other places that emit the same artifact or the same pattern (for example, grep for the literal the final artifact contains).
@@ -35,8 +38,8 @@ REQ: docs/req/REQ-2026-11-24-aviso-gemini-cli-legacy-sugere-comando-sem-scope-pr
 3. Falsification targets in both directions — for each surface, what breaks when the behavior regresses, and what breaks when it regresses the opposite way?
 4. Declared residual — what this design accepts not covering.
 **Acceptance criteria:**
-- [ ] The four sections above answered with evidence, not a one-line assertion
-- [ ] No implementation line written for this ML
+- [x] The four sections above answered with evidence, not a one-line assertion
+- [x] No implementation line written for this ML
 
 **Wave gates:**
 ```bash

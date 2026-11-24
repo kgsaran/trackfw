@@ -27,7 +27,10 @@ REQ: docs/req/REQ-2026-11-24-teste-de-orcamento-de-alias-afirma-o-trackfw-yaml-d
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model for this roadmap (hades-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — sítio único da mesma causa: `config_merge_key_test.go:501`. Seis outros testes leem arquivo
+versionado por `../../` (A2–A7) e afirmam invariante de sincronia que um fork herda intacto; é outra causa, declarada
+como residual. Achado crítico: `defaults()` (`config.go:398-403`) já preenche `req_dir`, `roadmap_dir` e `adr_dirs`,
+então "campos não vazios" passaria com um `parse()` que não faz nada. O ML-1A foi ajustado.
 **Files affected:** `docs/seguranca/2026-11-24-wave0-correcoes-de-consumidor-704-705.md` (novo; compartilhado com o roadmap irmão da mesma branch)
 **Actions:**
 1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed. Do not limit the search to the files already named by the REQ — before declaring the list closed, search the repository for other places that emit the same artifact or the same pattern (for example, grep for the literal the final artifact contains).
@@ -35,8 +38,8 @@ REQ: docs/req/REQ-2026-11-24-teste-de-orcamento-de-alias-afirma-o-trackfw-yaml-d
 3. Falsification targets in both directions — for each surface, what breaks when the behavior regresses, and what breaks when it regresses the opposite way?
 4. Declared residual — what this design accepts not covering.
 **Acceptance criteria:**
-- [ ] The four sections above answered with evidence, not a one-line assertion
-- [ ] No implementation line written for this ML
+- [x] The four sections above answered with evidence, not a one-line assertion
+- [x] No implementation line written for this ML
 
 **Wave gates:**
 ```bash
@@ -53,14 +56,14 @@ test -s docs/seguranca/2026-11-24-wave0-correcoes-de-consumidor-704-705.md
 **Status:** ⬜ Pending
 **Files affected:** `internal/config/config_merge_key_test.go`
 **Actions:**
-1. Em `TestAliasBomb_Budget_RealTrackfwYaml` (~L500–530), remover as cinco comparações de valor (L514–529) e afirmar
-   apenas `cfg.REQDir != ""`, `cfg.RoadmapDir != ""` e `len(cfg.ADRDirs) > 0`. Manter o `t.Fatalf` do parse e os
-   `t.Skip` do arquivo ausente.
-2. Novo teste irmão com fixture em `t.TempDir()`: yaml de consumidor (`req_dir: docs/requisições`,
-   `governance_mode: strict`, `roadmap_namespacing: by_agent`, `agents: [a, b, c]`) passa pela mesma lógica de asserção
-   (extraia um helper usado pelos dois). Braço antes: a lógica antiga reprova nele.
-3. Contra-braço: o helper reprova uma config vazia (`defaults()` sem parse com `req_dir: ""`) — use `testing.T`
-   falso ou teste a função de checagem que devolve erro.
+1. Em `TestAliasBomb_Budget_RealTrackfwYaml` (~L500–530), remover as cinco comparações de valor (L514–529). O teste
+   afirma só o que o nome diz: `parse()` sem erro sobre o arquivo real (orçamento suficiente). Não acrescente "campos
+   não vazios": `defaults()` já os preenche e a asserção seria vácua (Wave 0). Manter os `t.Skip` do arquivo ausente.
+2. Novo teste com fixture em `t.TempDir()` (yaml de consumidor: `req_dir: docs/requisições`, `governance_mode: strict`,
+   `roadmap_namespacing: by_agent`, `agents: [a, b, c]`): `parse()` sem erro e os campos iguais AOS VALORES DA FIXTURE
+   (`cfg.REQDir == "docs/requisições"` etc.). Braço: as asserções antigas (valores deste repo) reprovam nele.
+3. Contra-braço: partindo de `ProjectConfig{}` (zero, não `defaults()`), um yaml sem essas chaves deixa os campos
+   vazios, o que mostra que a asserção do item 2 só passa porque o `parse()` leu a fixture.
 4. Censo (relatório): outros `_test.go` que leem arquivo versionado da raiz do repo (`../../`, `repoRoot`,
    `runtime.Caller`) e afirmam valor deste repositório. Liste; não altere fora desta lista.
 **Acceptance criteria:**

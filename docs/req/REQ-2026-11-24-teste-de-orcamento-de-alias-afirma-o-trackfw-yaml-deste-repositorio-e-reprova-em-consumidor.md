@@ -22,11 +22,11 @@ arquiteto na leitura do teste (L514: "these values are known from the repo's tra
 sítio único que lê `../../trackfw.yaml`.
 
 ## Acceptance Criteria
-- [ ] O teste afirma só a propriedade do nome: `parse()` sem erro sobre o `trackfw.yaml` real, e campos obrigatórios
-      (`req_dir`, `roadmap_dir`, `adr_dirs`) não vazios. Nenhum valor específico deste repositório.
-- [ ] Braço: com um `trackfw.yaml` de consumidor (`req_dir: docs/requisições`, `governance_mode: strict`,
-      `roadmap_namespacing: by_agent`) o teste passa (antes reprovava). Contra-braço: um `parse()` que devolve config
-      vazia ainda reprova.
+- [ ] O teste afirma só a propriedade do nome: `parse()` sem erro sobre o `trackfw.yaml` real. Nenhum valor específico
+      deste repositório. Sem "campos não vazios", que `defaults()` torna vácuo (Wave 0).
+- [ ] Braço: um `trackfw.yaml` de consumidor (`req_dir: docs/requisições`, `governance_mode: strict`,
+      `roadmap_namespacing: by_agent`) é lido com os valores da fixture, e as asserções antigas reprovam nele.
+      Contra-braço: partindo de `ProjectConfig{}`, um yaml sem essas chaves deixa os campos vazios.
 - [ ] Censo: nenhum outro teste afirma o conteúdo de arquivo versionado deste repositório como se fosse universal
       (busca por leitura de `trackfw.yaml`, `lefthook.yml` e afins por caminho relativo à raiz).
 - [ ] `make quality` rc=0 e CI verde.
