@@ -3,8 +3,9 @@ package validator
 // credentialGuardGlobalScriptReference is a validator-local copy of the GLOBAL-scope
 // ~/.trackfw/scripts/trackfw-credential-guard.sh template composed in
 // internal/generators/scaffold.go (globalCredentialGuardScript). This is a DIFFERENT template
-// than credentialGuardScriptReference (the project-scope variant): the global variant omits the
-// project-guard block (`[ -f trackfw.yaml ] || exit 0`) and calls `trackfw guard credential
+// than credentialGuardScriptReference (the project-scope variant): the global variant has no
+// project-root check (the binary's --global flag disables the ancestor walk that makes the
+// project scope a no-op outside any trackfw project) and calls `trackfw guard credential
 // --global` instead of `trackfw guard credential`.
 //
 // ML-2A (ADR-2026-10-04): globalCredentialGuardScript is now a thin wrapper. Updated to match.

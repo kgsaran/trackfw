@@ -360,17 +360,14 @@ func RunCredential(stdin io.Reader, stdout, stderr io.Writer) int {
 
 // RunCredentialGlobal implements the credential guard logic for global scope.
 // Entry point for `trackfw guard credential --global`.
-// Faithful Go port of globalCredentialGuardScript:
-//   - no trackfw.yaml guard: runs in any directory.
-//   - DEFAULT_MODE = "block" (vs "warn" in project scope).
-//   - ROADMAP_DIR = "docs/roadmaps" (fixed, relative to cwd).
-//   - Writes attention JSON only if docs/roadmaps already exists as a directory (no mkdir).
-//   - Effective mode = strictest of "block" and all credential_guard.mode values found
-//     walking from cwd to filesystem root (D4, ADR-2026-11-24). block > warn.
-//     A credential_guard.mode: warn in a project yaml no longer downgrades the global
-//     default of block; it only takes effect in project scope.
 //
-// Returns 0 to allow, 2 to block. The caller MUST exit with this code.
+// Key differences from RunCredential (project scope):
+//   - No project-root check: runs in any directory, never a no-op.
+//   - Always blocks (D4, ADR-2026-11-24): credWalkStrictestMode with callerDefault="block"
+//     always returns "block"; no mode: warn in any ancestor yaml can lower the global
+//     default. The warn branch and attention-write are intentionally absent.
+//
+// Returns 2 to block. The caller MUST exit with this code.
 func RunCredentialGlobal(stdin io.Reader, stdout, stderr io.Writer) int {
 	// Step 1: Read all stdin.
 	data, _ := io.ReadAll(stdin)
@@ -451,35 +448,14 @@ func RunCredentialGlobal(stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 	}
 
-	// Step 9: Compute the effective mode — strictest of "block" (global-scope default)
-	// and every credential_guard.mode found walking from cwd to the filesystem root
-	// (D4, ADR-2026-11-24).  block > warn.  A mode:warn in any ancestor yaml cannot
-	// lower the global default; it can only be overridden by a stricter value.
-	cwd, err := os.Getwd()
-	if err != nil {
-		cwd = ""
-	}
-	mode := credWalkStrictestMode(cwd, "block")
-
-	// Step 10: Block or warn.
+	// Step 9–10: Global scope always blocks (D4, ADR-2026-11-24).
+	// credWalkStrictestMode(cwd, "block") would always return "block": callerDefault is
+	// "block" and no ancestor yaml's mode: warn can lower it (block > warn, one-way
+	// ratchet). The warn branch and attention-write are unreachable; the walk is omitted
+	// to make the code say what it does.
 	origin := credFindingMessage(finding)
-	if mode == "block" {
-		fmt.Fprintf(stderr, "trackfw-credential-guard: blocked - possible %s %s\n", finding.typ, origin)
-		return 2
-	}
-
-	fmt.Fprintf(stderr, "trackfw-credential-guard: warning - possible %s %s\n", finding.typ, origin)
-
-	// Global scope: write attention JSON only if docs/roadmaps already exists as a directory.
-	// Faithful port of: ROADMAP_DIR="docs/roadmaps"; if [ ! -d "$ROADMAP_DIR" ]; then exit 0; fi
-	const roadmapDir = "docs/roadmaps"
-	fi, statErr := os.Stat(roadmapDir)
-	if statErr != nil || !fi.IsDir() {
-		return 0
-	}
-	credWriteAttention(cwd, roadmapDir, finding)
-
-	return 0
+	fmt.Fprintf(stderr, "trackfw-credential-guard: blocked - possible %s %s\n", finding.typ, origin)
+	return 2
 }
 
 // credGlobToken expands a single command-line token when it contains a glob metacharacter.
@@ -1433,8 +1409,8 @@ func credNonJSONLayerTwoB(contextStr, shellCwd string) credFinding {
 // Returns (val, true) when a credential_guard: section is found (val may be "").
 // Returns ("", false) when no credential_guard: header exists.
 //
-// The validator's extractCredentialGuardMode and the guard's credReadModeWithDefault
-// both delegate to this function so that the two callers converge on exactly the
+// The validator's extractCredentialGuardMode and the guard's credWalkStrictestMode
+// both delegate to this function so that all callers converge on exactly the
 // same mode for every input (AC1).
 func ReadCredentialGuardMode(content string) (mode string, ok bool) {
 	lines := strings.Split(content, "\n")
@@ -1536,9 +1512,9 @@ func credFindNearestProjectRoot(startDir string) string {
 //     circuits; "warn" is accepted only if current strictest is not already "block";
 //     any other (unrecognised) value contributes nothing.
 //
-// IMPORTANT: callerDefault MUST be supplied by the caller ("warn" for project scope,
-// "block" for global scope). Never hardcode "block" here — doing so would elevate
-// the project-scope default and break TestCredNested_ProjectWarnOnlyCounterArm.
+// IMPORTANT: callerDefault MUST be supplied by the caller ("warn" for project scope).
+// Never hardcode "block" here — doing so would elevate the project-scope default and
+// break TestCredNested_ProjectWarnOnlyCounterArm.
 func credWalkStrictestMode(startDir, callerDefault string) string {
 	if startDir == "" {
 		return callerDefault
@@ -1574,28 +1550,6 @@ func credWalkStrictestMode(startDir, callerDefault string) string {
 		dir = parent
 	}
 	return strictest
-}
-
-// credReadModeWithDefault reads credential_guard.mode from the YAML file at
-// yamlPath, returning defaultMode when the file is absent, unreadable, or the
-// extracted value is not "warn" or "block".
-//
-// Delegates to ReadCredentialGuardMode for all parsing (D1 — shared reader).
-func credReadModeWithDefault(yamlPath, defaultMode string) string {
-	data, err := os.ReadFile(yamlPath)
-	if err != nil {
-		return defaultMode
-	}
-
-	val, ok := ReadCredentialGuardMode(string(data))
-	if !ok {
-		return defaultMode
-	}
-	switch val {
-	case "warn", "block":
-		return val
-	}
-	return defaultMode
 }
 
 // credReadRoadmapDir reads roadmap_dir from trackfw.yaml with CRLF normalisation

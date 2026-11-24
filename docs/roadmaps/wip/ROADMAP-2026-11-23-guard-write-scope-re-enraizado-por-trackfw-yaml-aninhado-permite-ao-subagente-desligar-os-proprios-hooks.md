@@ -165,7 +165,10 @@ inalcançável (ML-1D).
 - [x] `go test ./internal/guard/ ./internal/discover/` rc=0; `go build ./...` rc=0; `make parity-rest` rc=0 (após ML-1D)
 
 ### ML-1D — Restante do contrato antigo e código morto do modo global (apolo-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — `RunCredentialGlobal` bloqueia sem ler yaml (ramo `warn` e `credReadModeWithDefault` removidos,
+sem chamador); 2 testes de `generators` reescritos e renomeados, o caso global da paridade virou teste próprio; exceção
+FIFO no `check-symlink-privilege-guard.sh`. `go build`/`vet` rc=0, `make parity-rest` rc=0. `go test ./...` só reprova
+em `TestGate_RealTree` (`internal/winskips`): o teste de FIFO do ML-1A falta em `.github/windows-skips.json` (ML-1E).
 **Files affected:** `internal/generators/credential_guard_test.go`; `scripts/check-symlink-privilege-guard.sh`;
 `internal/guard/credential.go`; `internal/validator/validator_credential_guard_global_reference.go`
 **Actions:**
@@ -180,7 +183,18 @@ inalcançável (ML-1D).
 5. Run `go test ./... -count=1` once to find any other site that asserts the old contract; list it, change only files
    above.
 **Acceptance criteria:**
-- [ ] `go test ./... -count=1` rc=0; `make build && make parity-rest` rc=0
+- [x] `go test ./... -count=1` rc=0 (após ML-1E); `make build && make parity-rest` rc=0
+
+### ML-1E — Registro do teste de FIFO no inventário de skips do Windows (apolo-tf)
+**Status:** ⬜ Pending
+**Files affected:** `.github/windows-skips.json`; `internal/guard/credential_mode_test.go`
+**Actions:**
+1. Add the entry for `internal/guard/writescope_nested_root_fifo_unix_test.go:TestD3_FIFONamedTrackfwYAML_DenyWithoutHanging`
+   following the format and classification of the existing FIFO entries in the same file.
+2. `credential_mode_test.go:188`: the comment cites the removed `credReadModeWithDefault`; point it to
+   `credWalkStrictestMode`.
+**Acceptance criteria:**
+- [ ] `go test ./internal/winskips/ ./internal/guard/ -count=1` rc=0
 
 **Wave gates:**
 ```bash
