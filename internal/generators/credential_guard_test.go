@@ -258,9 +258,10 @@ func TestGlobalCredentialGuardScript_NoMatch_SilentPass(t *testing.T) {
 }
 
 func TestGlobalCredentialGuardScript_RespectsExplicitProjectMode(t *testing.T) {
-	// O binário global respeita mode: block explícito no cwd (rc=2). D4 (ADR-2026-11-24):
-	// mode: warn não rebaixa o padrão global de block — essa direção é coberta por
-	// TestGlobalCredentialGuardScript_ProjectModeWarnDoesNotDowngradeGlobalBlock.
+	// O script chama `trackfw guard credential` (projeto), que respeita mode: block no cwd
+	// (rc=2). Esta função não exerce RunCredentialGlobal — o nome "Global" refere-se ao
+	// fixture de invocação via script, não ao escopo do guard chamado.
+	// Assertion: script + trackfw.yaml mode: block + JWT → rc=2, "blocked" em stderr.
 	cwd, scriptPath := setupGlobalCredentialGuardFixture(t)
 	if err := os.WriteFile(filepath.Join(cwd, "trackfw.yaml"), []byte("credential_guard:\n  mode: block\n"), 0644); err != nil {
 		t.Fatal(err)
@@ -277,14 +278,13 @@ func TestGlobalCredentialGuardScript_RespectsExplicitProjectMode(t *testing.T) {
 }
 
 func TestGlobalCredentialGuardScript_ProjectModeWarnDoesNotDowngradeGlobalBlock(t *testing.T) {
-	// D4 (ADR-2026-11-24): mode: warn explícito em trackfw.yaml no cwd NÃO rebaixa o
-	// padrão global de block. credWalkStrictestMode(cwd, "block") parte de "block" e warn
-	// não pode sobrescrevê-lo (ratchet unidirecional block > warn).
+	// D4 (ADR-2026-11-24): RunCredentialGlobal hardcodes block sem chamar
+	// credWalkStrictestMode — mode: warn em trackfw.yaml não é lido nem avaliado.
 	// O .sh congelado diverge intencionalmente (comportamento pré-D4: retornava rc=0 com
 	// mode: warn); este teste exercita apenas o binário Go diretamente.
 	//
-	// Assertion: global scope + trackfw.yaml com mode: warn → rc=2, "blocked" em stderr,
-	// nenhum arquivo de attention (D4, ADR-2026-11-24).
+	// Assertion: RunCredentialGlobal (escopo global) + trackfw.yaml mode: warn + JWT → rc=2,
+	// "blocked" em stderr, nenhum arquivo de attention — sem ler yaml (D4, ADR-2026-11-24).
 	cwd := t.TempDir()
 	if err := os.WriteFile(filepath.Join(cwd, "trackfw.yaml"), []byte("credential_guard:\n  mode: warn\n"), 0644); err != nil {
 		t.Fatal(err)
@@ -1060,5 +1060,76 @@ func TestGlobalCredentialGuardScript_SecondLayer_AlwaysBlocksNoAttentionPath(t *
 	}
 	if attentionFileExists(cwd) {
 		t.Error("global scope: modo block não escreve .trackfw-credential-guard.json")
+	}
+}
+
+// TestCredentialGuardScript_DirectoryYaml_CallsTrackfw asserts that when the only
+// trackfw.yaml in the ancestor chain is a directory, the generated project-scope wrapper
+// DOES call trackfw (and exits with its exit code), rather than exiting 0 silently.
+// Asserts: D3 wrapper fix (ML-2C) — the check changes from "[ -f ]" to "[ -e ] || [ -L ]",
+// so a directory-named trackfw.yaml triggers the break and the wrapper executes trackfw;
+// the stub trackfw exits 2, so the wrapper exits 2. Before the fix, "[ -f ]" returned
+// false for a directory, the loop fell through to "exit 0", and rc=0.
+func TestCredentialGuardScript_DirectoryYaml_CallsTrackfw(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test requires sh — not available on Windows")
+	}
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh not found in PATH")
+	}
+
+	// Generate the project-scope wrapper script into a temp dir.
+	genDir := t.TempDir()
+	if err := GenerateCredentialGuardScript(genDir); err != nil {
+		t.Fatalf("GenerateCredentialGuardScript: %v", err)
+	}
+	scriptPath := filepath.Join(genDir, "scripts", "trackfw-credential-guard.sh")
+
+	// Create a project dir where trackfw.yaml is a DIRECTORY, not a regular file.
+	projDir := t.TempDir()
+	yamlDir := filepath.Join(projDir, "trackfw.yaml")
+	if err := os.Mkdir(yamlDir, 0700); err != nil {
+		t.Fatalf("mkdir trackfw.yaml: %v", err)
+	}
+
+	// Create a stub trackfw that always exits 2, to signal "I was called".
+	stubDir := t.TempDir()
+	stubPath := filepath.Join(stubDir, "trackfw")
+	stubContent := "#!/bin/sh\nexit 2\n"
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0755); err != nil {
+		t.Fatalf("write stub trackfw: %v", err)
+	}
+
+	// Use a minimal PATH: stub dir first (so our stub is found before any real trackfw),
+	// plus system utilities needed by the script (sh, dirname, command).
+	minimalPATH := stubDir + ":/usr/bin:/bin:/usr/sbin:/sbin"
+
+	cmd := exec.Command("sh", scriptPath)
+	cmd.Dir = projDir
+	cmd.Env = []string{
+		"PATH=" + minimalPATH,
+		"HOME=" + t.TempDir(),
+		"USERPROFILE=" + t.TempDir(),
+		"CODEX_HOME=" + t.TempDir(),
+		"XDG_CONFIG_HOME=" + t.TempDir(),
+	}
+	cmd.Stdin = strings.NewReader("")
+	var errBuf strings.Builder
+	cmd.Stderr = &errBuf
+
+	err := cmd.Run()
+	var exitCode int
+	if err == nil {
+		exitCode = 0
+	} else if exitErr, ok := err.(*exec.ExitError); ok {
+		exitCode = exitErr.ExitCode()
+	} else {
+		t.Fatalf("running script: %v", err)
+	}
+
+	// After fix: wrapper finds directory-named yaml → breaks → calls stub → rc=2.
+	// Before fix: wrapper's "[ -f ]" returns false for a directory → loop exits 0.
+	if exitCode != 2 {
+		t.Fatalf("directory yaml: want rc=2 (wrapper calls trackfw stub), got %d (stderr=%q)", exitCode, errBuf.String())
 	}
 }

@@ -236,7 +236,13 @@ func RunCredential(stdin io.Reader, stdout, stderr io.Writer) int {
 	// D4 (ADR-2026-11-24): detect the project by the nearest ancestor of projectCwd
 	// that holds a regular trackfw.yaml, not just the cwd itself.  A cwd inside a
 	// subdirectory of the project no longer disables the guard.
-	projectRoot := credFindNearestProjectRoot(projectCwd)
+	projectRoot, rootErr := credFindNearestProjectRoot(projectCwd)
+	if rootErr != nil {
+		// Non-regular trackfw.yaml found (directory, FIFO, or permission error) → deny.
+		// D3 (ADR-2026-11-24): only os.IsNotExist is absent; everything else blocks.
+		fmt.Fprintf(stderr, "trackfw-credential-guard: blocked - %v\n", rootErr)
+		return 2
+	}
 	if projectRoot == "" {
 		return 0 // not inside a trackfw project
 	}
@@ -1472,31 +1478,39 @@ func ReadCredentialGuardMode(content string) (mode string, ok bool) {
 
 // credFindNearestProjectRoot returns the nearest ancestor directory of startDir
 // (including startDir itself) that contains a REGULAR trackfw.yaml, by walking
-// up to the filesystem root. Returns "" when no such ancestor exists.
+// up to the filesystem root.
 //
-// Only a regular file counts as a valid project root (D3, ADR-2026-11-24).
-// A directory or FIFO named trackfw.yaml is NOT a valid root (ErrNotRegularFile
-// is returned by fileutil.ReadRegularFile; both errors are treated as "not here,
-// keep walking"). Their presence does, however, count as block in the mode chain
-// — see credWalkStrictestMode.
-func credFindNearestProjectRoot(startDir string) string {
+// Return values:
+//   - ("", nil)   — no trackfw.yaml in any ancestor; target is outside any project.
+//   - (dir, nil)  — regular trackfw.yaml found at dir.
+//   - (dir, err)  — trackfw.yaml exists at dir but is not a regular file (directory,
+//     FIFO, permission denied). D3 (ADR-2026-11-24): only os.IsNotExist is absent;
+//     any other error stops the walk and returns (dir, err) so the caller can deny.
+//
+// CHANGED in ML-2C: ErrNotRegularFile and permission errors no longer cause "keep
+// walking" — they stop the walk and signal an error to the caller (fail-closed).
+func credFindNearestProjectRoot(startDir string) (string, error) {
 	if startDir == "" {
-		return ""
+		return "", nil
 	}
 	dir := filepath.Clean(startDir)
 	for {
 		_, err := fileutil.ReadRegularFile(filepath.Join(dir, "trackfw.yaml"))
 		if err == nil {
-			return dir
+			return dir, nil
 		}
-		// os.IsNotExist → absent, skip; ErrNotRegularFile → not a valid root, skip.
+		if !os.IsNotExist(err) {
+			// ErrNotRegularFile (directory, FIFO) or permission error → D3: deny.
+			return dir, fmt.Errorf("credential guard: trackfw.yaml at %q: %w", dir, err)
+		}
+		// os.IsNotExist → absent; continue walking up.
 		parent := filepath.Dir(dir)
 		if parent == dir {
 			break // reached filesystem root
 		}
 		dir = parent
 	}
-	return ""
+	return "", nil
 }
 
 // credWalkStrictestMode walks from startDir up to the filesystem root, reading

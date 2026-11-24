@@ -21,7 +21,7 @@ const credentialGuardScriptReference = `#!/usr/bin/env bash
 set -euo pipefail
 d=$PWD
 while :; do
-  if [ -f "${d%/}/trackfw.yaml" ]; then break; fi
+  if [ -e "${d%/}/trackfw.yaml" ] || [ -L "${d%/}/trackfw.yaml" ]; then break; fi
   if [ "$d" = / ]; then exit 0; fi
   d=$(dirname "$d")
 done

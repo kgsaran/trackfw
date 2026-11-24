@@ -297,20 +297,14 @@ func TestD3_DirectoryNamedTrackfwYAML_Deny(t *testing.T) {
 		t.Fatal(err)
 	}
 	// target: outer/.claude/settings.json
-	// On HEAD: findProjectRoot walks up and reads outer/.claude/trackfw.yaml (dir).
-	// os.ReadFile on a directory returns an error (IsDirectory), which HEAD silences via
-	// "if err != nil { return nil, nil, nil }" in readWriteScopeFromYAML.
-	// findProjectRoot then continues up to outer/ and uses outer as root. .claude/settings.json
-	// resolves to outer/.claude/settings.json which IS a frozen path → rc=2 on HEAD too.
-	// But with a *different* re-root variant: if the directory is at outer/trackfw.yaml (the root itself),
-	// findProjectRoot would not find it and walk up further. The key attack is when
-	// findProjectRootSafe returns an error (dir named trackfw.yaml is encountered during the walk)
-	// instead of silently skipping. With the fix, any non-regular trackfw.yaml encountered during
-	// ANY part of the ancestor walk (D3) → deny. This test verifies that the error propagates.
-	//
-	// Note: on HEAD, the attack via directory-at-root is more subtle. Here we target the
-	// ErrNotRegularFile path in readWriteScopeFromYAML, which is the D3 fix.
-	// A directory at .claude/ is encountered during D2's ancestor walk of buildFrozenList.
+	// D3 mechanism: findProjectRootSafe walks up from nestedDir (.claude/).
+	// At nestedDir it calls fileutil.ReadRegularFile("…/.claude/trackfw.yaml") — this is a
+	// directory, so ReadRegularFile returns ErrNotRegularFile (not os.IsNotExist).
+	// Pre-fix (Forma V): os.IsNotExist was the only "absent" test; ErrNotRegularFile was
+	// treated as an unexpected error, silenced, and the walk continued up to outer/, where
+	// the outer project root was used — allowing the write.
+	// Post-fix (D3): any non-IsNotExist error from ReadRegularFile causes findProjectRootSafe
+	// to return ("", false, err); RunWriteScope propagates the error as deny → rc=2.
 	target := filepath.Join(nestedDir, "settings.json")
 	p := payload("Write", target, "agent-123")
 	rc, _ := runWS(t, p)

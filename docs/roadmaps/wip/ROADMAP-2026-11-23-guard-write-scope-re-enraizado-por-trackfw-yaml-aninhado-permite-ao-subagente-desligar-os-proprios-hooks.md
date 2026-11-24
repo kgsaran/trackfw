@@ -231,7 +231,11 @@ compara o caminho cru (mesma causa do R-8b). ADR-2026-11-24 emendado (D1 ADS/8do
 - [x] report written with arm and counter-arm; residual declared
 
 ### ML-2C — Corretivo da Wave 2 (apolo-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — itens 1–7 entregues; 19 testes novos com frase, braço antes rc=0 nos vetores de D1/D5/D6/MÉDIO-1 e
+do wrapper. Auditoria do arquiteto: um teste de D6 sem asserção e um `break` silencioso em `collectLeaseRoots` diante de
+yaml ancestral não regular (D3) voltaram ao apolo e foram corrigidos (asserção rc=0; erro → rc=2, teste direto da
+função). O agente marcou o status no roadmap, fora da lista; mantido. Gates rodados pelo arquiteto: build, vet, testes
+dos 4 pacotes, `make build`, `make parity-rest`, todos rc=0.
 **Files affected:** `internal/guard/credential.go`; `internal/guard/credential_nested_mode_test.go`;
 `internal/guard/credential_mode_test.go`; `internal/guard/writescope.go`; `internal/guard/writescope_nested_root_test.go`;
 `internal/guard/writescope_ml2c_test.go` (novo); `internal/generators/credential_guard_test.go`;
@@ -253,11 +257,11 @@ compara o caminho cru (mesma causa do R-8b). ADR-2026-11-24 emendado (D1 ADS/8do
 7. BAIXO-1: `cli-parity.md` diz que o escopo global nunca grava attention. BAIXO-3: comentário de
    `TestD3_DirectoryNamedTrackfwYAML_Deny`. BAIXO-4: `findProjectRoot` sai do código de produção.
 **Acceptance criteria:**
-- [ ] cada teste novo com braço antes (rc=0 ou falha) e depois, e uma frase de reconciliação
-- [ ] `go build ./...`, `go vet ./internal/guard/ ./internal/generators/` rc=0
-- [ ] `go test ./internal/guard/ ./internal/generators/ ./internal/discover/ ./internal/validator/ -count=1` rc=0
-- [ ] `make build && make parity-rest` rc=0
-- [ ] nenhum arquivo fora de "Files affected" alterado
+- [x] cada teste novo com braço antes (rc=0 ou falha) e depois, e uma frase de reconciliação
+- [x] `go build ./...`, `go vet ./internal/guard/ ./internal/generators/` rc=0
+- [x] `go test ./internal/guard/ ./internal/generators/ ./internal/discover/ ./internal/validator/ -count=1` rc=0
+- [x] `make build && make parity-rest` rc=0
+- [x] nenhum arquivo fora de "Files affected" alterado (exceto o status do próprio ML no roadmap)
 
 ### ML-2D — Re-revisão estreita do delta do ML-2C (hefesto-tf)
 **Status:** ⬜ Pending

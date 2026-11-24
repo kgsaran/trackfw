@@ -36,8 +36,9 @@ func credNestedJWTPayload() string {
 // TestCredNested_GlobalPlantedWarnBlocks asserts that in global scope, a trackfw.yaml
 // with mode:warn in the cwd does NOT downgrade the block default; the strictest mode
 // (block) wins → rc=2.
-// Sentence: credWalkStrictestMode with caller-default=block treats mode:warn as weaker
-// than the default and returns block; the global scope ignores the yaml's warn request.
+// Sentence: RunCredentialGlobal hardcodes block without calling credWalkStrictestMode;
+// a mode:warn yaml in the ancestor chain cannot lower the global default because the
+// yaml is never read in this scope.
 // Before this fix: mode from yaml overrode the caller default → rc=0.
 func TestCredNested_GlobalPlantedWarnBlocks(t *testing.T) {
 	dir := makeCredProjectDir(t, "credential_guard:\n  mode: warn\n")
@@ -52,8 +53,8 @@ func TestCredNested_GlobalPlantedWarnBlocks(t *testing.T) {
 
 // TestCredNested_GlobalNoYamlBlocks asserts that in global scope, without any
 // trackfw.yaml in the cwd or above it, the default block applies → rc=2.
-// Sentence: credWalkStrictestMode with no yamls in the ancestor chain returns the
-// caller default (block); global scope remains block with no yaml present.
+// Sentence: RunCredentialGlobal hardcodes block without reading any yaml; absence of
+// yaml in the ancestor chain is irrelevant — the block is unconditional.
 // Unchanged by this fix — acts as a regression guard.
 func TestCredNested_GlobalNoYamlBlocks(t *testing.T) {
 	dir := t.TempDir() // no trackfw.yaml
@@ -157,6 +158,44 @@ func TestCredNested_DirectoryYamlCountsAsBlock(t *testing.T) {
 	code, _, errOut := runCred(t, sub, credNestedJWTPayload())
 	if code != 2 {
 		t.Fatalf("dir-as-yaml: expected rc=2 (ErrNotRegularFile counts as block), got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestCredNested_DirectoryYamlDenies asserts that when the only trackfw.yaml in the
+// ancestor chain is a directory (not a regular file), RunCredential returns rc=2.
+// Asserts: D3 (MÉDIO-1 fix) — credFindNearestProjectRoot must not treat ErrNotRegularFile
+// as absent and walk past; a directory-named yaml marks the root and RunCredential must
+// deny (rc=2) so that a planted directory cannot silence the guard.
+// Before the fix: credFindNearestProjectRoot walked past ErrNotRegularFile → "" →
+// RunCredential returned 0 silently.
+func TestCredNested_DirectoryYamlDenies(t *testing.T) {
+	dir := t.TempDir()
+	// Plant a DIRECTORY named trackfw.yaml — not a regular file.
+	yamlDir := filepath.Join(dir, "trackfw.yaml")
+	if err := os.Mkdir(yamlDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	// Benign payload (no credentials): the deny comes from the non-regular yaml, not from
+	// credential pattern matching. Using empty payload so the hook can't match any pattern.
+	code, _, errOut := runCred(t, dir, "")
+	if code != 2 {
+		t.Fatalf("directory yaml: expected rc=2 (non-regular yaml → deny), got %d (stderr=%q)", code, errOut)
+	}
+	if errOut == "" {
+		t.Error("expected stderr message, got empty")
+	}
+}
+
+// TestCredNested_NoYamlAllows asserts that when there is no trackfw.yaml anywhere in
+// the ancestor chain, RunCredential returns rc=0 (not inside a project).
+// Asserts: D3 — only ErrNotRegularFile denies; a truly absent yaml (IsNotExist) allows
+// the walk to continue; reaching the FS root with no yaml found means no project → rc=0.
+// This is the counter-arm for TestCredNested_DirectoryYamlDenies.
+func TestCredNested_NoYamlAllows(t *testing.T) {
+	dir := t.TempDir() // no trackfw.yaml anywhere
+	code, _, _ := runCred(t, dir, "")
+	if code != 0 {
+		t.Fatalf("no yaml: expected rc=0 (not in a project), got %d", code)
 	}
 }
 
