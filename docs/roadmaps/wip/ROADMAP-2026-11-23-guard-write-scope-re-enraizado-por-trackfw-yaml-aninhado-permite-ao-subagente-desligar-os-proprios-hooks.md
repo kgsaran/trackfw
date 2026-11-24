@@ -321,8 +321,10 @@ go test ./internal/guard/ ./internal/generators/ ./internal/discover/ ./internal
 > Dependencies: Wave 2 audited.
 
 ### ML-3A — `make quality` e CI (zeus-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — `make quality` rc=0 na segunda rodada (a primeira reprovou em `TestGate_RealTree`, corrigido no
+ML-2G). PR #706 (draft): 24/24 checks verdes, inclusive `windows-full-suites`, `windows-arm64` e
+`windows-defect-reproduction`.
 **Files affected:** `docs/roadmaps/wip/ROADMAP-2026-11-23-guard-write-scope-re-enraizado-por-trackfw-yaml-aninhado-permite-ao-subagente-desligar-os-proprios-hooks.md`
 **Actions:** `make quality` with an idle machine; push; CI green on all jobs (Windows included).
 **Acceptance criteria:**
-- [ ] `make quality` rc=0; CI green
+- [x] `make quality` rc=0; CI green
