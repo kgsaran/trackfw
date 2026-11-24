@@ -72,8 +72,15 @@ test -s docs/seguranca/2026-11-24-wave0-write-scope-raiz-aninhada-threat-model.m
 > runs only `go test ./internal/guard/` (no `make quality` in this wave).
 
 ### ML-1A — Write-scope monotônico: D1, D2, D3 do ADR-2026-11-24 (apolo-tf)
-**Status:** ⬜ Pending
-**Files affected:** `internal/guard/writescope.go`; `internal/guard/writescope_nested_root_test.go` (novo)
+**Status:** ✅ Done — D1 antes da raiz (`hasTrackfwYAMLComponent`, só com `agent_id`); D2 por `frozenEntry{root,rel}` com
+`buildFrozenListForRoot` de cada ancestral; D3 via `findProjectRootSafe` + `ReadRegularFile` (não regular nega). 16
+testes + 1 de FIFO (arquivo com `//go:build !windows`, porque `syscall.Mkfifo` não compila no Windows); braço antes:
+9 vetores rc=0 e FIFO travado; depois, todos passam. Auditoria do arquiteto: build/vet rc=0; `go test ./internal/guard/`
+só reprova nos 3 testes do contrato antigo de credencial (ML-1C). O agente tentou um `git stash`, bloqueado pelo hook
+de worktree compartilhado; nada executado.
+**Files affected:** `internal/guard/writescope.go`; `internal/guard/writescope_nested_root_test.go` (novo);
+`internal/guard/writescope_nested_root_fifo_unix_test.go` (novo); `.claude/agent-memory/apolo-tf/MEMORY.md`;
+`.claude/agent-memory/apolo-tf/feedback_fifo_test_needs_build_tag.md` (novo)
 **Actions:**
 1. D1: for payloads with `agent_id`, deny (rc=2) any write whose path has a component equal to `trackfw.yaml` under
    `strings.EqualFold`, after path normalization and BEFORE the project-root lookup (Step 7), so it also applies outside
@@ -102,12 +109,15 @@ test -s docs/seguranca/2026-11-24-wave0-write-scope-raiz-aninhada-threat-model.m
 - Main session (no `agent_id`) writing `<proj>/sub/trackfw.yaml` → rc=0 (D1 is subagent-only)
 - Normalization unit test: `trackfw.yaml.`, `trackfw.yaml ` and `TRACKFW.YAML` all match; `trackfw.yaml.bak` does not
 **Acceptance criteria:**
-- [ ] all vectors above pass; arm reproduced as rc=0 before the change and rc=2 after (report both)
-- [ ] `go test ./internal/guard/` rc=0; `go vet ./internal/guard/` rc=0; `go build ./...` rc=0
-- [ ] no file outside "Files affected" changed
+- [x] all vectors above pass; arm reproduced as rc=0 before the change and rc=2 after (report both)
+- [x] `go test ./internal/guard/` rc=0; `go vet ./internal/guard/` rc=0; `go build ./...` rc=0 (após ML-1C)
+- [x] no file outside "Files affected" changed
 
 ### ML-1B — Guard de credencial: modo mais estrito da cadeia, D4 do ADR-2026-11-24 (apolo-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — `credFindNearestProjectRoot` (projeto pelo ancestral mais próximo com yaml regular) e
+`credWalkStrictestMode(startDir, callerDefault)` nos dois escopos; nenhum `"block"` literal na função compartilhada;
+attention e `roadmap_dir` agora pela raiz do projeto. 8 testes; braço antes rc=0 em 4 vetores, depois rc=2; contra-braço
+`warn` de projeto mantido. Três testes antigos afirmam o contrato que o ADR mudou (ML-1C).
 **Files affected:** `internal/guard/credential.go`; `internal/guard/credential_nested_mode_test.go` (novo)
 **Actions:**
 1. `RunCredential` (project scope): detect the project by the nearest ancestor of the cwd with `trackfw.yaml` (today it
@@ -127,8 +137,27 @@ test -s docs/seguranca/2026-11-24-wave0-write-scope-raiz-aninhada-threat-model.m
 - project, no yaml in any ancestor → rc=0 (not a project)
 - Antigravity payload cwd still used
 **Acceptance criteria:**
-- [ ] all tests above pass; `go test ./internal/guard/` rc=0; `go build ./...` rc=0
-- [ ] no file outside "Files affected" changed
+- [x] all tests above pass; `go test ./internal/guard/` rc=0; `go build ./...` rc=0 (após ML-1C)
+- [x] no file outside "Files affected" changed
+
+### ML-1C — Quem afirma o contrato antigo do modo global (apolo-tf)
+**Status:** ⬜ Pending
+**Files affected:** `internal/guard/credential_test.go`; `internal/guard/credential_mode_test.go`; `docs/cli-parity.md`;
+`scripts/trackfw-credential-guard.sh`; `internal/generators/scaffold.go`;
+`internal/validator/validator_credential_guard_integrity_reference.go`
+**Actions:**
+1. `TestRunCredentialGlobal_WarnModeFromYamlWritesJSON` (`credential_test.go:548`),
+   `TestRunCredentialGlobal_WarnNoDirNoFileCreated` (`:647`) and `TestReadCredentialGuardMode_EndToEnd_GlobalScope`
+   (`credential_mode_test.go:253`) assert that `mode: warn` lowers the global hook. Rewrite each to assert the D4
+   contract (global stays `block`), keeping whatever else they pin that is still true.
+2. `docs/cli-parity.md` (~6640): the credential mode section says the yaml mode is respected in global scope; state D4.
+3. The wrapper `scripts/trackfw-credential-guard.sh` exits 0 when `trackfw.yaml` is not in the cwd, which turns the
+   guard off in a subdirectory (same cause). Replace with an ancestor walk, in the wrapper and in its generator, keeping
+   the reference copy and the generated copy byte-identical (`internal/discover/discover_test.go:452`).
+4. Search `scripts/check-gates-falsify.sh` and `scripts/check-*.sh` for scenarios that assert the old global mode or the
+   wrapper's cwd check; list what you found (update only if they assert the old contract).
+**Acceptance criteria:**
+- [ ] `go test ./internal/guard/ ./internal/discover/` rc=0; `go build ./...` rc=0; `make parity-rest` rc=0
 
 **Wave gates:**
 ```bash

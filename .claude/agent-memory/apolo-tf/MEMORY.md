@@ -27,3 +27,4 @@
 - [bin/trackfw não é atualizado por go build ./...](feedback_bin_trackfw_not_refreshed_by_go_build_dot.md) — rodar make build ou go build -o bin/trackfw antes dos scripts de contrato; go build ./... só prova compilação
 - [config.go mensagens têm cópias congeladas em check-agent-models-parity.sh](feedback_config_messages_frozen_in_parity_script.md) — GLOBAL_WRONG_PLACE_MSG/NOT_CONFIGURED_MSG/MALFORMED_MSG falham cenários 86/169 do falsify se não atualizadas
 - [CODEX_HOME deve ser limpo em TestMain e scripts](feedback_codex_home_env_isolation.md) — dev com CODEX_HOME teria hooks.json real sobrescrito; sempre adicionar CODEX_HOME= ao lado de CLAUDE_CONFIG_DIR=
+- [FIFO test exige build tag !windows](feedback_fifo_test_needs_build_tag.md) — syscall.Mkfifo não compila em Windows; runtime.GOOS skip não basta; splittar em _unix_test.go com //go:build !windows

@@ -16,6 +16,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/kgsaran/trackfw/internal/fileutil"
 	"github.com/kgsaran/trackfw/internal/pathguard"
 )
 
@@ -206,7 +207,9 @@ const credMaxFileSize = 1048576 // 1 MiB
 //     (ADR-2026-11-18 D5).
 //  7. No match → return 0.
 //  8. Exemption: all redirects are ephemeral → return 0.
-//  9. Read credential_guard.mode (default "warn") via ReadCredentialGuardMode.
+//  9. Compute effective mode: strictest of "warn" (project default) and all
+//     credential_guard.mode values found walking from projectCwd to filesystem root
+//     (D4, ADR-2026-11-24). block > warn.
 //  10. block → stderr + return 2; warn → stderr + write attention JSON + return 0.
 //
 // Returns 0 to allow, 2 to block. The caller MUST exit with this code.
@@ -214,7 +217,7 @@ func RunCredential(stdin io.Reader, stdout, stderr io.Writer) int {
 	// Step 1: Read all stdin — INPUT=$(cat); no timeout (ADR D9 residual).
 	data, _ := io.ReadAll(stdin)
 
-	// Step 2: Check for trackfw.yaml.
+	// Step 2: Detect the trackfw project.
 	// Antigravity hooks run from <project>/.agents, so os.Getwd() points there,
 	// not to the project root where trackfw.yaml lives. Use the payload cwd when
 	// the Antigravity schema is detected (ADR-2026-11-18 D3).
@@ -230,7 +233,11 @@ func RunCredential(stdin io.Reader, stdout, stderr io.Writer) int {
 		// would resolve against the process cwd (.agents/), producing an incorrect path.
 		projectCwd = payloadCwd
 	}
-	if _, err := os.Stat(filepath.Join(projectCwd, "trackfw.yaml")); err != nil {
+	// D4 (ADR-2026-11-24): detect the project by the nearest ancestor of projectCwd
+	// that holds a regular trackfw.yaml, not just the cwd itself.  A cwd inside a
+	// subdirectory of the project no longer disables the guard.
+	projectRoot := credFindNearestProjectRoot(projectCwd)
+	if projectRoot == "" {
 		return 0 // not inside a trackfw project
 	}
 
@@ -330,8 +337,10 @@ func RunCredential(stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 	}
 
-	// Step 9: Read credential_guard.mode from trackfw.yaml (default "warn").
-	mode := credReadModeWithDefault(filepath.Join(projectCwd, "trackfw.yaml"), "warn")
+	// Step 9: Compute the effective mode — strictest of "warn" (project-scope default)
+	// and every credential_guard.mode found walking from projectCwd to the filesystem
+	// root (D4, ADR-2026-11-24).  block > warn.
+	mode := credWalkStrictestMode(projectCwd, "warn")
 
 	// Step 10: Block or warn.
 	origin := credFindingMessage(finding)
@@ -341,8 +350,10 @@ func RunCredential(stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	fmt.Fprintf(stderr, "trackfw-credential-guard: warning - possible %s %s\n", finding.typ, origin)
-	roadmapDir := credReadRoadmapDir(filepath.Join(projectCwd, "trackfw.yaml"))
-	credWriteAttention(projectCwd, roadmapDir, finding)
+	// roadmap_dir and the attention write use projectRoot (the dir with trackfw.yaml),
+	// not projectCwd, so the relative path resolves inside the project.
+	roadmapDir := credReadRoadmapDir(filepath.Join(projectRoot, "trackfw.yaml"))
+	credWriteAttention(projectRoot, roadmapDir, finding)
 
 	return 0
 }
@@ -354,8 +365,10 @@ func RunCredential(stdin io.Reader, stdout, stderr io.Writer) int {
 //   - DEFAULT_MODE = "block" (vs "warn" in project scope).
 //   - ROADMAP_DIR = "docs/roadmaps" (fixed, relative to cwd).
 //   - Writes attention JSON only if docs/roadmaps already exists as a directory (no mkdir).
-//   - If trackfw.yaml exists in cwd with credential_guard.mode = "warn"|"block", that value
-//     takes precedence.
+//   - Effective mode = strictest of "block" and all credential_guard.mode values found
+//     walking from cwd to filesystem root (D4, ADR-2026-11-24). block > warn.
+//     A credential_guard.mode: warn in a project yaml no longer downgrades the global
+//     default of block; it only takes effect in project scope.
 //
 // Returns 0 to allow, 2 to block. The caller MUST exit with this code.
 func RunCredentialGlobal(stdin io.Reader, stdout, stderr io.Writer) int {
@@ -438,14 +451,15 @@ func RunCredentialGlobal(stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 	}
 
-	// Step 9: Read credential_guard.mode; default is "block" (global scope).
-	// Reads from trackfw.yaml in cwd if it exists; falls back to "block" when the file
-	// is absent or mode is unrecognised (global scope default).
+	// Step 9: Compute the effective mode — strictest of "block" (global-scope default)
+	// and every credential_guard.mode found walking from cwd to the filesystem root
+	// (D4, ADR-2026-11-24).  block > warn.  A mode:warn in any ancestor yaml cannot
+	// lower the global default; it can only be overridden by a stricter value.
 	cwd, err := os.Getwd()
 	if err != nil {
 		cwd = ""
 	}
-	mode := credReadModeWithDefault(filepath.Join(cwd, "trackfw.yaml"), "block")
+	mode := credWalkStrictestMode(cwd, "block")
 
 	// Step 10: Block or warn.
 	origin := credFindingMessage(finding)
@@ -1478,6 +1492,88 @@ func ReadCredentialGuardMode(content string) (mode string, ok bool) {
 	}
 
 	return "", true // section found but no "mode:" key within the lookbehind window
+}
+
+// credFindNearestProjectRoot returns the nearest ancestor directory of startDir
+// (including startDir itself) that contains a REGULAR trackfw.yaml, by walking
+// up to the filesystem root. Returns "" when no such ancestor exists.
+//
+// Only a regular file counts as a valid project root (D3, ADR-2026-11-24).
+// A directory or FIFO named trackfw.yaml is NOT a valid root (ErrNotRegularFile
+// is returned by fileutil.ReadRegularFile; both errors are treated as "not here,
+// keep walking"). Their presence does, however, count as block in the mode chain
+// — see credWalkStrictestMode.
+func credFindNearestProjectRoot(startDir string) string {
+	if startDir == "" {
+		return ""
+	}
+	dir := filepath.Clean(startDir)
+	for {
+		_, err := fileutil.ReadRegularFile(filepath.Join(dir, "trackfw.yaml"))
+		if err == nil {
+			return dir
+		}
+		// os.IsNotExist → absent, skip; ErrNotRegularFile → not a valid root, skip.
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break // reached filesystem root
+		}
+		dir = parent
+	}
+	return ""
+}
+
+// credWalkStrictestMode walks from startDir up to the filesystem root, reading
+// credential_guard.mode from every trackfw.yaml found, and returns the strictest
+// mode between callerDefault and all values read (block > warn).
+// D4 (ADR-2026-11-24).
+//
+// Rules for each ancestor:
+//   - Regular yaml absent (os.IsNotExist): skipped, contributes nothing.
+//   - Non-regular yaml (ErrNotRegularFile, directory, FIFO) or any other read
+//     error: counts as "block" (D3) and short-circuits immediately.
+//   - Regular yaml present: ReadCredentialGuardMode is called; "block" short-
+//     circuits; "warn" is accepted only if current strictest is not already "block";
+//     any other (unrecognised) value contributes nothing.
+//
+// IMPORTANT: callerDefault MUST be supplied by the caller ("warn" for project scope,
+// "block" for global scope). Never hardcode "block" here — doing so would elevate
+// the project-scope default and break TestCredNested_ProjectWarnOnlyCounterArm.
+func credWalkStrictestMode(startDir, callerDefault string) string {
+	if startDir == "" {
+		return callerDefault
+	}
+	strictest := callerDefault
+	dir := filepath.Clean(startDir)
+	for {
+		data, err := fileutil.ReadRegularFile(filepath.Join(dir, "trackfw.yaml"))
+		if err != nil {
+			if !os.IsNotExist(err) {
+				// ErrNotRegularFile or any other non-absence error → D3: deny (block).
+				return "block"
+			}
+			// os.IsNotExist → absent, no contribution from this ancestor.
+		} else {
+			val, ok := ReadCredentialGuardMode(string(data))
+			if ok {
+				switch val {
+				case "block":
+					return "block" // strictest possible, short-circuit
+				case "warn":
+					if strictest != "block" {
+						strictest = "warn"
+					}
+				// Any other val (including "") contributes nothing.
+				}
+			}
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break // reached filesystem root
+		}
+		dir = parent
+	}
+	return strictest
 }
 
 // credReadModeWithDefault reads credential_guard.mode from the YAML file at
