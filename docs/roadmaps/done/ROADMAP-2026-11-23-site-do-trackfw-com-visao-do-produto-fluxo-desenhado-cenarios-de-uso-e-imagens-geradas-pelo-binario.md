@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-11-23
 req: "docs/req/REQ-2026-11-23-site-do-trackfw-com-visao-do-produto-fluxo-desenhado-cenarios-de-uso-e-imagens-geradas-pelo-binario.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Site do trackfw com visão do produto: fluxo desenhado, cenários de uso e imagens geradas pelo binário
 
-> Created: 2026-11-23 | Status: wip
+> Created: 2026-11-23 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-11-23-site-do-trackfw-com-visao-do-produto-fluxo-desenhado-cenarios-de-uso-e-imagens-geradas-pelo-binario.md -->
