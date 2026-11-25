@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-11-23
 req: "docs/req/REQ-2026-11-23-guard-write-scope-re-enraizado-por-trackfw-yaml-aninhado-permite-ao-subagente-desligar-os-proprios-hooks.md"
 squad: "hades-tf, apolo-tf, hefesto-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, hefesto-tf"
 
 # Roadmap: Guard write-scope re-enraizado por trackfw.yaml aninhado permite ao subagente desligar os próprios hooks
 
-> Created: 2026-11-23 | Status: wip
+> Created: 2026-11-23 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-11-23-guard-write-scope-re-enraizado-por-trackfw-yaml-aninhado-permite-ao-subagente-desligar-os-proprios-hooks.md -->
