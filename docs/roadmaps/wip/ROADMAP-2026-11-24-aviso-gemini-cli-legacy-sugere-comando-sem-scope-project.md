@@ -73,10 +73,10 @@ afirma o texto (braço: rc=1 com a mensagem antiga); `cli-parity.md` L10470 atua
 > lá cobrem este roadmap.
 
 ### ML-2A — `make quality` e CI (zeus-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — `make quality` rc=0; CI do PR #709: 24/24 SUCCESS (2026-11-25)
 **Files affected:** este roadmap
 **Acceptance criteria:**
-- [ ] `make quality` rc=0; CI verde; revisão do hefesto (roadmap irmão) sem achado bloqueante
+- [x] `make quality` rc=0; CI verde; revisão do hefesto (roadmap irmão) sem achado bloqueante
 
 **Wave gates:**
 ```bash
