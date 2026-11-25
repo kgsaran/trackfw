@@ -7,6 +7,29 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [11.9.1] - 2026-11-25
+
+Correções de segurança nos guards e duas correções relatadas por consumidor da v11.9.0.
+
+### Breaking Changes
+
+Nenhum comando ou flag muda. Os guards ficaram mais estritos: veja *Changed*.
+
+### Changed
+
+- **Guard de credencial:** o modo efetivo é o mais estrito da cadeia de `trackfw.yaml`. Um `mode: warn` no projeto não rebaixa mais o bloqueio do hook global (#706).
+
+### Fixed
+
+- **Guard de write-scope re-enraizado por `trackfw.yaml` aninhado:** um subagente podia criar `.claude/trackfw.yaml`, mudar a raiz que o guard usa e, na escrita seguinte, alterar `.claude/settings.json`, onde ficam os próprios hooks. Agora o subagente não escreve nenhum caminho com componente `trackfw.yaml`, inclusive nas grafias NTFS (`:stream`, ponto e espaço finais, nome curto 8dot3). Os caminhos congelados e os leases passam a valer para todos os ancestrais com `trackfw.yaml`. Um `trackfw.yaml` que não é arquivo regular, ou que não pode ser lido, bloqueia em vez de contar como ausente (#706).
+- **Guard de credencial:** um `trackfw.yaml` num subdiretório, ou o cwd num subdiretório, podia afrouxar ou desligar o guard. O mesmo foi corrigido no wrapper de shell (#706).
+- **`gemini_cli_legacy`:** o aviso agora sugere `trackfw agents install --targets antigravity --scope project`. Sem `--scope`, o comando caía em `global` fora de um terminal e não resolvia o aviso (#705, #709).
+- **Teste de orçamento de alias:** o teste lia o `trackfw.yaml` real e exigia os valores deste repositório, por isso reprovava em qualquer projeto com config própria. Agora ele afirma só que a leitura termina sem erro, e um teste com yaml de consumidor confere os valores lidos (#704, #709).
+
+### Internal
+
+- Home nova do site, em inglês e português, com a visão do produto, o fluxo, cenários e imagens geradas pelo binário (#702).
+
 ## [11.9.0] - 2026-11-23
 
 Onboarding verificável: cada comando que o README e o site mandam rodar funciona com o binário e é conferido por teste. O `init` passa a ler o `trackfw.yaml` como o leitor o lê (#700).

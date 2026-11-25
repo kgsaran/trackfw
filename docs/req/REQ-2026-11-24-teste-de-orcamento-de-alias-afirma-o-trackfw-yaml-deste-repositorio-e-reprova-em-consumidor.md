@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-11-24
 author: "zeus-tf (issue #704, decisão do KG em 2026-11-24)"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-11-24-teste-de-orcamento-de-alias-afirma-o-trackfw-yaml-deste-repositorio-e-reprova-em-consumidor.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-11-24-teste-de-orcamento-de-alias-afirma-o-trackfw-yaml-deste-repositorio-e-reprova-em-consumidor.md"
 ---
 
 # REQ: Teste de orçamento de alias afirma o trackfw.yaml deste repositório e reprova em consumidor
 
-> Date: 2026-11-24 | Status: Open
+> Date: 2026-11-24 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -22,14 +22,18 @@ arquiteto na leitura do teste (L514: "these values are known from the repo's tra
 sítio único que lê `../../trackfw.yaml`.
 
 ## Acceptance Criteria
-- [ ] O teste afirma só a propriedade do nome: `parse()` sem erro sobre o `trackfw.yaml` real. Nenhum valor específico
-      deste repositório. Sem "campos não vazios", que `defaults()` torna vácuo (Wave 0).
+- [x] O teste afirma só a propriedade do nome: `parse()` sem erro sobre o `trackfw.yaml` real. Nenhum valor específico
+      deste repositório. Sem "campos não vazios", que `defaults()` torna vácuo (Wave 0). Evidência:
+      `TestAliasBomb_Budget_RealTrackfwYaml` em `internal/config/config_merge_key_test.go` (commit `d0839c69`).
 - [ ] Braço: um `trackfw.yaml` de consumidor (`req_dir: docs/requisições`, `governance_mode: strict`,
       `roadmap_namespacing: by_agent`) é lido com os valores da fixture, e as asserções antigas reprovam nele.
-      Contra-braço: partindo de `ProjectConfig{}`, um yaml sem essas chaves deixa os campos vazios.
-- [ ] Censo: nenhum outro teste afirma o conteúdo de arquivo versionado deste repositório como se fosse universal
-      (busca por leitura de `trackfw.yaml`, `lefthook.yml` e afins por caminho relativo à raiz).
-- [ ] `make quality` rc=0 e CI verde.
+      Contra-braço: partindo de `ProjectConfig{}`, um yaml sem essas chaves deixa os campos vazios. Evidência:
+      `TestAliasBomb_Budget_ConsumerFixture` e `TestAliasBomb_Budget_CounterArm`.
+- [x] Censo: nenhum outro teste afirma o conteúdo de arquivo versionado deste repositório como se fosse universal
+      (busca por leitura de `trackfw.yaml`, `lefthook.yml` e afins por caminho relativo à raiz). Resultado (Wave 0,
+      `docs/seguranca/2026-11-24-wave0-correcoes-de-consumidor-704-705.md`): sítio único. A2–A7 afirmam invariante de
+      sincronia que um fork herda intacto; outra causa, declarada como residual.
+- [x] `make quality` rc=0 e CI verde (PR #709: 24/24 checks, Windows incluído; merge `8b110e0e`).
 
 ## Negative scope
 - Não muda o orçamento de alias nem o `parse()`.
@@ -45,4 +49,4 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-11-24-teste-de-orcamento-de-alias-afirma-o-trackfw-yaml-deste-repositorio-e-reprova-em-consumidor.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-11-24-teste-de-orcamento-de-alias-afirma-o-trackfw-yaml-deste-repositorio-e-reprova-em-consumidor.md
