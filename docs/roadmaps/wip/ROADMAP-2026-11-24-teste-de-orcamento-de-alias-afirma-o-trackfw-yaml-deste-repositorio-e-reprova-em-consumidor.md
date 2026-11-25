@@ -85,10 +85,13 @@ Censo confirma o Wave 0. Gates do arquiteto: build e `go test ./internal/config/
 - [x] revisão escrita; nenhum achado bloqueante aberto
 
 ### ML-2C — Comentários dos testes de orçamento (apolo-tf)
-**Status:** ⬜ Pending
-**Files affected:** `internal/config/config_merge_key_test.go`
+**Status:** ✅ Done — comentário do braço corrigido (a guarda antiga de `ADRDirs` também reprovaria) e dependência de par
+documentada no `CounterArm`. Só comentários.
+**Files affected:** `internal/config/config_merge_key_test.go`;
+`docs/adr/ADR-2026-11-18-guard-de-credencial-e-de-git-branch-no-google-antigravity-e-gemini-cli-como-legado.md`
+(nota do arquiteto, L3 da revisão)
 **Acceptance criteria:**
-- [ ] L1 e L2 da revisão corrigidos; `go test ./internal/config/ -count=1` rc=0
+- [x] L1 e L2 da revisão corrigidos; `go test ./internal/config/ -count=1` rc=0
 
 ### ML-2B — `make quality` e CI (zeus-tf)
 **Status:** ⬜ Pending

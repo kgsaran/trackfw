@@ -573,7 +573,9 @@ agents:
 	// REQDir "docs/req" != "docs/requisições" — FAIL
 	// GovernanceMode "lenient" != "strict"    — FAIL
 	// RoadmapNamespacing "flat" != "by_agent" — FAIL
-	// Agents check not present in original, but ADRDirs[0] "docs/adr" check would not apply.
+	// The ADRDirs guard from the original test (len(cfg.ADRDirs) == 0 || ADRDirs[0] != "docs/adr")
+	// would also fail here: this fixture has no adr_dirs key, so parse() leaves ADRDirs nil —
+	// len(nil) == 0 is true, so the guard fires and would report failure, same as the other three.
 	// (These fields are intentionally not re-asserted here; the lines above prove the point.)
 }
 
@@ -583,6 +585,13 @@ agents:
 // because parse() actually read the fixture — not because the fields were pre-populated.
 // Reconciliation (ML-1A #704): este contra-braço afirma que parse() NÃO preenche campos
 // ausentes do yaml — sem a chave no arquivo, o campo fica vazio (zero-value de string/slice).
+//
+// Dependência de par: este teste e TestAliasBomb_Budget_ConsumerFixture falsificam juntos o
+// caso de "parse() inerte" (lê o yaml mas não popula nenhum campo). ConsumerFixture mostra
+// valores não-zero quando as chaves estão presentes; este braço mostra zero-values quando
+// estão ausentes. Nenhum dos dois é suficiente isoladamente: sem ConsumerFixture, este braço
+// é vácuo (zeros poderiam vir da inicialização padrão de Go, não de parse()); sem este braço,
+// ConsumerFixture perde a testemunha de falsificação para parse() inerte.
 func TestAliasBomb_Budget_CounterArm(t *testing.T) {
 	const minimalYAML = `wip_limit: 2
 `
