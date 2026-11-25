@@ -75,6 +75,8 @@ O prompt já foi entregue ao modelo; bloquear o comando seguinte não protege o 
 porque quem tem chave de API paga segue usando. Uma regra do `validate` em nível **warning** (nunca violation)
 avisa quando há guard do Gemini CLI e nenhum do Antigravity no projeto: diz que o Gemini CLI é legado para contas
 individuais desde 2026-06-18 e aponta `trackfw agents install --targets antigravity`. O `doctor` repete o aviso.
+(Nota de 2026-11-24, issue #705: o remédio passou a ser `trackfw agents install --targets antigravity --scope project`,
+porque fora de um TTY o `--scope` padrão é `global` e não grava no projeto desde o #697.)
 Medido em 2026-11-20 (contrato §14): o `gemini` 0.53.0 com login Google de conta individual é recusado com
 `IneligibleTierError`, e o contra-braço sem credencial dá erro de autenticação. O caminho por chave de API não foi medido.
 

@@ -15,9 +15,10 @@ REQ: docs/req/REQ-2026-11-24-teste-de-orcamento-de-alias-afirma-o-trackfw-yaml-d
 
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
-- [ ] O teste afirma só `parse()` sem erro e campos obrigatórios não vazios (issue #704)
-- [ ] Braço com yaml de consumidor passa; contra-braço com config vazia reprova
-- [ ] Censo de testes que afirmam arquivo versionado deste repositório
+- [x] O teste do arquivo real afirma só `parse()` sem erro (issue #704); sem "campos não vazios", vácuo por `defaults()`
+- [x] Braço: a fixture de consumidor é lida com os valores dela; contra-braço: partindo de `ProjectConfig{}`, sem as
+      chaves no yaml, os campos ficam vazios
+- [x] Censo de testes que afirmam arquivo versionado deste repositório (Wave 0: sítio único; A2–A7 residual)
 - [ ] `make quality` rc=0 e CI verde
 
 ## Status Legend
@@ -77,10 +78,17 @@ Censo confirma o Wave 0. Gates do arquiteto: build e `go test ./internal/config/
 > red team (decisão do arquiteto, registrada aqui).
 
 ### ML-2A — Revisão de qualidade dos dois roadmaps (hefesto-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — APROVA COM RESSALVAS. M1 (ACs do roadmap com o critério vácuo) corrigido pelo arquiteto; L3
+(ADR-2026-11-18 com o remédio antigo) com nota do arquiteto; L1 e L2 (comentários de teste) no ML-2C.
 **Files affected:** `docs/seguranca/2026-11-24-revisao-correcoes-de-consumidor-704-705.md` (novo)
 **Acceptance criteria:**
-- [ ] revisão escrita; nenhum achado bloqueante aberto
+- [x] revisão escrita; nenhum achado bloqueante aberto
+
+### ML-2C — Comentários dos testes de orçamento (apolo-tf)
+**Status:** ⬜ Pending
+**Files affected:** `internal/config/config_merge_key_test.go`
+**Acceptance criteria:**
+- [ ] L1 e L2 da revisão corrigidos; `go test ./internal/config/ -count=1` rc=0
 
 ### ML-2B — `make quality` e CI (zeus-tf)
 **Status:** ⬜ Pending
