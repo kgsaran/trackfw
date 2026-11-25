@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-11-24
 req: "docs/req/REQ-2026-11-24-aviso-gemini-cli-legacy-sugere-comando-sem-scope-project.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Aviso gemini_cli_legacy sugere comando sem --scope project
 
-> Created: 2026-11-24 | Status: wip
+> Created: 2026-11-24 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-11-24-aviso-gemini-cli-legacy-sugere-comando-sem-scope-project.md -->
@@ -15,10 +15,10 @@ REQ: docs/req/REQ-2026-11-24-aviso-gemini-cli-legacy-sugere-comando-sem-scope-pr
 
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
-- [ ] Mensagem com `--scope project` (issue #705)
-- [ ] Teste fixa o `--scope project`; `cli-parity.md` atualizado
-- [ ] Censo das mensagens de regra de projeto com comando de escopo
-- [ ] `make quality` rc=0 e CI verde
+- [x] Mensagem com `--scope project` (issue #705)
+- [x] Teste fixa o `--scope project`; `cli-parity.md` atualizado
+- [x] Censo das mensagens de regra de projeto com comando de escopo
+- [x] `make quality` rc=0 e CI verde
 
 ## Status Legend
 ⬜ Pending · 🔄 In progress · ✅ Done · ❌ Blocked

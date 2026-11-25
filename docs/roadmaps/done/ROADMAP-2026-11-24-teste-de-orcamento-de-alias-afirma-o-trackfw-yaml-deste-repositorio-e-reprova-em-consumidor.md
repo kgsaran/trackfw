@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-11-24
 req: "docs/req/REQ-2026-11-24-teste-de-orcamento-de-alias-afirma-o-trackfw-yaml-deste-repositorio-e-reprova-em-consumidor.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Teste de orçamento de alias afirma o trackfw.yaml deste repositório e reprova em consumidor
 
-> Created: 2026-11-24 | Status: wip
+> Created: 2026-11-24 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-11-24-teste-de-orcamento-de-alias-afirma-o-trackfw-yaml-deste-repositorio-e-reprova-em-consumidor.md -->
@@ -19,7 +19,7 @@ REQ: docs/req/REQ-2026-11-24-teste-de-orcamento-de-alias-afirma-o-trackfw-yaml-d
 - [x] Braço: a fixture de consumidor é lida com os valores dela; contra-braço: partindo de `ProjectConfig{}`, sem as
       chaves no yaml, os campos ficam vazios
 - [x] Censo de testes que afirmam arquivo versionado deste repositório (Wave 0: sítio único; A2–A7 residual)
-- [ ] `make quality` rc=0 e CI verde
+- [x] `make quality` rc=0 e CI verde
 
 ## Status Legend
 ⬜ Pending · 🔄 In progress · ✅ Done · ❌ Blocked
