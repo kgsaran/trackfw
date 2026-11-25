@@ -10467,7 +10467,7 @@ Windsurf e Amazon Q **permanecem com violation-grade** (`warnOnly=false` na mesm
 Quando o projeto tem guard do Gemini CLI (`.gemini/settings.json` com marcador de credential guard) mas **nenhum** guard do Antigravity (`.agents/hooks.json` com marcador de credential guard), emite um warning:
 
 ```
-Gemini CLI is legacy for individual accounts since 2026-06-18 (D7, ADR-2026-11-18): project has Gemini CLI guard (.gemini/settings.json) but no Antigravity guard (.agents/hooks.json); run `trackfw agents install --targets antigravity`
+Gemini CLI is legacy for individual accounts since 2026-06-18 (D7, ADR-2026-11-18): project has Gemini CLI guard (.gemini/settings.json) but no Antigravity guard (.agents/hooks.json); run `trackfw agents install --targets antigravity --scope project`
 ```
 
 **Lógica de silêncio:**

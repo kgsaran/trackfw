@@ -495,8 +495,13 @@ func TestAliasBomb_Budget_ReadAgentConventions(t *testing.T) {
 }
 
 // TestAliasBomb_Budget_RealTrackfwYaml asserts:
-// The repo's own trackfw.yaml is well below the node-visit budget and loads with the
-// same field values before and after ML-4H.
+// The repo's own trackfw.yaml is well below the node-visit budget — parse() returns
+// no error (ML-4H budget). Field values are not asserted here: they reflect this
+// repository's own trackfw.yaml and would fail in any consumer with a different
+// configuration (issue #704). See TestAliasBomb_Budget_ConsumerFixture and
+// TestAliasBomb_Budget_CounterArm for the property-based assertions.
+// Reconciliation (ML-1A #704): this test afirma somente que parse() não retorna erro
+// sobre o arquivo real — a propriedade que o nome do teste descreve (orçamento suficiente).
 func TestAliasBomb_Budget_RealTrackfwYaml(t *testing.T) {
 	data, err := os.ReadFile("../../trackfw.yaml")
 	if os.IsNotExist(err) {
@@ -511,20 +516,115 @@ func TestAliasBomb_Budget_RealTrackfwYaml(t *testing.T) {
 	if parseErr := parse(string(data), &cfg); parseErr != nil {
 		t.Fatalf("parse() returned error on real trackfw.yaml (budget too low?): %v", parseErr)
 	}
-	// Compare key fields — these values are known from the repo's trackfw.yaml.
-	if cfg.REQDir != "docs/req" {
-		t.Errorf("REQDir: want docs/req, got %q", cfg.REQDir)
+}
+
+// TestAliasBomb_Budget_ConsumerFixture asserts:
+// parse() reads consumer-specific field values from a fixture yaml, overwriting the
+// ProjectConfig zero-value. The braço shows the old repo-value assertions would fail
+// on a consumer with different configuration, confirming the assertions depend on what
+// parse() reads rather than on defaults().
+// Reconciliation (ML-1A #704): este teste afirma que parse() lê e sobrescreve campos
+// com os valores da fixture do consumidor — REQDir, GovernanceMode, RoadmapNamespacing
+// e Agents diferem dos valores deste repositório, então as asserções antigas reprovariam.
+func TestAliasBomb_Budget_ConsumerFixture(t *testing.T) {
+	const fixtureYAML = `req_dir: docs/requisições
+roadmap_dir: docs/roadmaps
+governance_mode: strict
+roadmap_namespacing: by_agent
+agents:
+  - a
+  - b
+  - c
+`
+	tmp := t.TempDir()
+	fixturePath := filepath.Join(tmp, "trackfw.yaml")
+	if err := os.WriteFile(fixturePath, []byte(fixtureYAML), 0644); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(fixturePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Start from zero-value, not defaults(), so every assertion depends on parse().
+	var cfg ProjectConfig
+	if parseErr := parse(string(data), &cfg); parseErr != nil {
+		t.Fatalf("parse() returned error on consumer fixture: %v", parseErr)
+	}
+
+	// Assert fields equal the fixture values.
+	if cfg.REQDir != "docs/requisições" {
+		t.Errorf("REQDir: want %q, got %q", "docs/requisições", cfg.REQDir)
 	}
 	if cfg.RoadmapDir != "docs/roadmaps" {
-		t.Errorf("RoadmapDir: want docs/roadmaps, got %q", cfg.RoadmapDir)
+		t.Errorf("RoadmapDir: want %q, got %q", "docs/roadmaps", cfg.RoadmapDir)
 	}
-	if len(cfg.ADRDirs) == 0 || cfg.ADRDirs[0] != "docs/adr" {
-		t.Errorf("ADRDirs: want [docs/adr], got %v", cfg.ADRDirs)
+	if cfg.GovernanceMode != "strict" {
+		t.Errorf("GovernanceMode: want %q, got %q", "strict", cfg.GovernanceMode)
 	}
-	if cfg.GovernanceMode != "lenient" {
-		t.Errorf("GovernanceMode: want lenient, got %q", cfg.GovernanceMode)
+	if cfg.RoadmapNamespacing != "by_agent" {
+		t.Errorf("RoadmapNamespacing: want %q, got %q", "by_agent", cfg.RoadmapNamespacing)
 	}
-	if cfg.RoadmapNamespacing != "flat" {
-		t.Errorf("RoadmapNamespacing: want flat, got %q", cfg.RoadmapNamespacing)
+	if len(cfg.Agents) != 3 || cfg.Agents[0] != "a" || cfg.Agents[1] != "b" || cfg.Agents[2] != "c" {
+		t.Errorf("Agents: want [a b c], got %v", cfg.Agents)
+	}
+
+	// Braço: the old repo-value assertions from the original test would fail on this fixture.
+	// REQDir "docs/req" != "docs/requisições" — FAIL
+	// GovernanceMode "lenient" != "strict"    — FAIL
+	// RoadmapNamespacing "flat" != "by_agent" — FAIL
+	// The ADRDirs guard from the original test (len(cfg.ADRDirs) == 0 || ADRDirs[0] != "docs/adr")
+	// would also fail here: this fixture has no adr_dirs key, so parse() leaves ADRDirs nil —
+	// len(nil) == 0 is true, so the guard fires and would report failure, same as the other three.
+	// (These fields are intentionally not re-asserted here; the lines above prove the point.)
+}
+
+// TestAliasBomb_Budget_CounterArm asserts:
+// When parse() receives a yaml with none of the tracked keys, all fields remain at
+// their zero-value. This shows that TestAliasBomb_Budget_ConsumerFixture only passes
+// because parse() actually read the fixture — not because the fields were pre-populated.
+// Reconciliation (ML-1A #704): este contra-braço afirma que parse() NÃO preenche campos
+// ausentes do yaml — sem a chave no arquivo, o campo fica vazio (zero-value de string/slice).
+//
+// Dependência de par: este teste e TestAliasBomb_Budget_ConsumerFixture falsificam juntos o
+// caso de "parse() inerte" (lê o yaml mas não popula nenhum campo). ConsumerFixture mostra
+// valores não-zero quando as chaves estão presentes; este braço mostra zero-values quando
+// estão ausentes. Nenhum dos dois é suficiente isoladamente: sem ConsumerFixture, este braço
+// é vácuo (zeros poderiam vir da inicialização padrão de Go, não de parse()); sem este braço,
+// ConsumerFixture perde a testemunha de falsificação para parse() inerte.
+func TestAliasBomb_Budget_CounterArm(t *testing.T) {
+	const minimalYAML = `wip_limit: 2
+`
+	tmp := t.TempDir()
+	fixturePath := filepath.Join(tmp, "trackfw.yaml")
+	if err := os.WriteFile(fixturePath, []byte(minimalYAML), 0644); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(fixturePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Zero-value ProjectConfig — no defaults(), no pre-population.
+	var cfg ProjectConfig
+	if parseErr := parse(string(data), &cfg); parseErr != nil {
+		t.Fatalf("parse() returned error on minimal yaml: %v", parseErr)
+	}
+
+	// Fields absent from the yaml must remain empty.
+	if cfg.REQDir != "" {
+		t.Errorf("REQDir: want empty string, got %q", cfg.REQDir)
+	}
+	if cfg.RoadmapDir != "" {
+		t.Errorf("RoadmapDir: want empty string, got %q", cfg.RoadmapDir)
+	}
+	if cfg.GovernanceMode != "" {
+		t.Errorf("GovernanceMode: want empty string, got %q", cfg.GovernanceMode)
+	}
+	if cfg.RoadmapNamespacing != "" {
+		t.Errorf("RoadmapNamespacing: want empty string, got %q", cfg.RoadmapNamespacing)
+	}
+	if len(cfg.Agents) != 0 {
+		t.Errorf("Agents: want empty slice, got %v", cfg.Agents)
 	}
 }

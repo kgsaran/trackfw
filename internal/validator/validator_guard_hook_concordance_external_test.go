@@ -1114,6 +1114,8 @@ func TestGuardHookConcordance_D17_Antigravity_PresenceWarning_CounterArm(t *test
 // Gemini CLI mas não tem guard do Antigravity, a regra gemini_cli_legacy emite um warning.
 // Reconciliação (ML-3C): a regra dispara quando Gemini tem guard E Antigravity não tem — o
 // cenário de migração que o usuário precisa ser avisado.
+// Reconciliação (ML-1A #705): o remédio sugerido inclui --scope project para garantir que
+// a instalação seja de projeto, não global.
 func TestGeminiCliLegacy_GeminiGuardNoAntigravity_Warns(t *testing.T) {
 	dir := setupConcordanceDir(t)
 	t.Setenv("CODEX_HOME", "")
@@ -1137,15 +1139,23 @@ func TestGeminiCliLegacy_GeminiGuardNoAntigravity_Warns(t *testing.T) {
 			t.Errorf("gemini_cli_legacy must be a warning, not a violation; got: %q", v)
 		}
 	}
-	found := false
+	var matchedWarning string
 	for _, w := range warnings {
 		if strings.Contains(w, geminiLegacyMarker) {
-			found = true
+			matchedWarning = w
 			break
 		}
 	}
-	if !found {
+	if matchedWarning == "" {
 		t.Errorf("expected gemini_cli_legacy warning; warnings=%v violations=%v", warnings, violations)
+		return
+	}
+	// The remedy must specify --scope project so that agents install targets the project,
+	// not the global harness. Without --scope, resolveScope defaults to global in non-TTY
+	// environments (integrations_flags.go:565), writing outside the project root (REQ-2026-11-24).
+	const scopeMarker = "--targets antigravity --scope project"
+	if !strings.Contains(matchedWarning, scopeMarker) {
+		t.Errorf("gemini_cli_legacy warning must contain %q; got: %q", scopeMarker, matchedWarning)
 	}
 }
 

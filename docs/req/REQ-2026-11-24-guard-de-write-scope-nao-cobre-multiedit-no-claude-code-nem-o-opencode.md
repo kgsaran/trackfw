@@ -27,8 +27,10 @@ Varredura em 2026-11-24: nenhuma issue aberta com o mesmo mecanismo. A REQ-2026-
 está Done e não cobre o write-scope.
 
 ## Acceptance Criteria
-- [ ] Medido se o Claude Code atual emite `MultiEdit`, com a versão e o payload registrados. Se emitir, o matcher do
-      write-scope a cobre, com teste de braço (antes rc=0, depois rc=2) e contra-braço.
+- [ ] O matcher do write-scope inclui `MultiEdit` sempre, sem esperar prova de emissão, com teste de braço (antes rc=0,
+      depois rc=2) e contra-braço. Motivo (#707, Claude Code 2.1.319): a camada de permissão reconhece o nome, mesmo
+      sem a ferramenta ter sido oferecida ao modelo; incluir custa zero, e o #528 mostrou o preço de um nome ausente.
+      Quando houver um emissor real, o payload é registrado.
 - [ ] O OpenCode recebe o write-scope pelo plugin existente, cobrindo `write`, `edit` e `patch`/`apply_patch`, com os
       caminhos extraídos do patch pela mesma regra do guard de credencial. Cada vetor do AC1 da Wave 0 da
       REQ-2026-11-23 é aplicável ao OpenCode, com braço e contra-braço.
