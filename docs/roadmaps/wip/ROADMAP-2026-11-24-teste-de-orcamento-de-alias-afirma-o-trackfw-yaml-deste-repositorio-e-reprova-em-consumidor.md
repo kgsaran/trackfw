@@ -95,7 +95,8 @@ documentada no `CounterArm`. Só comentários.
 
 ### ML-2B — `make quality` e CI (zeus-tf)
 **Status:** ⬜ Pending
-**Files affected:** este roadmap
+**Files affected:** este roadmap; `docs/req/REQ-2026-11-24-guard-de-write-scope-nao-cobre-multiedit-no-claude-code-nem-o-opencode.md`
+(AC1 reescrito pela medição do #707, decisão do KG em 2026-11-25); `docs/agents-working-context/` (entradas do arquiteto)
 **Acceptance criteria:**
 - [ ] `make quality` rc=0; CI verde
 
