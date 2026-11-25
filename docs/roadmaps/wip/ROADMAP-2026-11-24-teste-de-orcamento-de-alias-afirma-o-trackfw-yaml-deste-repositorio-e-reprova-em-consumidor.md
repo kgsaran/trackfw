@@ -53,7 +53,9 @@ test -s docs/seguranca/2026-11-24-wave0-correcoes-de-consumidor-704-705.md
 > Dependencies: Wave 0 audited. Disjoint from the sibling roadmap (#705); one apolo dispatch covers both.
 
 ### ML-1A — Teste afirma a propriedade, não o conteúdo do yaml (apolo-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — `TestAliasBomb_Budget_RealTrackfwYaml` afirma só o parse; novos `TestAliasBomb_Budget_ConsumerFixture`
+(valores da fixture a partir de `ProjectConfig{}`) e `TestAliasBomb_Budget_CounterArm` (sem as chaves, campos vazios).
+Censo confirma o Wave 0. Gates do arquiteto: build e `go test ./internal/config/ ./internal/validator/` rc=0.
 **Files affected:** `internal/config/config_merge_key_test.go`
 **Actions:**
 1. Em `TestAliasBomb_Budget_RealTrackfwYaml` (~L500–530), remover as cinco comparações de valor (L514–529). O teste
@@ -67,8 +69,8 @@ test -s docs/seguranca/2026-11-24-wave0-correcoes-de-consumidor-704-705.md
 4. Censo (relatório): outros `_test.go` que leem arquivo versionado da raiz do repo (`../../`, `repoRoot`,
    `runtime.Caller`) e afirmam valor deste repositório. Liste; não altere fora desta lista.
 **Acceptance criteria:**
-- [ ] `go test ./internal/config/ -count=1` rc=0; frase de reconciliação por teste novo ou alterado
-- [ ] nenhum arquivo fora de "Files affected" alterado
+- [x] `go test ./internal/config/ -count=1` rc=0; frase de reconciliação por teste novo ou alterado
+- [x] nenhum arquivo fora de "Files affected" alterado
 
 ## Wave 2 — Review
 > Dependencies: Wave 1 audited. Mudança só em teste, sem superfície de ataque nova: a revisão de qualidade substitui o

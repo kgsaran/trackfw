@@ -53,7 +53,8 @@ test -s docs/seguranca/2026-11-24-wave0-correcoes-de-consumidor-704-705.md
 > Dependencies: Wave 0 audited. Disjoint from the sibling roadmap (#704); one apolo dispatch covers both.
 
 ### ML-1A — Remédio do aviso com `--scope project` (apolo-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — mensagem e comentário com `--scope project`; `TestGeminiCliLegacy_GeminiGuardNoAntigravity_Warns`
+afirma o texto (braço: rc=1 com a mensagem antiga); `cli-parity.md` L10470 atualizado.
 **Files affected:** `internal/validator/validator_gemini_cli_legacy.go`;
 `internal/validator/validator_guard_hook_concordance_external_test.go`; `docs/cli-parity.md`
 **Actions:**
@@ -64,8 +65,8 @@ test -s docs/seguranca/2026-11-24-wave0-correcoes-de-consumidor-704-705.md
 3. `docs/cli-parity.md` ~L10470: mesma troca.
 4. Se o Wave 0 apontar outra mensagem do mesmo tipo, PARE e reporte (o arquiteto acrescenta ao escopo).
 **Acceptance criteria:**
-- [ ] `go test ./internal/validator/ ./internal/commands/ -count=1` rc=0; frase de reconciliação
-- [ ] nenhum arquivo fora de "Files affected" alterado
+- [x] `go test ./internal/validator/ ./internal/commands/ -count=1` rc=0; frase de reconciliação
+- [x] nenhum arquivo fora de "Files affected" alterado
 
 ## Wave 2 — Review
 > Dependencies: Wave 1 audited. Revisão e `make quality` compartilhados com o roadmap irmão (#704): ML-2A e ML-2B de

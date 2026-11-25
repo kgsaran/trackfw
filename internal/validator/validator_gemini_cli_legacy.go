@@ -7,7 +7,7 @@ package validator
 // D7 (ADR-2026-11-18): when a project has a Gemini CLI guard (.gemini/settings.json with
 // credential guard marker) but NO Antigravity guard (.agents/hooks.json with credential guard
 // marker), emit a warning: the Gemini CLI is legacy for individual accounts since 2026-06-18;
-// suggest `trackfw agents install --targets antigravity`.
+// suggest `trackfw agents install --targets antigravity --scope project`.
 //
 // This rule is ALWAYS a warning — never a violation, even in strict mode.
 // Use applyRuleWarnOnly (not applyRule) so it cannot be overridden to "error" via
@@ -45,7 +45,7 @@ func validateGeminiCliLegacyWarnings(root string) ([]string, error) {
 	return []string{
 		"Gemini CLI is legacy for individual accounts since 2026-06-18 (D7, ADR-2026-11-18): " +
 			"project has Gemini CLI guard (.gemini/settings.json) but no Antigravity guard " +
-			"(.agents/hooks.json); run `trackfw agents install --targets antigravity`",
+			"(.agents/hooks.json); run `trackfw agents install --targets antigravity --scope project`",
 	}, nil
 }
 
