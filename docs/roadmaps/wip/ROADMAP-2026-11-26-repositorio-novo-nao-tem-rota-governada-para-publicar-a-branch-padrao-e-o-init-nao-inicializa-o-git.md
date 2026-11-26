@@ -240,7 +240,7 @@ Residuais declarados pelo arquiteto no ML-3A, na ADR (não são deste ML):
 - [x] `go test ./internal/winskips/ ./internal/commands/ -count=1` rc=0
 
 ### ML-2E — D2 do `branch new` só com rc=1 do `rev-parse` (apolo-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — auditado: só exit code 1 dispara; self-test da calibração rc=0 (9 braços) no binário da branch.
 **Motivo:** o `make quality` deu rc=2 em `scripts/check-roadmap-slug-matching.sh --self-test`: 205 de 205 branches
 saíram com a recusa de HEAD unborn. O script roda `branch new --dry-run` num diretório que não é repositório git. Ali
 o `rev-parse --verify -q HEAD` dá rc=128, e o D2 de `branch.go` trata qualquer erro como HEAD unborn. A ADR diz rc=1.
@@ -248,11 +248,11 @@ Fora de um repositório git, a mensagem fica errada e o `--dry-run` deixa de rel
 
 **Files affected:** `internal/commands/branch.go`; `internal/commands/branch_test.go`
 **Acceptance criteria:**
-- [ ] o D2 dispara só quando o `rev-parse --verify -q HEAD` sai com código 1; qualquer outro erro segue o fluxo
+- [x] o D2 dispara só quando o `rev-parse --verify -q HEAD` sai com código 1; qualquer outro erro segue o fluxo
       anterior à REQ
-- [ ] teste com git real: num diretório que não é repo, `--dry-run` imprime `would create` ou `would block`, sem a
+- [x] teste com git real: num diretório que não é repo, `--dry-run` imprime `would create` ou `would block`, sem a
       recusa de unborn; num repo com HEAD unborn, a recusa continua
-- [ ] `bash scripts/check-roadmap-slug-matching.sh --self-test` rc=0 com o binário da branch
+- [x] `bash scripts/check-roadmap-slug-matching.sh --self-test` rc=0 com o binário da branch
 
 ## Wave 3 — Gate final
 

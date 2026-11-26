@@ -72,6 +72,12 @@ type branchNewDeps struct {
 	// Used for fetch, remote get-url, symbolic-ref and rev-parse. nil when fromRef != "" (no
 	// remote resolution needed) so that pre-existing unit tests don't have to provide it.
 	gitExec func(args ...string) (string, error)
+	// headExitCode returns the exit code of `git rev-parse --verify -q HEAD` in the current
+	// working directory. Production: defaultGitRevParseHeadExitCode. D2 (ADR-2026-11-26) only
+	// treats exit code 1 as "unborn HEAD"; any other non-zero code (e.g. 128 for "not a git
+	// repository") must not trigger the unborn-HEAD refusal. nil disables the D2 check (pre-REQ
+	// unit tests that do not set this field are unaffected).
+	headExitCode func() int
 	// ghExec runs `gh <args...>` and returns raw stdout bytes. Production: defaultGhExec, nil in
 	// tests. Used only when fromRef == "" to resolve the forge default branch name.
 	ghExec ghExecFn
@@ -139,6 +145,7 @@ Create the governance artifacts first if this blocks you:
 				fromRef:         from,
 				gitExec:         defaultGitExec,
 				ghExec:          defaultGhExec,
+				headExitCode:    defaultGitRevParseHeadExitCode,
 				out:             cmd.OutOrStdout(),
 			}
 			return runBranchNew(args[0], dryRun, deps)
@@ -199,6 +206,38 @@ func defaultGitCheckout(branchName, startPoint string) error {
 	return err
 }
 
+// gitRevParseHeadExitCode runs "git rev-parse --verify -q HEAD" in dir (empty string uses
+// the process's current working directory) and returns the process exit code:
+//
+//   - 0: HEAD exists and has a commit.
+//   - 1: HEAD is unborn (the repository has no commits yet).
+//   - 128: not a git repository (or the path is outside any repository).
+//   - 255: git binary not found or other non-ExitError failure.
+//
+// The exit code is the discriminant for D2 (ADR-2026-11-26): only rc==1 means
+// "unborn HEAD"; rc==128 must not be treated as such.
+func gitRevParseHeadExitCode(dir string) int {
+	cmd := exec.Command("git", "rev-parse", "--verify", "-q", "HEAD") //nolint:gosec
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	err := cmd.Run()
+	if err == nil {
+		return 0
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.ExitCode()
+	}
+	return 255 // git not found or other non-exit-error
+}
+
+// defaultGitRevParseHeadExitCode is the production implementation of branchNewDeps.headExitCode.
+// It calls gitRevParseHeadExitCode with the process's working directory (empty dir argument).
+func defaultGitRevParseHeadExitCode() int {
+	return gitRevParseHeadExitCode("")
+}
+
 // runBranchNew implements the `trackfw branch new <type>/<slug>` flow described in
 // docs/req/REQ-2026-09-12-*.md and REQ-2026-08-04-*.md.
 func runBranchNew(spec string, dryRun bool, deps branchNewDeps) error {
@@ -214,21 +253,25 @@ func runBranchNew(spec string, dryRun bool, deps branchNewDeps) error {
 	// first: commit on the default branch, push, then come back to branch new.
 	// Uses only condition (1): rev-parse --verify -q HEAD rc==1. No rev-list needed here
 	// (branch new only needs to know the branch is unborn; commit uses the full conjunct).
-	if deps.gitExec != nil {
-		if _, revErr := deps.gitExec("rev-parse", "--verify", "-q", "HEAD"); revErr != nil {
-			msg := "trackfw branch new: cannot create a branch from an unborn HEAD.\n" +
-				"Complete the bootstrap first:\n" +
-				"  1. Create the repository on your forge\n" +
-				"  2. git remote add origin <url>\n" +
-				"  3. git status --short\n" +
-				"  4. git add <each path listed by git status --short>\n" +
-				"  5. trackfw commit -m \"chore(scaffold): initial\"\n" +
-				"  6. trackfw push\n" +
-				"Then: trackfw branch new " + branchName + "\n" +
-				"If the repository already has another branch with commits, use: git switch <branch>"
-			fmt.Fprintln(deps.out, msg)
-			return fmt.Errorf("blocked: HEAD has no commit — complete bootstrap before creating branches")
-		}
+	//
+	// 🔴 Only rc==1 means "unborn HEAD". rc==128 means "not a git repository" (or git absent)
+	// and must NOT trigger this refusal — the caller may be a governance script running
+	// branch new --dry-run outside any repository to measure slug matching (ML-2E,
+	// ADR-2026-11-26). For those callers the flow continues normally so --dry-run can
+	// report the slug governance verdict (would create / would block).
+	if deps.headExitCode != nil && deps.headExitCode() == 1 {
+		msg := "trackfw branch new: cannot create a branch from an unborn HEAD.\n" +
+			"Complete the bootstrap first:\n" +
+			"  1. Create the repository on your forge\n" +
+			"  2. git remote add origin <url>\n" +
+			"  3. git status --short\n" +
+			"  4. git add <each path listed by git status --short>\n" +
+			"  5. trackfw commit -m \"chore(scaffold): initial\"\n" +
+			"  6. trackfw push\n" +
+			"Then: trackfw branch new " + branchName + "\n" +
+			"If the repository already has another branch with commits, use: git switch <branch>"
+		fmt.Fprintln(deps.out, msg)
+		return fmt.Errorf("blocked: HEAD has no commit — complete bootstrap before creating branches")
 	}
 
 	// chore/docs are housekeeping types — already treated as roadmap-exempt by `trackfw ship`
