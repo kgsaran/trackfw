@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -1265,9 +1264,6 @@ func TestRunInit_RealGit_ClaudeScope_PrintsActualPaths(t *testing.T) {
 // the scaffold cannot be tricked by maliciously named files placed in the
 // project directory before trackfw init ran.
 func TestD1_6_RealGit_ShellInjectionSafe(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX single-quoting is a POSIX shell feature — skipped on Windows")
-	}
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("sh not available — skipping shell-injection test")
 	}

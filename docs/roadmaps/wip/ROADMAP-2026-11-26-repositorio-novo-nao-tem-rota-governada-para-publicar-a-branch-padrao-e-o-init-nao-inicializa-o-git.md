@@ -220,7 +220,7 @@ Residuais declarados pelo arquiteto no ML-3A, na ADR (não são deste ML):
       Testes afirmam o texto.
 
 ### ML-2D — Corretivo do `make quality`: goldens do arquiteto e skips de Windows (apolo-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done
 **Motivo:** o `make quality` deu rc=2, com duas falhas.
 - `TestRenderWithoutIdentityMatchesFrozenGoldens` e `_CRLFSource` falham. O ML-1E mudou
   `internal/integrations/assets/agents/architect.md` e não atualizou os goldens; o gate da Wave 1 não incluía
@@ -231,13 +231,13 @@ Residuais declarados pelo arquiteto no ML-3A, na ADR (não são deste ML):
 `internal/integrations/testdata/architect.agent-directory.golden.md`; `internal/commands/push_bootstrap_test.go`;
 `internal/commands/init_test.go`; `.github/windows-skips.json`
 **Acceptance criteria:**
-- [ ] os dois goldens refletem o `architect.md` atual (só as linhas do bootstrap mudam);
+- [x] os dois goldens refletem o `architect.md` atual (só as linhas do bootstrap mudam);
       `go test ./internal/integrations/ -count=1` rc=0
-- [ ] `TestD3Bypass_*` deixam de pular no Windows. A URL `file://` é montada de forma portável
+- [x] `TestD3Bypass_*` deixam de pular no Windows. A URL `file://` é montada de forma portável
       (`file:///` + caminho com `/`, sem a barra inicial duplicada).
-- [ ] `TestD1_6_RealGit_ShellInjectionSafe` deixa de pular por `runtime.GOOS`. O pulo por ausência de `sh` continua.
+- [x] `TestD1_6_RealGit_ShellInjectionSafe` deixa de pular por `runtime.GOOS`. O pulo por ausência de `sh` continua.
       Se ainda sobrar pulo de Windows, ele é registrado em `.github/windows-skips.json` com evidência.
-- [ ] `go test ./internal/winskips/ ./internal/commands/ -count=1` rc=0
+- [x] `go test ./internal/winskips/ ./internal/commands/ -count=1` rc=0
 
 ## Wave 3 — Gate final
 

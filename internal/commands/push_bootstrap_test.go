@@ -4,12 +4,20 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/kgsaran/trackfw/internal/validator"
 )
+
+// fileURL converts a local filesystem path to a portable file:// URL that
+// works on both Unix and Windows.  On Unix, an absolute path /tmp/x becomes
+// file:///tmp/x.  On Windows, C:\x (or the ToSlash form C:/x) becomes
+// file:///C:/x — the extra leading slash is required for the three-slash
+// file:/// form on Windows (file://host/path, where host is empty here).
+func fileURL(p string) string {
+	return "file:///" + strings.TrimPrefix(filepath.ToSlash(p), "/")
+}
 
 // ────────────────────────────────────────────────────────────────────────────
 // D3/D4 real-git integration tests (ADR-2026-11-26)
@@ -502,19 +510,15 @@ func bareHasRef(t *testing.T, bareDir, refName string) bool {
 // the push would succeed (measured by Hades, measure_gaps3.sh). With the guard
 // the push is refused and bareB receives no main branch.
 func TestD3Bypass_Forma1_PushInsteadOfPlusInsteadOf_Blocked(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("file:// URLs require Unix-style absolute paths — skipped on Windows")
-	}
-
-	bareA := makeBareRepo(t)      // origin url (empty)
+	bareA := makeBareRepo(t)        // origin url (empty)
 	bareB := makeBareWithDevelop(t) // push destination (has develop)
-	bareC := makeBareRepo(t)      // ls-remote redirect target (empty)
+	bareC := makeBareRepo(t)        // ls-remote redirect target (empty)
 
-	urlA := "file://" + bareA
-	urlB := "file://" + bareB
-	urlBSlash := "file://" + bareB + "/"
-	urlC := "file://" + bareC
-	urlCSlash := "file://" + bareC + "/"
+	urlA := fileURL(bareA)
+	urlB := fileURL(bareB)
+	urlBSlash := fileURL(bareB) + "/"
+	urlC := fileURL(bareC)
+	urlCSlash := fileURL(bareC) + "/"
 
 	local := t.TempDir()
 	// Isolate HOME and XDG_CONFIG_HOME so global ~/.gitconfig cannot interfere.
@@ -597,17 +601,13 @@ func TestD3Bypass_Forma1_PushInsteadOfPlusInsteadOf_Blocked(t *testing.T) {
 // Rule reconciliation: affirms D3-bypass guard (ML-2C) closes the chained-
 // insteadOf vector confirmed in Hades measure_gaps8.sh Section A.
 func TestD3Bypass_Forma2_ChainedInsteadOf_Blocked(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("file:// URLs require Unix-style absolute paths — skipped on Windows")
-	}
-
-	bareA := makeBareRepo(t)      // origin url (empty)
+	bareA := makeBareRepo(t)        // origin url (empty)
 	bareX := makeBareWithDevelop(t) // first redirect target (has develop)
-	bareY := makeBareRepo(t)      // second redirect target (empty)
+	bareY := makeBareRepo(t)        // second redirect target (empty)
 
-	urlA := "file://" + bareA
-	urlX := "file://" + bareX
-	urlY := "file://" + bareY
+	urlA := fileURL(bareA)
+	urlX := fileURL(bareX)
+	urlY := fileURL(bareY)
 
 	local := t.TempDir()
 	homeDir := t.TempDir()
@@ -676,10 +676,6 @@ func TestD3Bypass_Forma2_ChainedInsteadOf_Blocked(t *testing.T) {
 // bootstrap path (D3-bypass guard only blocks when ls-remote --get-url returns
 // a different URL, never when the URL is returned unchanged).
 func TestD3Bypass_CounterArm_NoInsteadOf_Passes(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("file:// URLs require Unix-style absolute paths — skipped on Windows")
-	}
-
 	t.Run("plain_empty_remote", func(t *testing.T) {
 		bare := makeBareRepo(t)
 		local := t.TempDir()
@@ -691,7 +687,7 @@ func TestD3Bypass_CounterArm_NoInsteadOf_Passes(t *testing.T) {
 			[]string{"init", "-q", "-b", "main", "."},
 			[]string{"config", "user.email", "t@localhost"},
 			[]string{"config", "user.name", "T"},
-			[]string{"remote", "add", "origin", "file://" + bare},
+			[]string{"remote", "add", "origin", fileURL(bare)},
 		)
 		if err := os.WriteFile(filepath.Join(local, "b.txt"), []byte("x\n"), 0o644); err != nil {
 			t.Fatalf("write: %v", err)
@@ -720,9 +716,9 @@ func TestD3Bypass_CounterArm_NoInsteadOf_Passes(t *testing.T) {
 			[]string{"init", "-q", "-b", "main", "."},
 			[]string{"config", "user.email", "t@localhost"},
 			[]string{"config", "user.name", "T"},
-			[]string{"remote", "add", "origin", "file://" + bareFetch},
+			[]string{"remote", "add", "origin", fileURL(bareFetch)},
 			// Explicit pushurl pointing to a different empty bare (no insteadOf).
-			[]string{"remote", "set-url", "--push", "origin", "file://" + barePush},
+			[]string{"remote", "set-url", "--push", "origin", fileURL(barePush)},
 		)
 		if err := os.WriteFile(filepath.Join(local, "b.txt"), []byte("x\n"), 0o644); err != nil {
 			t.Fatalf("write: %v", err)
