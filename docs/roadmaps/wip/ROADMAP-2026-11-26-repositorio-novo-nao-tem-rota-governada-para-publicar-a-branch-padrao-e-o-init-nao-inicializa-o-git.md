@@ -255,7 +255,7 @@ Fora de um repositório git, a mensagem fica errada e o `--dry-run` deixa de rel
 - [x] `bash scripts/check-roadmap-slug-matching.sh --self-test` rc=0 com o binário da branch
 
 ### ML-2F — Cenário s60 do falsify segue o literal novo do `switch` (apolo-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — mutação medida: rc=0 mutado, rc=2 íntegro; `make quality` rc=0.
 **Motivo:** o `make quality` deu rc=2 em `parity-falsify`. O cenário `s60-go-switch-c-detection-removed`, de
 `scripts/check-gates-falsify.sh`, procura `case "-c", "-C", "--create", "--force-create":`, mas o D6 acrescentou
 `"--orphan"` ao `case` (`internal/guard/gitbranch.go`). Sem casamento, o chunk morre e 31 rótulos ficam sem rodar.
@@ -263,14 +263,14 @@ Uma sonda nos 46 `corrupt_literal` encontrou só este literal quebrado entre os 
 
 **Files affected:** `scripts/check-gates-falsify.sh`
 **Acceptance criteria:**
-- [ ] o literal do s60 é `case "-c", "-C", "--create", "--force-create", "--orphan":`, e a mutação continua desligando
+- [x] o literal do s60 é `case "-c", "-C", "--create", "--force-create", "--orphan":`, e a mutação continua desligando
       a detecção de `git switch -c`
-- [ ] `make quality` rc=0
+- [x] `make quality` rc=0
 
 ## Wave 3 — Gate final
 
 ### ML-3A — Replay, `make quality` e CI (zeus-tf)
-**Status:** ⬜ Pending
+**Status:** 🔄 In progress — replay ok; `make quality` rc=0; aguardando CI
 **Files affected:** este roadmap; `docs/req/REQ-2026-11-26-repositorio-novo-nao-tem-rota-governada-para-publicar-a-branch-padrao-e-o-init-nao-inicializa-o-git.md`; `docs/adr/ADR-2026-11-26-bootstrap-de-repositorio-novo-init-roda-git-init-e-a-branch-padrao-e-publicada-uma-vez-pelo-trackfw.md`;
 `docs/adr/ADR-2026-08-22-comandos-de-entrega-separados-push-proprio-e-ship-como-composicao.md`;
 `docs/adr/ADR-2026-10-10-a-fiacao-do-guard-e-ancorada-no-origin-main-por-tupla-e-a-remocao-e-violacao-fora-do-lenient-e-do-baseline.md`
