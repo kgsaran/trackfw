@@ -51,6 +51,12 @@ func (m *mockPushGit) exec(args ...string) (string, error) {
 		return m.remoteURL, nil
 	case strings.HasPrefix(joined, "remote get-url --push --all"):
 		return m.pushURLs, nil
+	case strings.HasPrefix(joined, "ls-remote --get-url"):
+		// No insteadOf rewrite in mock — return the URL unchanged (args[2] is the URL).
+		if len(args) >= 3 {
+			return args[2], nil
+		}
+		return "", nil
 	case strings.HasPrefix(joined, "ls-remote --heads"):
 		return m.lsRemoteOut, nil
 	case strings.HasPrefix(joined, "rev-list --count refs/heads/"):

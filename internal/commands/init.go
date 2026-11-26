@@ -85,31 +85,39 @@ var initBootstrapOut io.Writer = os.Stdout
 // In production it uses defaultInitGitStatus.
 var initGitStatusFn = defaultInitGitStatus
 
-// defaultInitGitStatus runs `git status --porcelain --untracked-files=normal`
-// capturing only stdout. Any stderr output (e.g. dubious-ownership warnings)
-// is intentionally discarded so that it cannot contaminate the path list.
+// defaultInitGitStatus runs `git status --porcelain -z --untracked-files=normal`
+// capturing only stdout. The -z flag uses NUL as the entry terminator, which
+// avoids shell injection from filenames containing spaces, quotes, or $(…).
+// Any stderr output (e.g. dubious-ownership warnings) is intentionally discarded
+// so that git warnings cannot contaminate the path list.
 func defaultInitGitStatus() string {
-	cmd := exec.Command("git", "status", "--porcelain", "--untracked-files=normal")
+	cmd := exec.Command("git", "status", "--porcelain", "-z", "--untracked-files=normal")
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	// stderr intentionally not captured — git warnings must not appear in paths.
 	_ = cmd.Run()
-	return strings.TrimSpace(out.String())
+	// Do NOT TrimSpace: a leading/trailing space in a filename is real with -z.
+	return out.String()
 }
 
-// parseGitStatusPorcelain parses the stdout of `git status --porcelain` and
-// returns the top-level paths. Untracked directories appear with a trailing
-// slash (e.g. ".claude/"); the slash is stripped so that `git add .claude`
-// stages the entire directory. Only the path part (after the 3-char XY+space
-// prefix) is returned; this covers untracked (??) and modified entries.
+// parseGitStatusPorcelain parses the NUL-terminated stdout of
+// `git status --porcelain -z` and returns the top-level paths.
+//
+// D1-6 (ML-2C, ADR-2026-11-26): the -z output uses NUL as the entry
+// terminator, which preserves filenames that contain shell metacharacters
+// (spaces, quotes, $(...)) without quoting. Each entry has the same
+// "XY SP path" prefix as the non-z form; trailing slashes on untracked
+// directories are stripped so that `git add .claude` stages the whole tree.
+//
+// Note: the per-path TrimSpace is intentionally absent (a leading/trailing
+// space in a filename is real and must be preserved).
 func parseGitStatusPorcelain(out string) []string {
 	var paths []string
-	for _, line := range strings.Split(out, "\n") {
-		if len(line) < 4 { // minimum: "?? x"
+	for _, entry := range strings.Split(out, "\x00") {
+		if len(entry) < 4 { // minimum: "?? x"
 			continue
 		}
-		path := strings.TrimRight(line[3:], "/")
-		path = strings.TrimSpace(path)
+		path := strings.TrimRight(entry[3:], "/")
 		if path != "" {
 			paths = append(paths, path)
 		}
@@ -530,8 +538,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 		// pre-check from executeScaffoldAndInstall fails
 		// TestExecuteScaffoldAndInstall_PreCheckFiresOnSymlinkClaudeDir).
 		// D1 (ADR-2026-11-26): git init is called inside executeScaffoldAndInstall,
-		// after the AI-tool destination pre-check and before the scaffold write, so
-		// that a pre-check failure leaves the project directory completely empty.
+		// after the scaffold and AI-tool install, so that a scaffold pre-check
+		// failure leaves the project directory completely empty.
 		aiTools, _ := cmd.Flags().GetStringSlice("ai-tools")
 		if err := executeScaffoldAndInstall(cfg, aiTools, cwd, scope, home); err != nil {
 			return err
@@ -818,7 +826,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// Pre-check + scaffold + install via shared function (T-8: same function as
 	// the non-TTY path — a test on executeScaffoldAndInstall covers both).
 	// D1 (ADR-2026-11-26): git init is called inside executeScaffoldAndInstall,
-	// after the AI-tool destination pre-check and before the scaffold write.
+	// after the scaffold and AI-tool install, so that a scaffold pre-check
+	// failure leaves no .git/ behind.
 	if err := executeScaffoldAndInstall(cfg, aiTools, cwd, scope, home); err != nil {
 		return err
 	}

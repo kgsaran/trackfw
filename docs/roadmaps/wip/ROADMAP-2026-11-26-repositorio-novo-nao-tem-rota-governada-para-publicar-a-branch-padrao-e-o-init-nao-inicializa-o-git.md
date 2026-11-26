@@ -163,19 +163,19 @@ go test ./internal/commands/ ./internal/validator/ ./internal/generators/ ./inte
 > Dependencies: Wave 1 audited. Exceção num guard: revisão de qualidade e red team.
 
 ### ML-2A — Revisão de qualidade (hefesto-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — aprova com ressalvas (A1–A5); todas corrigidas no ML-2C.
 **Files affected:** `docs/seguranca/2026-11-26-revisao-bootstrap-de-repositorio-novo.md` (novo)
 **Acceptance criteria:**
-- [ ] revisão escrita; nenhum achado bloqueante aberto
+- [x] revisão escrita; nenhum achado bloqueante aberto
 
 ### ML-2B — Red team da exceção de bootstrap (hades-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — reprovou por D3-bypass; corrigido no ML-2C e conferido no binário (Forma 2 rc=1, sem `main` no destino).
 **Files affected:** `docs/seguranca/2026-11-26-red-team-bootstrap-de-repositorio-novo.md` (novo)
 **Acceptance criteria:**
-- [ ] vetores do Wave 0 medidos antes e depois no binário; nenhum escape aberto
+- [x] vetores do Wave 0 medidos antes e depois no binário; nenhum escape aberto
 
 ### ML-2C — Corretivo da Wave 2: achados do Hefesto (A1–A5) e do Hades (apolo-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done — auditado no binário: Forma 2 recusa citando `insteadOf`; contra-braço publica; `git add --` impresso não executa `$(touch PWNED)` e adiciona `-A` literal; guard `--push=false` rc=0, `bash -c 'gh repo create x --push'` rc=2.
 **Motivo:** o Hefesto aprovou com ressalvas (A1 médio, A2–A5 baixos). O Hades reprovou por D3-bypass (médio): com
 `insteadOf` encadeado, ou com `pushInsteadOf` + `insteadOf`, `ls-remote --heads <push_url>` reescreve a URL uma segunda
 vez. A consulta vê um remoto vazio, e o push chega a outro remoto, que já tem branches. Também apontou quatro achados
@@ -194,28 +194,28 @@ Residuais declarados pelo arquiteto no ML-3A, na ADR (não são deste ML):
 `internal/generators/nextsteps.go`; `internal/commands/commit.go`; `internal/commands/commit_test.go`;
 `internal/commands/branch.go`; `internal/commands/branch_test.go`; `internal/guard/gitbranch.go`; `internal/guard/gitbranch_test.go`
 **Acceptance criteria:**
-- [ ] D3-bypass: `checkRemoteEmpty` roda `git ls-remote --get-url <u>` para cada URL de push. Se o resultado
+- [x] D3-bypass: `checkRemoteEmpty` roda `git ls-remote --get-url <u>` para cada URL de push. Se o resultado
       (sem espaços nas pontas) diferir de `<u>`, devolve erro com uma mensagem que cita `insteadOf`. Como D3 é
       fail-closed, o push da `main` recusa. Há testes com git real para a Forma 1 (`pushInsteadOf` + `insteadOf`) e
       a Forma 2 (`insteadOf` encadeado): rc≠0, a mensagem cita `insteadOf`, e o remoto com branches não recebe a
       `main`. Contra-braço: um remoto vazio sem `insteadOf`, e um `pushurl` explícito sem `insteadOf`, continuam
       passando.
-- [ ] A1: o teste do lease de ausência discrimina o lease. Ele exige, na saída do push, `stale info` (rejeição do
+- [x] A1: o teste do lease de ausência discrimina o lease. Ele exige, na saída do push, `stale info` (rejeição do
       lease), e não `fetch first` nem `non-fast-forward`. O contra-braço é medido e escrito no relatório: sem o
       lease, a mesma rejeição vem com outra mensagem.
-- [ ] A2: a linha `_ = generators.PrintBootstrapSteps` some de `init_test.go`.
-- [ ] A3: a dica de D4, hoje duplicada em `push.go` e `ship.go`, vira um helper único, `bootstrapStepsHint()`.
-- [ ] A4 e A5: o comentário de `parseLSRemoteHeads` deixa de descrever um caso impossível. Os comentários de
+- [x] A2: a linha `_ = generators.PrintBootstrapSteps` some de `init_test.go`.
+- [x] A3: a dica de D4, hoje duplicada em `push.go` e `ship.go`, vira um helper único, `bootstrapStepsHint()`.
+- [x] A4 e A5: o comentário de `parseLSRemoteHeads` deixa de descrever um caso impossível. Os comentários de
       `init.go` dizem que o `git init` roda depois do scaffold.
-- [ ] D1-6: a lista de caminhos vem de `git status -z --porcelain`, separada por NUL. Cada caminho é impresso entre
+- [x] D1-6: a lista de caminhos vem de `git status -z --porcelain`, separada por NUL. Cada caminho é impresso entre
       aspas simples POSIX (`'` vira `'\''`), e a linha começa com `git add -- `. Teste: com os arquivos `$(touch PWNED)`
       e `-A` no diretório, a linha impressa, executada com `sh -c`, não cria `PWNED` e adiciona os dois arquivos
       literalmente.
-- [ ] D6-FP: `gh repo create x --push=false`, `--push=0`, `--push=no` e `--push=off` são permitidos.
+- [x] D6-FP: `gh repo create x --push=false`, `--push=0`, `--push=no` e `--push=off` são permitidos.
       `--push`, `--push=true`, `--push=1`, `--push=yes` e qualquer outro valor são bloqueados (fail-closed).
-- [ ] D6-wrapper: `matchSubcommandPOSIX` aplica `applyGhRule` também a `gh`.
+- [x] D6-wrapper: `matchSubcommandPOSIX` aplica `applyGhRule` também a `gh`.
       `bash -c 'gh repo create x --push'` dá rc=2; `bash -c 'gh repo view'` dá rc=0.
-- [ ] M-X1: a recusa do `commit` na `main`/`master`, quando há commit, e a recusa do `branch new` com HEAD unborn
+- [x] M-X1: a recusa do `commit` na `main`/`master`, quando há commit, e a recusa do `branch new` com HEAD unborn
       incluem uma saída a mais: `git switch <existing-branch>`, ou o passo de bootstrap que faltar.
       Testes afirmam o texto.
 

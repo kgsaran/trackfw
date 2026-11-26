@@ -358,7 +358,8 @@ func runCommit(message string, deps commitDeps) error {
 			// Fall through to (d) commit.
 		} else {
 			msg := fmt.Sprintf(
-				"trackfw commit: direct commit on %q is not permitted. Use 'trackfw branch new <type>/<slug>' first.",
+				"trackfw commit: direct commit on %q is not permitted. Use 'trackfw branch new <type>/<slug>' first.\n"+
+					"Or switch to an existing branch: git switch <branch>",
 				branch,
 			)
 			fmt.Fprintln(deps.out, msg)

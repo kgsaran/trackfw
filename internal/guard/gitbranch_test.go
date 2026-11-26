@@ -1888,3 +1888,72 @@ func TestAllReasonsProduceValidJSON(t *testing.T) {
 		}
 	})
 }
+
+// ─── D6-FP and D6-wrapper tests (ML-2C) ──────────────────────────────────────
+
+// TestMatchSubcommand_GhRepoCreate_PushFalsy_Allowed (ML-2C D6-FP) affirms that
+// falsy --push=<val> forms are permitted.
+//
+// Rule reconciliation: affirms D6-FP fix — `--push=false/0/no/off` suppresses
+// the push entirely and must not be blocked; they are semantically equivalent to
+// omitting --push. The arm below tests truthy/bare forms that remain blocked.
+func TestMatchSubcommand_GhRepoCreate_PushFalsy_Allowed(t *testing.T) {
+	allowed := []string{
+		"gh repo create myrepo --push=false",
+		"gh repo create myrepo --push=0",
+		"gh repo create myrepo --push=no",
+		"gh repo create myrepo --push=off",
+		"gh repo create myrepo --push=False",
+		"gh repo create myrepo --push=NO",
+		"gh repo create myrepo --push=Off",
+	}
+	for _, cmd := range allowed {
+		if got := MatchSubcommand(cmd); got != "" {
+			t.Errorf("D6-FP: %q should be allowed (falsy --push value), got %q", cmd, got)
+		}
+	}
+
+	// Arm: truthy and bare --push forms must still be blocked.
+	blocked := []string{
+		"gh repo create myrepo --push=true",
+		"gh repo create myrepo --push=1",
+		"gh repo create myrepo --push=yes",
+		"gh repo create myrepo --push=maybe",
+		"gh repo create myrepo --push",
+	}
+	for _, cmd := range blocked {
+		if got := MatchSubcommand(cmd); got != "gh-repo-create-push" {
+			t.Errorf("D6-FP arm: %q should be blocked as gh-repo-create-push, got %q", cmd, got)
+		}
+	}
+}
+
+// TestMatchSubcommand_GhWrapper_Blocked (ML-2C D6-wrapper) affirms that
+// `gh repo create --push` inside a shell wrapper is blocked.
+//
+// Rule reconciliation: affirms D6-wrapper fix — matchSubcommandPOSIX now
+// applies applyGhRule when the extracted base command is "gh", closing the
+// gap where `bash -c 'gh repo create x --push'` returned rc=0 (measured by
+// Hades, d6_wrapper.sh). Counter-arm: `bash -c 'gh repo view'` is allowed.
+func TestMatchSubcommand_GhWrapper_Blocked(t *testing.T) {
+	blocked := []string{
+		`bash -c 'gh repo create x --push'`,
+		`sh -c 'gh repo create x --push'`,
+	}
+	for _, cmd := range blocked {
+		if got := MatchSubcommand(cmd); got != "gh-repo-create-push" {
+			t.Errorf("D6-wrapper: %q should be blocked as gh-repo-create-push, got %q", cmd, got)
+		}
+	}
+
+	// Counter-arm: gh commands that do not push must pass through.
+	allowed := []string{
+		`bash -c 'gh repo view'`,
+		`sh -c 'gh pr create --title x'`,
+	}
+	for _, cmd := range allowed {
+		if got := MatchSubcommand(cmd); got != "" {
+			t.Errorf("D6-wrapper counter-arm: %q should be allowed, got %q", cmd, got)
+		}
+	}
+}

@@ -529,3 +529,43 @@ func TestRunBranchNew_BornHEAD_AllowsTypeCheck(t *testing.T) {
 		t.Error("type gate must be called when HEAD has a commit (D2 passes through)")
 	}
 }
+
+// TestRunBranchNew_UnbornHEAD_IncludesGitSwitchHint (ML-2C M-X1) affirms that
+// when branch new is blocked on an unborn HEAD (D2), the output printed to the
+// user includes a "git switch <branch>" hint so the user can recover by switching
+// to an existing branch rather than being stuck with only the bootstrap path.
+// The hint lives in the printed message (deps.out), not the returned error; the
+// error is a short machine-parseable "blocked: HEAD has no commit" string.
+//
+// Rule reconciliation: affirms M-X1 (ML-2C) — the printed block already contained
+// the hint after the Wave 2 implementation; this test asserts it is present and
+// will catch any accidental removal.
+func TestRunBranchNew_UnbornHEAD_IncludesGitSwitchHint(t *testing.T) {
+	out := &bytes.Buffer{}
+
+	d := branchNewDeps{
+		loadConfig:      func() config.ProjectConfig { return config.ProjectConfig{} },
+		resolveWIPDirs:  func(config.ProjectConfig) []string { return []string{"docs/roadmaps/wip"} },
+		resolveDoneDirs: func(config.ProjectConfig) []string { return []string{"docs/roadmaps/done"} },
+		matchSlug:       func(slug string, wip, done []string) (bool, []string) { return true, nil },
+		matchDone:       func(slug string, done []string) []string { return nil },
+		execGitCheckout: func(branch, _ string) error { return nil },
+		fromRef:         "HEAD",
+		out:             out,
+		gitExec: func(args ...string) (string, error) {
+			if len(args) >= 1 && args[0] == "rev-parse" {
+				return "", errors.New("fatal: Needed a single revision")
+			}
+			return "", nil
+		},
+	}
+
+	err := runBranchNew("feat/bootstrap-test", false, d)
+	if err == nil {
+		t.Fatal("expected error for unborn HEAD, got nil")
+	}
+	// The hint is in the printed output, not the returned error.
+	if !strings.Contains(out.String(), "git switch") {
+		t.Errorf("M-X1: branch new unborn HEAD output must include 'git switch <branch>' hint; got output: %q, err: %v", out.String(), err)
+	}
+}

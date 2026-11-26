@@ -8,6 +8,19 @@ import (
 	"strings"
 )
 
+// posixSingleQuote wraps s in POSIX single quotes, replacing any embedded
+// single-quote character with the sequence '\'' so the result is safe to
+// pass to sh -c. This avoids shell-injection from filenames that contain
+// spaces, shell metacharacters, or $(...) expansions.
+//
+// Examples:
+//   posixSingleQuote("a.txt")     → 'a.txt'
+//   posixSingleQuote("it's.txt")  → 'it'\''s.txt'
+//   posixSingleQuote("$(touch X)") → '$(touch X)'
+func posixSingleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
 type toolEntry struct {
 	file string
 	cmd  string
@@ -61,7 +74,15 @@ func PrintBootstrapSteps(w io.Writer, paths []string) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "  git status --short")
 	if len(paths) > 0 {
-		fmt.Fprintf(w, "  git add %s\n", strings.Join(paths, " "))
+		// D1-6 (ML-2C): POSIX-single-quote each path so that filenames
+		// containing spaces, quotes or $(...) are safe when the line is
+		// passed to sh -c. The -- separator prevents leading-dash names
+		// (e.g. "-A") from being interpreted as flags.
+		quoted := make([]string, len(paths))
+		for i, p := range paths {
+			quoted[i] = posixSingleQuote(p)
+		}
+		fmt.Fprintf(w, "  git add -- %s\n", strings.Join(quoted, " "))
 	} else {
 		fmt.Fprintln(w, "  git add <each path listed by git status --short>")
 	}

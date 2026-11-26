@@ -307,17 +307,8 @@ func runPush(opts pushOpts, deps pushDeps) error {
 	// network failure will surface at the actual push). Blocks only when we can
 	// confirm the remote has no branches at all — "empty remote", not "no main/master".
 	if d4Empty, d4Err := checkRemoteEmpty(deps.execGit); d4Err == nil && d4Empty {
-		return fmt.Errorf(
-			"trackfw push: the remote has no branches yet.\n"+
-				"Publish the default branch first:\n"+
-				"  1. Create the repository on your forge\n"+
-				"  2. git remote add origin <url>\n"+
-				"  3. git status --short\n"+
-				"  4. git add <each path listed by git status --short>\n"+
-				"  5. trackfw commit -m \"chore(scaffold): initial\"\n"+
-				"  6. trackfw push  (from main or master)\n"+
-				"Then come back and push your feature branch.",
-		)
+		return errors.New("trackfw push: the remote has no branches yet.\n" +
+			bootstrapStepsHint("push your feature branch"))
 	}
 
 	// ─── Step 4: Push ────────────────────────────────────────────────────────
@@ -340,6 +331,21 @@ func runPush(opts pushOpts, deps pushDeps) error {
 
 // ─── D3/D4 helpers (ADR-2026-11-26) ─────────────────────────────────────────
 
+// bootstrapStepsHint returns the shared bootstrap step list used by D4 messages
+// in push and ship. The action parameter completes "Then come back and <action>."
+// (A3 — ADR-2026-11-26: common D4 steps extracted to avoid verbatim duplication
+// between push.go and ship.go.)
+func bootstrapStepsHint(action string) string {
+	return "Publish the default branch first:\n" +
+		"  1. Create the repository on your forge\n" +
+		"  2. git remote add origin <url>\n" +
+		"  3. git status --short\n" +
+		"  4. git add <each path listed by git status --short>\n" +
+		"  5. trackfw commit -m \"chore(scaffold): initial\"\n" +
+		"  6. trackfw push  (from main or master)\n" +
+		"Then come back and " + action + "."
+}
+
 // checkRemoteEmpty queries every push URL configured for origin and reports
 // whether all of them have no branches.
 //
@@ -347,6 +353,12 @@ func runPush(opts pushOpts, deps pushDeps) error {
 // git ls-remote --heads. Returns (false, nil) when any URL has branches.
 // Returns (false, err) when the remote state cannot be determined — callers
 // must treat this as "uncertain": D3 refuses (fail-closed), D4 passes (fail-open).
+//
+// D3-bypass guard (ADR-2026-11-26, ML-2C): before querying with ls-remote
+// --heads, each push URL is passed to ls-remote --get-url. If the result
+// differs from the URL, a git insteadOf/pushInsteadOf rule would redirect the
+// ls-remote query to a different destination than the actual push — the check
+// would see an empty remote while the push reaches a non-empty one. fail-closed.
 func checkRemoteEmpty(execGit func(args ...string) (string, error)) (bool, error) {
 	urlsOut, err := execGit("remote", "get-url", "--push", "--all", "origin")
 	if err != nil {
@@ -363,6 +375,22 @@ func checkRemoteEmpty(execGit func(args ...string) (string, error)) (bool, error
 		return false, fmt.Errorf("no push URLs configured for origin")
 	}
 	for _, u := range urls {
+		// D3-bypass guard: verify ls-remote would query the same URL that push
+		// will use. git applies insteadOf to the URL passed to ls-remote; if the
+		// resolved URL differs from u, the check sees a different destination.
+		resolved, resolvedErr := execGit("ls-remote", "--get-url", u)
+		resolved = strings.TrimSpace(resolved)
+		if resolvedErr != nil || resolved != u {
+			resolvedDisplay := resolved
+			if resolvedErr != nil {
+				resolvedDisplay = resolvedErr.Error()
+			}
+			return false, fmt.Errorf(
+				"push URL %q is rewritten to %q by an insteadOf/pushInsteadOf rule — "+
+					"remove the rule temporarily to perform the bootstrap push",
+				u, resolvedDisplay,
+			)
+		}
 		lsOut, lsErr := execGit("ls-remote", "--heads", u)
 		if lsErr != nil {
 			return false, fmt.Errorf("ls-remote %s: %w", u, lsErr)
@@ -402,8 +430,9 @@ func parseLSRemoteHeads(out string) (hasBranches bool, unrecognized bool) {
 		if strings.HasPrefix(ref, "refs/heads/") {
 			hasBranches = true
 		}
-		// Other refs (tags, HEAD, etc.) from --heads are unexpected but
-		// not treated as unrecognized — they just don't indicate a branch.
+		// Other refs under refs/heads/ that do not indicate a branch (none
+		// expected from --heads, which limits output to refs/heads/*) are
+		// skipped without setting unrecognized.
 	}
 	return
 }

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -1113,9 +1114,6 @@ func TestRunGitInitForBootstrap_FreshDir_PrintsBootstrapSteps(t *testing.T) {
 	if strings.Contains(out, "git add -A") {
 		t.Errorf("bootstrap output must not contain 'git add -A', got: %q", out)
 	}
-	// Unused import guard: generators is imported by the package; confirm PrintBootstrapSteps
-	// is the actual function called (not a local copy).
-	_ = generators.PrintBootstrapSteps
 }
 
 // TestRunGitInitForBootstrap_AlreadyInsideWorkTree_NoBootstrapSteps is the counter-arm:
@@ -1229,12 +1227,11 @@ func TestRunInit_RealGit_ClaudeScope_PrintsActualPaths(t *testing.T) {
 		}
 	}
 
-	// Execute the git add line in the project.
-	addArgs := strings.Fields(addLine)
-	if len(addArgs) < 2 {
-		t.Fatalf("git add line has too few args: %q", addLine)
-	}
-	addCmd := exec.Command(addArgs[0], addArgs[1:]...)
+	// Execute the git add line via sh -c so that POSIX single-quoted paths
+	// (produced by D1-6 fix, ML-2C) are interpreted correctly by the shell.
+	// Using strings.Fields + exec.Command would leave the single quotes as
+	// part of the path argument and fail to find the files.
+	addCmd := exec.Command("sh", "-c", addLine)
 	addCmd.Dir = project
 	if addOut, err := addCmd.CombinedOutput(); err != nil {
 		t.Fatalf("executing %q failed: %v\n%s", addLine, err, addOut)
@@ -1251,5 +1248,101 @@ func TestRunInit_RealGit_ClaudeScope_PrintsActualPaths(t *testing.T) {
 		if strings.HasPrefix(line, "?? ") {
 			t.Errorf("after executing the printed git add, untracked file remains: %q (full status: %q)", line, string(statusOut))
 		}
+	}
+}
+
+// TestD1_6_RealGit_ShellInjectionSafe (ML-2C, D1-6) affirms that filenames
+// containing shell metacharacters ($(touch PWNED) and -A) are safely handled
+// by the POSIX-single-quoted git add line emitted by PrintBootstrapSteps.
+//
+// When the printed line is executed with sh -c in the project directory:
+//  1. PWNED must NOT be created ($(touch PWNED) is not executed as a command).
+//  2. `git diff --cached --name-only` must contain the two literal filenames.
+//
+// Rule reconciliation: affirms D1-6 (ML-2C, ADR-2026-11-26) — the POSIX
+// single-quoted git add line suppresses $() command substitution and passes
+// -A as a literal pathspec (not the --all flag), so that the agent staging
+// the scaffold cannot be tricked by maliciously named files placed in the
+// project directory before trackfw init ran.
+func TestD1_6_RealGit_ShellInjectionSafe(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX single-quoting is a POSIX shell feature — skipped on Windows")
+	}
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh not available — skipping shell-injection test")
+	}
+
+	dir := t.TempDir()
+	gitRepoIn(t, dir,
+		[]string{"init", "-q", "-b", "main", "."},
+		[]string{"config", "user.email", "t@localhost"},
+		[]string{"config", "user.name", "T"},
+	)
+
+	// Create the two dangerous files BEFORE querying git status.
+	dangerousName := "$(touch PWNED)"
+	dashAName := "-A"
+	for _, name := range []string{dangerousName, dashAName} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x\n"), 0o644); err != nil {
+			t.Fatalf("write %q: %v", name, err)
+		}
+	}
+
+	// Query git status -z to build the path list (same as production code).
+	statusCmd := exec.Command("git", "status", "--porcelain", "-z", "--untracked-files=normal")
+	statusCmd.Dir = dir
+	var statusBuf bytes.Buffer
+	statusCmd.Stdout = &statusBuf
+	if err := statusCmd.Run(); err != nil {
+		t.Fatalf("git status -z: %v", err)
+	}
+	paths := parseGitStatusPorcelain(statusBuf.String())
+	if len(paths) == 0 {
+		t.Fatal("expected at least 2 untracked files from git status -z, got none")
+	}
+
+	// Build the git add line via PrintBootstrapSteps.
+	var buf bytes.Buffer
+	generators.PrintBootstrapSteps(&buf, paths)
+	out := buf.String()
+
+	// Extract the git add line.
+	var addLine string
+	for _, line := range strings.Split(out, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "git add -- ") {
+			addLine = trimmed
+			break
+		}
+	}
+	if addLine == "" {
+		t.Fatalf("bootstrap output must contain 'git add -- ...'; got: %q", out)
+	}
+
+	// Execute the git add line via sh -c in the project directory.
+	addCmd := exec.Command("sh", "-c", addLine)
+	addCmd.Dir = dir
+	if addOut, addErr := addCmd.CombinedOutput(); addErr != nil {
+		t.Fatalf("sh -c %q failed: %v\n%s", addLine, addErr, addOut)
+	}
+
+	// 1. PWNED must NOT exist — $(touch PWNED) was not executed.
+	if _, statErr := os.Stat(filepath.Join(dir, "PWNED")); statErr == nil {
+		t.Error("D1-6: PWNED was created — shell injection via $(touch PWNED) was not prevented")
+	}
+
+	// 2. Both dangerous filenames must be staged.
+	cachedCmd := exec.Command("git", "diff", "--cached", "--name-only")
+	cachedCmd.Dir = dir
+	cachedOut, cachedErr := cachedCmd.Output()
+	if cachedErr != nil {
+		t.Fatalf("git diff --cached --name-only: %v", cachedErr)
+	}
+	staged := string(cachedOut)
+	if !strings.Contains(staged, dangerousName) {
+		t.Errorf("D1-6: file %q must be staged; staged files: %q", dangerousName, staged)
+	}
+	if !strings.Contains(staged, dashAName) {
+		t.Errorf("D1-6: file %q must be staged as literal path (not flag); staged files: %q", dashAName, staged)
 	}
 }

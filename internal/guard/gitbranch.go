@@ -871,9 +871,21 @@ func applyGhRule(tokens []string) string {
 		return ""
 	}
 	// Look for --push flag in the remaining tokens.
+	// D6-FP (ML-2C): --push=false/0/no/off are falsy values that suppress the
+	// push — allow them. --push (bare flag) and all other values are blocked.
 	for _, t := range tokens[verbIdx+1:] {
-		if t == "--push" || strings.HasPrefix(t, "--push=") {
+		if t == "--push" {
 			return "gh-repo-create-push"
+		}
+		if strings.HasPrefix(t, "--push=") {
+			val := strings.ToLower(t[len("--push="):])
+			switch val {
+			case "false", "0", "no", "off":
+				// Falsy value — push is disabled; allow the command.
+				continue
+			default:
+				return "gh-repo-create-push"
+			}
 		}
 	}
 	return ""
@@ -2878,6 +2890,16 @@ func matchSubcommandPOSIX(cmdRaw string, depth int) string {
 				return tag
 			}
 			continue // base is a shell interpreter, not git
+		}
+
+		// D6-wrapper (ML-2C): apply gh rule inside shell wrappers (e.g.
+		// `bash -c 'gh repo create x --push'`). applyGhRule is also called
+		// at the top level in MatchSubcommand; this closes the depth->0 path.
+		if base == "gh" {
+			if tag := applyGhRule(tokens[1:]); tag != "" {
+				return tag
+			}
+			continue
 		}
 
 		// Git guard (same logic as MatchSubcommand).

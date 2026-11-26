@@ -66,6 +66,25 @@ func TestCommit_Master_Blocks(t *testing.T) {
 	}
 }
 
+// TestCommit_ProtectedBranch_IncludesGitSwitchHint (ML-2C M-X1) affirms that
+// the commit refusal on main/master, when HEAD has a commit (born HEAD), includes
+// a "git switch <branch>" exit hint alongside the "trackfw branch new" suggestion.
+//
+// Rule reconciliation: affirms M-X1 (ML-2C) for commit — with a born HEAD on
+// main/master, the user has existing branches available; the git switch hint
+// offers that path explicitly rather than only "use trackfw branch new".
+func TestCommit_ProtectedBranch_IncludesGitSwitchHint(t *testing.T) {
+	for _, branch := range []string{"main", "master"} {
+		t.Run(branch, func(t *testing.T) {
+			deps, out, _ := makeCommitDeps(branch, true, nil)
+			_ = runCommit("fix: something", deps)
+			if !strings.Contains(out.String(), "git switch") {
+				t.Errorf("M-X1: commit refusal on %q must include 'git switch <branch>' hint; got: %q", branch, out.String())
+			}
+		})
+	}
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // runCommit — feat/fix/refactor without a matching roadmap: blocked
 // ────────────────────────────────────────────────────────────────────────────

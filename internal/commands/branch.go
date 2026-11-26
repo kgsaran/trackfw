@@ -224,7 +224,8 @@ func runBranchNew(spec string, dryRun bool, deps branchNewDeps) error {
 				"  4. git add <each path listed by git status --short>\n" +
 				"  5. trackfw commit -m \"chore(scaffold): initial\"\n" +
 				"  6. trackfw push\n" +
-				"Then: trackfw branch new " + branchName
+				"Then: trackfw branch new " + branchName + "\n" +
+				"If the repository already has another branch with commits, use: git switch <branch>"
 			fmt.Fprintln(deps.out, msg)
 			return fmt.Errorf("blocked: HEAD has no commit — complete bootstrap before creating branches")
 		}

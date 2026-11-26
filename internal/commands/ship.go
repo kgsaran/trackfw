@@ -368,17 +368,8 @@ func runShip(opts shipOpts, deps shipDeps) error {
 	// runShip does not call runPush (ship.go:417), so D4 must live here too.
 	// Fail-open: query failure passes through (the subsequent push will surface it).
 	if d4Empty, d4Err := checkRemoteEmpty(deps.execGit); d4Err == nil && d4Empty {
-		return fmt.Errorf(
-			"trackfw ship: the remote has no branches yet.\n"+
-				"Publish the default branch first:\n"+
-				"  1. Create the repository on your forge\n"+
-				"  2. git remote add origin <url>\n"+
-				"  3. git status --short\n"+
-				"  4. git add <each path listed by git status --short>\n"+
-				"  5. trackfw commit -m \"chore(scaffold): initial\"\n"+
-				"  6. trackfw push  (from main or master)\n"+
-				"Then come back and ship your feature branch.",
-		)
+		return errors.New("trackfw ship: the remote has no branches yet.\n" +
+			bootstrapStepsHint("ship your feature branch"))
 	}
 
 	// ─── Step 4: Review staged ───────────────────────────────────────────────
