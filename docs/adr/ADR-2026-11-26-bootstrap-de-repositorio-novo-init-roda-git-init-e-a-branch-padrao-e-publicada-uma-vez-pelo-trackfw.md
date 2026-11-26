@@ -1,12 +1,12 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-11-26
 author: "zeus-tf (decisão do KG em 2026-11-26)"
 ---
 
 # ADR: Bootstrap de repositório novo: init roda git init e a branch padrão é publicada uma vez pelo trackfw
 
-> Date: 2026-11-26 | Status: Proposed
+> Date: 2026-11-26 | Status: Accepted
 
 ## Context
 
@@ -111,6 +111,37 @@ Fonte: `docs/seguranca/2026-11-26-wave0-bootstrap-de-repositorio-novo.md` (§6).
   - `git symbolic-ref HEAD`.
 
   D2 continua sendo o controle real. O guard é defesa em profundidade.
+
+## Ajustes da Wave 2 (2026-11-26, incorporados)
+
+Fontes:
+- `docs/seguranca/2026-11-26-revisao-bootstrap-de-repositorio-novo.md` (Hefesto);
+- `docs/seguranca/2026-11-26-red-team-bootstrap-de-repositorio-novo.md` (Hades).
+
+Correções feitas no ML-2C:
+
+- **D3, URL reescrita.** `get-url --push` devolve a URL já reescrita por `insteadOf`/`pushInsteadOf`, e
+  `ls-remote <url>` aplica a reescrita de novo. Com duas regras, a consulta via um remoto vazio e o push chegava a
+  outro (D3-bypass). Agora, para cada URL de push, roda-se `git ls-remote --get-url <u>`. Se o resultado for
+  diferente de `<u>`, a checagem recusa (fail-closed).
+- **D1, passos impressos.** A lista de `git add` sai de `git status -z --porcelain`, com `--` e aspas simples POSIX em
+  cada caminho (D1-6).
+- **D6.** `gh repo create --push=false|0|no|off` é permitido. `gh` dentro de `bash -c`/`sh -c` passa pela mesma regra.
+
+Residuais aceitos:
+
+- **Falso positivo do `insteadOf` em cascata legítima.** Exemplo: `HTTPS→SSH` mais `git@→ssh://`. O push de
+  bootstrap recusa, e o usuário remove uma das regras enquanto publica. Só acontece uma vez por repositório.
+- **TOCTOU de ref com outro nome.** A consulta e o push não são atômicos. O lease interno protege só
+  `refs/heads/<branch>`, então um escritor concorrente pode criar outra branch no remoto nesse intervalo. A `main`
+  existente continua protegida pelo lease e pelo receive-pack. O git não tem lease atômico sobre o conjunto de refs.
+- **git fora do PreToolUse.** Hooks git (ex.: `pre-push`) e scripts do usuário executam git sem passar pelo guard.
+  É a classe de residual já declarada no §4 do Wave 0, e não uma causa nova.
+- **Alias.** `git -c alias.x=switch x --orphan` e `git config alias.*` escapam da tokenização do guard. A classe está
+  declarada no código como "Residual D5" (`internal/guard/gitbranch.go`). D2 continua sendo o controle real.
+- **PowerShell.** As aspas simples POSIX não escapam `'` do jeito do PowerShell (`''`). Um nome de arquivo com `'`
+  impresso no Windows precisa ser corrigido à mão. Os demais metacaracteres continuam literais entre aspas simples
+  no PowerShell.
 
 ## Consequences
 

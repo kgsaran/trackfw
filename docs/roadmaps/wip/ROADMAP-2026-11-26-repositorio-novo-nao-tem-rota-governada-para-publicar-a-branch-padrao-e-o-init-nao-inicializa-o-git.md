@@ -156,7 +156,7 @@ composto inteiro; o agente que seguir a instrução é bloqueado. `git add <cami
 **Wave gates:**
 ```bash
 go build ./...
-go test ./internal/commands/ ./internal/validator/ ./internal/generators/ ./internal/guard/ -count=1
+go test ./internal/commands/ ./internal/validator/ ./internal/generators/ ./internal/guard/ ./internal/integrations/ ./internal/winskips/ -count=1
 ```
 
 ## Wave 2 — Review
@@ -218,6 +218,26 @@ Residuais declarados pelo arquiteto no ML-3A, na ADR (não são deste ML):
 - [x] M-X1: a recusa do `commit` na `main`/`master`, quando há commit, e a recusa do `branch new` com HEAD unborn
       incluem uma saída a mais: `git switch <existing-branch>`, ou o passo de bootstrap que faltar.
       Testes afirmam o texto.
+
+### ML-2D — Corretivo do `make quality`: goldens do arquiteto e skips de Windows (apolo-tf)
+**Status:** ⬜ Pending
+**Motivo:** o `make quality` deu rc=2, com duas falhas.
+- `TestRenderWithoutIdentityMatchesFrozenGoldens` e `_CRLFSource` falham. O ML-1E mudou
+  `internal/integrations/assets/agents/architect.md` e não atualizou os goldens; o gate da Wave 1 não incluía
+  `internal/integrations`.
+- `TestGate_RealTree` (winskips) falha. O ML-2C pulou 4 testes no Windows sem registrar.
+
+**Files affected:** `internal/integrations/testdata/architect.subagent.golden.md`;
+`internal/integrations/testdata/architect.agent-directory.golden.md`; `internal/commands/push_bootstrap_test.go`;
+`internal/commands/init_test.go`; `.github/windows-skips.json`
+**Acceptance criteria:**
+- [ ] os dois goldens refletem o `architect.md` atual (só as linhas do bootstrap mudam);
+      `go test ./internal/integrations/ -count=1` rc=0
+- [ ] `TestD3Bypass_*` deixam de pular no Windows. A URL `file://` é montada de forma portável
+      (`file:///` + caminho com `/`, sem a barra inicial duplicada).
+- [ ] `TestD1_6_RealGit_ShellInjectionSafe` deixa de pular por `runtime.GOOS`. O pulo por ausência de `sh` continua.
+      Se ainda sobrar pulo de Windows, ele é registrado em `.github/windows-skips.json` com evidência.
+- [ ] `go test ./internal/winskips/ ./internal/commands/ -count=1` rc=0
 
 ## Wave 3 — Gate final
 
