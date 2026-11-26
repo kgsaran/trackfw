@@ -1200,7 +1200,12 @@ func checkMLScope(roadmapPath string, currentWaveLabel string) barrierCheck {
 	if !ok {
 		check.Status = "blocked"
 		check.Failures = append(check.Failures,
-			"origin/main not available — cannot compute scope diff (configure a remote or run with a fetched origin/main)")
+			"origin/main not available — cannot compute scope diff (configure a remote or run with a fetched origin/main). "+
+				"If this is a new repository without commits yet: "+
+				"1) git status --short  "+
+				"2) git add <each path listed by git status --short>  "+
+				"3) trackfw commit -m \"chore(scaffold): initial\"  "+
+				"4) trackfw push")
 		return check
 	}
 

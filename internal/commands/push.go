@@ -139,12 +139,65 @@ func runPush(opts pushOpts, deps pushDeps) error {
 	}
 	branch = strings.TrimSpace(branch)
 
-	// main/master is blocked unconditionally.
+	// ─── D3 (ADR-2026-11-26): bootstrap push for default branch ─────────────────
+	// Self-contained early return — never falls through to isShipBranch, governance,
+	// or squash-merge detection. Accepts main/master only when the remote has no
+	// branches yet and the local branch has exactly one commit.
 	if branch == "main" || branch == "master" {
-		return fmt.Errorf(
-			"trackfw push cannot run on %q — use a feature branch:\n  trackfw branch new feat/<slug>",
-			branch,
-		)
+		// D3: refuse the user --force-with-lease flag before any query.
+		if opts.forceWithLease {
+			return fmt.Errorf(
+				"trackfw push cannot run on %q: --force-with-lease is not valid for the bootstrap push",
+				branch,
+			)
+		}
+		// D3: verify remote state (fail-closed — any error aborts).
+		empty, remErr := checkRemoteEmpty(deps.execGit)
+		if remErr != nil {
+			return fmt.Errorf(
+				"trackfw push cannot run on %q: cannot verify remote state (%v).\n"+
+					"Complete the bootstrap first:\n"+
+					"  1. Create the repository on your forge\n"+
+					"  2. git remote add origin <url>\n"+
+					"  3. git status --short\n"+
+					"  4. git add <each path listed by git status --short>\n"+
+					"  5. trackfw commit -m \"chore(scaffold): initial\"\n"+
+					"  6. trackfw push  (from main or master)",
+				branch, remErr,
+			)
+		}
+		if !empty {
+			return fmt.Errorf(
+				"trackfw push cannot run on %q: the remote already has branches.\n"+
+					"Use a feature branch: trackfw branch new feat/<slug>",
+				branch,
+			)
+		}
+		// D3: single-commit gate — only the bootstrap commit is allowed.
+		countOut, countErr := deps.execGit("rev-list", "--count", "refs/heads/"+branch)
+		if countErr != nil {
+			return fmt.Errorf(
+				"trackfw push cannot run on %q: cannot count commits (%v)",
+				branch, countErr,
+			)
+		}
+		if strings.TrimSpace(countOut) != "1" {
+			return fmt.Errorf(
+				"trackfw push cannot run on %q: bootstrap push requires exactly 1 commit, found %s.\n"+
+					"Use a feature branch for subsequent commits: trackfw branch new feat/<slug>",
+				branch, strings.TrimSpace(countOut),
+			)
+		}
+		// D3: absence-lease push — publishes default branch exactly once.
+		// The lease is internal; the user --force-with-lease flag is refused above.
+		absenceLease := "--force-with-lease=refs/heads/" + branch + ":"
+		if pushOut, pushErr := git("push", "-u", "origin", branch, absenceLease); pushErr != nil {
+			return pushFailure(pushOut, pushErr)
+		}
+		if !opts.dryRun {
+			fmt.Fprintf(deps.out, "Bootstrap push: %s → origin/%s\n", branch, branch)
+		}
+		return nil
 	}
 
 	if !isShipBranch(branch) {
@@ -249,6 +302,24 @@ func runPush(opts pushOpts, deps pushDeps) error {
 		}
 	}
 
+	// ─── Step 3.5: D4 (ADR-2026-11-26) — block feature push to empty remote ────
+	// Fail-open: if the remote cannot be queried, the push proceeds as today (the
+	// network failure will surface at the actual push). Blocks only when we can
+	// confirm the remote has no branches at all — "empty remote", not "no main/master".
+	if d4Empty, d4Err := checkRemoteEmpty(deps.execGit); d4Err == nil && d4Empty {
+		return fmt.Errorf(
+			"trackfw push: the remote has no branches yet.\n"+
+				"Publish the default branch first:\n"+
+				"  1. Create the repository on your forge\n"+
+				"  2. git remote add origin <url>\n"+
+				"  3. git status --short\n"+
+				"  4. git add <each path listed by git status --short>\n"+
+				"  5. trackfw commit -m \"chore(scaffold): initial\"\n"+
+				"  6. trackfw push  (from main or master)\n"+
+				"Then come back and push your feature branch.",
+		)
+	}
+
 	// ─── Step 4: Push ────────────────────────────────────────────────────────
 	pushArgs := buildPushArgs(branch, deps.execGit)
 	if opts.forceWithLease {
@@ -265,4 +336,84 @@ func runPush(opts pushOpts, deps pushDeps) error {
 	}
 
 	return nil
+}
+
+// ─── D3/D4 helpers (ADR-2026-11-26) ─────────────────────────────────────────
+
+// checkRemoteEmpty queries every push URL configured for origin and reports
+// whether all of them have no branches.
+//
+// Returns (true, nil) when every URL returns no refs/heads/* lines from
+// git ls-remote --heads. Returns (false, nil) when any URL has branches.
+// Returns (false, err) when the remote state cannot be determined — callers
+// must treat this as "uncertain": D3 refuses (fail-closed), D4 passes (fail-open).
+func checkRemoteEmpty(execGit func(args ...string) (string, error)) (bool, error) {
+	urlsOut, err := execGit("remote", "get-url", "--push", "--all", "origin")
+	if err != nil {
+		return false, fmt.Errorf("remote get-url: %w", err)
+	}
+	var urls []string
+	for _, u := range strings.Split(urlsOut, "\n") {
+		u = strings.TrimSpace(u)
+		if u != "" {
+			urls = append(urls, u)
+		}
+	}
+	if len(urls) == 0 {
+		return false, fmt.Errorf("no push URLs configured for origin")
+	}
+	for _, u := range urls {
+		lsOut, lsErr := execGit("ls-remote", "--heads", u)
+		if lsErr != nil {
+			return false, fmt.Errorf("ls-remote %s: %w", u, lsErr)
+		}
+		hasBranches, unrecognized := parseLSRemoteHeads(lsOut)
+		if unrecognized {
+			return false, fmt.Errorf("ls-remote returned unrecognized output for %s", u)
+		}
+		if hasBranches {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// parseLSRemoteHeads parses the stdout of `git ls-remote --heads <url>`.
+// Each non-empty line must have the form:  <hex>\t<ref>
+// Returns hasBranches=true when at least one ref starts with refs/heads/.
+// Returns unrecognized=true when at least one non-empty line does not match
+// the expected format; callers should treat unrecognized output as an error.
+func parseLSRemoteHeads(out string) (hasBranches bool, unrecognized bool) {
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimRight(line, "\r")
+		if line == "" {
+			continue
+		}
+		tab := strings.IndexByte(line, '\t')
+		if tab < 0 {
+			unrecognized = true
+			continue
+		}
+		hash, ref := line[:tab], line[tab+1:]
+		if !isHexString(hash) || len(hash) == 0 {
+			unrecognized = true
+			continue
+		}
+		if strings.HasPrefix(ref, "refs/heads/") {
+			hasBranches = true
+		}
+		// Other refs (tags, HEAD, etc.) from --heads are unexpected but
+		// not treated as unrecognized — they just don't indicate a branch.
+	}
+	return
+}
+
+// isHexString reports whether every rune in s is a hex digit (0-9, a-f, A-F).
+func isHexString(s string) bool {
+	for _, c := range s {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
 }

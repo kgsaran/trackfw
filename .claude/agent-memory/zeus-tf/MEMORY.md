@@ -53,3 +53,4 @@
 - [Sonda no binário, não leitura de fonte](feedback_sonda_no_binario_nao_leitura_de_fonte.md) — Codex: fonte dizia cmd.exe, binário roda powershell -NoProfile; 'guard inerte' era falso
 - [Ler o rc antes de commitar](feedback_ler_rc_antes_de_commitar.md) — exit da notificação é do wrapper `; echo rc=$?`; commitei rc=0 com rc=2 (ML-5I)
 - [Site novo: protótipo primeiro, inglês primeiro](project_goatcounter_apos_onboarding.md) — GoatCounter pulado (11-23); não reabrir sem o KG pedir
+- [Fechar issue citada com Relates](feedback_fechar_issue_relates_no_fechamento.md) — "Relates to" não fecha; fechamento da REQ fecha a issue (esqueci #704/#705)

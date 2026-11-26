@@ -2064,6 +2064,61 @@ standalone command for the common case where `trackfw commit` was already run an
 step remains. `ship` always also commits (requires `-m`); `push` never commits. `commit` never
 pushes; `push` never commits.
 
+### `push` — bootstrap push (D3, ADR-2026-11-26)
+
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
+
+When the current branch is `main` or `master`, `trackfw push` runs a **self-contained early return**
+(D3) that publishes the default branch exactly once — before any governance or PR checks. D3 fires
+only when **all** of the following hold:
+
+1. All push URLs for `origin` are empty (checked via `git remote get-url --push --all origin`
+   followed by `git ls-remote --heads <url>` for each URL).
+2. The local branch has **exactly one commit** (the commit that D2 sancionou via
+   `trackfw commit`).
+3. `--force-with-lease` was **not** passed by the user (it is never valid here).
+
+D3 is **fail-closed**: if the remote state cannot be verified (unreachable URL, no push URLs
+configured, unrecognized `ls-remote` output) the push is refused with an explicit error.
+
+The push itself uses a `--force-with-lease=refs/heads/<branch>:` absence lease (the colon form
+with no expected SHA), which causes the server to reject the push if any other client created the
+branch in the window between the check and the push (TOCTOU guard, measured M-TOCTOU
+ADR-2026-11-26 §2.4). The `-u` flag is included so the branch registers its upstream.
+
+**D3 refuses `--force-with-lease` on main/master** with a specific message — the flag is not
+valid for a bootstrap push.
+
+**D3 refuses a second push on main/master** (remote already has the branch) with a message
+directing the user to a feature branch.
+
+Bootstrap sequence:
+```
+1. Create the repository on your forge (e.g. gh repo create --source . without --push)
+2. git remote add origin <url>
+3. git status --short
+4. git add <each path listed by git status --short>
+5. trackfw commit -m "chore(scaffold): initial"
+6. trackfw push   (from main or master — triggers D3)
+```
+
+After D3 returns, the default branch is on the remote. All subsequent pushes on `main`/`master`
+are refused; use `trackfw branch new feat/<slug>` to start normal feature work.
+
+### `push` — feature branch blocked on empty remote (D4, ADR-2026-11-26)
+
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
+
+When the current branch is a **feature branch** (not `main`/`master`), `trackfw push` checks
+whether the remote has **any** branches (D4). If the remote is empty, the push is blocked with a
+message describing the bootstrap sequence above.
+
+D4 is **fail-open**: if the remote state cannot be verified (network error, no push URLs) the
+feature push proceeds. This is the inverse of D3's fail-closed policy — a governance gap is
+preferable to silently blocking all feature work in isolated environments.
+
+D4 also applies to `trackfw ship` (which does not call `runPush` internally).
+
 ### `push --force-with-lease` — governed force-push (ML-4B)
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->

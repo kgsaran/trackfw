@@ -67,49 +67,91 @@ test -s docs/seguranca/2026-11-26-wave0-bootstrap-de-repositorio-novo.md
 > `docs/cli-parity.md` e os templates a partir do comportamento final.
 
 ### ML-1A — `init` com `git init`; `branch new` e `commit` no bootstrap (apolo-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done
 **Files affected:** `internal/commands/init.go`; `internal/commands/init_test.go`; `internal/commands/branch.go`;
 `internal/commands/branch_test.go`; `internal/commands/commit.go`; `internal/commands/commit_test.go`;
 `internal/commands/commit_unborn_branch_test.go`
 **Actions:** D1 (quatro estados) e D2 (predicados separados de `commit` e `branch new`) do ADR-2026-11-26, seção
 "Ajustes do Wave 0". Relatório: `docs/seguranca/2026-11-26-wave0-bootstrap-de-repositorio-novo.md` §6.
 **Acceptance criteria:**
-- [ ] `go test ./internal/commands/ -run 'Init|Branch|Commit' -count=1` rc=0; braço e contra-braço por decisão; frase de
+- [x] `go test ./internal/commands/ -run 'Init|Branch|Commit' -count=1` rc=0; braço e contra-braço por decisão; frase de
       reconciliação por teste novo
-- [ ] nenhum arquivo fora de "Files affected" alterado
+- [x] nenhum arquivo fora de "Files affected" alterado
 
 ### ML-1B — `push` e `ship`: publicação única da branch padrão e feature barrada em remoto vazio (apolo-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done
 **Files affected:** `internal/commands/push.go`; `internal/commands/push_test.go`; `internal/commands/ship.go`;
-`internal/commands/ship_test.go`
+`internal/commands/ship_test.go`; `internal/commands/push_bootstrap_test.go` (novo; acrescentado na auditoria)
 **Actions:** D3 (remoto vazio em todas as URLs de push, um commit, lease de ausência, recusa da flag
 `--force-with-lease`; substitui o bloqueio em `push.go:143`) e D4 (helper usado por `runPush` e por `runShip`,
 `ship.go:417`) do ADR-2026-11-26, seção "Ajustes do Wave 0". Testes com remotos bare em `t.TempDir()`.
 **Acceptance criteria:**
-- [ ] `go test ./internal/commands/ -run 'Push|Ship' -count=1` rc=0; recusam os vetores de D3 (`pushurl` ≠ `url`, várias
+- [x] `go test ./internal/commands/ -run 'Push|Ship' -count=1` rc=0; recusam os vetores de D3 (`pushurl` ≠ `url`, várias
       `pushurl`, branch criada entre consulta e push, remoto ausente/inacessível, `--force-with-lease`, `main` com 2
       commits); D4 com remoto vazio recusa em `push` e `ship`; com remoto só `develop`, passa
-- [ ] nenhum arquivo fora de "Files affected" alterado
+- [x] nenhum arquivo fora de "Files affected" alterado
 
 ### ML-1C — Mensagens, templates e contrato (apolo-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done
 **Files affected:** `internal/commands/barrier.go`; `internal/commands/barrier_ml_scope_test.go`;
 `internal/validator/validator_credential_guard_integrity.go`; `internal/generators/agentfiles.go`;
 `internal/generators/agentfiles_test.go`; `internal/generators/nextsteps.go`;
 `internal/integrations/assets/agents/architect.md`; `docs/cli-parity.md`
 **Actions:** D5 do ADR-2026-11-26, sobre a lista de superfícies do censo do Wave 0 (`docs/seguranca/2026-11-26-wave0-bootstrap-de-repositorio-novo.md` §1).
 **Acceptance criteria:**
-- [ ] `go test ./internal/commands/ ./internal/validator/ ./internal/generators/ -count=1` rc=0
-- [ ] nenhum arquivo fora de "Files affected" alterado
+- [x] `go test ./internal/commands/ ./internal/validator/ ./internal/generators/ -count=1` rc=0
+- [x] nenhum arquivo fora de "Files affected" alterado
 
 ### ML-1D — Guard git-branch: `gh repo create --push`, `--orphan`, `symbolic-ref HEAD` (apolo-tf)
-**Status:** ⬜ Pending
+**Status:** ✅ Done
 **Files affected:** `internal/guard/gitbranch.go`; `internal/guard/gitbranch_test.go`
 **Actions:** D6 do ADR-2026-11-26. Braço (rc=0 antes, rc=2 depois) por comando; contra-braço: `gh repo create x
 --private` sem `--push`, `git switch feat/x` e `git symbolic-ref --short HEAD` (leitura) continuam com rc=0.
 **Acceptance criteria:**
-- [ ] `go test ./internal/guard/ -count=1` rc=0; frase de reconciliação por teste novo
-- [ ] nenhum arquivo fora de "Files affected" alterado
+- [x] `go test ./internal/guard/ -count=1` rc=0; frase de reconciliação por teste novo
+- [x] nenhum arquivo fora de "Files affected" alterado
+
+### ML-1E — Corretivo da auditoria: instrução de bootstrap compatível com o guard (apolo-tf)
+**Status:** ✅ Done — auditado: nenhum emissor com `git add .`, `-A` ou `&&`; `init` imprime os passos.
+**Motivo (auditoria do arquiteto, binário da branch):** as instruções de bootstrap mandam
+`git add . && trackfw commit ... && trackfw push`. O guard git-branch gerado nega `git add .` (rc=2) e nega o comando
+composto inteiro; o agente que seguir a instrução é bloqueado. `git add <caminhos explícitos>` passa (rc=0). E o
+`init` que acabou de rodar `git init` não imprime os próximos passos do bootstrap.
+**Files affected:** `internal/commands/branch.go`; `internal/commands/push.go`; `internal/commands/ship.go`;
+`internal/commands/barrier.go`; `internal/commands/init.go`; `internal/commands/init_test.go`;
+`internal/validator/validator_credential_guard_integrity.go`; `internal/generators/agentfiles.go`;
+`internal/generators/agentfiles_test.go`; `internal/generators/nextsteps.go`;
+`internal/integrations/assets/agents/architect.md`; `docs/cli-parity.md`
+**Acceptance criteria:**
+- [x] nenhum emissor de instrução de bootstrap contém `git add .`, `git add -A` ou cadeia com `&&`; a instrução é
+      `git status --short`, `git add <cada caminho listado>`, `trackfw commit -m "..."` e `trackfw push`, em comandos
+      separados
+- [x] um teste fixa a ausência de `git add .` no bloco "Agent Protocol" gerado (braço: reprova no texto atual)
+- [x] `init` que roda `git init` imprime os passos do bootstrap; teste com braço e contra-braço (repo existente não
+      imprime)
+
+### ML-1F — Corretivo da auditoria do ML-1E: lista de arquivos do bootstrap e testes dos vetores (apolo-tf)
+**Status:** ✅ Done — auditado pelo replay: o `git add` impresso pelo `init` deixa 0 não rastreados, e a `main` publicada contém `.claude/settings.json`. Os testes de D3 (`pushurl`, várias `pushurl`, lease) e de D6 existem e passam.
+**Motivo (auditoria do arquiteto, binário da branch):**
+- A instrução fixa `git add trackfw.yaml .gitignore .gitattributes docs scripts vault` deixa de fora o que o `init`
+  gera para as ferramentas de IA (`.claude/`, `CLAUDE.md`, `AGENTS.md`...). Medido: depois dela, `git status` mostra
+  `?? .claude/`. Como D2 só deixa um commit na `main`, os hooks e as instruções do agente não entram na `main`
+  publicada.
+- D3 e D6 estão certos no binário, mas sem teste que os fixe: `pushurl` ≠ `url` e várias `pushurl` recusam (rc=1,
+  medido), assim como `git checkout --orphan`, `git worktree add --orphan` e `gh repo create ... --push=true` (rc=2,
+  medido). Não há teste para nenhum deles, nem para o lease de ausência.
+**Files affected:** `internal/generators/nextsteps.go`; `internal/commands/init.go`; `internal/commands/init_test.go`;
+`internal/commands/branch.go`; `internal/commands/push.go`; `internal/commands/ship.go`; `internal/commands/barrier.go`;
+`internal/validator/validator_credential_guard_integrity.go`; `internal/generators/agentfiles.go`;
+`internal/generators/agentfiles_test.go`; `internal/integrations/assets/agents/architect.md`; `docs/cli-parity.md`;
+`internal/commands/push_bootstrap_test.go`; `internal/guard/gitbranch_test.go`
+**Acceptance criteria:**
+- [x] nenhum emissor traz lista fixa de caminhos; as mensagens genéricas dizem "adicione explicitamente cada caminho
+      listado por `git status --short`"; o `init` que rodou `git init` imprime a lista real dos caminhos que gerou
+      (teste: com `--ai-tools claude`, a lista contém `.claude` e `CLAUDE.md`)
+- [x] testes com git real para D3: `pushurl` ≠ `url`, várias `pushurl` (a primeira vazia) e o lease de ausência (a
+      branch criada no destino depois da consulta faz o push falhar)
+- [x] testes de D6 para `git checkout --orphan`, `git worktree add --orphan` e `gh repo create ... --push=true`
 
 **Wave gates:**
 ```bash

@@ -209,6 +209,27 @@ func runBranchNew(spec string, dryRun bool, deps branchNewDeps) error {
 
 	branchName := branchType + "/" + slug
 
+	// D2 (ADR-2026-11-26): refuse if HEAD has no commit (unborn HEAD). This catches
+	// both the case with and without --from HEAD. The user must complete the bootstrap
+	// first: commit on the default branch, push, then come back to branch new.
+	// Uses only condition (1): rev-parse --verify -q HEAD rc==1. No rev-list needed here
+	// (branch new only needs to know the branch is unborn; commit uses the full conjunct).
+	if deps.gitExec != nil {
+		if _, revErr := deps.gitExec("rev-parse", "--verify", "-q", "HEAD"); revErr != nil {
+			msg := "trackfw branch new: cannot create a branch from an unborn HEAD.\n" +
+				"Complete the bootstrap first:\n" +
+				"  1. Create the repository on your forge\n" +
+				"  2. git remote add origin <url>\n" +
+				"  3. git status --short\n" +
+				"  4. git add <each path listed by git status --short>\n" +
+				"  5. trackfw commit -m \"chore(scaffold): initial\"\n" +
+				"  6. trackfw push\n" +
+				"Then: trackfw branch new " + branchName
+			fmt.Fprintln(deps.out, msg)
+			return fmt.Errorf("blocked: HEAD has no commit — complete bootstrap before creating branches")
+		}
+	}
+
 	// chore/docs are housekeeping types — already treated as roadmap-exempt by `trackfw ship`
 	// and `trackfw commit` — so the branch_has_wip_roadmap gate below does not apply to them.
 	var cfg config.ProjectConfig

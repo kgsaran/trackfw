@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -1691,5 +1692,55 @@ func TestAgentFilePath_MatchesInjectRulesForTool(t *testing.T) {
 		if _, ok := AgentFilePath(bogus); ok {
 			t.Errorf("AgentFilePath(%q): ok=true, want false (tool has no governance rules file)", bogus)
 		}
+	}
+}
+
+// TestAgentProtocol_NoGitAddDotOrAddAll affirms that the generated "Agent Protocol"
+// block does not contain whole-tree staging instructions ('git add .' or 'git add -A')
+// and does contain 'trackfw push'.
+//
+// Rule reconciliation: affirms D5 (ADR-2026-11-26) — the guard denies 'git add .'
+// and 'git add -A'; any agent that follows an instruction containing either form
+// would be blocked. This test fails on the pre-ML-1E text, which contained
+// 'git add . && trackfw commit ... && trackfw push' in the bootstrap block.
+//
+// Arm: the generated rules block must NOT contain 'git add .' (whole-tree) and must
+// contain 'trackfw push'.
+// Counter-arm: the test is applied to the flat-namespacing path (no --agent flag),
+// which is the common case; by_agent namespacing generates the same bootstrap block.
+func TestAgentProtocol_NoGitAddDotOrAddAll(t *testing.T) {
+	block := trackfwRulesBlock("", "flat", nil)
+
+	// whole-tree staging: 'git add .' where dot is followed by whitespace or end-of-string
+	// This matches 'git add . &&', 'git add .\n', 'git add . ' but not 'git add .gitignore'.
+	wholeTreeRe := regexp.MustCompile(`\bgit add \.(\s|\z)`)
+	if wholeTreeRe.MatchString(block) {
+		t.Errorf("generated Agent Protocol contains whole-tree 'git add .': found in %q",
+			wholeTreeRe.FindString(block))
+	}
+
+	if strings.Contains(block, "git add -A") {
+		t.Errorf("generated Agent Protocol contains 'git add -A'")
+	}
+
+	if !strings.Contains(block, "trackfw push") {
+		t.Errorf("generated Agent Protocol must contain 'trackfw push'")
+	}
+}
+
+// TestAgentProtocol_NoFixedPathList affirms that the generated "Agent Protocol"
+// block does not contain the old fixed path list ".gitattributes docs scripts vault".
+// Using a fixed list leaves out AI-tool directories (.claude/, AGENTS.md, etc.) that
+// init writes when --ai-tools are selected (ML-1F, ADR-2026-11-26).
+//
+// Rule reconciliation: affirms D5+ML-1F — bootstrap instructions must say
+// "git add <each path>" rather than enumerating a fixed set.
+// Arm: the test fails on the pre-ML-1F text which contained the fixed list.
+// Counter-arm: TestAgentProtocol_NoGitAddDotOrAddAll confirms 'trackfw push' is still present.
+func TestAgentProtocol_NoFixedPathList(t *testing.T) {
+	block := trackfwRulesBlock("", "flat", nil)
+
+	if strings.Contains(block, ".gitattributes docs scripts vault") {
+		t.Errorf("generated Agent Protocol must not contain the fixed path list '.gitattributes docs scripts vault'; use the generic 'each path listed by git status --short' form instead")
 	}
 }

@@ -60,6 +60,19 @@ const (
 
 	reasonRmForce = "trackfw: raw git rm -f/--force blocked — irreversibly removes files from the working tree and index, same class as `git clean -f`/`git reset --hard` already blocked. Nothing before this command was executed (a compound command is blocked as a whole)."
 
+	// D6 (ADR-2026-11-26): bootstrap-related guard additions.
+
+	// reasonSymbolicRefWrite is emitted when `git symbolic-ref` is invoked in write
+	// or delete mode (two positionals, or --delete flag). Read-only uses
+	// (`git symbolic-ref HEAD`, `git symbolic-ref --short HEAD`) remain allowed.
+	reasonSymbolicRefWrite = "trackfw: raw git symbolic-ref write blocked — rewrites a symbolic ref (such as HEAD) which can redirect commits to an unreviewed branch outside the governed bootstrap flow. `trackfw init` calls this internally when needed. Read-only uses (e.g. git symbolic-ref --short HEAD) are still allowed. Nothing before this command was executed (a compound command is blocked as a whole)."
+
+	// reasonGhRepoCreatePush is emitted when `gh repo create --push` is invoked.
+	// The --push flag publishes the default branch before trackfw governance is
+	// in place, bypassing D3 (ADR-2026-11-26). `gh repo create` without --push
+	// remains allowed; use `trackfw push` to publish the default branch afterwards.
+	reasonGhRepoCreatePush = "trackfw: gh repo create --push blocked — the --push flag publishes the default branch before trackfw governance is in place, bypassing the governed bootstrap push (D3, ADR-2026-11-26). Use `gh repo create` without --push, then `trackfw push` to publish the default branch. Nothing before this command was executed (a compound command is blocked as a whole)."
+
 	// reasonWorktreeAddImplicit is emitted when `git worktree add <path>` is invoked
 	// without any branch-selection flag (-b/-B/--detach/-d/--orphan) and without a
 	// commit-ish as a second positional argument. In that form git creates an implicit
@@ -201,6 +214,11 @@ func RunGitBranch(stdin io.Reader, idleTimeout time.Duration, command string, ge
 		reason = reasonWorktreeAddImplicit
 	case "wrapper-not-analyzed":
 		reason = reasonWrapperNotAnalyzed
+	// D6 (ADR-2026-11-26): bootstrap-related guard additions.
+	case "symbolic-ref-write":
+		reason = reasonSymbolicRefWrite
+	case "gh-repo-create-push":
+		reason = reasonGhRepoCreatePush
 	default:
 		return 0
 	}
@@ -394,12 +412,19 @@ func MatchSubcommand(cmdRaw string) string {
 			continue
 		}
 
-		// First token must be "git" (by basename, so /usr/bin/git also works).
+		// First token must be "git" or "gh" (by basename).
 		// Case-insensitive and strip .exe so git.exe / GIT.EXE (Windows idiom)
 		// are treated identically to "git" (C2 fix, ADR-2026-10-04).
 		base := filepath.Base(tokens[0])
 		base = strings.ToLower(base)
 		base = strings.TrimSuffix(base, ".exe")
+		// D6 (ADR-2026-11-26): also inspect `gh` commands.
+		if base == "gh" {
+			if tag := applyGhRule(tokens[1:]); tag != "" {
+				return tag
+			}
+			continue
+		}
 		if base != "git" {
 			continue
 		}
@@ -813,6 +838,47 @@ func findSubcommand(tokens []string) (string, []string) {
 	return "", nil
 }
 
+// applyGhRule inspects tokens after "gh" has been stripped and returns a
+// block tag if the command should be denied, or "" to allow.
+// D6 (ADR-2026-11-26): gh repo create --push publishes the default branch
+// before trackfw governance is in place and is blocked.
+//
+// tokens is everything after the "gh" binary token (env/prefix wrappers have
+// already been stripped by stripEnvCommandPrefix in the MatchSubcommand loop).
+func applyGhRule(tokens []string) string {
+	// Find the first non-flag token (the gh noun, e.g. "repo").
+	var noun string
+	var nounIdx int
+	for i, t := range tokens {
+		if !strings.HasPrefix(t, "-") {
+			noun = t
+			nounIdx = i
+			break
+		}
+	}
+	if noun != "repo" {
+		return ""
+	}
+	// Find the verb after "repo" (skipping flags).
+	verbIdx := -1
+	for i, t := range tokens[nounIdx+1:] {
+		if !strings.HasPrefix(t, "-") {
+			verbIdx = nounIdx + 1 + i
+			break
+		}
+	}
+	if verbIdx < 0 || tokens[verbIdx] != "create" {
+		return ""
+	}
+	// Look for --push flag in the remaining tokens.
+	for _, t := range tokens[verbIdx+1:] {
+		if t == "--push" || strings.HasPrefix(t, "--push=") {
+			return "gh-repo-create-push"
+		}
+	}
+	return ""
+}
+
 // applyRule checks the subcommand against the blocking rules. Returns the
 // subcommand tag to report (e.g. "push") or "" to allow. Mirrors the bash
 // case statement in match_subcommand() (lines 476–697).
@@ -847,13 +913,15 @@ func applyRule(sub string, rest []string) string {
 		return ""
 
 	case "switch":
-		// Blocked: switch -c/-C/--create/--force-create (new branch).
+		// Blocked: switch -c/-C/--create/--force-create/--orphan (new branch).
+		// D6 (ADR-2026-11-26): --orphan creates an orphan branch, same governance class.
 		for _, t := range rest {
 			switch t {
-			case "-c", "-C", "--create", "--force-create":
+			case "-c", "-C", "--create", "--force-create", "--orphan":
 				return "switch-c"
 			}
-			if strings.HasPrefix(t, "--create=") || strings.HasPrefix(t, "--force-create=") {
+			if strings.HasPrefix(t, "--create=") || strings.HasPrefix(t, "--force-create=") ||
+				strings.HasPrefix(t, "--orphan=") {
 				return "switch-c"
 			}
 		}
@@ -970,6 +1038,12 @@ func applyRule(sub string, rest []string) string {
 				if t == "-b" || t == "-B" {
 					return "worktree-add-b"
 				}
+				// D6 (ADR-2026-11-26): --orphan creates a new orphan branch; same class as -b.
+				// Covers both the 1-positional form (implicit branch from path name, git ≥ 2.54.0)
+				// and the 2-positional form (explicit branch name + path).
+				if t == "--orphan" {
+					return "worktree-add-b"
+				}
 			}
 			// Block implicit branch creation: `git worktree add <path>` with no
 			// branch-selection flag and no commit-ish as a second positional.
@@ -1021,6 +1095,26 @@ func applyRule(sub string, rest []string) string {
 	case "update-ref":
 		// Always blocked (no exceptions). See .sh lines 674–682.
 		return "update-ref"
+
+	case "symbolic-ref":
+		// D6 (ADR-2026-11-26): block write and delete forms.
+		// Write form:  git symbolic-ref <name> <target>   (2+ positionals)
+		// Delete form: git symbolic-ref --delete <name>
+		// Read forms:  git symbolic-ref [--short|--verify|...] <name>  (1 positional, no --delete)
+		// — read forms are still allowed; they don't change repo state.
+		hasDelete := false
+		positionals := 0
+		for _, t := range rest {
+			if t == "--delete" || t == "-d" {
+				hasDelete = true
+			} else if !strings.HasPrefix(t, "-") {
+				positionals++
+			}
+		}
+		if hasDelete || positionals >= 2 {
+			return "symbolic-ref-write"
+		}
+		return ""
 
 	case "rm":
 		// Blocked: -f/--force.

@@ -16,10 +16,22 @@ import (
 
 // mockPushGit captures every call to execGit for push tests.
 type mockPushGit struct {
-	branch     string // returned for symbolic-ref --short HEAD
-	remoteURL  string // returned for remote get-url origin
-	hasUpstream bool  // true → @{u} resolves (push without -u); false → push -u
-	calls      [][]string
+	branch      string // returned for symbolic-ref --short HEAD
+	remoteURL   string // returned for remote get-url origin
+	hasUpstream bool   // true → @{u} resolves (push without -u); false → push -u
+	calls       [][]string
+
+	// D3/D4 (ADR-2026-11-26) fields.
+	// pushURLs is returned for "remote get-url --push --all origin".
+	// If empty, the mock returns "" (no URLs → checkRemoteEmpty returns error → fail-closed for D3,
+	// fail-open for D4).
+	pushURLs string
+	// lsRemoteOut is returned for "ls-remote --heads <url>".
+	// If empty, mock returns "" (no branches).
+	lsRemoteOut string
+	// revListCount is returned for "rev-list --count refs/heads/<branch>".
+	// If empty, mock returns "" which triggers an error in D3 commit-count gate.
+	revListCount string
 }
 
 func (m *mockPushGit) exec(args ...string) (string, error) {
@@ -37,6 +49,12 @@ func (m *mockPushGit) exec(args ...string) (string, error) {
 		return m.branch, nil
 	case joined == "remote get-url origin":
 		return m.remoteURL, nil
+	case strings.HasPrefix(joined, "remote get-url --push --all"):
+		return m.pushURLs, nil
+	case strings.HasPrefix(joined, "ls-remote --heads"):
+		return m.lsRemoteOut, nil
+	case strings.HasPrefix(joined, "rev-list --count refs/heads/"):
+		return m.revListCount, nil
 	case strings.HasPrefix(joined, "rev-parse --abbrev-ref --symbolic-full-name @{u}"):
 		if m.hasUpstream {
 			return "origin/" + m.branch, nil
@@ -348,5 +366,237 @@ func TestPush_GovernanceDegraded_PrintsDegradedNotOK(t *testing.T) {
 	}
 	if strings.Contains(stdout, "Governance: OK") {
 		t.Errorf("degraded governance must NOT print 'Governance: OK', got: %q", stdout)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// D3 (ADR-2026-11-26): bootstrap push for default branch
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestPush_D3_Main_RemoteEmpty_OneCommit_Pushes affirms that when main has an
+// empty remote and exactly one commit, D3 pushes with an absence lease and returns nil.
+// Rule reconciliation: affirms the D3 happy path — the absence lease is the
+// mechanism that lets a single bootstrap push through while blocking a second.
+func TestPush_D3_Main_RemoteEmpty_OneCommit_Pushes(t *testing.T) {
+	out := &bytes.Buffer{}
+	m := &mockPushGit{
+		branch:       "main",
+		pushURLs:     "https://github.com/user/repo.git",
+		lsRemoteOut:  "", // no branches
+		revListCount: "1",
+	}
+	deps := pushDeps{execGit: m.exec, out: out}
+	err := runPush(pushOpts{dryRun: true}, deps)
+	if err != nil {
+		t.Fatalf("expected D3 bootstrap push to succeed, got: %v", err)
+	}
+	// In dry-run mode, the push write command is not sent to the mock — it is
+	// printed to stdout as "[dry-run] git push ...". Verify the absence lease
+	// appears in the dry-run output.
+	stdout := out.String()
+	if !strings.Contains(stdout, "--force-with-lease=refs/heads/main:") {
+		t.Errorf("D3 dry-run output must contain absence lease '--force-with-lease=refs/heads/main:'\ngot: %q", stdout)
+	}
+}
+
+// TestPush_D3_Main_RemoteHasBranches_Blocked affirms D3 blocks when the remote
+// already has branches (the normal post-bootstrap state).
+// Rule reconciliation: affirms D3 refuses after the bootstrap push has been made;
+// the second push is what the existing TestPush_Main_Blocks tested before D3.
+func TestPush_D3_Main_RemoteHasBranches_Blocked(t *testing.T) {
+	m := &mockPushGit{
+		branch:      "main",
+		pushURLs:    "https://github.com/user/repo.git",
+		lsRemoteOut: "abc123def456abc123def456abc123def456abc1\trefs/heads/main\n",
+	}
+	deps := pushDeps{execGit: m.exec, out: &bytes.Buffer{}}
+	err := runPush(pushOpts{}, deps)
+	if err == nil {
+		t.Fatal("expected D3 to block when remote already has branches")
+	}
+	if !strings.Contains(err.Error(), "trackfw push cannot run on") {
+		t.Errorf("expected 'trackfw push cannot run on' in error, got: %q", err.Error())
+	}
+}
+
+// TestPush_D3_Main_TwoCommits_Blocked is the counter-arm for the single-commit gate.
+// Rule reconciliation: affirms that D3 refuses if the branch has 2 commits — only the
+// bootstrap commit (count==1) authorized by D2 may be pushed on the default branch.
+func TestPush_D3_Main_TwoCommits_Blocked(t *testing.T) {
+	m := &mockPushGit{
+		branch:       "main",
+		pushURLs:     "https://github.com/user/repo.git",
+		lsRemoteOut:  "", // remote is empty
+		revListCount: "2",
+	}
+	deps := pushDeps{execGit: m.exec, out: &bytes.Buffer{}}
+	err := runPush(pushOpts{}, deps)
+	if err == nil {
+		t.Fatal("expected D3 to block when branch has 2 commits")
+	}
+	if !strings.Contains(err.Error(), "trackfw push cannot run on") {
+		t.Errorf("expected 'trackfw push cannot run on' in error, got: %q", err.Error())
+	}
+}
+
+// TestPush_D3_Main_ForceWithLease_Refused affirms D3 refuses the user --force-with-lease
+// flag before any remote query.
+// Rule reconciliation: affirms that the absence lease (internal) is never confused with
+// the user flag; the user flag is refused unconditionally on the default branch.
+func TestPush_D3_Main_ForceWithLease_Refused(t *testing.T) {
+	m := &mockPushGit{branch: "main"}
+	deps := pushDeps{execGit: m.exec, out: &bytes.Buffer{}}
+	err := runPush(pushOpts{forceWithLease: true}, deps)
+	if err == nil {
+		t.Fatal("expected D3 to refuse --force-with-lease on main")
+	}
+	if !strings.Contains(err.Error(), "trackfw push cannot run on") {
+		t.Errorf("expected 'trackfw push cannot run on' in error, got: %q", err.Error())
+	}
+	// No push-URL query must have been made — refusal is before any query.
+	for _, call := range m.calls {
+		if strings.Join(call, " ") == "remote get-url --push --all origin" {
+			t.Error("D3 must not query remote when refusing --force-with-lease flag")
+		}
+	}
+}
+
+// TestPush_D3_Main_RemoteUnreachable_FailClosed affirms D3 refuses when the remote
+// cannot be queried (fail-closed).
+// Rule reconciliation: affirms that "uncertain = refuse" for D3 — from ADR-2026-11-26 D3:
+// "remoto ausente, sem resposta, autenticação recusada ou saída não reconhecida recusa".
+func TestPush_D3_Main_RemoteUnreachable_FailClosed(t *testing.T) {
+	// pushURLs is empty → checkRemoteEmpty returns error → D3 refuses.
+	m := &mockPushGit{branch: "main", pushURLs: ""}
+	deps := pushDeps{execGit: m.exec, out: &bytes.Buffer{}}
+	err := runPush(pushOpts{}, deps)
+	if err == nil {
+		t.Fatal("expected D3 fail-closed when remote cannot be verified")
+	}
+	if !strings.Contains(err.Error(), "trackfw push cannot run on") {
+		t.Errorf("expected 'trackfw push cannot run on' in error, got: %q", err.Error())
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// D4 (ADR-2026-11-26): block feature push to empty remote
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestPush_D4_FeatureBranch_EmptyRemote_Blocked affirms that a feature branch push
+// is blocked when the remote has no branches at all.
+// Rule reconciliation: affirms the D4 precondition from ADR-2026-11-26 — "empty remote",
+// not "no main/master", so that existing repos with a non-standard default branch are unaffected.
+func TestPush_D4_FeatureBranch_EmptyRemote_Blocked(t *testing.T) {
+	out := &bytes.Buffer{}
+	m := &mockPushGit{
+		branch:   "feat/my-feature",
+		pushURLs: "https://github.com/user/repo.git",
+		// lsRemoteOut is "" (no branches) — remote is empty.
+	}
+	deps := pushDeps{
+		execGit:         m.exec,
+		checkGovernance: func() *validator.GovernanceViolation { return nil },
+		out:             out,
+	}
+	err := runPush(pushOpts{}, deps)
+	if err == nil {
+		t.Fatal("expected D4 to block feature push to empty remote")
+	}
+	if !strings.Contains(err.Error(), "remote has no branches yet") {
+		t.Errorf("expected 'remote has no branches yet' in error, got: %q", err.Error())
+	}
+}
+
+// TestPush_D4_FeatureBranch_RemoteHasBranches_Passes is the counter-arm for D4.
+// Rule reconciliation: affirms that D4 does NOT block when the remote already has
+// at least one branch — normal feature branch push after bootstrap.
+func TestPush_D4_FeatureBranch_RemoteHasBranches_Passes(t *testing.T) {
+	out := &bytes.Buffer{}
+	m := &mockPushGit{
+		branch:      "feat/my-feature",
+		pushURLs:    "https://github.com/user/repo.git",
+		lsRemoteOut: "abc123def456abc123def456abc123def456abc1\trefs/heads/main\n",
+	}
+	deps := pushDeps{
+		execGit:         m.exec,
+		checkGovernance: func() *validator.GovernanceViolation { return nil },
+		out:             out,
+	}
+	err := runPush(pushOpts{dryRun: true}, deps)
+	if err != nil {
+		t.Fatalf("expected D4 to pass when remote has branches, got: %v", err)
+	}
+}
+
+// TestPush_D4_FeatureBranch_RemoteQueryFails_FailOpen affirms D4 is fail-open:
+// if the remote cannot be queried, the push proceeds (network errors surface at push time).
+// Rule reconciliation: affirms ADR-2026-11-26 D4 "Se a consulta falhar, o push da feature
+// segue como hoje" — D4 failure must not become a new blocking gate.
+func TestPush_D4_FeatureBranch_RemoteQueryFails_FailOpen(t *testing.T) {
+	out := &bytes.Buffer{}
+	// pushURLs is "" → checkRemoteEmpty returns error → D4 fail-open → push proceeds.
+	m := &mockPushGit{
+		branch:   "feat/my-feature",
+		pushURLs: "",
+	}
+	deps := pushDeps{
+		execGit:         m.exec,
+		checkGovernance: func() *validator.GovernanceViolation { return nil },
+		out:             out,
+	}
+	err := runPush(pushOpts{dryRun: true}, deps)
+	if err != nil {
+		t.Fatalf("expected D4 fail-open when query fails, got: %v", err)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// parseLSRemoteHeads unit tests
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestParseLSRemoteHeads_Empty affirms that empty output is clean (no branches, no unrecognized).
+// Rule reconciliation: affirms the "empty remote" happy path that D3 and D4 depend on.
+func TestParseLSRemoteHeads_Empty(t *testing.T) {
+	hasBranches, unrecognized := parseLSRemoteHeads("")
+	if hasBranches || unrecognized {
+		t.Errorf("empty output: hasBranches=%v unrecognized=%v, expected both false", hasBranches, unrecognized)
+	}
+}
+
+// TestParseLSRemoteHeads_OneBranch affirms a single valid branch line is detected.
+// Rule reconciliation: affirms D3/D4 refuse when the remote has at least one branch.
+func TestParseLSRemoteHeads_OneBranch(t *testing.T) {
+	out := "abc123def456abc123def456abc123def456abc1\trefs/heads/main\n"
+	hasBranches, unrecognized := parseLSRemoteHeads(out)
+	if !hasBranches {
+		t.Error("expected hasBranches=true for a line with refs/heads/")
+	}
+	if unrecognized {
+		t.Error("expected unrecognized=false for a valid ls-remote line")
+	}
+}
+
+// TestParseLSRemoteHeads_NonHeadRef affirms that a non-heads ref (e.g., refs/tags/)
+// is not counted as a branch but is not unrecognized.
+// Rule reconciliation: affirms that existing repos with tags on a fresh clone are
+// not misclassified as "has branches" by D3/D4.
+func TestParseLSRemoteHeads_NonHeadRef(t *testing.T) {
+	out := "abc123def456abc123def456abc123def456abc1\trefs/tags/v1.0.0\n"
+	hasBranches, unrecognized := parseLSRemoteHeads(out)
+	if hasBranches {
+		t.Error("expected hasBranches=false for refs/tags/ line")
+	}
+	if unrecognized {
+		t.Error("expected unrecognized=false for a valid (non-head) ls-remote line")
+	}
+}
+
+// TestParseLSRemoteHeads_MalformedLine affirms that a line without a tab is unrecognized.
+// Rule reconciliation: affirms D3 fail-closed on malformed output — "saída não reconhecida recusa".
+func TestParseLSRemoteHeads_MalformedLine(t *testing.T) {
+	out := "not-a-valid-line\n"
+	_, unrecognized := parseLSRemoteHeads(out)
+	if !unrecognized {
+		t.Error("expected unrecognized=true for a line without a tab")
 	}
 }

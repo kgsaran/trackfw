@@ -2,8 +2,10 @@ package generators
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type toolEntry struct {
@@ -42,4 +44,28 @@ func PrintArchitectNextSteps(cwd string) {
 	fmt.Println()
 	fmt.Println("  Run /trackfw:architect in your AI assistant chat.")
 	fmt.Println()
+}
+
+// PrintBootstrapSteps prints the bootstrap steps for a freshly initialized
+// repository to w. Called by init when git init was just run. Repos that
+// already had a work tree do not receive this output.
+// D5 (ADR-2026-11-26): every surface that agents read describes the bootstrap.
+//
+// paths contains the top-level paths reported by `git status --porcelain` after
+// scaffold completed — init passes the real list so the agent sees exact paths.
+// When paths is empty (e.g. the mock tests that stub initGitExecFn), the
+// placeholder form is used instead.
+func PrintBootstrapSteps(w io.Writer, paths []string) {
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Bootstrap steps — commit the scaffold and publish the default branch:")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "  git status --short")
+	if len(paths) > 0 {
+		fmt.Fprintf(w, "  git add %s\n", strings.Join(paths, " "))
+	} else {
+		fmt.Fprintln(w, "  git add <each path listed by git status --short>")
+	}
+	fmt.Fprintln(w, "  trackfw commit -m \"chore(scaffold): initial\"")
+	fmt.Fprintln(w, "  trackfw push")
+	fmt.Fprintln(w)
 }

@@ -444,3 +444,88 @@ func TestResolveBranchStartPoint_ExplicitRefResolvesToSHA(t *testing.T) {
 		t.Errorf("B-1: expected displayRef %q, got %q", fakeRef, displayRef)
 	}
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// D2 (ADR-2026-11-26): branch new rejects unborn HEAD before type check
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestRunBranchNew_UnbornHEAD_BlocksBeforeTypeCheck affirms D2 for branch new:
+// when rev-parse --verify -q HEAD fails (HEAD has no commit), runBranchNew
+// must return an error with the bootstrap instructions — without reaching the
+// roadmap/type gate.
+// Rule reconciliation: affirms ADR-2026-11-26 D2 conclusion that an unborn HEAD
+// is blocked at the entry of runBranchNew; the counter-arm
+// (TestRunBranchNew_BornHEAD_AllowsTypeCheck) confirms the type gate fires when HEAD has a commit.
+func TestRunBranchNew_UnbornHEAD_BlocksBeforeTypeCheck(t *testing.T) {
+	out := &bytes.Buffer{}
+	typeGateCalled := false
+
+	d := branchNewDeps{
+		loadConfig:      func() config.ProjectConfig { return config.ProjectConfig{} },
+		resolveWIPDirs:  func(config.ProjectConfig) []string { return []string{"docs/roadmaps/wip"} },
+		resolveDoneDirs: func(config.ProjectConfig) []string { return []string{"docs/roadmaps/done"} },
+		matchSlug: func(slug string, wip, done []string) (bool, []string) {
+			typeGateCalled = true
+			return true, nil
+		},
+		matchDone:       func(slug string, done []string) []string { return nil },
+		execGitCheckout: func(branch, _ string) error { return nil },
+		fromRef:         "HEAD",
+		out:             out,
+		gitExec: func(args ...string) (string, error) {
+			// Simulate unborn HEAD: rev-parse --verify returns non-nil error.
+			if len(args) >= 1 && args[0] == "rev-parse" {
+				return "", errors.New("fatal: Needed a single revision")
+			}
+			return "", nil
+		},
+	}
+
+	err := runBranchNew("feat/bootstrap-test", false, d)
+	if err == nil {
+		t.Fatal("expected error for unborn HEAD, got nil")
+	}
+	if !strings.Contains(err.Error(), "unborn") && !strings.Contains(err.Error(), "bootstrap") {
+		t.Errorf("error must mention unborn/bootstrap, got: %v", err)
+	}
+	// The type/roadmap gate must NOT have fired — block happens before it.
+	if typeGateCalled {
+		t.Error("type gate must not be called when HEAD has no commit (D2 blocks first)")
+	}
+}
+
+// TestRunBranchNew_BornHEAD_AllowsTypeCheck is the counter-arm for
+// TestRunBranchNew_UnbornHEAD_BlocksBeforeTypeCheck: when rev-parse succeeds
+// (HEAD has a commit), runBranchNew proceeds past the D2 check to the type gate.
+// Rule reconciliation: affirms the counter-arm — if D2 blocked all branches
+// unconditionally, this test would fail because typeGateCalled would be false.
+func TestRunBranchNew_BornHEAD_AllowsTypeCheck(t *testing.T) {
+	out := &bytes.Buffer{}
+	typeGateCalled := false
+
+	d := branchNewDeps{
+		loadConfig:      func() config.ProjectConfig { return config.ProjectConfig{} },
+		resolveWIPDirs:  func(config.ProjectConfig) []string { return []string{"docs/roadmaps/wip"} },
+		resolveDoneDirs: func(config.ProjectConfig) []string { return []string{"docs/roadmaps/done"} },
+		matchSlug: func(slug string, wip, done []string) (bool, []string) {
+			typeGateCalled = true
+			return true, nil // matched: allow checkout
+		},
+		matchDone:       func(slug string, done []string) []string { return nil },
+		execGitCheckout: func(branch, _ string) error { return nil },
+		fromRef:         "HEAD",
+		out:             out,
+		gitExec: func(args ...string) (string, error) {
+			// Simulate born HEAD: rev-parse --verify succeeds.
+			return "abc1234", nil
+		},
+	}
+
+	err := runBranchNew("feat/bootstrap-test", false, d)
+	if err != nil {
+		t.Fatalf("unexpected error for born HEAD: %v", err)
+	}
+	if !typeGateCalled {
+		t.Error("type gate must be called when HEAD has a commit (D2 passes through)")
+	}
+}
