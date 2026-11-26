@@ -254,6 +254,19 @@ Fora de um repositório git, a mensagem fica errada e o `--dry-run` deixa de rel
       recusa de unborn; num repo com HEAD unborn, a recusa continua
 - [x] `bash scripts/check-roadmap-slug-matching.sh --self-test` rc=0 com o binário da branch
 
+### ML-2F — Cenário s60 do falsify segue o literal novo do `switch` (apolo-tf)
+**Status:** ⬜ Pending
+**Motivo:** o `make quality` deu rc=2 em `parity-falsify`. O cenário `s60-go-switch-c-detection-removed`, de
+`scripts/check-gates-falsify.sh`, procura `case "-c", "-C", "--create", "--force-create":`, mas o D6 acrescentou
+`"--orphan"` ao `case` (`internal/guard/gitbranch.go`). Sem casamento, o chunk morre e 31 rótulos ficam sem rodar.
+Uma sonda nos 46 `corrupt_literal` encontrou só este literal quebrado entre os arquivos tocados pela branch.
+
+**Files affected:** `scripts/check-gates-falsify.sh`
+**Acceptance criteria:**
+- [ ] o literal do s60 é `case "-c", "-C", "--create", "--force-create", "--orphan":`, e a mutação continua desligando
+      a detecção de `git switch -c`
+- [ ] `make quality` rc=0
+
 ## Wave 3 — Gate final
 
 ### ML-3A — Replay, `make quality` e CI (zeus-tf)
