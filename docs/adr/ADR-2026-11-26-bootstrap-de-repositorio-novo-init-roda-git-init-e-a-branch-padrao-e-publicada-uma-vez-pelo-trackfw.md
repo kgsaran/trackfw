@@ -74,6 +74,44 @@ O remoto fica só com `feat/x`. A partir daí, nenhuma rota governada cria a `ma
   "Agent Protocol" de todo template gerado (`CLAUDE.md`, `AGENTS.md` e demais alvos) descrevem o bootstrap de
   repositório novo.
 
+## Ajustes do Wave 0 (2026-11-26, incorporados; prevalecem sobre o texto acima)
+
+Fonte: `docs/seguranca/2026-11-26-wave0-bootstrap-de-repositorio-novo.md` (§6). Decisões do arquiteto sobre as três questões abertas pelo Hades.
+
+- **D1, quatro estados.** `git rev-parse --is-inside-work-tree`, com `LC_ALL=C`:
+  - rc=0 e `true`: imprime a raiz detectada, não roda `git init`, escreve o scaffold;
+  - rc=0 e `false` (dentro de `.git/` ou de repositório bare): aborta com rc≠0 antes de qualquer escrita, porque
+    `git init` ali cria repositório aninhado (M-X9);
+  - rc=128 com "not a git repository": roda `git init` com `main`;
+  - rc=128 com outro erro (ex.: "dubious ownership", M-D1owner): avisa, não roda `git init`, escreve o scaffold, rc=0.
+    Sem binário `git`: o mesmo.
+- **D2, predicado.**
+  - `commit` usa a conjunção: `git rev-parse --verify -q HEAD` com rc=1 e `git rev-list --all --count` igual a `0`
+    (M-X1). Fail-closed.
+  - `branch new` usa só a primeira condição, antes do teste de tipo governado, com e sem `--from HEAD`.
+- **D3, predicado: remoto vazio** (questão 1).
+  - Consulta todas as URLs de push (`git remote get-url --push --all origin`) e roda `git ls-remote --heads` em cada
+    uma. Recusa se qualquer uma tiver uma branch ou falhar. Com várias URLs, só a primeira receberia a checagem
+    (M-X10).
+  - "Remoto sem a branch padrão" deixaria publicar `main` sem revisão num repositório existente cuja branch padrão é
+    `develop` (M-E). Com D4, o estado do relato não se forma mais.
+  - A exceção substitui o bloqueio de `main`/`master` em `push.go` e recusa a flag `--force-with-lease` do usuário
+    antes de qualquer consulta. O lease interno de ausência continua.
+- **D3, conteúdo limitado** (questão 3). A branch padrão só é publicada com exatamente um commit
+  (`git rev-list --count refs/heads/<branch>` igual a `1`), o que D2 autorizou. Comandos que o guard permite
+  (`git fetch . feat/x:main`, `git merge`, `git reset --soft`; M-mover, M-mover-fetch) põem histórico sem revisão na
+  `main` antes do primeiro push; o limite mantém a âncora do ADR-2026-10-10.
+- **D4 no `ship`.** `runShip` não chama `runPush` (`ship.go:417`). D4 vale nos dois caminhos, por um helper
+  compartilhado.
+- **D6 (novo): guard de branch** (questão 2). Por decisão do arquiteto, entram nesta REQ todos os achados, e não só
+  os que o bootstrap usa (regra "defeito conhecido se corrige agora"). O guard git-branch passa a negar:
+  - `gh repo create` com `--push`, em todas as variantes. Hoje rc=0 (M-C) e é um push que não passa pelo guard;
+  - `git switch --orphan` e `git checkout --orphan`;
+  - `git worktree add --orphan`;
+  - `git symbolic-ref HEAD`.
+
+  D2 continua sendo o controle real. O guard é defesa em profundidade.
+
 ## Consequences
 
 - O fluxo de projeto novo passa a ser:
@@ -86,13 +124,14 @@ O remoto fica só com `feat/x`. A partir daí, nenhuma rota governada cria a `ma
 - A âncora do ADR-2026-10-10 ("o `origin/main` só muda por merge, que passa por revisão") ganha uma exceção: o
   primeiro conteúdo da branch padrão é publicado sem PR. Isso só vale para um destino que ainda não tem essa branch.
 - O ADR-2026-08-22 (bloqueio de `main`/`master` no `push`/`ship`) ganha as exceções D3 e D4.
-- Criar o repositório no forge fica fora do trackfw. Se o guard git-branch não intercepta
-  `gh repo create --source . --push`, isso já é um desvio do guard de push, e o Wave 0 deve dizer.
+- Criar o repositório no forge fica fora do trackfw. `gh repo create ... --push` passava pelo guard (M-C) e é negado
+  por D6; `gh repo create` sem `--push` continua livre.
+- Projetos anteriores a esta REQ cujo remoto já tem só a feature precisam criar a `main` fora do trackfw. Residual.
 
 ## Alternatives Considered
 
 - **Comando próprio (`trackfw repo bootstrap`):** um comando a mais para aprender; o agente tenta `trackfw push`
   primeiro de qualquer jeito.
-- **Exigir o remoto totalmente vazio:** o caminho medido (feature publicada antes) fecharia a exceção para sempre.
-  Com D4, a feature não sobe antes, e o lease de ausência garante no servidor que a branch padrão não existe.
+- **Remoto sem a branch padrão (em vez de remoto vazio):** proposta inicial; o Wave 0 mostrou publicação sem revisão
+  num repositório existente com `develop` (M-E). Rejeitada nos ajustes do Wave 0.
 - **`git init` só com flag (`--git`):** decisão do KG em 2026-11-26: sempre.

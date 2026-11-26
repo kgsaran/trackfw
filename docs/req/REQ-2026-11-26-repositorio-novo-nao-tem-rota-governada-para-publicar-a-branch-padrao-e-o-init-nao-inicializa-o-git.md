@@ -34,11 +34,14 @@ mecanismo.
 - [ ] D2: `branch new` com `HEAD` sem commit recusa, inclusive com `--from HEAD`, e orienta o bootstrap. `trackfw
       commit` aceita `main`/`master` só no primeiro commit; com braço (antes rc=1, depois rc=0) e contra-braço (segundo
       commit continua recusado).
-- [ ] D3: `trackfw push` publica `main`/`master` só quando a URL de push não tem a branch, com lease de ausência.
+- [ ] D3: `trackfw push` publica `main`/`master` só quando todas as URLs de push estão vazias e a branch tem um
+      commit, com lease de ausência. Vetores também: várias `pushurl` e `main` com dois commits.
       Vetores medidos no binário: `pushurl` divergente de `url`, branch criada entre a consulta e o push, remoto
       ausente, remoto inacessível e `--force-with-lease` do usuário. Todos recusam.
 - [ ] D4: `trackfw push` e `ship` de feature recusam com remoto vazio; com remoto não vazio sem `main`/`master`
       (branch padrão `develop`), seguem como hoje.
+- [ ] D6: o guard git-branch nega `gh repo create ... --push`, `switch`/`checkout --orphan`,
+      `worktree add --orphan` e `symbolic-ref HEAD`, com braço e contra-braço (`gh repo create` sem `--push` passa).
 - [ ] D5: as mensagens de recusa, o `ml_scope` sem `origin/main`, o aviso de severidade e o bloco "Agent Protocol" de
       todos os templates gerados descrevem o bootstrap; `docs/cli-parity.md` atualizado.
 - [ ] Replay do fluxo do relato (init → remoto → commit → push → branch new → commit → push → barrier) termina com
@@ -46,8 +49,8 @@ mecanismo.
 - [ ] `make quality` rc=0 e CI verde.
 
 ## Negative scope
-- Não cria o repositório no forge (`gh repo create` e equivalentes). Se o Wave 0 mostrar que esse comando já
-  desvia o guard de push, o achado entra nesta REQ.
+- Não cria o repositório no forge. O Wave 0 mediu que `gh repo create ... --push` desvia o guard de push (M-C):
+  esse desvio entra nesta REQ (D6), mas criar o repositório continua fora.
 - Não muda o bloqueio de `main`/`master` fora do bootstrap: segundo commit, push com a branch já no remoto e `ship`
   na branch padrão continuam recusados.
 - Não muda a resolução da branch padrão em outros comandos (`branch prune`, `barrier`), além das mensagens.

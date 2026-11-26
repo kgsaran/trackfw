@@ -30,8 +30,12 @@ REQ: docs/req/REQ-2026-11-26-repositorio-novo-nao-tem-rota-governada-para-public
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model for this roadmap (hades-tf)
-**Status:** ⬜ Pending
-**Files affected:** `docs/seguranca/2026-11-26-wave0-bootstrap-de-repositorio-novo.md` (novo)
+**Status:** ✅ Done — auditado pelo arquiteto. Achados de bloqueio incorporados ao ADR ("Ajustes do Wave 0"): D1 em
+quatro estados, predicado de D2, D3 com remoto vazio, todas as URLs de push e um commit, D4 também no `ship`, D6 novo
+(guard). Conferi no binário: `gh repo create ... --push`, `git switch --orphan` e `git fetch . feat/x:main` passam
+pelo guard com rc=0.
+**Files affected:** `docs/seguranca/2026-11-26-wave0-bootstrap-de-repositorio-novo.md` (novo);
+`vault/notes/bootstrap-repo-novo-achados-wave0-2026-11-26.md` (novo); `vault/notes/index.md`
 **Actions:**
 1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed. Do not limit the search to the files already named by the REQ — before declaring the list closed, search the repository for other places that emit the same artifact or the same pattern (for example, grep for the literal the final artifact contains).
 2. Threat model — who empties this Wave 0 without breaking any written rule, and how?
@@ -46,8 +50,8 @@ REQ: docs/req/REQ-2026-11-26-repositorio-novo-nao-tem-rota-governada-para-public
    - Censo das superfícies: todo emissor do bloco "Agent Protocol" e toda mensagem que manda usar
      `trackfw branch new` ou `trackfw push` na branch padrão.
 **Acceptance criteria:**
-- [ ] The four sections above answered with evidence, not a one-line assertion
-- [ ] No implementation line written for this ML
+- [x] The four sections above answered with evidence, not a one-line assertion
+- [x] No implementation line written for this ML
 
 **Wave gates:**
 ```bash
@@ -58,7 +62,8 @@ test -s docs/seguranca/2026-11-26-wave0-bootstrap-de-repositorio-novo.md
 ```
 
 ## Wave 1 — Implementation
-> Dependencies: Wave 0 audited. ML-1A e ML-1B em paralelo (arquivos disjuntos); ML-1C depois dos dois, porque escreve
+> Dependencies: Wave 0 audited. ML-1A, ML-1B e ML-1D têm arquivos disjuntos, mas rodam em sequência num só agente
+> (teto de CPU e o mesmo pacote `internal/commands` em ML-1A/1B). ML-1C fecha a wave, porque escreve
 > `docs/cli-parity.md` e os templates a partir do comportamento final.
 
 ### ML-1A — `init` com `git init`; `branch new` e `commit` no bootstrap (apolo-tf)
@@ -66,7 +71,8 @@ test -s docs/seguranca/2026-11-26-wave0-bootstrap-de-repositorio-novo.md
 **Files affected:** `internal/commands/init.go`; `internal/commands/init_test.go`; `internal/commands/branch.go`;
 `internal/commands/branch_test.go`; `internal/commands/commit.go`; `internal/commands/commit_test.go`;
 `internal/commands/commit_unborn_branch_test.go`
-**Actions:** D1 e D2 do ADR-2026-11-26, nos termos do relatório do Wave 0.
+**Actions:** D1 (quatro estados) e D2 (predicados separados de `commit` e `branch new`) do ADR-2026-11-26, seção
+"Ajustes do Wave 0". Relatório: `docs/seguranca/2026-11-26-wave0-bootstrap-de-repositorio-novo.md` §6.
 **Acceptance criteria:**
 - [ ] `go test ./internal/commands/ -run 'Init|Branch|Commit' -count=1` rc=0; braço e contra-braço por decisão; frase de
       reconciliação por teste novo
@@ -76,27 +82,39 @@ test -s docs/seguranca/2026-11-26-wave0-bootstrap-de-repositorio-novo.md
 **Status:** ⬜ Pending
 **Files affected:** `internal/commands/push.go`; `internal/commands/push_test.go`; `internal/commands/ship.go`;
 `internal/commands/ship_test.go`
-**Actions:** D3 e D4 do ADR-2026-11-26, nos termos do relatório do Wave 0. Testes com remoto bare em `t.TempDir()`.
+**Actions:** D3 (remoto vazio em todas as URLs de push, um commit, lease de ausência, recusa da flag
+`--force-with-lease`; substitui o bloqueio em `push.go:143`) e D4 (helper usado por `runPush` e por `runShip`,
+`ship.go:417`) do ADR-2026-11-26, seção "Ajustes do Wave 0". Testes com remotos bare em `t.TempDir()`.
 **Acceptance criteria:**
-- [ ] `go test ./internal/commands/ -run 'Push|Ship' -count=1` rc=0; os cinco vetores de D3 recusam; D4 com remoto vazio
-      recusa e com remoto `develop` passa
+- [ ] `go test ./internal/commands/ -run 'Push|Ship' -count=1` rc=0; recusam os vetores de D3 (`pushurl` ≠ `url`, várias
+      `pushurl`, branch criada entre consulta e push, remoto ausente/inacessível, `--force-with-lease`, `main` com 2
+      commits); D4 com remoto vazio recusa em `push` e `ship`; com remoto só `develop`, passa
 - [ ] nenhum arquivo fora de "Files affected" alterado
 
 ### ML-1C — Mensagens, templates e contrato (apolo-tf)
 **Status:** ⬜ Pending
 **Files affected:** `internal/commands/barrier.go`; `internal/commands/barrier_ml_scope_test.go`;
 `internal/validator/validator_credential_guard_integrity.go`; `internal/generators/agentfiles.go`;
-`internal/generators/agentfiles_test.go`; `docs/cli-parity.md`
-**Actions:** D5 do ADR-2026-11-26. Os demais emissores achados pelo censo do Wave 0 entram aqui (o arquiteto atualiza
-esta lista antes do despacho).
+`internal/generators/agentfiles_test.go`; `internal/generators/nextsteps.go`;
+`internal/integrations/assets/agents/architect.md`; `docs/cli-parity.md`
+**Actions:** D5 do ADR-2026-11-26, sobre a lista de superfícies do censo do Wave 0 (`docs/seguranca/2026-11-26-wave0-bootstrap-de-repositorio-novo.md` §1).
 **Acceptance criteria:**
 - [ ] `go test ./internal/commands/ ./internal/validator/ ./internal/generators/ -count=1` rc=0
+- [ ] nenhum arquivo fora de "Files affected" alterado
+
+### ML-1D — Guard git-branch: `gh repo create --push`, `--orphan`, `symbolic-ref HEAD` (apolo-tf)
+**Status:** ⬜ Pending
+**Files affected:** `internal/guard/gitbranch.go`; `internal/guard/gitbranch_test.go`
+**Actions:** D6 do ADR-2026-11-26. Braço (rc=0 antes, rc=2 depois) por comando; contra-braço: `gh repo create x
+--private` sem `--push`, `git switch feat/x` e `git symbolic-ref --short HEAD` (leitura) continuam com rc=0.
+**Acceptance criteria:**
+- [ ] `go test ./internal/guard/ -count=1` rc=0; frase de reconciliação por teste novo
 - [ ] nenhum arquivo fora de "Files affected" alterado
 
 **Wave gates:**
 ```bash
 go build ./...
-go test ./internal/commands/ ./internal/validator/ ./internal/generators/ -count=1
+go test ./internal/commands/ ./internal/validator/ ./internal/generators/ ./internal/guard/ -count=1
 ```
 
 ## Wave 2 — Review
