@@ -54,3 +54,4 @@
 - [Ler o rc antes de commitar](feedback_ler_rc_antes_de_commitar.md) — exit da notificação é do wrapper `; echo rc=$?`; commitei rc=0 com rc=2 (ML-5I)
 - [Site novo: protótipo primeiro, inglês primeiro](project_goatcounter_apos_onboarding.md) — GoatCounter pulado (11-23); não reabrir sem o KG pedir
 - [Fechar issue citada com Relates](feedback_fechar_issue_relates_no_fechamento.md) — "Relates to" não fecha; fechamento da REQ fecha a issue (esqueci #704/#705)
+- [Gate de wave inclui pacotes de contrato](feedback_gate_de_wave_inclui_pacotes_de_contrato.md) — asset/skip/guard tocado → integrations, winskips e sonda do falsify no gate; 3 make quality vermelhos (11-26)

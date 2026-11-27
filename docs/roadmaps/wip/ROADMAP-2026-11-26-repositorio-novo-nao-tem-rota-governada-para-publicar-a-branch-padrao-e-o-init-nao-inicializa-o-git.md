@@ -270,10 +270,10 @@ Uma sonda nos 46 `corrupt_literal` encontrou só este literal quebrado entre os 
 ## Wave 3 — Gate final
 
 ### ML-3A — Replay, `make quality` e CI (zeus-tf)
-**Status:** 🔄 In progress — replay ok; `make quality` rc=0; aguardando CI
+**Status:** ✅ Done — replay ok; `make quality` rc=0; CI do PR #711 verde (24 checks, inclusive windows-full-suites)
 **Files affected:** este roadmap; `docs/req/REQ-2026-11-26-repositorio-novo-nao-tem-rota-governada-para-publicar-a-branch-padrao-e-o-init-nao-inicializa-o-git.md`; `docs/adr/ADR-2026-11-26-bootstrap-de-repositorio-novo-init-roda-git-init-e-a-branch-padrao-e-publicada-uma-vez-pelo-trackfw.md`;
 `docs/adr/ADR-2026-08-22-comandos-de-entrega-separados-push-proprio-e-ship-como-composicao.md`;
 `docs/adr/ADR-2026-10-10-a-fiacao-do-guard-e-ancorada-no-origin-main-por-tupla-e-a-remocao-e-violacao-fora-do-lenient-e-do-baseline.md`
 (notas de emenda)
 **Acceptance criteria:**
-- [ ] replay do fluxo do relato no binário da branch; `make quality` rc=0; CI verde
+- [x] replay do fluxo do relato no binário da branch; `make quality` rc=0; CI verde
