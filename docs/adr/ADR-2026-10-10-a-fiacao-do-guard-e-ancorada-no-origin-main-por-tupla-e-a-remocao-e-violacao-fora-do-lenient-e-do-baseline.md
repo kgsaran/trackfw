@@ -146,3 +146,16 @@ assimetria não está documentada como deliberada em lugar nenhum; o mesmo mecan
   neutralizado, que foi medido. Rejeitada.
 - **Estender `validateCredentialGuardPresenceRequired` a todos os CLIs**: usa o próprio arquivo como
   referência e acusaria "nunca instalado" como adulteração em todo repositório novo (AC3b). Rejeitada.
+
+## Emenda 1 (2026-11-26) — o primeiro conteúdo da branch padrão
+
+A âncora "o `origin/main` só muda por merge, que passa por revisão" ganha uma exceção, decidida no
+`ADR-2026-11-26-bootstrap-de-repositorio-novo-init-roda-git-init-e-a-branch-padrao-e-publicada-uma-vez-pelo-trackfw.md`.
+O primeiro conteúdo da branch padrão é publicado sem PR.
+
+A exceção é limitada:
+- o remoto tem que estar vazio de branches;
+- a branch tem exatamente um commit, o do scaffold, que o `trackfw commit` só autoriza com HEAD unborn e o
+  repositório sem nenhum commit.
+
+Enquanto `origin/main` não existe, o `ml_scope` continua bloqueando, e a mensagem orienta o bootstrap.

@@ -128,6 +128,36 @@ func TestMatchSubcommand_SwitchAllowed(t *testing.T) {
 	}
 }
 
+// TestMatchSubcommand_SwitchOrphan_Blocked asserts "git switch --orphan" is blocked.
+// Rule reconciliation: affirms D6 (ADR-2026-11-26) — git switch --orphan creates
+// a new orphan branch, same governance class as git switch -c.
+func TestMatchSubcommand_SwitchOrphan_Blocked(t *testing.T) {
+	cases := []string{
+		"git switch --orphan orphan-branch",
+		"git switch --orphan new-root",
+	}
+	for _, cmd := range cases {
+		if got := MatchSubcommand(cmd); got != "switch-c" {
+			t.Errorf("D6: %q should be blocked as switch-c, got %q", cmd, got)
+		}
+	}
+}
+
+// TestMatchSubcommand_SwitchOrphan_CounterArm affirms that plain "git switch <branch>"
+// (without --orphan/-c/-C) remains allowed after the D6 change.
+// Rule reconciliation: confirms D6 does not affect non-branch-creating switch forms.
+func TestMatchSubcommand_SwitchOrphan_CounterArm(t *testing.T) {
+	cases := []string{
+		"git switch main",
+		"git switch feat/my-feature",
+	}
+	for _, cmd := range cases {
+		if got := MatchSubcommand(cmd); got != "" {
+			t.Errorf("D6 counter-arm: %q should be allowed, got %q", cmd, got)
+		}
+	}
+}
+
 // TestMatchSubcommand_BranchCreate asserts "git branch <name>" (positional) is blocked.
 func TestMatchSubcommand_BranchCreate(t *testing.T) {
 	if got := MatchSubcommand("git branch feat/x"); got != "branch-create" {
@@ -229,17 +259,22 @@ func TestMatchSubcommand_WorktreeAddImplicit_AllowedDetach(t *testing.T) {
 	}
 }
 
-// TestMatchSubcommand_WorktreeAddOrphanBlocked asserts --orphan without -b is blocked.
-// Affirms R-3: git ≥ 2.54.0 allows `git worktree add --orphan <path>` to create an implicit
-// branch from the path name. The guard treats this as a blocked form.
+// TestMatchSubcommand_WorktreeAddOrphanBlocked asserts --orphan is blocked.
+// D6 (ADR-2026-11-26): --orphan creates a new orphan branch; same governance
+// class as -b/-B. The 1-positional form (implicit path-derived branch name) and
+// the 2-positional form (explicit branch name + path, git ≥ 2.54.0) are both
+// blocked as "worktree-add-b" (the explicit --orphan check fires before the
+// implicit positional-count check).
 func TestMatchSubcommand_WorktreeAddOrphanBlocked(t *testing.T) {
 	cases := []string{
-		"git worktree add --orphan ../foo",
-		"git worktree add --orphan /tmp/new-tree",
+		"git worktree add --orphan ../foo",           // 1 positional
+		"git worktree add --orphan /tmp/new-tree",    // 1 positional
+		"git worktree add --orphan main ./new-wt",    // 2 positionals (D6 new case)
+		"git worktree add --orphan orphan-br /tmp/x", // 2 positionals (D6 new case)
 	}
 	for _, cmd := range cases {
-		if got := MatchSubcommand(cmd); got != "worktree-add-implicit" {
-			t.Errorf("R-3: %q should be blocked as worktree-add-implicit, got %q", cmd, got)
+		if got := MatchSubcommand(cmd); got != "worktree-add-b" {
+			t.Errorf("D6: %q should be blocked as worktree-add-b, got %q", cmd, got)
 		}
 	}
 }
@@ -355,6 +390,139 @@ func TestMatchSubcommand_RestoreWorktree(t *testing.T) {
 func TestMatchSubcommand_UpdateRef(t *testing.T) {
 	if got := MatchSubcommand("git update-ref refs/heads/main HEAD"); got != "update-ref" {
 		t.Fatalf("got %q want %q", got, "update-ref")
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// D6 (ADR-2026-11-26): symbolic-ref write and gh repo create --push
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestMatchSubcommand_SymbolicRefWrite_Blocked asserts that the write form
+// (two positionals) is blocked.
+// Rule reconciliation: affirms D6 — git symbolic-ref HEAD refs/heads/branch
+// redirects commits to an unreviewed branch; blocked as "symbolic-ref-write".
+func TestMatchSubcommand_SymbolicRefWrite_Blocked(t *testing.T) {
+	cases := []string{
+		"git symbolic-ref HEAD refs/heads/main",
+		"git symbolic-ref HEAD refs/heads/feat/x",
+		"git symbolic-ref refs/heads/x refs/heads/y",
+	}
+	for _, cmd := range cases {
+		if got := MatchSubcommand(cmd); got != "symbolic-ref-write" {
+			t.Errorf("D6: %q should be blocked as symbolic-ref-write, got %q", cmd, got)
+		}
+	}
+}
+
+// TestMatchSubcommand_SymbolicRefDelete_Blocked asserts that the --delete form
+// is blocked.
+// Rule reconciliation: affirms D6 — delete removes the symbolic ref itself,
+// same write-class operation.
+func TestMatchSubcommand_SymbolicRefDelete_Blocked(t *testing.T) {
+	cases := []string{
+		"git symbolic-ref --delete HEAD",
+		"git symbolic-ref -d HEAD",
+	}
+	for _, cmd := range cases {
+		if got := MatchSubcommand(cmd); got != "symbolic-ref-write" {
+			t.Errorf("D6: %q should be blocked as symbolic-ref-write, got %q", cmd, got)
+		}
+	}
+}
+
+// TestMatchSubcommand_SymbolicRefRead_Allowed is the counter-arm for symbolic-ref.
+// Rule reconciliation: affirms D6 only blocks write/delete forms — read forms
+// (single positional, no --delete) are still needed by scripts like
+// defaultCurrentBranch() and must NOT be blocked.
+func TestMatchSubcommand_SymbolicRefRead_Allowed(t *testing.T) {
+	cases := []string{
+		"git symbolic-ref HEAD",
+		"git symbolic-ref --short HEAD",
+		"git symbolic-ref --verify HEAD",
+		"git symbolic-ref -q HEAD",
+	}
+	for _, cmd := range cases {
+		if got := MatchSubcommand(cmd); got != "" {
+			t.Errorf("D6 counter-arm: read form %q should be allowed, got %q", cmd, got)
+		}
+	}
+}
+
+// TestMatchSubcommand_GhRepoCreate_Push_Blocked asserts that gh repo create --push
+// is blocked.
+// Rule reconciliation: affirms D6 — --push publishes the default branch before
+// trackfw governance is in place, bypassing D3 (ADR-2026-11-26).
+func TestMatchSubcommand_GhRepoCreate_Push_Blocked(t *testing.T) {
+	cases := []string{
+		"gh repo create --push",
+		"gh repo create myrepo --push",
+		"gh repo create --public --push myrepo",
+		"gh repo create myrepo --public --push",
+	}
+	for _, cmd := range cases {
+		if got := MatchSubcommand(cmd); got != "gh-repo-create-push" {
+			t.Errorf("D6: %q should be blocked as gh-repo-create-push, got %q", cmd, got)
+		}
+	}
+}
+
+// TestMatchSubcommand_GhRepoCreate_NoPush_Allowed is the counter-arm for gh create.
+// Rule reconciliation: affirms D6 only blocks --push; gh repo create without --push
+// is the correct bootstrap step and must NOT be blocked.
+func TestMatchSubcommand_GhRepoCreate_NoPush_Allowed(t *testing.T) {
+	cases := []string{
+		"gh repo create myrepo",
+		"gh repo create --public myrepo",
+		"gh repo create --private",
+		"gh pr create --title x",
+		"gh issue list",
+	}
+	for _, cmd := range cases {
+		if got := MatchSubcommand(cmd); got != "" {
+			t.Errorf("D6 counter-arm: %q should be allowed, got %q", cmd, got)
+		}
+	}
+}
+
+// TestMatchSubcommand_D6_Supplemental covers forms not tested individually by the
+// per-command D6 tests: the specific forms listed in the ML-1F acceptance criteria
+// (ADR-2026-11-26, D6).
+//
+// Arms:
+//   - git checkout --orphan z → "checkout-b" (orphan branch creation)
+//   - git worktree add --orphan -b z ../w → "worktree-add-b" (--orphan fires before -b)
+//   - gh repo create x --source . --push=true → "gh-repo-create-push" (--push=<val> form)
+//
+// Counter-arms (forms that must pass through):
+//   - git checkout feat/x → "" (checkout existing branch, no -b/--orphan)
+//   - git worktree add ../w feat/x → "" (two-positional form, existing branch)
+//
+// Rule reconciliation: affirms D6 — the three arms deny branch creation that bypasses
+// the governed bootstrap (ADR-2026-11-26). The counter-arms confirm normal checkout
+// and worktree operations are not blocked.
+func TestMatchSubcommand_D6_Supplemental(t *testing.T) {
+	arms := []struct {
+		cmd  string
+		want string
+	}{
+		{"git checkout --orphan z", "checkout-b"},
+		{"git worktree add --orphan -b z ../w", "worktree-add-b"},
+		{"gh repo create x --source . --push=true", "gh-repo-create-push"},
+	}
+	for _, tc := range arms {
+		if got := MatchSubcommand(tc.cmd); got != tc.want {
+			t.Errorf("D6 arm: %q: want %q, got %q", tc.cmd, tc.want, got)
+		}
+	}
+
+	counterArms := []string{
+		"git checkout feat/x",
+		"git worktree add ../w feat/x",
+	}
+	for _, cmd := range counterArms {
+		if got := MatchSubcommand(cmd); got != "" {
+			t.Errorf("D6 counter-arm: %q should be allowed, got %q", cmd, got)
+		}
 	}
 }
 
@@ -1665,6 +1833,9 @@ func TestAllReasonsProduceValidJSON(t *testing.T) {
 		"add-implicit":             reasonAddImplicit,
 		"worktree-add-implicit":    reasonWorktreeAddImplicit,
 		"wrapper-not-analyzed":     reasonWrapperNotAnalyzed,
+		// D6 (ADR-2026-11-26): bootstrap guard additions.
+		"symbolic-ref-write":       reasonSymbolicRefWrite,
+		"gh-repo-create-push":      reasonGhRepoCreatePush,
 	}
 
 	// --- JSON-validity check (one sub-test per reason) ---
@@ -1716,4 +1887,73 @@ func TestAllReasonsProduceValidJSON(t *testing.T) {
 			}
 		}
 	})
+}
+
+// ─── D6-FP and D6-wrapper tests (ML-2C) ──────────────────────────────────────
+
+// TestMatchSubcommand_GhRepoCreate_PushFalsy_Allowed (ML-2C D6-FP) affirms that
+// falsy --push=<val> forms are permitted.
+//
+// Rule reconciliation: affirms D6-FP fix — `--push=false/0/no/off` suppresses
+// the push entirely and must not be blocked; they are semantically equivalent to
+// omitting --push. The arm below tests truthy/bare forms that remain blocked.
+func TestMatchSubcommand_GhRepoCreate_PushFalsy_Allowed(t *testing.T) {
+	allowed := []string{
+		"gh repo create myrepo --push=false",
+		"gh repo create myrepo --push=0",
+		"gh repo create myrepo --push=no",
+		"gh repo create myrepo --push=off",
+		"gh repo create myrepo --push=False",
+		"gh repo create myrepo --push=NO",
+		"gh repo create myrepo --push=Off",
+	}
+	for _, cmd := range allowed {
+		if got := MatchSubcommand(cmd); got != "" {
+			t.Errorf("D6-FP: %q should be allowed (falsy --push value), got %q", cmd, got)
+		}
+	}
+
+	// Arm: truthy and bare --push forms must still be blocked.
+	blocked := []string{
+		"gh repo create myrepo --push=true",
+		"gh repo create myrepo --push=1",
+		"gh repo create myrepo --push=yes",
+		"gh repo create myrepo --push=maybe",
+		"gh repo create myrepo --push",
+	}
+	for _, cmd := range blocked {
+		if got := MatchSubcommand(cmd); got != "gh-repo-create-push" {
+			t.Errorf("D6-FP arm: %q should be blocked as gh-repo-create-push, got %q", cmd, got)
+		}
+	}
+}
+
+// TestMatchSubcommand_GhWrapper_Blocked (ML-2C D6-wrapper) affirms that
+// `gh repo create --push` inside a shell wrapper is blocked.
+//
+// Rule reconciliation: affirms D6-wrapper fix — matchSubcommandPOSIX now
+// applies applyGhRule when the extracted base command is "gh", closing the
+// gap where `bash -c 'gh repo create x --push'` returned rc=0 (measured by
+// Hades, d6_wrapper.sh). Counter-arm: `bash -c 'gh repo view'` is allowed.
+func TestMatchSubcommand_GhWrapper_Blocked(t *testing.T) {
+	blocked := []string{
+		`bash -c 'gh repo create x --push'`,
+		`sh -c 'gh repo create x --push'`,
+	}
+	for _, cmd := range blocked {
+		if got := MatchSubcommand(cmd); got != "gh-repo-create-push" {
+			t.Errorf("D6-wrapper: %q should be blocked as gh-repo-create-push, got %q", cmd, got)
+		}
+	}
+
+	// Counter-arm: gh commands that do not push must pass through.
+	allowed := []string{
+		`bash -c 'gh repo view'`,
+		`sh -c 'gh pr create --title x'`,
+	}
+	for _, cmd := range allowed {
+		if got := MatchSubcommand(cmd); got != "" {
+			t.Errorf("D6-wrapper counter-arm: %q should be allowed, got %q", cmd, got)
+		}
+	}
 }

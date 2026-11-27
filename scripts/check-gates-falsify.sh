@@ -4852,7 +4852,7 @@ cp "$ROOT_DIR/go.sum" "$T60_MOD/go.sum"
 
 corrupt_literal \
   "$ROOT_DIR/internal/guard/gitbranch.go" "$T60_MOD/internal/guard/gitbranch.go" \
-  $'case "-c", "-C", "--create", "--force-create":' \
+  $'case "-c", "-C", "--create", "--force-create", "--orphan":' \
   $'case "__never-matches-s60__":' \
   "s60-go-switch-c-detection-removed"
 

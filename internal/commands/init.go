@@ -1,9 +1,12 @@
 package commands
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/kgsaran/trackfw/internal/homedir"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -32,6 +35,180 @@ var initStdinIsTTY = func() bool {
 // In production it calls f.Run() directly.
 var initFormRunner = func(f *huh.Form) error {
 	return f.Run()
+}
+
+// initGitCheck is an injection point for tests to override the git repository
+// detection call used by D1 (ADR-2026-11-26). It runs
+// `git rev-parse --is-inside-work-tree` with LC_ALL=C and returns
+// (stdout, stderr string, rc int). In production it delegates to
+// defaultInitGitCheck.
+var initGitCheck = defaultInitGitCheck
+
+// defaultInitGitCheck runs `git rev-parse --is-inside-work-tree` with
+// LC_ALL=C to detect the current git repository state. Returns
+// (stdout, stderr, exitCode). An exec.ErrNotFound means git is not installed;
+// the caller handles all four D1 states from the returned values.
+func defaultInitGitCheck() (stdout, stderr string, rc int) {
+	cmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")
+	cmd.Env = append(os.Environ(), "LC_ALL=C")
+	var outBuf, errBuf bytes.Buffer
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+	err := cmd.Run()
+	outStr := strings.TrimSpace(outBuf.String())
+	errStr := strings.TrimSpace(errBuf.String())
+	if err == nil {
+		return outStr, errStr, 0
+	}
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		return outStr, errStr, exitErr.ExitCode()
+	}
+	// Not found or other non-exit error: return rc=-1 to signal "no git binary".
+	return "", "", -1
+}
+
+// initGitExecFn is an injection point for tests to override the git execution
+// used for `git init` and `git symbolic-ref` within D1. In production it uses
+// exec.Command directly (no deadline needed for local ops).
+var initGitExecFn = defaultInitGitExec
+
+// initBootstrapOut is an injection point for tests to capture bootstrap step
+// output. In production it writes to os.Stdout. Used by runGitInitForBootstrap
+// to print the bootstrap steps only when git init was actually run (D5,
+// ADR-2026-11-26): repos that already had a work tree do not get this output.
+var initBootstrapOut io.Writer = os.Stdout
+
+// initGitStatusFn is an injection point for tests to override the
+// `git status --porcelain --untracked-files=normal` call that queries the
+// paths written by scaffold. Returns raw porcelain stdout only; stderr is
+// never captured so git warnings cannot contaminate the path list.
+// In production it uses defaultInitGitStatus.
+var initGitStatusFn = defaultInitGitStatus
+
+// defaultInitGitStatus runs `git status --porcelain -z --untracked-files=normal`
+// capturing only stdout. The -z flag uses NUL as the entry terminator, which
+// avoids shell injection from filenames containing spaces, quotes, or $(…).
+// Any stderr output (e.g. dubious-ownership warnings) is intentionally discarded
+// so that git warnings cannot contaminate the path list.
+func defaultInitGitStatus() string {
+	cmd := exec.Command("git", "status", "--porcelain", "-z", "--untracked-files=normal")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	// stderr intentionally not captured — git warnings must not appear in paths.
+	_ = cmd.Run()
+	// Do NOT TrimSpace: a leading/trailing space in a filename is real with -z.
+	return out.String()
+}
+
+// parseGitStatusPorcelain parses the NUL-terminated stdout of
+// `git status --porcelain -z` and returns the top-level paths.
+//
+// D1-6 (ML-2C, ADR-2026-11-26): the -z output uses NUL as the entry
+// terminator, which preserves filenames that contain shell metacharacters
+// (spaces, quotes, $(...)) without quoting. Each entry has the same
+// "XY SP path" prefix as the non-z form; trailing slashes on untracked
+// directories are stripped so that `git add .claude` stages the whole tree.
+//
+// Note: the per-path TrimSpace is intentionally absent (a leading/trailing
+// space in a filename is real and must be preserved).
+func parseGitStatusPorcelain(out string) []string {
+	var paths []string
+	for _, entry := range strings.Split(out, "\x00") {
+		if len(entry) < 4 { // minimum: "?? x"
+			continue
+		}
+		path := strings.TrimRight(entry[3:], "/")
+		if path != "" {
+			paths = append(paths, path)
+		}
+	}
+	return paths
+}
+
+// defaultInitGitExec runs a git command for the D1 bootstrap (git init,
+// git symbolic-ref). Returns (combined output, error).
+func defaultInitGitExec(args ...string) (string, error) {
+	cmd := exec.Command("git", args...) //nolint:gosec
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	err := cmd.Run()
+	return strings.TrimSpace(out.String()), err
+}
+
+// runGitInitForBootstrap implements D1 of ADR-2026-11-26:
+//
+//	git rev-parse --is-inside-work-tree with LC_ALL=C → four states:
+//	  rc=0, stdout=="true"  → print detected root, skip git init, scaffold proceeds; rc=0
+//	  rc=0, stdout=="false" → inside .git/ or bare repo; abort with rc≠0 before any write
+//	  rc=128, stderr contains "not a git repository" → run git init -b main (fallback: git init + symbolic-ref); scaffold proceeds
+//	  rc=128, other stderr  → warn (dubious ownership, permissions); skip git init; scaffold proceeds; rc=0
+//	  rc=-1 (no git binary) → warn; skip git init; scaffold proceeds; rc=0
+//
+// Returns a non-nil error only for the rc=0/false case (abort before scaffold).
+// All other failure-to-init paths return nil so scaffold proceeds.
+func runGitInitForBootstrap(cwd string) error {
+	stdout, stderr, rc := initGitCheck()
+
+	switch {
+	case rc == 0 && stdout == "true":
+		// Already inside a work tree. Find and print the detected root.
+		toplevelCmd := exec.Command("git", "rev-parse", "--show-toplevel")
+		toplevelCmd.Env = append(os.Environ(), "LC_ALL=C")
+		var tlOut bytes.Buffer
+		toplevelCmd.Stdout = &tlOut
+		_ = toplevelCmd.Run()
+		toplevel := strings.TrimSpace(tlOut.String())
+		if toplevel == "" {
+			toplevel = "(unknown root)"
+		}
+		fmt.Printf("trackfw init: already inside a git repository rooted at %q — skipping git init.\n", toplevel)
+		return nil
+
+	case rc == 0 && stdout == "false":
+		// Inside .git/ directory or a bare repository. Running git init here would
+		// create a nested repository (.git/.git/ or bare/.git/). Abort before any write.
+		return fmt.Errorf(
+			"trackfw init: refusing to run inside a git directory or bare repository (git reports false for is-inside-work-tree).\n" +
+				"Run init from an ordinary project directory, not from inside .git/ or a bare repo.",
+		)
+
+	case rc == 128 && strings.Contains(stderr, "not a git repository"):
+		// Fresh directory — initialize git with main as the default branch.
+		// Try -b main first (git >= 2.28); fall back to git init + symbolic-ref
+		// for older versions.
+		if _, err := initGitExecFn("init", "-b", "main"); err != nil {
+			// Fallback for git < 2.28 that doesn't support -b.
+			if _, initErr := initGitExecFn("init"); initErr != nil {
+				fmt.Printf("trackfw init: warning: git init failed (%v) — skipping git init; run it manually.\n", initErr)
+				return nil
+			}
+			if _, symErr := initGitExecFn("symbolic-ref", "HEAD", "refs/heads/main"); symErr != nil {
+				fmt.Printf("trackfw init: warning: could not set default branch to main (%v) — the default branch may not be 'main'.\n", symErr)
+			}
+		}
+		fmt.Println("trackfw init: initialized git repository with branch 'main'.")
+		// Query the real paths from git status --porcelain (stdout only; see
+		// defaultInitGitStatus for why stderr is excluded). The scaffold has
+		// already been written at this point (runGitInitForBootstrap is the last
+		// step of executeScaffoldAndInstall), so the porcelain output reflects
+		// the full set of files the agent needs to stage.
+		statusOut := initGitStatusFn()
+		paths := parseGitStatusPorcelain(statusOut)
+		generators.PrintBootstrapSteps(initBootstrapOut, paths)
+		return nil
+
+	case rc == -1:
+		// git binary not found.
+		fmt.Println("trackfw init: warning: git not found in PATH — skipping git init; install git and run 'git init' manually.")
+		return nil
+
+	default:
+		// rc=128 with other stderr (dubious ownership, permission error, etc.):
+		// warn but do not abort; scaffold proceeds.
+		fmt.Printf("trackfw init: warning: git check returned an unexpected error (%s) — skipping git init; scaffold will proceed.\n", stderr)
+		return nil
+	}
 }
 
 // applyCITriggerFromExisting reads ci_trigger from an already-existing trackfw.yaml (if any)
@@ -73,14 +250,34 @@ func isPathguardRefusal(err error) bool {
 // REQ-2026-11-02): removing the preCheckAIToolDestinations call from this
 // function causes TestExecuteScaffoldAndInstall_PreCheckFiresOnSymlinkClaudeDir
 // to fail regardless of which path invoked executeScaffoldAndInstall.
+//
+// D1 ordering (ADR-2026-11-26): the rc=0/false guard runs BEFORE scaffold (abort
+// before any project-dir write); `git init` itself runs AFTER scaffold and install
+// so that a scaffold pre-check failure leaves no .git/ behind.
 func executeScaffoldAndInstall(cfg generators.Config, aiTools []string, cwd, scope, home string) error {
 	if err := preCheckAIToolDestinations(aiTools, cwd, scope, home); err != nil {
 		return err
+	}
+	// D1 guard (ADR-2026-11-26): rc=0/false (inside .git/ or bare repo) must abort
+	// BEFORE any write to the project directory. The full git init is deferred to
+	// after scaffold so that a scaffold pre-check failure leaves no .git/ behind.
+	if s, _, rc := initGitCheck(); rc == 0 && s == "false" {
+		return fmt.Errorf(
+			"trackfw init: refusing to run inside a git directory or bare repository (git reports false for is-inside-work-tree).\n" +
+				"Run init from an ordinary project directory, not from inside .git/ or a bare repo.",
+		)
 	}
 	if err := generators.Scaffold(cfg); err != nil {
 		return err
 	}
 	if err := installAITools(aiTools, cwd, scope); err != nil {
+		return err
+	}
+	// D1 git init AFTER scaffold and install (ADR-2026-11-26): rc=0/false was already
+	// handled above; the remaining states (rc=0/true, rc=128, rc=-1, default) are
+	// handled by runGitInitForBootstrap here. Scaffold failure returns before this call,
+	// so no .git/ is created when scaffold aborts on a symlink pre-check.
+	if err := runGitInitForBootstrap(cwd); err != nil {
 		return err
 	}
 	return nil
@@ -340,6 +537,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 		// same function called from both TTY and non-TTY paths — removing the
 		// pre-check from executeScaffoldAndInstall fails
 		// TestExecuteScaffoldAndInstall_PreCheckFiresOnSymlinkClaudeDir).
+		// D1 (ADR-2026-11-26): git init is called inside executeScaffoldAndInstall,
+		// after the scaffold and AI-tool install, so that a scaffold pre-check
+		// failure leaves the project directory completely empty.
 		aiTools, _ := cmd.Flags().GetStringSlice("ai-tools")
 		if err := executeScaffoldAndInstall(cfg, aiTools, cwd, scope, home); err != nil {
 			return err
@@ -625,6 +825,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Pre-check + scaffold + install via shared function (T-8: same function as
 	// the non-TTY path — a test on executeScaffoldAndInstall covers both).
+	// D1 (ADR-2026-11-26): git init is called inside executeScaffoldAndInstall,
+	// after the scaffold and AI-tool install, so that a scaffold pre-check
+	// failure leaves no .git/ behind.
 	if err := executeScaffoldAndInstall(cfg, aiTools, cwd, scope, home); err != nil {
 		return err
 	}

@@ -29,6 +29,12 @@ type mockGit struct {
 	baseRef     string // returned for symbolic-ref refs/remotes/origin/HEAD (empty = error → fallback "main")
 	commitLog   string // returned for `log <base>..HEAD --no-merges --format=%B<sep>`
 	calls       [][]string
+
+	// D4 (ADR-2026-11-26) fields.
+	// pushURLs is returned for "remote get-url --push --all origin".
+	// lsRemoteOut is returned for "ls-remote --heads <url>".
+	pushURLs    string
+	lsRemoteOut string
 }
 
 func (m *mockGit) exec(args ...string) (string, error) {
@@ -67,6 +73,18 @@ func (m *mockGit) exec(args ...string) (string, error) {
 
 	case joined == "remote get-url origin":
 		return m.remoteURL, nil
+
+	case strings.HasPrefix(joined, "remote get-url --push --all"):
+		return m.pushURLs, nil
+
+	case strings.HasPrefix(joined, "ls-remote --get-url"):
+		// No insteadOf rewrite in mock — return the URL unchanged (args[2] is the URL).
+		if len(args) >= 3 {
+			return args[2], nil
+		}
+		return "", nil
+	case strings.HasPrefix(joined, "ls-remote --heads"):
+		return m.lsRemoteOut, nil
 	}
 
 	return "", nil
@@ -2058,6 +2076,85 @@ func TestShip_ForceFlagDoesNotExist(t *testing.T) {
 	}
 	if flag := cmd.Flags().Lookup("force-with-lease"); flag == nil {
 		t.Fatal("expected --force-with-lease flag to be registered")
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// D4 (ADR-2026-11-26): block feature ship to empty remote
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestShip_D4_FeatureBranch_EmptyRemote_Blocked affirms that ship blocks a feature
+// branch when the remote has no branches yet.
+// Rule reconciliation: affirms D4 applies to ship — from ADR-2026-11-26 D4:
+// "trackfw push (e o ship) de qualquer outra branch recusa quando o destino
+// do push está vazio".
+func TestShip_D4_FeatureBranch_EmptyRemote_Blocked(t *testing.T) {
+	m := &mockGit{
+		branch:      "feat/my-feature",
+		stagedFiles: "file.go",
+		pushURLs:    "https://github.com/user/repo.git",
+		// lsRemoteOut is "" (no branches) — remote is empty.
+	}
+	d := shipDeps{
+		execGit:         m.exec,
+		checkGovernance: func() *validator.GovernanceViolation { return nil },
+		out:             &bytes.Buffer{},
+		availFn:         func(string) bool { return false },
+		execForgeCLI:    func(string, []string) error { return nil },
+	}
+	err := runShip(shipOpts{message: "feat: x"}, d)
+	if err == nil {
+		t.Fatal("expected D4 to block ship to empty remote")
+	}
+	if !strings.Contains(err.Error(), "remote has no branches yet") {
+		t.Errorf("expected 'remote has no branches yet' in error, got: %q", err.Error())
+	}
+}
+
+// TestShip_D4_FeatureBranch_RemoteHasBranches_Passes is the counter-arm for ship D4.
+// Rule reconciliation: affirms that D4 does NOT block when the remote already has
+// at least one branch — normal feature branch ship after bootstrap.
+func TestShip_D4_FeatureBranch_RemoteHasBranches_Passes(t *testing.T) {
+	m := &mockGit{
+		branch:      "feat/my-feature",
+		stagedFiles: "file.go",
+		pushURLs:    "https://github.com/user/repo.git",
+		lsRemoteOut: "abc123def456abc123def456abc123def456abc1\trefs/heads/main\n",
+	}
+	d := shipDeps{
+		execGit:         m.exec,
+		checkGovernance: func() *validator.GovernanceViolation { return nil },
+		out:             &bytes.Buffer{},
+		availFn:         func(string) bool { return false },
+		execForgeCLI:    func(string, []string) error { return nil },
+	}
+	err := runShip(shipOpts{message: "feat: x", dryRun: true}, d)
+	if err != nil {
+		t.Fatalf("expected D4 to pass when remote has branches, got: %v", err)
+	}
+}
+
+// TestShip_D4_FeatureBranch_RemoteQueryFails_FailOpen affirms ship D4 is fail-open:
+// if the remote cannot be queried, ship proceeds (network failure surfaces at push time).
+// Rule reconciliation: affirms ADR-2026-11-26 D4 "Se a consulta falhar, o push da feature
+// segue como hoje" — this applies equally to ship.
+func TestShip_D4_FeatureBranch_RemoteQueryFails_FailOpen(t *testing.T) {
+	// pushURLs is "" → checkRemoteEmpty returns error → D4 fail-open → ship proceeds.
+	m := &mockGit{
+		branch:      "feat/my-feature",
+		stagedFiles: "file.go",
+		pushURLs:    "",
+	}
+	d := shipDeps{
+		execGit:         m.exec,
+		checkGovernance: func() *validator.GovernanceViolation { return nil },
+		out:             &bytes.Buffer{},
+		availFn:         func(string) bool { return false },
+		execForgeCLI:    func(string, []string) error { return nil },
+	}
+	err := runShip(shipOpts{message: "feat: x", dryRun: true}, d)
+	if err != nil {
+		t.Fatalf("expected D4 fail-open when query fails, got: %v", err)
 	}
 }
 

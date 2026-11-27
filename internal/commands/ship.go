@@ -364,6 +364,14 @@ func runShip(opts shipOpts, deps shipDeps) error {
 		}
 	}
 
+	// ─── Step 3.5: D4 (ADR-2026-11-26) — block feature ship to empty remote ────
+	// runShip does not call runPush (ship.go:417), so D4 must live here too.
+	// Fail-open: query failure passes through (the subsequent push will surface it).
+	if d4Empty, d4Err := checkRemoteEmpty(deps.execGit); d4Err == nil && d4Empty {
+		return errors.New("trackfw ship: the remote has no branches yet.\n" +
+			bootstrapStepsHint("ship your feature branch"))
+	}
+
 	// ─── Step 4: Review staged ───────────────────────────────────────────────
 	statusOut, _ := deps.execGit("status", "--short")
 	diffStatOut, _ := deps.execGit("diff", "--cached", "--stat")

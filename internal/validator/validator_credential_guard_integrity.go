@@ -409,7 +409,12 @@ func originMainRefUnreadableMessage() string {
 		"(e.g. git fetch --depth=1 --no-tags origin +refs/heads/main:refs/remotes/origin/main) " +
 		"before trackfw validate; " +
 		"rule severities that are lower in trackfw.yaml than their built-in defaults " +
-		"are overridden to prevent bypass"
+		"are overridden to prevent bypass. " +
+		"If this is a new repository without commits yet: " +
+		"1) git status --short  " +
+		"2) git add <each path listed by git status --short>  " +
+		"3) trackfw commit -m \"chore(scaffold): initial\"  " +
+		"4) trackfw push"
 }
 
 // originMainAnchorWeakeningMessage is the per-rule violation emitted when the severity anchor

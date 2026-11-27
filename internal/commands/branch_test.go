@@ -3,6 +3,7 @@ package commands
 import (
 	"bytes"
 	"errors"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -442,5 +443,333 @@ func TestResolveBranchStartPoint_ExplicitRefResolvesToSHA(t *testing.T) {
 	}
 	if displayRef != fakeRef {
 		t.Errorf("B-1: expected displayRef %q, got %q", fakeRef, displayRef)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// D2 (ADR-2026-11-26): branch new rejects unborn HEAD before type check
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestRunBranchNew_UnbornHEAD_BlocksBeforeTypeCheck affirms D2 for branch new:
+// when headExitCode returns 1 (rev-parse --verify -q HEAD exits 1 = unborn HEAD),
+// runBranchNew must return an error with the bootstrap instructions — without
+// reaching the roadmap/type gate.
+// Rule reconciliation: affirms ADR-2026-11-26 D2 conclusion that rc==1 is blocked
+// at the entry of runBranchNew; the counter-arm (TestRunBranchNew_BornHEAD_AllowsTypeCheck)
+// confirms the type gate fires when HEAD has a commit (rc==0).
+func TestRunBranchNew_UnbornHEAD_BlocksBeforeTypeCheck(t *testing.T) {
+	out := &bytes.Buffer{}
+	typeGateCalled := false
+
+	d := branchNewDeps{
+		loadConfig:      func() config.ProjectConfig { return config.ProjectConfig{} },
+		resolveWIPDirs:  func(config.ProjectConfig) []string { return []string{"docs/roadmaps/wip"} },
+		resolveDoneDirs: func(config.ProjectConfig) []string { return []string{"docs/roadmaps/done"} },
+		matchSlug: func(slug string, wip, done []string) (bool, []string) {
+			typeGateCalled = true
+			return true, nil
+		},
+		matchDone:       func(slug string, done []string) []string { return nil },
+		execGitCheckout: func(branch, _ string) error { return nil },
+		fromRef:         "HEAD",
+		out:             out,
+		headExitCode:    func() int { return 1 }, // simulate unborn HEAD (rc==1)
+	}
+
+	err := runBranchNew("feat/bootstrap-test", false, d)
+	if err == nil {
+		t.Fatal("expected error for unborn HEAD, got nil")
+	}
+	if !strings.Contains(err.Error(), "unborn") && !strings.Contains(err.Error(), "bootstrap") {
+		t.Errorf("error must mention unborn/bootstrap, got: %v", err)
+	}
+	// The type/roadmap gate must NOT have fired — block happens before it.
+	if typeGateCalled {
+		t.Error("type gate must not be called when HEAD has no commit (D2 blocks first)")
+	}
+}
+
+// TestRunBranchNew_BornHEAD_AllowsTypeCheck is the counter-arm for
+// TestRunBranchNew_UnbornHEAD_BlocksBeforeTypeCheck: when headExitCode returns 0
+// (HEAD has a commit), runBranchNew proceeds past the D2 check to the type gate.
+// Rule reconciliation: affirms the counter-arm — if D2 blocked all branches
+// unconditionally, this test would fail because typeGateCalled would be false.
+func TestRunBranchNew_BornHEAD_AllowsTypeCheck(t *testing.T) {
+	out := &bytes.Buffer{}
+	typeGateCalled := false
+
+	d := branchNewDeps{
+		loadConfig:      func() config.ProjectConfig { return config.ProjectConfig{} },
+		resolveWIPDirs:  func(config.ProjectConfig) []string { return []string{"docs/roadmaps/wip"} },
+		resolveDoneDirs: func(config.ProjectConfig) []string { return []string{"docs/roadmaps/done"} },
+		matchSlug: func(slug string, wip, done []string) (bool, []string) {
+			typeGateCalled = true
+			return true, nil // matched: allow checkout
+		},
+		matchDone:       func(slug string, done []string) []string { return nil },
+		execGitCheckout: func(branch, _ string) error { return nil },
+		fromRef:         "HEAD",
+		out:             out,
+		headExitCode:    func() int { return 0 }, // simulate born HEAD (rc==0)
+	}
+
+	err := runBranchNew("feat/bootstrap-test", false, d)
+	if err != nil {
+		t.Fatalf("unexpected error for born HEAD: %v", err)
+	}
+	if !typeGateCalled {
+		t.Error("type gate must be called when HEAD has a commit (D2 passes through)")
+	}
+}
+
+// TestRunBranchNew_UnbornHEAD_IncludesGitSwitchHint (ML-2C M-X1) affirms that
+// when branch new is blocked on an unborn HEAD (D2, headExitCode returns 1), the
+// output printed to the user includes a "git switch <branch>" hint so the user can
+// recover by switching to an existing branch rather than being stuck with only the
+// bootstrap path. The hint lives in the printed message (deps.out), not the returned
+// error; the error is a short machine-parseable "blocked: HEAD has no commit" string.
+//
+// Rule reconciliation: affirms M-X1 (ML-2C) — the printed block already contained
+// the hint after the Wave 2 implementation; this test asserts it is present and
+// will catch any accidental removal.
+func TestRunBranchNew_UnbornHEAD_IncludesGitSwitchHint(t *testing.T) {
+	out := &bytes.Buffer{}
+
+	d := branchNewDeps{
+		loadConfig:      func() config.ProjectConfig { return config.ProjectConfig{} },
+		resolveWIPDirs:  func(config.ProjectConfig) []string { return []string{"docs/roadmaps/wip"} },
+		resolveDoneDirs: func(config.ProjectConfig) []string { return []string{"docs/roadmaps/done"} },
+		matchSlug:       func(slug string, wip, done []string) (bool, []string) { return true, nil },
+		matchDone:       func(slug string, done []string) []string { return nil },
+		execGitCheckout: func(branch, _ string) error { return nil },
+		fromRef:         "HEAD",
+		out:             out,
+		headExitCode:    func() int { return 1 }, // simulate unborn HEAD (rc==1)
+	}
+
+	err := runBranchNew("feat/bootstrap-test", false, d)
+	if err == nil {
+		t.Fatal("expected error for unborn HEAD, got nil")
+	}
+	// The hint is in the printed output, not the returned error.
+	if !strings.Contains(out.String(), "git switch") {
+		t.Errorf("M-X1: branch new unborn HEAD output must include 'git switch <branch>' hint; got output: %q, err: %v", out.String(), err)
+	}
+}
+
+// D2 counter-arm tests (ML-2E): exit codes other than 1 must NOT trigger the unborn refusal.
+// ────────────────────────────────────────────────────────────────────────────────────────────
+
+// TestRunBranchNew_D2_ExitCode128_AllowsTypeCheck affirms that rc==128
+// ("not a git repository") does NOT trigger the D2 unborn-HEAD refusal.
+// headExitCode returning 128 simulates the response when git is called outside
+// any repository (the common case for scripts that run --dry-run to measure
+// slug matching, such as check-roadmap-slug-matching.sh).
+// Rule reconciliation: affirms ML-2E requirement that D2 uses rc==1 exclusively;
+// rc==128 must pass through to the slug governance check.
+func TestRunBranchNew_D2_ExitCode128_AllowsTypeCheck(t *testing.T) {
+	out := &bytes.Buffer{}
+	typeGateCalled := false
+
+	d := branchNewDeps{
+		loadConfig:      func() config.ProjectConfig { return config.ProjectConfig{} },
+		resolveWIPDirs:  func(config.ProjectConfig) []string { return []string{"docs/roadmaps/wip"} },
+		resolveDoneDirs: func(config.ProjectConfig) []string { return []string{"docs/roadmaps/done"} },
+		matchSlug: func(slug string, wip, done []string) (bool, []string) {
+			typeGateCalled = true
+			return true, nil
+		},
+		matchDone:       func(slug string, done []string) []string { return nil },
+		execGitCheckout: func(branch, _ string) error { return nil },
+		fromRef:         "HEAD",
+		out:             out,
+		headExitCode:    func() int { return 128 }, // not a git repository
+	}
+
+	err := runBranchNew("feat/bootstrap-test", false, d)
+	if err != nil {
+		t.Fatalf("rc==128 must not block: unexpected error: %v", err)
+	}
+	if !typeGateCalled {
+		t.Error("type gate must be called when headExitCode is 128 (not a repository)")
+	}
+	if strings.Contains(out.String(), "unborn HEAD") {
+		t.Errorf("rc==128 must not emit unborn-HEAD message; got: %q", out.String())
+	}
+}
+
+// TestRunBranchNew_D2_ExitCodeMinus1_AllowsTypeCheck affirms that rc==-1
+// (git binary not found, or other non-ExitError failure) does NOT trigger D2.
+// Rule reconciliation: affirms ML-2E requirement that D2 uses rc==1 exclusively;
+// any non-zero code other than 1 passes through.
+func TestRunBranchNew_D2_ExitCodeMinus1_AllowsTypeCheck(t *testing.T) {
+	out := &bytes.Buffer{}
+	typeGateCalled := false
+
+	d := branchNewDeps{
+		loadConfig:      func() config.ProjectConfig { return config.ProjectConfig{} },
+		resolveWIPDirs:  func(config.ProjectConfig) []string { return []string{"docs/roadmaps/wip"} },
+		resolveDoneDirs: func(config.ProjectConfig) []string { return []string{"docs/roadmaps/done"} },
+		matchSlug: func(slug string, wip, done []string) (bool, []string) {
+			typeGateCalled = true
+			return true, nil
+		},
+		matchDone:       func(slug string, done []string) []string { return nil },
+		execGitCheckout: func(branch, _ string) error { return nil },
+		fromRef:         "HEAD",
+		out:             out,
+		headExitCode:    func() int { return -1 }, // git not found
+	}
+
+	err := runBranchNew("feat/bootstrap-test", false, d)
+	if err != nil {
+		t.Fatalf("rc==-1 must not block: unexpected error: %v", err)
+	}
+	if !typeGateCalled {
+		t.Error("type gate must be called when headExitCode is -1 (git not found)")
+	}
+	if strings.Contains(out.String(), "unborn HEAD") {
+		t.Errorf("rc==-1 must not emit unborn-HEAD message; got: %q", out.String())
+	}
+}
+
+// Real-git D2 tests using gitRevParseHeadExitCode directly (ML-2E).
+// ────────────────────────────────────────────────────────────────────────────────────────────
+
+// TestGitRevParseHeadExitCode_NonGitDir affirms that gitRevParseHeadExitCode returns 128
+// (not 1) for a directory that is not a git repository. This is the exit code that was
+// previously misclassified as "unborn HEAD" by the old D2 implementation, causing
+// check-roadmap-slug-matching.sh --self-test to report 205/205 false rejections.
+// Rule reconciliation: affirms ML-2E — the discriminant between "unborn HEAD" and
+// "not a repository" is the exit code (1 vs 128), and this test asserts the value
+// that arrives at D2 for the non-repository case.
+func TestGitRevParseHeadExitCode_NonGitDir(t *testing.T) {
+	dir := t.TempDir()
+	// Set GIT_CEILING_DIRECTORIES so git cannot walk up into an enclosing repository.
+	t.Setenv("GIT_CEILING_DIRECTORIES", dir)
+
+	got := gitRevParseHeadExitCode(dir)
+	if got != 128 {
+		t.Errorf("expected exit code 128 for non-git dir, got %d", got)
+	}
+}
+
+// TestGitRevParseHeadExitCode_UnbornRepo affirms that gitRevParseHeadExitCode returns 1
+// for a git-initialized repository with no commits (unborn HEAD).
+// Rule reconciliation: affirms ML-2E — rc==1 is the signal D2 must act on; this test
+// asserts that the real git subprocess produces rc==1 in the unborn-HEAD scenario.
+func TestGitRevParseHeadExitCode_UnbornRepo(t *testing.T) {
+	dir := t.TempDir()
+	if err := exec.Command("git", "init", dir).Run(); err != nil {
+		t.Skipf("git init failed (git not available?): %v", err)
+	}
+
+	got := gitRevParseHeadExitCode(dir)
+	if got != 1 {
+		t.Errorf("expected exit code 1 for unborn HEAD, got %d", got)
+	}
+}
+
+// TestRunBranchNew_D2_RealGit_NonGitDir_DryRun_ShowsWouldCreate affirms the end-to-end
+// fix for ML-2E: running --dry-run in a directory that is not a git repository must NOT
+// print the unborn-HEAD refusal. The slug governance check runs normally and prints
+// "would create" (or "would block") — not the bootstrap instructions.
+//
+// This test exercises the production headExitCode path (gitRevParseHeadExitCode) so
+// that any regression in the discriminant is caught before the slug-matching script.
+// Rule reconciliation: affirms ML-2E — this is the exact scenario that caused
+// check-roadmap-slug-matching.sh --self-test to report 205/205 blocked branches.
+func TestRunBranchNew_D2_RealGit_NonGitDir_DryRun_ShowsWouldCreate(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("GIT_CEILING_DIRECTORIES", dir)
+
+	out := &bytes.Buffer{}
+
+	d := branchNewDeps{
+		loadConfig:      func() config.ProjectConfig { return config.ProjectConfig{} },
+		resolveWIPDirs:  func(config.ProjectConfig) []string { return []string{"docs/roadmaps/wip"} },
+		resolveDoneDirs: func(config.ProjectConfig) []string { return []string{"docs/roadmaps/done"} },
+		matchSlug:       func(slug string, wip, done []string) (bool, []string) { return true, nil },
+		matchDone:       func(slug string, done []string) []string { return nil },
+		execGitCheckout: func(branch, _ string) error { return nil },
+		fromRef:         "HEAD",
+		out:             out,
+		headExitCode:    func() int { return gitRevParseHeadExitCode(dir) },
+	}
+
+	err := runBranchNew("chore/x", true /*dryRun*/, d)
+	if err != nil {
+		t.Fatalf("non-git dir must not block in dry-run: %v", err)
+	}
+	got := out.String()
+	if strings.Contains(got, "unborn HEAD") || strings.Contains(got, "bootstrap") {
+		t.Errorf("non-git dir must not produce unborn-HEAD message; got: %q", got)
+	}
+	if !strings.Contains(got, "would create") && !strings.Contains(got, "would block") {
+		t.Errorf("non-git dir dry-run must print 'would create' or 'would block'; got: %q", got)
+	}
+}
+
+// TestRunBranchNew_D2_RealGit_UnbornRepo_Blocks affirms that an unborn HEAD repository
+// (git-initialized, no commits) is blocked by D2 even with real git.
+// Rule reconciliation: affirms ML-2E counter-arm — the fix must not accidentally
+// disable D2 for the actual unborn-HEAD case.
+func TestRunBranchNew_D2_RealGit_UnbornRepo_Blocks(t *testing.T) {
+	dir := t.TempDir()
+	if err := exec.Command("git", "init", dir).Run(); err != nil {
+		t.Skipf("git init failed (git not available?): %v", err)
+	}
+
+	out := &bytes.Buffer{}
+
+	d := branchNewDeps{
+		loadConfig:      func() config.ProjectConfig { return config.ProjectConfig{} },
+		resolveWIPDirs:  func(config.ProjectConfig) []string { return []string{"docs/roadmaps/wip"} },
+		resolveDoneDirs: func(config.ProjectConfig) []string { return []string{"docs/roadmaps/done"} },
+		matchSlug:       func(slug string, wip, done []string) (bool, []string) { return true, nil },
+		matchDone:       func(slug string, done []string) []string { return nil },
+		execGitCheckout: func(branch, _ string) error { return nil },
+		fromRef:         "HEAD",
+		out:             out,
+		headExitCode:    func() int { return gitRevParseHeadExitCode(dir) },
+	}
+
+	err := runBranchNew("chore/x", false /*dryRun*/, d)
+	if err == nil {
+		t.Fatal("unborn HEAD repo must be blocked by D2, got nil error")
+	}
+	if !strings.Contains(err.Error(), "unborn") && !strings.Contains(err.Error(), "bootstrap") {
+		t.Errorf("error must mention unborn/bootstrap, got: %v", err)
+	}
+}
+
+// Cobra wiring tests (ML-2E): run through newBranchNewCmd to validate that
+// headExitCode is set in the production deps.
+// ────────────────────────────────────────────────────────────────────────────────────────────
+
+// TestBranchNewCmd_D2_WiringSet_UnbornRepo affirms that the production command
+// (newBranchNewCmd) sets headExitCode in deps so D2 fires for a real unborn repository.
+// Rule reconciliation: validates the production wiring — if headExitCode is not set in
+// newBranchNewCmd, D2 is nil and silently dead; this test catches that regression.
+func TestBranchNewCmd_D2_WiringSet_UnbornRepo(t *testing.T) {
+	dir := t.TempDir()
+	if err := exec.Command("git", "init", dir).Run(); err != nil {
+		t.Skipf("git init failed (git not available?): %v", err)
+	}
+	t.Chdir(dir)
+
+	cmd := newBranchNewCmd()
+	var out, errBuf bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errBuf)
+	cmd.SetArgs([]string{"chore/wiring-check", "--dry-run", "--from", "HEAD"})
+
+	execErr := cmd.Execute()
+	if execErr == nil {
+		t.Fatal("unborn HEAD repo must be blocked (D2); got nil error — headExitCode may not be wired in newBranchNewCmd")
+	}
+	combined := out.String() + errBuf.String()
+	if !strings.Contains(combined, "unborn") && !strings.Contains(combined, "bootstrap") {
+		t.Errorf("expected unborn-HEAD message; got out=%q err=%q execErr=%v", out.String(), errBuf.String(), execErr)
 	}
 }

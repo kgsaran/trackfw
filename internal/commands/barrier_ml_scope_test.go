@@ -853,16 +853,24 @@ func TestMLScope_NoOriginMain_Blocked(t *testing.T) {
 		t.Fatalf("expected ml_scope blocked when origin/main absent, got %q\nevidence: %v\nfailures: %v",
 			check.Status, check.Evidence, check.Failures)
 	}
-	// The failure message must mention origin/main.
-	found := false
+	// The failure message must mention origin/main (pre-existing) and the D5 bootstrap hint.
+	foundOriginMain := false
+	foundBootstrap := false
 	for _, f := range check.Failures {
 		if strings.Contains(f, "origin/main") {
-			found = true
-			break
+			foundOriginMain = true
+		}
+		if strings.Contains(f, "trackfw commit") || strings.Contains(f, "trackfw push") {
+			foundBootstrap = true
 		}
 	}
-	if !found {
+	if !foundOriginMain {
 		t.Fatalf("expected 'origin/main' in failures; got: %v", check.Failures)
+	}
+	// D5 (ADR-2026-11-26): the blocked message must include a bootstrap hint so agents
+	// know what to do when the repo has no commits yet.
+	if !foundBootstrap {
+		t.Fatalf("expected 'trackfw commit' or 'trackfw push' in failures (D5 bootstrap hint); got: %v", check.Failures)
 	}
 }
 

@@ -1,12 +1,17 @@
 package commands
 
 import (
+	"bytes"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/generators"
 	"github.com/kgsaran/trackfw/internal/identity"
 )
@@ -677,6 +682,9 @@ func TestExecuteScaffoldAndInstall_PreCheckFiresOnSymlinkClaudeDir(t *testing.T)
 // (T-12) fires for ClaudeCommandsDirPath regardless of the --ai-tools flag —
 // preCheckAIToolDestinations returns early when aiTools is empty, so the only
 // guard is the Scaffold pre-check.
+// D1 note (ADR-2026-11-26): git init runs AFTER scaffold succeeds; because
+// scaffold aborts here on the symlink pre-check, git init is never called and
+// no .git/ is created — only the placed symlink exists after the abort.
 func TestInitScaffoldPreCheckAbortsOnSymlinkProjectClaudeNoAITools(t *testing.T) {
 	project, _ := initFixture(t)
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
@@ -692,7 +700,7 @@ func TestInitScaffoldPreCheckAbortsOnSymlinkProjectClaudeNoAITools(t *testing.T)
 		t.Fatal("expected error: project .claude is a symlink, Scaffold pre-check must abort")
 	}
 
-	// Count only non-.claude entries (the symlink itself is there before init).
+	// Only the placed symlink (.claude) may exist — no scaffold files and no .git/.
 	entries, _ := os.ReadDir(project)
 	for _, e := range entries {
 		if e.Name() == ".claude" {
@@ -706,6 +714,9 @@ func TestInitScaffoldPreCheckAbortsOnSymlinkProjectClaudeNoAITools(t *testing.T)
 // without partial writes when <proj>/scripts is a symlink. Reconciliation:
 // affirms that the Scaffold pre-check covers the scripts/ directory via
 // validateScriptPath — partial writes happen without the pre-check.
+// D1 note (ADR-2026-11-26): git init runs AFTER scaffold succeeds; because
+// scaffold aborts here on the symlink pre-check, git init is never called and
+// no .git/ is created — only the placed symlink exists after the abort.
 func TestInitScaffoldPreCheckAbortsOnSymlinkScriptsDir(t *testing.T) {
 	project, _ := initFixture(t)
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
@@ -720,7 +731,7 @@ func TestInitScaffoldPreCheckAbortsOnSymlinkScriptsDir(t *testing.T) {
 		t.Fatal("expected error: project scripts/ is a symlink, Scaffold pre-check must abort")
 	}
 
-	// No files other than the scripts symlink should exist.
+	// Only the placed symlink (scripts/) may exist — no scaffold files and no .git/.
 	entries, _ := os.ReadDir(project)
 	for _, e := range entries {
 		if e.Name() == "scripts" {
@@ -734,6 +745,9 @@ func TestInitScaffoldPreCheckAbortsOnSymlinkScriptsDir(t *testing.T) {
 // without partial writes when <proj>/vault is a symlink. Reconciliation:
 // affirms that the Scaffold pre-check covers vault/ via vaultIndexPath —
 // without the pre-check, govDirs (docs/) would be written before the error.
+// D1 note (ADR-2026-11-26): git init runs AFTER scaffold succeeds; because
+// scaffold aborts here on the symlink pre-check, git init is never called and
+// no .git/ is created — only the placed symlink exists after the abort.
 func TestInitScaffoldPreCheckAbortsOnSymlinkVaultDir(t *testing.T) {
 	project, _ := initFixture(t)
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
@@ -748,6 +762,7 @@ func TestInitScaffoldPreCheckAbortsOnSymlinkVaultDir(t *testing.T) {
 		t.Fatal("expected error: project vault/ is a symlink, Scaffold pre-check must abort")
 	}
 
+	// Only the placed symlink (vault/) may exist — no scaffold files and no .git/.
 	entries, _ := os.ReadDir(project)
 	for _, e := range entries {
 		if e.Name() == "vault" {
@@ -761,6 +776,9 @@ func TestInitScaffoldPreCheckAbortsOnSymlinkVaultDir(t *testing.T) {
 // without partial writes when <proj>/docs is a symlink. Reconciliation:
 // affirms that the Scaffold pre-check covers docs/ via govDirs — without the
 // pre-check, some govDirs would succeed before docs/ is refused.
+// D1 note (ADR-2026-11-26): git init runs AFTER scaffold succeeds; because
+// scaffold aborts here on the symlink pre-check, git init is never called and
+// no .git/ is created — only the placed symlink exists after the abort.
 func TestInitScaffoldPreCheckAbortsOnSymlinkDocsDir(t *testing.T) {
 	project, _ := initFixture(t)
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
@@ -775,6 +793,7 @@ func TestInitScaffoldPreCheckAbortsOnSymlinkDocsDir(t *testing.T) {
 		t.Fatal("expected error: project docs/ is a symlink, Scaffold pre-check must abort")
 	}
 
+	// Only the placed symlink (docs/) may exist — no scaffold files and no .git/.
 	entries, _ := os.ReadDir(project)
 	for _, e := range entries {
 		if e.Name() == "docs" {
@@ -853,5 +872,473 @@ func TestInitPreCheckRejectsSymlinkInCodexHome(t *testing.T) {
 	entries, _ := os.ReadDir(project)
 	for _, e := range entries {
 		t.Errorf("project must be empty after pre-check abort, found: %s", e.Name())
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// D1 (ADR-2026-11-26): runGitInitForBootstrap — four-state table
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestRunGitInitForBootstrap_FreshDir affirms the main D1 path: rc=128 with
+// "not a git repository" in stderr triggers `git init -b main`, returns nil.
+// Rule reconciliation: affirms the conclusion that rc=128/"not a git repository"
+// is the correct discriminator for a directory that needs git init — the arm
+// that runs initGitExecFn confirms init was called; the counter-arm uses
+// rc=0/true to confirm the "already in a repo" path skips init.
+func TestRunGitInitForBootstrap_FreshDir(t *testing.T) {
+	// Inject: simulate fresh directory (not a git repository).
+	oldCheck := initGitCheck
+	oldExec := initGitExecFn
+	oldStatus := initGitStatusFn
+	t.Cleanup(func() { initGitCheck = oldCheck; initGitExecFn = oldExec; initGitStatusFn = oldStatus })
+
+	initGitCheck = func() (string, string, int) {
+		return "", "fatal: not a git repository (or any of the parent directories): .git", 128
+	}
+
+	var execArgs [][]string
+	initGitExecFn = func(args ...string) (string, error) {
+		execArgs = append(execArgs, append([]string{}, args...))
+		return "", nil
+	}
+	// Stub status so the test does not query the real repo's working tree.
+	initGitStatusFn = func() string { return "" }
+
+	if err := runGitInitForBootstrap(t.TempDir()); err != nil {
+		t.Fatalf("expected nil error for fresh dir, got: %v", err)
+	}
+	// At least one git exec call must have been made (git init -b main or fallback).
+	if len(execArgs) == 0 {
+		t.Error("expected initGitExecFn to be called for fresh dir, got 0 calls")
+	}
+	firstArgs := execArgs[0]
+	if len(firstArgs) < 1 || firstArgs[0] != "init" {
+		t.Errorf("expected first git call to be 'init', got %v", firstArgs)
+	}
+}
+
+// TestRunGitInitForBootstrap_AlreadyInsideWorkTree affirms that rc=0/stdout=="true"
+// skips git init and returns nil (D1 state 1).
+// Rule reconciliation: affirms the conclusion that an existing work tree is
+// detected and git init is not invoked — the counter-arm (FreshDir) confirms
+// init IS invoked when rc=128.
+func TestRunGitInitForBootstrap_AlreadyInsideWorkTree(t *testing.T) {
+	oldCheck := initGitCheck
+	oldExec := initGitExecFn
+	t.Cleanup(func() { initGitCheck = oldCheck; initGitExecFn = oldExec })
+
+	initGitCheck = func() (string, string, int) {
+		return "true", "", 0
+	}
+	var execCalled bool
+	initGitExecFn = func(args ...string) (string, error) {
+		execCalled = true
+		return "", nil
+	}
+
+	if err := runGitInitForBootstrap(t.TempDir()); err != nil {
+		t.Fatalf("expected nil error when already in work tree, got: %v", err)
+	}
+	if execCalled {
+		t.Error("initGitExecFn must not be called when already inside a work tree")
+	}
+}
+
+// TestRunGitInitForBootstrap_InsideBareOrGitDir affirms that rc=0/stdout=="false"
+// returns a non-nil error (D1 state 2: inside .git/ or a bare repo).
+// Rule reconciliation: affirms M-X9 conclusion that git init inside a gitdir or
+// bare repo would create a nested repo — this case must abort before any write.
+func TestRunGitInitForBootstrap_InsideBareOrGitDir(t *testing.T) {
+	oldCheck := initGitCheck
+	t.Cleanup(func() { initGitCheck = oldCheck })
+
+	initGitCheck = func() (string, string, int) {
+		return "false", "", 0
+	}
+
+	err := runGitInitForBootstrap(t.TempDir())
+	if err == nil {
+		t.Fatal("expected non-nil error for rc=0/false (inside .git/ or bare repo), got nil")
+	}
+	if !strings.Contains(err.Error(), "refusing") {
+		t.Errorf("error must mention 'refusing', got: %v", err)
+	}
+}
+
+// TestRunGitInitForBootstrap_DubiousOwnership affirms that rc=128 with stderr
+// NOT containing "not a git repository" (e.g., "dubious ownership") warns but
+// returns nil so scaffold proceeds (D1 state 4).
+// Rule reconciliation: affirms the conclusion that ownership/permission errors
+// are non-fatal for init — git init is skipped but scaffold proceeds (fail-open).
+func TestRunGitInitForBootstrap_DubiousOwnership(t *testing.T) {
+	oldCheck := initGitCheck
+	oldExec := initGitExecFn
+	t.Cleanup(func() { initGitCheck = oldCheck; initGitExecFn = oldExec })
+
+	initGitCheck = func() (string, string, int) {
+		return "", "fatal: detected dubious ownership in repository", 128
+	}
+	var execCalled bool
+	initGitExecFn = func(args ...string) (string, error) {
+		execCalled = true
+		return "", nil
+	}
+
+	if err := runGitInitForBootstrap(t.TempDir()); err != nil {
+		t.Fatalf("expected nil (warn + skip) for dubious ownership, got: %v", err)
+	}
+	if execCalled {
+		t.Error("initGitExecFn must not be called for dubious ownership (non-fatal skip)")
+	}
+}
+
+// TestRunGitInitForBootstrap_NoGitBinary affirms that rc==-1 (git not in PATH)
+// warns but returns nil so scaffold proceeds (D1 state 5 / rc=-1 branch).
+// Rule reconciliation: affirms the ADR-2026-11-26 decision that a missing git
+// binary is non-fatal for init — the user must run git init manually.
+func TestRunGitInitForBootstrap_NoGitBinary(t *testing.T) {
+	oldCheck := initGitCheck
+	oldExec := initGitExecFn
+	t.Cleanup(func() { initGitCheck = oldCheck; initGitExecFn = oldExec })
+
+	initGitCheck = func() (string, string, int) {
+		return "", "", -1
+	}
+	var execCalled bool
+	initGitExecFn = func(args ...string) (string, error) {
+		execCalled = true
+		return "", nil
+	}
+
+	if err := runGitInitForBootstrap(t.TempDir()); err != nil {
+		t.Fatalf("expected nil (warn + skip) when git is missing, got: %v", err)
+	}
+	if execCalled {
+		t.Error("initGitExecFn must not be called when git binary is missing")
+	}
+}
+
+// TestRunGitInitForBootstrap_FallbackSymbolicRef affirms that when `git init -b main`
+// fails (old git without -b), the fallback runs `git init` then `git symbolic-ref HEAD
+// refs/heads/main` and still returns nil.
+// Rule reconciliation: affirms the backward-compatibility path for git < 2.28
+// — without it, init would silently leave the default branch as 'master' on old git.
+func TestRunGitInitForBootstrap_FallbackSymbolicRef(t *testing.T) {
+	oldCheck := initGitCheck
+	oldExec := initGitExecFn
+	oldStatus := initGitStatusFn
+	t.Cleanup(func() { initGitCheck = oldCheck; initGitExecFn = oldExec; initGitStatusFn = oldStatus })
+
+	initGitCheck = func() (string, string, int) {
+		return "", "fatal: not a git repository (or any of the parent directories): .git", 128
+	}
+
+	var execArgs [][]string
+	initGitExecFn = func(args ...string) (string, error) {
+		execArgs = append(execArgs, append([]string{}, args...))
+		// First call: `git init -b main` fails (old git).
+		if len(execArgs) == 1 {
+			return "", fmt.Errorf("unknown switch `b'")
+		}
+		return "", nil
+	}
+	// Stub status so the test does not query the real repo's working tree.
+	initGitStatusFn = func() string { return "" }
+
+	if err := runGitInitForBootstrap(t.TempDir()); err != nil {
+		t.Fatalf("expected nil from fallback path, got: %v", err)
+	}
+	// Expect at least: ["init", "-b", "main"] + ["init"] + ["symbolic-ref", ...]
+	if len(execArgs) < 3 {
+		t.Fatalf("expected at least 3 git calls (init -b, init, symbolic-ref), got %v", execArgs)
+	}
+	var foundSymbolicRef bool
+	for _, a := range execArgs {
+		if len(a) >= 1 && a[0] == "symbolic-ref" {
+			foundSymbolicRef = true
+		}
+	}
+	if !foundSymbolicRef {
+		t.Errorf("expected symbolic-ref call in fallback, calls were: %v", execArgs)
+	}
+}
+
+// TestRunGitInitForBootstrap_FreshDir_PrintsBootstrapSteps is the arm: when git init
+// runs (D1 state 3, rc=128 "not a git repository"), the bootstrap steps are written to
+// initBootstrapOut so the user knows how to stage and push the initial commit.
+//
+// Rule reconciliation: affirms D5 (ADR-2026-11-26) — the bootstrap surface printed by
+// init must guide the agent through the first commit and push without using whole-tree
+// staging ('git add .' / 'git add -A'), which the guard denies.
+// Counter-arm: TestRunGitInitForBootstrap_AlreadyInsideWorkTree_NoBootstrapSteps.
+func TestRunGitInitForBootstrap_FreshDir_PrintsBootstrapSteps(t *testing.T) {
+	oldCheck := initGitCheck
+	oldExec := initGitExecFn
+	oldOut := initBootstrapOut
+	oldStatus := initGitStatusFn
+	t.Cleanup(func() {
+		initGitCheck = oldCheck
+		initGitExecFn = oldExec
+		initBootstrapOut = oldOut
+		initGitStatusFn = oldStatus
+	})
+
+	initGitCheck = func() (string, string, int) {
+		return "", "fatal: not a git repository (or any of the parent directories): .git", 128
+	}
+	initGitExecFn = func(args ...string) (string, error) { return "", nil }
+	// Stub status to empty: mock path does not have real files, so we expect
+	// the generic "each path listed" placeholder, not an actual file list.
+	initGitStatusFn = func() string { return "" }
+	var buf bytes.Buffer
+	initBootstrapOut = &buf
+
+	if err := runGitInitForBootstrap(t.TempDir()); err != nil {
+		t.Fatalf("expected nil error for fresh dir, got: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "trackfw push") {
+		t.Errorf("bootstrap output must contain 'trackfw push', got: %q", out)
+	}
+	if !strings.Contains(out, "git status --short") {
+		t.Errorf("bootstrap output must contain 'git status --short', got: %q", out)
+	}
+	// Whole-tree staging must not appear: 'git add .' where dot is followed by whitespace
+	// or end-of-string. This regex does NOT match 'git add .gitignore' (dot + letter).
+	wholeTreeRe := regexp.MustCompile(`\bgit add \.(\s|\z)`)
+	if wholeTreeRe.MatchString(out) {
+		t.Errorf("bootstrap output must not contain whole-tree 'git add .', got: %q", out)
+	}
+	if strings.Contains(out, "git add -A") {
+		t.Errorf("bootstrap output must not contain 'git add -A', got: %q", out)
+	}
+}
+
+// TestRunGitInitForBootstrap_AlreadyInsideWorkTree_NoBootstrapSteps is the counter-arm:
+// when already inside a work tree (D1 state 1, rc=0/"true"), no bootstrap steps are
+// printed — the repo already exists and the user does not need onboarding.
+//
+// Rule reconciliation: affirms D5 (ADR-2026-11-26) — the bootstrap steps are emitted
+// only once, when git init actually runs. An existing repo must not receive them again.
+// Arm: TestRunGitInitForBootstrap_FreshDir_PrintsBootstrapSteps.
+func TestRunGitInitForBootstrap_AlreadyInsideWorkTree_NoBootstrapSteps(t *testing.T) {
+	oldCheck := initGitCheck
+	oldOut := initBootstrapOut
+	t.Cleanup(func() {
+		initGitCheck = oldCheck
+		initBootstrapOut = oldOut
+	})
+
+	initGitCheck = func() (string, string, int) {
+		return "true", "", 0
+	}
+	var buf bytes.Buffer
+	initBootstrapOut = &buf
+
+	if err := runGitInitForBootstrap(t.TempDir()); err != nil {
+		t.Fatalf("expected nil error when already in work tree, got: %v", err)
+	}
+	if buf.Len() > 0 {
+		t.Errorf("expected no bootstrap output for existing repo, got: %q", buf.String())
+	}
+}
+
+// TestRunInit_RealGit_ClaudeScope_PrintsActualPaths is a real-git integration test
+// for the init bootstrap output (ML-1F, ADR-2026-11-26). When init runs in a fresh
+// directory (no git repo) with --ai-tools claude --scope project, it runs real git
+// init, writes the scaffold, then queries git status --porcelain to build the git add
+// line. The printed line must contain ".claude" and "CLAUDE.md" (created by the claude
+// scope), and when executed, it must leave git status --porcelain without any "??" entries.
+//
+// Rule reconciliation: affirms D5+ML-1F — init does not use a fixed path list; it
+// queries the real post-scaffold state. The arm fails on the fixed-list implementation
+// because ".claude" and "CLAUDE.md" are absent from the fixed list.
+// Counter-arm: TestRunGitInitForBootstrap_AlreadyInsideWorkTree_NoBootstrapSteps
+// (mock) confirms an existing repo does not print bootstrap steps.
+func TestRunInit_RealGit_ClaudeScope_PrintsActualPaths(t *testing.T) {
+	project, home := initFixture(t)
+	// Isolate Claude and Codex config dirs so the test does not write to the
+	// developer's real ~/.claude or ~/.codex (memory notes: codex-home-env-isolation,
+	// claude-config-dir-isolation).
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	t.Setenv("CODEX_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg"))
+
+	// Reset the config singleton so it picks up the fresh project dir.
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	// Capture bootstrap output (initBootstrapOut is the injection point used by
+	// runGitInitForBootstrap — it receives the printed bootstrap steps).
+	var buf bytes.Buffer
+	oldOut := initBootstrapOut
+	initBootstrapOut = &buf
+	t.Cleanup(func() { initBootstrapOut = oldOut })
+
+	// Do NOT inject initGitCheck or initGitExecFn or initGitStatusFn — this test
+	// exercises the real paths: git init runs for real, scaffold writes real files,
+	// and git status --porcelain queries the real filesystem.
+	cfg := generators.Config{
+		ProjectName: "test-project",
+		ProjectType: "governance",
+		Hooks:       "none",
+		CI:          "none",
+	}
+	if err := executeScaffoldAndInstall(cfg, []string{"claude"}, project, "project", home); err != nil {
+		t.Fatalf("executeScaffoldAndInstall failed: %v", err)
+	}
+
+	out := buf.String()
+
+	// The printed git add line must contain ".claude" and "CLAUDE.md" (the agent
+	// config directory and rules file created for the claude scope).
+	if !strings.Contains(out, ".claude") {
+		t.Errorf("bootstrap output must contain '.claude' (created by --scope project), got: %q", out)
+	}
+	if !strings.Contains(out, "CLAUDE.md") {
+		t.Errorf("bootstrap output must contain 'CLAUDE.md' (created by --scope project), got: %q", out)
+	}
+
+	// Parse the "git add ..." line and execute it in the project dir.
+	var addLine string
+	for _, line := range strings.Split(out, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "git add ") {
+			addLine = trimmed
+			break
+		}
+	}
+	if addLine == "" {
+		t.Fatal("bootstrap output must contain a 'git add ...' line, got: " + out)
+	}
+
+	// Set required git identity in the project so git add can run (git add itself
+	// does not need identity, but we set it to keep the repo in a valid state).
+	for _, args := range [][]string{
+		{"config", "user.email", "t@localhost"},
+		{"config", "user.name", "T"},
+	} {
+		gitCmd := exec.Command("git", args...)
+		gitCmd.Dir = project
+		if out, err := gitCmd.CombinedOutput(); err != nil {
+			t.Fatalf("git config failed: %v\n%s", err, out)
+		}
+	}
+
+	// Execute the git add line via sh -c so that POSIX single-quoted paths
+	// (produced by D1-6 fix, ML-2C) are interpreted correctly by the shell.
+	// Using strings.Fields + exec.Command would leave the single quotes as
+	// part of the path argument and fail to find the files.
+	addCmd := exec.Command("sh", "-c", addLine)
+	addCmd.Dir = project
+	if addOut, err := addCmd.CombinedOutput(); err != nil {
+		t.Fatalf("executing %q failed: %v\n%s", addLine, err, addOut)
+	}
+
+	// After the git add, there must be no untracked (??) files in the index.
+	statusCmd := exec.Command("git", "status", "--porcelain")
+	statusCmd.Dir = project
+	statusOut, err := statusCmd.Output()
+	if err != nil {
+		t.Fatalf("git status --porcelain failed: %v", err)
+	}
+	for _, line := range strings.Split(string(statusOut), "\n") {
+		if strings.HasPrefix(line, "?? ") {
+			t.Errorf("after executing the printed git add, untracked file remains: %q (full status: %q)", line, string(statusOut))
+		}
+	}
+}
+
+// TestD1_6_RealGit_ShellInjectionSafe (ML-2C, D1-6) affirms that filenames
+// containing shell metacharacters ($(touch PWNED) and -A) are safely handled
+// by the POSIX-single-quoted git add line emitted by PrintBootstrapSteps.
+//
+// When the printed line is executed with sh -c in the project directory:
+//  1. PWNED must NOT be created ($(touch PWNED) is not executed as a command).
+//  2. `git diff --cached --name-only` must contain the two literal filenames.
+//
+// Rule reconciliation: affirms D1-6 (ML-2C, ADR-2026-11-26) — the POSIX
+// single-quoted git add line suppresses $() command substitution and passes
+// -A as a literal pathspec (not the --all flag), so that the agent staging
+// the scaffold cannot be tricked by maliciously named files placed in the
+// project directory before trackfw init ran.
+func TestD1_6_RealGit_ShellInjectionSafe(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("sh not available — skipping shell-injection test")
+	}
+
+	dir := t.TempDir()
+	gitRepoIn(t, dir,
+		[]string{"init", "-q", "-b", "main", "."},
+		[]string{"config", "user.email", "t@localhost"},
+		[]string{"config", "user.name", "T"},
+	)
+
+	// Create the two dangerous files BEFORE querying git status.
+	dangerousName := "$(touch PWNED)"
+	dashAName := "-A"
+	for _, name := range []string{dangerousName, dashAName} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x\n"), 0o644); err != nil {
+			t.Fatalf("write %q: %v", name, err)
+		}
+	}
+
+	// Query git status -z to build the path list (same as production code).
+	statusCmd := exec.Command("git", "status", "--porcelain", "-z", "--untracked-files=normal")
+	statusCmd.Dir = dir
+	var statusBuf bytes.Buffer
+	statusCmd.Stdout = &statusBuf
+	if err := statusCmd.Run(); err != nil {
+		t.Fatalf("git status -z: %v", err)
+	}
+	paths := parseGitStatusPorcelain(statusBuf.String())
+	if len(paths) == 0 {
+		t.Fatal("expected at least 2 untracked files from git status -z, got none")
+	}
+
+	// Build the git add line via PrintBootstrapSteps.
+	var buf bytes.Buffer
+	generators.PrintBootstrapSteps(&buf, paths)
+	out := buf.String()
+
+	// Extract the git add line.
+	var addLine string
+	for _, line := range strings.Split(out, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "git add -- ") {
+			addLine = trimmed
+			break
+		}
+	}
+	if addLine == "" {
+		t.Fatalf("bootstrap output must contain 'git add -- ...'; got: %q", out)
+	}
+
+	// Execute the git add line via sh -c in the project directory.
+	addCmd := exec.Command("sh", "-c", addLine)
+	addCmd.Dir = dir
+	if addOut, addErr := addCmd.CombinedOutput(); addErr != nil {
+		t.Fatalf("sh -c %q failed: %v\n%s", addLine, addErr, addOut)
+	}
+
+	// 1. PWNED must NOT exist — $(touch PWNED) was not executed.
+	if _, statErr := os.Stat(filepath.Join(dir, "PWNED")); statErr == nil {
+		t.Error("D1-6: PWNED was created — shell injection via $(touch PWNED) was not prevented")
+	}
+
+	// 2. Both dangerous filenames must be staged.
+	cachedCmd := exec.Command("git", "diff", "--cached", "--name-only")
+	cachedCmd.Dir = dir
+	cachedOut, cachedErr := cachedCmd.Output()
+	if cachedErr != nil {
+		t.Fatalf("git diff --cached --name-only: %v", cachedErr)
+	}
+	staged := string(cachedOut)
+	if !strings.Contains(staged, dangerousName) {
+		t.Errorf("D1-6: file %q must be staged; staged files: %q", dangerousName, staged)
+	}
+	if !strings.Contains(staged, dashAName) {
+		t.Errorf("D1-6: file %q must be staged as literal path (not flag); staged files: %q", dashAName, staged)
 	}
 }

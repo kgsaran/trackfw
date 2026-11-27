@@ -101,6 +101,16 @@ This project uses **trackfw** for AI-native delivery governance.
 Chain: ` + "`ADR → REQ → ROADMAP`" + ` · States: ` + "`backlog / analyzing / wip / blocked / done / abandoned`" + `
 
 ### Agent Protocol
+> **New repository bootstrap (first run only):** if the repo has no commits yet — immediately after
+> ` + "`trackfw init`" + ` — publish the default branch before creating any feature branch.
+> List each path explicitly; whole-tree staging is denied by the guard:
+>
+>     git status --short
+>     git add <each path listed by git status --short>
+>     trackfw commit -m "chore(scaffold): initial"
+>     trackfw push
+>
+> Once the default branch is on the remote, follow the normal protocol below.
 1. **Before any implementation (mandatory):** create governance artifacts FIRST, then branch:
    ` + step1Req + ` → ` + "`trackfw roadmap move <name> wip`" + ` → ` + "`trackfw branch new <type>/<slug>`" + step1Note + `
    ❌ Never create a branch before REQ + ROADMAP are in wip/

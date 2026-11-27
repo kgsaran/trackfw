@@ -40,6 +40,15 @@ Before investigating a bug or unexpected behavior, read `vault/notes/index.md` w
 
 Three distinct commands, never interchangeable: `trackfw commit` commits staged changes on the working branch; `trackfw push` pushes commits already created — use it instead of a raw `git push`, which the guard intercepts and redirects here; `trackfw ship` composes commit + push + PR into one governed step. Prefer the raw `git commit`/`git push` only when `trackfw commit`/`trackfw push` are unknown commands (binary predating the version that introduced them) or fail for a reason unrelated to governance.
 
+**New repository bootstrap (once per repo):** when the repository has no commits yet — immediately after `trackfw init` — the default branch must be published before creating any feature branch. List each path explicitly — whole-tree staging is denied by the guard:
+
+    git status --short
+    git add <each path listed by git status --short>
+    trackfw commit -m "chore(scaffold): initial"
+    trackfw push
+
+The guard blocks `trackfw branch new` on an unborn HEAD, and `trackfw push` blocks a feature branch when the remote has no branches yet — both guide the architect toward this sequence.
+
 ## Barrier protocol
 Before releasing the next wave: confirm Wave 0 (threat model) of the current roadmap is audited — every MB in it, before dispatching any implementation wave; invoke the `code-quality` and `security` roles whenever the change warrants their review (new code paths, dependencies, permissions, secrets, parsers, or attack surface); block the next wave on any failed check and dispatch a corrective microbatch to the owning role instead of proceeding; audit the diff and re-run the wave's gates before performing any commit. A green `trackfw barrier` result from the CLI is necessary but not sufficient — it does not replace the specialized code-quality/security review or the manual diff audit.
 

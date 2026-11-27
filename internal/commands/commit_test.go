@@ -66,6 +66,25 @@ func TestCommit_Master_Blocks(t *testing.T) {
 	}
 }
 
+// TestCommit_ProtectedBranch_IncludesGitSwitchHint (ML-2C M-X1) affirms that
+// the commit refusal on main/master, when HEAD has a commit (born HEAD), includes
+// a "git switch <branch>" exit hint alongside the "trackfw branch new" suggestion.
+//
+// Rule reconciliation: affirms M-X1 (ML-2C) for commit — with a born HEAD on
+// main/master, the user has existing branches available; the git switch hint
+// offers that path explicitly rather than only "use trackfw branch new".
+func TestCommit_ProtectedBranch_IncludesGitSwitchHint(t *testing.T) {
+	for _, branch := range []string{"main", "master"} {
+		t.Run(branch, func(t *testing.T) {
+			deps, out, _ := makeCommitDeps(branch, true, nil)
+			_ = runCommit("fix: something", deps)
+			if !strings.Contains(out.String(), "git switch") {
+				t.Errorf("M-X1: commit refusal on %q must include 'git switch <branch>' hint; got: %q", branch, out.String())
+			}
+		})
+	}
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // runCommit — feat/fix/refactor without a matching roadmap: blocked
 // ────────────────────────────────────────────────────────────────────────────
@@ -334,4 +353,169 @@ func TestCommit_SuggestFlag_NeverCommits_EvenWithMessage(t *testing.T) {
 	// long as no commit happens. We only assert no panic/commit occurs; the branch-specific
 	// heuristic classification is already covered by the buildSuggestedMessage tests above.
 	_ = cmd.Execute()
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// D2 (ADR-2026-11-26): isBootstrapFirstCommit — conjunct predicate
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestIsBootstrapFirstCommit_UnbornAndZeroCount affirms the main bootstrap case:
+// both conditions true (HEAD unborn AND rev-list --all --count == "0") → true.
+// Rule reconciliation: affirms ADR-2026-11-26 D2 conclusion that only a fresh repo
+// (never had any commit) triggers the exception; the counter-arm (SwitchOrphan)
+// confirms count>0 is correctly rejected.
+func TestIsBootstrapFirstCommit_UnbornAndZeroCount(t *testing.T) {
+	execGit := func(args ...string) (string, error) {
+		if len(args) >= 1 && args[0] == "rev-parse" {
+			// HEAD is unborn — rev-parse fails.
+			return "", errors.New("fatal: Needed a single revision")
+		}
+		if len(args) >= 1 && args[0] == "rev-list" {
+			return "0\n", nil
+		}
+		return "", nil
+	}
+	if !isBootstrapFirstCommit(execGit) {
+		t.Error("expected true for unborn HEAD with zero commits, got false")
+	}
+}
+
+// TestIsBootstrapFirstCommit_SwitchOrphan affirms M-X1: when HEAD is unborn but
+// rev-list --all --count is > 0 (git switch --orphan in a repo with history),
+// returns false — the exception must NOT fire.
+// Rule reconciliation: affirms the M-X1 measurement conclusion that
+// rev-list --all --count (without HEAD) is the only reliable discriminator
+// between a fresh repo and an orphan branch in an existing repo.
+func TestIsBootstrapFirstCommit_SwitchOrphan(t *testing.T) {
+	execGit := func(args ...string) (string, error) {
+		if len(args) >= 1 && args[0] == "rev-parse" {
+			return "", errors.New("fatal: Needed a single revision")
+		}
+		if len(args) >= 1 && args[0] == "rev-list" {
+			// count > 0: other branches have commits (switch --orphan case)
+			return "3\n", nil
+		}
+		return "", nil
+	}
+	if isBootstrapFirstCommit(execGit) {
+		t.Error("expected false for unborn HEAD with existing commits (switch --orphan), got true")
+	}
+}
+
+// TestIsBootstrapFirstCommit_BornHead affirms that when HEAD resolves (there is at
+// least one commit on the current branch), returns false immediately.
+// Rule reconciliation: affirms the D2 "from second commit on, exception does not
+// fire" behaviour — if condition (1) is false, (2) is not even evaluated.
+func TestIsBootstrapFirstCommit_BornHead(t *testing.T) {
+	revListCalled := false
+	execGit := func(args ...string) (string, error) {
+		if len(args) >= 1 && args[0] == "rev-parse" {
+			return "abc1234", nil // HEAD resolves → not unborn
+		}
+		if len(args) >= 1 && args[0] == "rev-list" {
+			revListCalled = true
+		}
+		return "1\n", nil
+	}
+	if isBootstrapFirstCommit(execGit) {
+		t.Error("expected false when HEAD has a commit, got true")
+	}
+	// Short-circuit: rev-list must not be called when condition (1) is false.
+	if revListCalled {
+		t.Error("rev-list must not be called when HEAD already has a commit")
+	}
+}
+
+// TestIsBootstrapFirstCommit_NilExecGit affirms the fail-closed contract: a nil
+// execGit returns false (block the commit).
+// Rule reconciliation: affirms the fail-closed specification in ADR-2026-11-26 D2.
+func TestIsBootstrapFirstCommit_NilExecGit(t *testing.T) {
+	if isBootstrapFirstCommit(nil) {
+		t.Error("expected false for nil execGit (fail-closed), got true")
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// D2 (ADR-2026-11-26): runCommit bootstrap exception on main/master
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestRunCommit_BootstrapException_AllowsFirstCommitOnMain affirms that when
+// isBootstrapFirstCommit returns true, runCommit proceeds to call execGitCommit
+// on the default branch (main) instead of blocking it.
+// Rule reconciliation: affirms ADR-2026-11-26 D2 — first commit on main is
+// allowed; the counter-arm (TestRunCommit_BootstrapException_BlocksSecondCommit)
+// confirms the block resumes from the second commit on.
+func TestRunCommit_BootstrapException_AllowsFirstCommitOnMain(t *testing.T) {
+	out := &bytes.Buffer{}
+	commitCalled := false
+
+	d := commitDeps{
+		loadConfig:    func() config.ProjectConfig { return config.ProjectConfig{} },
+		currentBranch: func() (string, error) { return "main", nil },
+		resolveRoadmap: func(cfg config.ProjectConfig, b string) validator.BranchRoadmapResolution {
+			return validator.BranchRoadmapResolution{Matched: false}
+		},
+		execGitCommit: func(msg string) error {
+			commitCalled = true
+			return nil
+		},
+		stagedNameStatus: func() (string, error) { return "M\tREADME.md\n", nil },
+		execGit: func(args ...string) (string, error) {
+			// Simulate bootstrap: HEAD unborn AND count==0.
+			if len(args) >= 1 && args[0] == "rev-parse" {
+				return "", errors.New("fatal: Needed a single revision")
+			}
+			if len(args) >= 1 && args[0] == "rev-list" {
+				return "0\n", nil
+			}
+			return "", nil
+		},
+		out: out,
+	}
+
+	if err := runCommit("chore(scaffold): initial", d); err != nil {
+		t.Fatalf("expected first bootstrap commit to be allowed, got error: %v", err)
+	}
+	if !commitCalled {
+		t.Error("execGitCommit must be called for the bootstrap first commit on main")
+	}
+}
+
+// TestRunCommit_BootstrapException_BlocksSecondCommit is the counter-arm for
+// TestRunCommit_BootstrapException_AllowsFirstCommitOnMain: when HEAD resolves
+// (second or later commit), the protected-branch block must fire on main.
+// Rule reconciliation: affirms ADR-2026-11-26 D2 "from second commit on, the
+// block resumes" — the exception is strictly one-shot.
+func TestRunCommit_BootstrapException_BlocksSecondCommit(t *testing.T) {
+	out := &bytes.Buffer{}
+	commitCalled := false
+
+	d := commitDeps{
+		loadConfig:    func() config.ProjectConfig { return config.ProjectConfig{} },
+		currentBranch: func() (string, error) { return "main", nil },
+		resolveRoadmap: func(cfg config.ProjectConfig, b string) validator.BranchRoadmapResolution {
+			return validator.BranchRoadmapResolution{Matched: false}
+		},
+		execGitCommit: func(msg string) error {
+			commitCalled = true
+			return nil
+		},
+		stagedNameStatus: func() (string, error) { return "M\tREADME.md\n", nil },
+		execGit: func(args ...string) (string, error) {
+			// HEAD resolves → not bootstrap (second commit scenario).
+			return "abc1234", nil
+		},
+		out: out,
+	}
+
+	err := runCommit("fix: second commit on main", d)
+	if err == nil {
+		t.Fatal("expected block for second commit on main, got nil error")
+	}
+	if !strings.Contains(err.Error(), "not permitted") {
+		t.Errorf("error must mention 'not permitted', got: %v", err)
+	}
+	if commitCalled {
+		t.Error("execGitCommit must not be called when main commit is blocked")
+	}
 }

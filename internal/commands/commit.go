@@ -45,7 +45,11 @@ type commitDeps struct {
 	// (production: defaultStagedNameStatus). Used only by buildSuggestedMessage — never touched
 	// by the normal `-m` commit flow.
 	stagedNameStatus func() (string, error)
-	out              io.Writer
+	// execGit runs a git read command (production: defaultGitExec). Used for the D2 bootstrap
+	// check (ADR-2026-11-26): rev-parse --verify -q HEAD and rev-list --all --count. nil skips
+	// the check — acceptable for tests that exercise non-protected branches only.
+	execGit func(args ...string) (string, error)
+	out     io.Writer
 }
 
 // defaultResolveRoadmap resolves branch governance for an existing branch (D2 of
@@ -108,6 +112,7 @@ Create the governance artifacts first if this blocks you:
 				resolveRoadmap:   defaultResolveRoadmap,
 				execGitCommit:    defaultGitCommit,
 				stagedNameStatus: defaultStagedNameStatus,
+				execGit:          defaultGitExec,
 				out:              cmd.OutOrStdout(),
 			}
 
@@ -340,14 +345,26 @@ func runCommit(message string, deps commitDeps) error {
 	}
 	branch = strings.TrimSpace(branch)
 
-	// (a) main/master: always blocked.
+	// (a) main/master: blocked, with D2 exception (ADR-2026-11-26) for the bootstrap
+	// first commit. Allowed only when BOTH conditions hold (fail-closed):
+	//   (1) git rev-parse --verify -q HEAD returns rc==1 (HEAD has no commit — unborn)
+	//   (2) git rev-list --all --count returns "0" (no commits anywhere in the repo)
+	// This distinguishes a fresh repo (count==0) from `git switch --orphan` in a repo
+	// with history (count>0, M-X1). From the second commit on, (1) becomes false (HEAD
+	// resolves) → exception does not fire → protected branch block resumes.
 	if commitProtectedBranches[branch] {
-		msg := fmt.Sprintf(
-			"trackfw commit: direct commit on %q is not permitted. Use 'trackfw branch new <type>/<slug>' first.",
-			branch,
-		)
-		fmt.Fprintln(deps.out, msg)
-		return fmt.Errorf("blocked: commit directly on %q is not permitted", branch)
+		if isBootstrapFirstCommit(deps.execGit) {
+			// Bootstrap exception: first commit on the default branch is allowed.
+			// Fall through to (d) commit.
+		} else {
+			msg := fmt.Sprintf(
+				"trackfw commit: direct commit on %q is not permitted. Use 'trackfw branch new <type>/<slug>' first.\n"+
+					"Or switch to an existing branch: git switch <branch>",
+				branch,
+			)
+			fmt.Fprintln(deps.out, msg)
+			return fmt.Errorf("blocked: commit directly on %q is not permitted", branch)
+		}
 	}
 
 	// (b) feat/fix/refactor: require a matching roadmap in wip/, blocked/ or done/ (D2 of
@@ -399,4 +416,33 @@ func commitGovernedBranchPrefix(branch string) (prefix string, matched bool) {
 		}
 	}
 	return "", false
+}
+
+// isBootstrapFirstCommit returns true when BOTH D2 predicates hold (ADR-2026-11-26):
+//
+//  1. git rev-parse --verify -q HEAD → rc==1 (HEAD is unborn, no commit yet)
+//  2. git rev-list --all --count      → "0" (no commits anywhere in the repo)
+//
+// Both conditions must hold. Fail-closed: if execGit is nil or either command
+// fails unexpectedly, returns false (block the commit).
+//
+// Using rev-list --all --count (without HEAD) is the only reliable discriminator
+// between a fresh repo (count==0) and `git switch --orphan` in a repo that already
+// has commits on other branches (count>0, M-X1). Using --all --count HEAD would
+// return rc=128 in both cases and cannot distinguish them.
+func isBootstrapFirstCommit(execGit func(args ...string) (string, error)) bool {
+	if execGit == nil {
+		return false
+	}
+	// Condition (1): HEAD has no commit.
+	if _, err := execGit("rev-parse", "--verify", "-q", "HEAD"); err == nil {
+		// HEAD resolves → not unborn → not bootstrap.
+		return false
+	}
+	// Condition (2): no commits anywhere in the repo.
+	count, err := execGit("rev-list", "--all", "--count")
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(count) == "0"
 }

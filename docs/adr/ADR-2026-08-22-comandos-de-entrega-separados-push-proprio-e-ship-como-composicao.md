@@ -107,3 +107,19 @@ deve ter, escape hatch. A verificação feita nesta análise confirma que o CLI 
 bypass — o `git push` que ele executa é subprocesso e nunca atravessa o hook, que só inspeciona o
 comando da ferramenta Bash do agente. É por isso que `ship` funciona hoje, e `push` funcionará pelo
 mesmo mecanismo.
+
+## Emenda 1 (2026-11-26) — exceção de bootstrap no `push`
+
+O bloqueio de `main`/`master` em `trackfw push` ganha uma exceção, decidida no
+`ADR-2026-11-26-bootstrap-de-repositorio-novo-init-roda-git-init-e-a-branch-padrao-e-publicada-uma-vez-pelo-trackfw.md`.
+
+**D3.** O `push` da branch padrão é permitido só quando três condições valem juntas:
+- todas as URLs de push do `origin` estão sem branches, e nenhuma é reescrita por `insteadOf`;
+- a branch tem exatamente um commit;
+- o usuário não passou `--force-with-lease`.
+
+Esse `push` leva o lease interno de ausência.
+
+**D4.** `push` e `ship` de uma feature para um remoto vazio recusam, orientando a publicar a branch padrão primeiro.
+
+`ship` da branch padrão continua bloqueado.
