@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-11-26
 req: "docs/req/REQ-2026-11-26-repositorio-novo-nao-tem-rota-governada-para-publicar-a-branch-padrao-e-o-init-nao-inicializa-o-git.md"
 squad: "hades-tf, apolo-tf, hefesto-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, hefesto-tf"
 
 # Roadmap: Repositório novo não tem rota governada para publicar a branch padrão e o init não inicializa o git
 
-> Created: 2026-11-26 | Status: wip
+> Created: 2026-11-26 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-11-26-repositorio-novo-nao-tem-rota-governada-para-publicar-a-branch-padrao-e-o-init-nao-inicializa-o-git.md -->

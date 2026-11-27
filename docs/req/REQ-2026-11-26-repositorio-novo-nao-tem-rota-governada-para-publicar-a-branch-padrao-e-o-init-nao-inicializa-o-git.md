@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-11-26
 author: "zeus-tf (relato do KG em 2026-11-26, projeto improve-driving)"
 adr: "docs/adr/ADR-2026-11-26-bootstrap-de-repositorio-novo-init-roda-git-init-e-a-branch-padrao-e-publicada-uma-vez-pelo-trackfw.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-11-26-repositorio-novo-nao-tem-rota-governada-para-publicar-a-branch-padrao-e-o-init-nao-inicializa-o-git.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-11-26-repositorio-novo-nao-tem-rota-governada-para-publicar-a-branch-padrao-e-o-init-nao-inicializa-o-git.md"
 ---
 
 # REQ: Repositório novo não tem rota governada para publicar a branch padrão e o init não inicializa o git
 
-> Date: 2026-11-26 | Status: Open
+> Date: 2026-11-26 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -64,4 +64,4 @@ ADR: docs/adr/ADR-2026-11-26-bootstrap-de-repositorio-novo-init-roda-git-init-e-
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-11-26-repositorio-novo-nao-tem-rota-governada-para-publicar-a-branch-padrao-e-o-init-nao-inicializa-o-git.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-11-26-repositorio-novo-nao-tem-rota-governada-para-publicar-a-branch-padrao-e-o-init-nao-inicializa-o-git.md
